@@ -1,0 +1,17 @@
+{
+  "name": "dullypdf",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "start": "npm run db:up && npm run dev",
+    "start:fast": "npm run kill-old && node scripts/wsl_warn.js && npm run dev",
+    "dev": "concurrently \"npm run backend:dev\" \"npm run frontend:dev\"",
+    "kill-old": "bash scripts/kill_old_processes.sh",
+    "db:up": "docker compose up -d postgres",
+    "frontend:dev": "cd frontend && npm run dev",
+    "backend:dev": "uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir backend"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

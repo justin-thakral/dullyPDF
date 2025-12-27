@@ -1,0 +1,83 @@
+# Example connection settings for the sample healthcare database
+#
+# This repository ships SQL scripts under db/init that define a sample schema
+# in a Postgres database named "healthdb" and a denormalized view
+# public.vw_form_fields that the app reads to infer columns and fetch data.
+#
+# Use these examples as a template when filling the Connect DB form in the UI
+# or when calling the backend endpoint POST /api/connections/test.
+
+############################################################
+# Option A: Postgres (recommended for the db/init scripts) #
+############################################################
+
+TYPE=postgres
+HOST=db.example.com              # e.g., ep-xxxx.aws.neon.tech or RDS endpoint
+PORT=5432
+DATABASE=healthdb                # created to run db/init/*.sql into
+SCHEMA=public
+VIEW=vw_form_fields              # view created by 003_form_schema.sql
+USER=cdata_ro                    # read-only role created by 002_roles.sql
+PASSWORD=change_me_securely      # set a strong password (do not use the placeholder)
+SSL=true                         # require TLS when connecting over the internet
+
+# psql test (replace with your real host/user/password):
+# PGPASSWORD=$PASSWORD psql \
+#   -h $HOST -p $PORT -U $USER -d $DATABASE \
+#   -c 'SELECT * FROM "public"."vw_form_fields" LIMIT 1;'
+
+# Backend API test payload example (POST /api/connections/test):
+# {
+#   "type": "postgres",
+#   "host": "db.example.com",
+#   "port": 5432,
+#   "database": "healthdb",
+#   "schema": "public",
+#   "view": "vw_form_fields",
+#   "user": "cdata_ro",
+#   "password": "change_me_securely",
+#   "ssl": true
+# }
+
+############################################################
+# Option B: SQL Server (if you mirror the schema)          #
+############################################################
+
+TYPE=sqlserver
+HOST=sql.example.com            # e.g., your SQL Server hostname or IP
+PORT=1433
+DATABASE=healthdb               # ensure the schema/view exist here too
+SCHEMA=dbo
+VIEW=vw_form_fields             # same logical view name
+USER=ro_user                    # read-only SQL login with SELECT on the view
+PASSWORD=change_me_securely
+ENCRYPT=true                    # enable TLS encryption
+TRUST_SERVER_CERTIFICATE=false  # set true only if you understand the risks
+
+# sqlcmd test (replace with your real host/user/password):
+# sqlcmd -S tcp:$HOST,$PORT -d $DATABASE -U $USER -P $PASSWORD -Q "SELECT TOP (1) * FROM [$SCHEMA].[$VIEW];"
+
+# Backend API test payload example (POST /api/connections/test):
+# {
+#   "type": "sqlserver",
+#   "host": "sql.example.com",
+#   "port": 1433,
+#   "database": "healthdb",
+#   "schema": "dbo",
+#   "view": "vw_form_fields",
+#   "user": "ro_user",
+#   "password": "change_me_securely",
+#   "encrypt": true,
+#   "trustServerCertificate": false
+# }
+
+############################################################
+# Notes                                                    #
+############################################################
+# - The app expects a denormalized view exposing the columns you want to map.
+#   For the sample Postgres database, this is public.vw_form_fields.
+# - Always use a least-privilege, read-only account restricted to the view.
+# - Require TLS for any internet-exposed connections.
+# - In production, avoid persisting credentials; use short-lived secrets or
+#   store them encrypted and rotate regularly.
+

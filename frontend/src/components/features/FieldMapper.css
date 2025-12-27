@@ -1,0 +1,363 @@
+/**
+ * FieldMapper Component Styles - Professional AI Mapping Interface
+ *
+ * Styling for the database field mapping component with a focus on
+ * clarity, usability, and visual feedback for AI-generated results.
+ */
+
+.field-mapper-container {
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 2rem;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.08);
+  border: 1px solid #e5e7eb;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.field-mapper-container .field-mapper-header {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.field-mapper-container .field-mapper-header h3 {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: #1f2937;
+  margin-bottom: 0.5rem;
+}
+
+.field-mapper-container .field-mapper-header p {
+  color: #6b7280;
+  font-size: 1rem;
+}
+
+/* Upload Section */
+.field-mapper-container .upload-section {
+  margin-bottom: 2rem;
+}
+
+.field-mapper-container .upload-area {
+  border: 2px dashed #d1d5db;
+  border-radius: 12px;
+  padding: 2rem;
+  text-align: center;
+  transition: all 0.3s ease;
+  background: #f9fafb;
+}
+
+.field-mapper-container .upload-area:hover {
+  border-color: #3b82f6;
+  background: #eff6ff;
+}
+
+.field-mapper-container .file-input {
+  display: none;
+}
+
+.field-mapper-container .upload-label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  cursor: pointer;
+}
+
+.field-mapper-container .upload-icon {
+  width: 60px;
+  height: 60px;
+  border-radius: 12px;
+  background: #3b82f6;
+  color: white;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.9rem;
+}
+
+.field-mapper-container .upload-text {
+  font-size: 1rem;
+  color: #374151;
+  font-weight: 500;
+}
+
+.field-mapper-container .upload-success {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  border-radius: 8px;
+}
+
+.field-mapper-container .success-header {
+  font-weight: 600;
+  color: #065f46;
+  margin-bottom: 0.5rem;
+}
+
+.field-mapper-container .fields-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.field-mapper-container .field-tag {
+  background: #dbeafe;
+  color: #1e40af;
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+}
+
+.field-mapper-container .field-tag-more {
+  background: #e5e7eb;
+  color: #374151;
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+}
+
+/* Mapping Section */
+.field-mapper-container .mapping-section {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.field-mapper-container .generate-button {
+  background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+  color: white;
+  border: none;
+  padding: 0.875rem 2rem;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 1rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: all 0.3s ease;
+}
+
+.field-mapper-container .generate-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px rgba(59, 130, 246, 0.3);
+}
+
+.field-mapper-container .generate-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.field-mapper-container .spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top: 2px solid white;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+/* Error Messages */
+.field-mapper-container .error-message {
+  margin-top: 1rem;
+  padding: 0.75rem 1rem;
+  background: #fee2e2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  color: #b91c1c;
+  font-weight: 500;
+}
+
+/* Mappings Results */
+.field-mapper-container .mappings-results {
+  margin-top: 2rem;
+}
+
+.field-mapper-container .results-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+}
+
+.field-mapper-container .results-header h4 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.field-mapper-container .confidence-score {
+  font-size: 0.9rem;
+  color: #6b7280;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.field-mapper-container .confidence-value {
+  font-weight: 600;
+}
+
+.field-mapper-container .mappings-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.field-mapper-container .mapping-item {
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 1.5rem;
+  background: #f9fafb;
+}
+
+.field-mapper-container .mapping-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.field-mapper-container .mapping-arrow {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.field-mapper-container .database-field,
+.field-mapper-container .pdf-field {
+  padding: 0.5rem 1rem;
+  background: white;
+  border-radius: 6px;
+  border: 1px solid #e5e7eb;
+  font-weight: 500;
+  color: #374151;
+}
+
+.field-mapper-container .arrow {
+  color: #6b7280;
+  font-size: 1.25rem;
+  font-weight: bold;
+}
+
+.field-mapper-container .mapping-details {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.field-mapper-container .confidence-badge {
+  padding: 0.25rem 0.75rem;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.field-mapper-container .reasoning {
+  color: #6b7280;
+  font-size: 0.9rem;
+  flex: 1;
+}
+
+.field-mapper-container .apply-button {
+  margin-top: 1rem;
+  background: #10b981;
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.field-mapper-container .apply-button:hover {
+  background: #059669;
+}
+
+.field-mapper-container .apply-button.applied {
+  background: #6b7280;
+  cursor: not-allowed;
+}
+
+/* Unmapped Section */
+.field-mapper-container .unmapped-section {
+  margin-top: 2rem;
+  padding: 1rem;
+  background: #fef3c7;
+  border: 1px solid #fcd34d;
+  border-radius: 8px;
+}
+
+.field-mapper-container .unmapped-section h5 {
+  margin-bottom: 1rem;
+  color: #92400e;
+  font-weight: 600;
+}
+
+.field-mapper-container .unmapped-group {
+  margin-bottom: 1rem;
+}
+
+.field-mapper-container .unmapped-title {
+  font-weight: 500;
+  color: #92400e;
+  margin-bottom: 0.5rem;
+}
+
+.field-mapper-container .unmapped-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.field-mapper-container .unmapped-field {
+  background: white;
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  border: 1px solid #fcd34d;
+  color: #92400e;
+  font-size: 0.85rem;
+}
+
+.field-mapper-container .actions-section {
+  text-align: center;
+  margin-top: 2rem;
+}
+
+.field-mapper-container .reset-button {
+  background: #6b7280;
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.field-mapper-container .reset-button:hover {
+  background: #4b5563;
+}
+
+@media (max-width: 768px) {
+  .field-mapper-container {
+    padding: 1.5rem;
+  }
+
+  .field-mapper-container .mapping-arrow {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .field-mapper-container .results-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  .field-mapper-container .mapping-details {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

@@ -1,0 +1,486 @@
+%PDF-1.4
+%öäüß
+1 0 obj
+<<
+/Type /Catalog
+/Pages 2 0 R
+/AcroForm 3 0 R
+>>
+endobj
+2 0 obj
+<<
+/Type /Pages
+/Kids [4 0 R]
+/Count 1
+>>
+endobj
+3 0 obj
+<<
+/Fields [5 0 R 6 0 R 7 0 R 8 0 R 9 0 R 10 0 R 11 0 R 12 0 R 13 0 R 14 0 R
+15 0 R 16 0 R 17 0 R]
+/NeedAppearances false
+/DR 18 0 R
+>>
+endobj
+4 0 obj
+<<
+/Type /Page
+/Parent 2 0 R
+/MediaBox [0 0 612 792]
+/Resources <<
+/Font <<
+/F1 19 0 R
+/F2 20 0 R
+>>
+>>
+/Contents 21 0 R
+/Annots [22 0 R 23 0 R 24 0 R 25 0 R 26 0 R 27 0 R 28 0 R 29 0 R 30 0 R 31 0 R
+32 0 R 33 0 R 34 0 R]
+>>
+endobj
+5 0 obj
+<<
+/FT /Tx
+/T (full_name)
+/Type /Annot
+/Subtype /Widget
+>>
+endobj
+6 0 obj
+<<
+/FT /Tx
+/T (employee_id)
+/Type /Annot
+/Subtype /Widget
+>>
+endobj
+7 0 obj
+<<
+/FT /Tx
+/T (email)
+/Type /Annot
+/Subtype /Widget
+>>
+endobj
+8 0 obj
+<<
+/FT /Tx
+/T (phone)
+/Type /Annot
+/Subtype /Widget
+>>
+endobj
+9 0 obj
+<<
+/FT /Tx
+/T (street_address)
+/Type /Annot
+/Subtype /Widget
+>>
+endobj
+10 0 obj
+<<
+/FT /Tx
+/T (state)
+/Type /Annot
+/Subtype /Widget
+>>
+endobj
+11 0 obj
+<<
+/FT /Tx
+/T (zip)
+/Type /Annot
+/Subtype /Widget
+>>
+endobj
+12 0 obj
+<<
+/FT /Tx
+/T (city)
+/Type /Annot
+/Subtype /Widget
+>>
+endobj
+13 0 obj
+<<
+/FT /Btn
+/T (i_consent_to_electronic_signat)
+/Type /Annot
+/Subtype /Widget
+>>
+endobj
+14 0 obj
+<<
+/FT /Btn
+/T (i_confirm_the_information_prov)
+/Type /Annot
+/Subtype /Widget
+>>
+endobj
+15 0 obj
+<<
+/FT /Tx
+/T (i_confirm_the_information_prov)
+/Type /Annot
+/Subtype /Widget
+>>
+endobj
+16 0 obj
+<<
+/FT /Tx
+/T (date)
+/Type /Annot
+/Subtype /Widget
+>>
+endobj
+17 0 obj
+<<
+/FT /Sig
+/Type /Annot
+/Subtype /Widget
+/F 132
+/T (signature)
+>>
+endobj
+18 0 obj
+<<
+/Font 35 0 R
+>>
+endobj
+19 0 obj
+<<
+/Type /Font
+/Subtype /Type1
+/BaseFont /Helvetica
+>>
+endobj
+20 0 obj
+<<
+/Type /Font
+/Subtype /Type1
+/BaseFont /Helvetica-Bold
+>>
+endobj
+21 0 obj
+<<
+/Length 2042
+>>
+stream
+BT
+/F2 18 Tf
+1 0 0 1 72.00 720.00 Tm
+(Employee Information Form \(Base\)) Tj
+ET
+1.20 w
+72.00 692.00 m 540.00 692.00 l S
+BT
+/F2 13 Tf
+1 0 0 1 72.00 674.00 Tm
+(Section 1  Employee Details) Tj
+ET
+BT
+/F2 11 Tf
+1 0 0 1 72.00 656.00 Tm
+(Full Name) Tj
+ET
+0.80 w
+232.00 654.00 m 492.00 654.00 l S
+BT
+/F2 11 Tf
+1 0 0 1 72.00 632.00 Tm
+(Employee ID) Tj
+ET
+0.80 w
+232.00 630.00 m 492.00 630.00 l S
+BT
+/F2 11 Tf
+1 0 0 1 72.00 608.00 Tm
+(Date of Birth \(MM/DD/YYYY\)) Tj
+ET
+0.80 w
+232.00 606.00 m 492.00 606.00 l S
+BT
+/F2 11 Tf
+1 0 0 1 72.00 584.00 Tm
+(SSN \(Last 4\)) Tj
+ET
+0.80 w
+232.00 582.00 m 352.00 582.00 l S
+BT
+/F2 11 Tf
+1 0 0 1 72.00 560.00 Tm
+(Email) Tj
+ET
+0.80 w
+232.00 558.00 m 492.00 558.00 l S
+BT
+/F2 11 Tf
+1 0 0 1 72.00 536.00 Tm
+(Phone) Tj
+ET
+0.80 w
+232.00 534.00 m 492.00 534.00 l S
+0.60 w
+72.00 508.00 m 540.00 508.00 l S
+BT
+/F2 13 Tf
+1 0 0 1 72.00 490.00 Tm
+(Section 2  Address) Tj
+ET
+BT
+/F2 11 Tf
+1 0 0 1 72.00 472.00 Tm
+(Street Address) Tj
+ET
+0.80 w
+232.00 470.00 m 572.00 470.00 l S
+BT
+/F2 11 Tf
+1 0 0 1 72.00 448.00 Tm
+(City) Tj
+ET
+0.80 w
+132.00 446.00 m 312.00 446.00 l S
+BT
+/F2 11 Tf
+1 0 0 1 332.00 448.00 Tm
+(State) Tj
+ET
+0.80 w
+374.00 446.00 m 414.00 446.00 l S
+BT
+/F2 11 Tf
+1 0 0 1 434.00 448.00 Tm
+(ZIP) Tj
+ET
+0.80 w
+458.00 446.00 m 518.00 446.00 l S
+0.60 w
+72.00 420.00 m 540.00 420.00 l S
+BT
+/F2 13 Tf
+1 0 0 1 72.00 402.00 Tm
+(Section 3  Consents) Tj
+ET
+0.90 w
+72.00 374.00 12.00 12.00 re S
+BT
+/F1 11 Tf
+1 0 0 1 90.00 380.00 Tm
+(I consent to electronic signatures) Tj
+ET
+0.90 w
+72.00 352.00 12.00 12.00 re S
+BT
+/F1 11 Tf
+1 0 0 1 90.00 358.00 Tm
+(I confirm the information provided is accurate) Tj
+ET
+0.60 w
+72.00 334.00 m 540.00 334.00 l S
+BT
+/F2 13 Tf
+1 0 0 1 72.00 316.00 Tm
+(Section 4  Authorization) Tj
+ET
+BT
+/F2 11 Tf
+1 0 0 1 72.00 298.00 Tm
+(Signature) Tj
+ET
+0.80 w
+152.00 296.00 m 392.00 296.00 l S
+BT
+/F2 11 Tf
+1 0 0 1 412.00 298.00 Tm
+(Date) Tj
+ET
+0.80 w
+452.00 296.00 m 532.00 296.00 l S
+BT
+/F1 9 Tf
+1 0 0 1 72.00 268.00 Tm
+(Base template: add interactive fields programmatically at the marked lines/boxes.) Tj
+ET
+
+endstream
+endobj
+22 0 obj
+<<
+/Type /Annot
+/Subtype /Widget
+/Rect [231.284 653.02 492.074 674.914]
+/P 4 0 R
+/Parent 5 0 R
+>>
+endobj
+23 0 obj
+<<
+/Type /Annot
+/Subtype /Widget
+/Rect [232.236 630.174 491.12198 653.972]
+/P 4 0 R
+/Parent 6 0 R
+>>
+endobj
+24 0 obj
+<<
+/Type /Annot
+/Subtype /Widget
+/Rect [232.236 557.827 488.267 582.577]
+/P 4 0 R
+/Parent 7 0 R
+>>
+endobj
+25 0 obj
+<<
+/Type /Annot
+/Subtype /Widget
+/Rect [233.188 534.029 488.267 558.779]
+/P 4 0 R
+/Parent 8 0 R
+>>
+endobj
+26 0 obj
+<<
+/Type /Annot
+/Subtype /Widget
+/Rect [226.525 469.299 552.037 508.32703]
+/P 4 0 R
+/Parent 9 0 R
+>>
+endobj
+27 0 obj
+<<
+/Type /Annot
+/Subtype /Widget
+/Rect [371.197 445.5 415.931 470.25]
+/P 4 0 R
+/Parent 10 0 R
+>>
+endobj
+28 0 obj
+<<
+/Type /Annot
+/Subtype /Widget
+/Rect [454.954 445.5 518.724 469.299]
+/P 4 0 R
+/Parent 11 0 R
+>>
+endobj
+29 0 obj
+<<
+/Type /Annot
+/Subtype /Widget
+/Rect [129.443 445.5 315.04102 468.347]
+/P 4 0 R
+/Parent 12 0 R
+>>
+endobj
+30 0 obj
+<<
+/Type /Annot
+/Subtype /Widget
+/Rect [69.48 372.202 85.66 389.337]
+/P 4 0 R
+/Parent 13 0 R
+>>
+endobj
+31 0 obj
+<<
+/Type /Annot
+/Subtype /Widget
+/Rect [70.432 351.26 85.659996 367.44302]
+/P 4 0 R
+/Parent 14 0 R
+>>
+endobj
+32 0 obj
+<<
+/Type /Annot
+/Subtype /Widget
+/Rect [72.335 332.222 538.71204 355.068]
+/P 4 0 R
+/Parent 15 0 R
+>>
+endobj
+33 0 obj
+<<
+/Type /Annot
+/Subtype /Widget
+/Rect [448.292 296.049 533.001 318.89502]
+/P 4 0 R
+/Parent 16 0 R
+>>
+endobj
+34 0 obj
+<<
+/Type /Annot
+/Subtype /Widget
+/Rect [140.864 295.097 395.944 316.03897]
+/P 4 0 R
+/Parent 17 0 R
+>>
+endobj
+35 0 obj
+<<
+/Helv 36 0 R
+>>
+endobj
+36 0 obj
+<<
+/Type /Font
+/Subtype /Type1
+/BaseFont /Helvetica
+/Encoding /WinAnsiEncoding
+>>
+endobj
+xref
+0 37
+0000000000 65535 f
+0000000015 00000 n
+0000000080 00000 n
+0000000137 00000 n
+0000000288 00000 n
+0000000528 00000 n
+0000000602 00000 n
+0000000678 00000 n
+0000000748 00000 n
+0000000818 00000 n
+0000000897 00000 n
+0000000968 00000 n
+0000001037 00000 n
+0000001107 00000 n
+0000001204 00000 n
+0000001301 00000 n
+0000001397 00000 n
+0000001467 00000 n
+0000001550 00000 n
+0000001585 00000 n
+0000001656 00000 n
+0000001732 00000 n
+0000003829 00000 n
+0000003943 00000 n
+0000004060 00000 n
+0000004175 00000 n
+0000004290 00000 n
+0000004407 00000 n
+0000004520 00000 n
+0000004634 00000 n
+0000004750 00000 n
+0000004862 00000 n
+0000004980 00000 n
+0000005097 00000 n
+0000005215 00000 n
+0000005333 00000 n
+0000005368 00000 n
+trailer
+<<
+/Size 37
+/Root 1 0 R
+/ID [<0F806C2846A91E75308138C90F444C0F> <0F806C2846A91E75308138C90F444C0F>]
+>>
+startxref
+5466
+%%EOF

@@ -1,0 +1,215 @@
+%PDF-1.4
+1 0 obj
+<<
+/Type /Catalog
+/Pages 2 0 R
+>>
+endobj
+
+2 0 obj
+<<
+/Type /Pages
+/Kids [3 0 R]
+/Count 1
+>>
+endobj
+
+3 0 obj
+<<
+/Type /Page
+/Parent 2 0 R
+/MediaBox [0 0 612 792]
+/Contents 4 0 R
+/Resources <<
+/Font <<
+/F1 5 0 R
+/F2 6 0 R
+/F3 7 0 R
+>>
+>>
+>>
+endobj
+
+4 0 obj
+<<
+/Length 3000
+>>
+stream
+BT
+/F1 18 Tf
+50 750 Td
+(PRIOR AUTHORIZATION REQUEST FORM) Tj
+0 -30 Td
+/F2 10 Tf
+(Please complete all sections. Incomplete forms will be returned.) Tj
+0 -40 Td
+/F1 14 Tf
+(1. PATIENT INFORMATION) Tj
+0 -20 Td
+/F2 10 Tf
+(Full Name: John Michael Doe                    DOB: 01/15/1980  Sex: M  F ) Tj
+0 -15 Td
+(Member ID: BCBS123456789        Insurance: Blue Cross Blue Shield) Tj
+0 -15 Td
+(Address: 123 Main Street, Anytown, ST 12345) Tj
+0 -15 Td
+(Phone: (555) 123-4567              Email: john.doe@email.com) Tj
+0 -30 Td
+/F1 14 Tf
+(2. INSURANCE / PLAN INFORMATION) Tj
+0 -20 Td
+/F2 10 Tf
+(Insurance Company: Blue Cross Blue Shield    Plan Type: PPO  HMO  Medicare ) Tj
+0 -15 Td
+(Policy Number: POL987654321      Group Number: GRP001) Tj
+0 -15 Td
+(Effective Date: 01/01/2024       Termination Date: 12/31/2024) Tj
+0 -30 Td
+/F1 14 Tf
+(3. PROVIDER INFORMATION) Tj
+0 -20 Td
+/F2 10 Tf
+(Requesting Provider: Dr. Sarah Smith, MD        NPI: 1234567890) Tj
+0 -15 Td
+(Specialty: Neurology  Cardiology  Orthopedics  Other: _________________) Tj
+0 -15 Td
+(Phone: (555) 987-6543              Fax: (555) 987-6544) Tj
+0 -15 Td
+(Address: 456 Medical Center Dr, Anytown, ST 12345) Tj
+0 -15 Td
+(Facility: Anytown Medical Center    Tax ID: 12-3456789) Tj
+0 -30 Td
+/F1 14 Tf
+(4. SERVICE / PROCEDURE REQUESTED) Tj
+0 -20 Td
+/F2 10 Tf
+(Service Type: MRI Brain with Contrast) Tj
+0 -15 Td
+(CPT Code: 70553                    ICD-10 Code: R51 - Headache) Tj
+0 -15 Td
+(Number of Treatments: 1           Requested Date: 12/20/2024) Tj
+0 -15 Td
+(Place of Service: Outpatient  Inpatient  Emergency  Other: _____________) Tj
+0 -30 Td
+/F1 14 Tf
+(5. CLINICAL JUSTIFICATION) Tj
+0 -20 Td
+/F2 10 Tf
+(Medical Necessity:) Tj
+0 -15 Td
+(Patient presents with persistent headaches and dizziness for 3 weeks.) Tj
+0 -12 Td
+(Physical examination reveals no focal neurological deficits. Patient has) Tj
+0 -12 Td
+(history of hypertension, well controlled. MRI brain with contrast is) Tj
+0 -12 Td
+(medically necessary to rule out intracranial pathology including mass) Tj
+0 -12 Td
+(lesions, vascular abnormalities, or acute stroke. Clinical guidelines) Tj
+0 -12 Td
+(support MRI imaging for persistent headaches with associated symptoms.) Tj
+0 -20 Td
+(Clinical Findings:) Tj
+0 -15 Td
+( Headaches (duration: 3 weeks)     Dizziness     Nausea) Tj
+0 -15 Td
+( Photophobia                      No focal deficits  Normal vitals) Tj
+0 -20 Td
+(Prior Treatments:) Tj
+0 -15 Td
+( OTC medications (no relief)      Rest          Other: _____________) Tj
+0 -30 Td
+/F1 14 Tf
+(6. SUPPORTING DOCUMENTATION) Tj
+0 -20 Td
+/F2 10 Tf
+(Attached Documents (check all that apply):) Tj
+0 -15 Td
+( Physician Notes (12/15/2024)     Laboratory Results (CBC, CMP)) Tj
+0 -15 Td
+( Previous Imaging (CT Head)       Patient Medical History) Tj
+0 -15 Td
+( Insurance Card Copy              Discharge Summary) Tj
+0 -15 Td
+( Consultation Reports             Other: ________________________________) Tj
+0 -20 Td
+(Additional Notes:) Tj
+0 -15 Td
+(_____________________________________________________________________________) Tj
+0 -15 Td
+(_____________________________________________________________________________) Tj
+0 -30 Td
+/F1 14 Tf
+(7. AUTHORIZATION REQUEST DETAILS) Tj
+0 -20 Td
+/F2 10 Tf
+(Date of Request: 12/15/2024        Urgency:  Routine  Urgent  Emergency) Tj
+0 -15 Td
+(Requested Start Date: 12/20/2024   Requested End Date: 12/20/2024) Tj
+0 -15 Td
+(Alternative Treatment Considered:  Yes  No) Tj
+0 -15 Td
+(If Yes, please explain: ____________________________________________________) Tj
+0 -30 Td
+/F1 14 Tf
+(8. SIGNATURES) Tj
+0 -20 Td
+/F2 10 Tf
+(Provider Signature: Dr. Sarah Smith, MD        Date: 12/15/2024) Tj
+0 -15 Td
+(Patient Consent: John M. Doe                   Date: 12/15/2024) Tj
+0 -15 Td
+(Electronic Signature: [E-Signature Applied]   Timestamp: 12/15/2024 14:30:25) Tj
+0 -30 Td
+/F3 8 Tf
+(Form ID: PA-2024-001234 | Submission Deadline: 5 business days prior to service) Tj
+0 -15 Td
+(For urgent requests, call (555) 800-AUTH | Online submission: www.bcbs.com/pa) Tj
+0 -15 Td
+(Provider Portal: https://provider.bcbs.com | Fax: (555) 800-FAX) Tj
+ET
+endstream
+endobj
+
+5 0 obj
+<<
+/Type /Font
+/Subtype /Type1
+/BaseFont /Helvetica-Bold
+>>
+endobj
+
+6 0 obj
+<<
+/Type /Font
+/Subtype /Type1
+/BaseFont /Helvetica
+>>
+endobj
+
+7 0 obj
+<<
+/Type /Font
+/Subtype /Type1
+/BaseFont /Helvetica-Oblique
+>>
+endobj
+
+xref
+0 8
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000274 00000 n 
+0000003274 00000 n 
+0000003524 00000 n 
+0000003774 00000 n 
+trailer
+<<
+/Size 8
+/Root 1 0 R
+>>
+startxref
+3875
+%%EOF

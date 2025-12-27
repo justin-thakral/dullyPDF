@@ -1,0 +1,215 @@
+%PDF-1.4
+1 0 obj
+<<
+/Type /Catalog
+/Pages 2 0 R
+>>
+endobj
+
+2 0 obj
+<<
+/Type /Pages
+/Kids [3 0 R]
+/Count 1
+>>
+endobj
+
+3 0 obj
+<<
+/Type /Page
+/Parent 2 0 R
+/MediaBox [0 0 612 792]
+/Contents 4 0 R
+/Resources <<
+/Font <<
+/F1 5 0 R
+/F2 6 0 R
+/F3 7 0 R
+>>
+>>
+>>
+endobj
+
+4 0 obj
+<<
+/Length 3000
+>>
+stream
+BT
+/F1 18 Tf
+50 750 Td
+(PRIOR AUTHORIZATION REQUEST FORM) Tj
+0 -30 Td
+/F2 10 Tf
+(Please complete all sections. Incomplete forms will be returned.) Tj
+0 -40 Td
+/F1 14 Tf
+(1. PATIENT INFORMATION) Tj
+0 -20 Td
+/F2 10 Tf
+(Full Name: Jane Elizabeth Smith              DOB: 03/22/1975  Sex: M  F ) Tj
+0 -15 Td
+(Member ID: AETNA789012345       Insurance: Aetna Health Insurance) Tj
+0 -15 Td
+(Address: 456 Oak Avenue, Springfield, IL 62701) Tj
+0 -15 Td
+(Phone: (217) 555-7890              Email: jane.smith@email.com) Tj
+0 -30 Td
+/F1 14 Tf
+(2. INSURANCE / PLAN INFORMATION) Tj
+0 -20 Td
+/F2 10 Tf
+(Insurance Company: Aetna Health Insurance    Plan Type: PPO  HMO  Medicare ) Tj
+0 -15 Td
+(Policy Number: AET456789012      Group Number: GRP002) Tj
+0 -15 Td
+(Effective Date: 01/01/2024       Termination Date: 12/31/2024) Tj
+0 -30 Td
+/F1 14 Tf
+(3. PROVIDER INFORMATION) Tj
+0 -20 Td
+/F2 10 Tf
+(Requesting Provider: Dr. Michael Chen, MD      NPI: 9876543210) Tj
+0 -15 Td
+(Specialty: Cardiology  Neurology  Orthopedics  Other: _________________) Tj
+0 -15 Td
+(Phone: (217) 555-2468              Fax: (217) 555-2469) Tj
+0 -15 Td
+(Address: 789 Heart Center Blvd, Springfield, IL 62701) Tj
+0 -15 Td
+(Facility: Springfield Heart Institute    Tax ID: 98-7654321) Tj
+0 -30 Td
+/F1 14 Tf
+(4. SERVICE / PROCEDURE REQUESTED) Tj
+0 -20 Td
+/F2 10 Tf
+(Service Type: Cardiac Catheterization) Tj
+0 -15 Td
+(CPT Code: 93458                   ICD-10 Code: I25.9 - CAD) Tj
+0 -15 Td
+(Number of Treatments: 1           Requested Date: 12/22/2024) Tj
+0 -15 Td
+(Place of Service: Inpatient  Outpatient  Emergency  Other: _____________) Tj
+0 -30 Td
+/F1 14 Tf
+(5. CLINICAL JUSTIFICATION) Tj
+0 -20 Td
+/F2 10 Tf
+(Medical Necessity:) Tj
+0 -15 Td
+(Patient presents with chest pain and shortness of breath. Recent stress) Tj
+0 -12 Td
+(test was positive for ischemia. Patient has risk factors including) Tj
+0 -12 Td
+(hypertension, diabetes, and family history of CAD. Cardiac catheterization) Tj
+0 -12 Td
+(is medically necessary to evaluate coronary artery disease and determine) Tj
+0 -12 Td
+(appropriate treatment. Clinical guidelines support invasive evaluation) Tj
+0 -12 Td
+(for patients with positive stress tests and multiple risk factors.) Tj
+0 -20 Td
+(Clinical Findings:) Tj
+0 -15 Td
+( Chest pain (duration: 2 weeks)    Shortness of breath    Positive stress test) Tj
+0 -15 Td
+( Hypertension                     Diabetes               Family history CAD) Tj
+0 -20 Td
+(Prior Treatments:) Tj
+0 -15 Td
+( Medical therapy (no relief)      Stress test (positive)  Other: _____________) Tj
+0 -30 Td
+/F1 14 Tf
+(6. SUPPORTING DOCUMENTATION) Tj
+0 -20 Td
+/F2 10 Tf
+(Attached Documents (check all that apply):) Tj
+0 -15 Td
+( Physician Notes (12/18/2024)     Stress Test Results (12/10/2024)) Tj
+0 -15 Td
+( EKG Results (12/18/2024)         Patient Medical History) Tj
+0 -15 Td
+( Insurance Card Copy              Laboratory Results) Tj
+0 -15 Td
+( Cardiology Consultation         Other: ________________________________) Tj
+0 -20 Td
+(Additional Notes:) Tj
+0 -15 Td
+(_____________________________________________________________________________) Tj
+0 -15 Td
+(_____________________________________________________________________________) Tj
+0 -30 Td
+/F1 14 Tf
+(7. AUTHORIZATION REQUEST DETAILS) Tj
+0 -20 Td
+/F2 10 Tf
+(Date of Request: 12/18/2024        Urgency:  Routine  Urgent  Emergency) Tj
+0 -15 Td
+(Requested Start Date: 12/22/2024   Requested End Date: 12/22/2024) Tj
+0 -15 Td
+(Alternative Treatment Considered:  Yes  No) Tj
+0 -15 Td
+(If Yes, please explain: ____________________________________________________) Tj
+0 -30 Td
+/F1 14 Tf
+(8. SIGNATURES) Tj
+0 -20 Td
+/F2 10 Tf
+(Provider Signature: Dr. Michael Chen, MD      Date: 12/18/2024) Tj
+0 -15 Td
+(Patient Consent: Jane E. Smith                 Date: 12/18/2024) Tj
+0 -15 Td
+(Electronic Signature: [E-Signature Applied]   Timestamp: 12/18/2024 10:15:30) Tj
+0 -30 Td
+/F3 8 Tf
+(Form ID: PA-2024-001235 | Submission Deadline: 5 business days prior to service) Tj
+0 -15 Td
+(For urgent requests, call (217) 800-AUTH | Online submission: www.aetna.com/pa) Tj
+0 -15 Td
+(Provider Portal: https://provider.aetna.com | Fax: (217) 800-FAX) Tj
+ET
+endstream
+endobj
+
+5 0 obj
+<<
+/Type /Font
+/Subtype /Type1
+/BaseFont /Helvetica-Bold
+>>
+endobj
+
+6 0 obj
+<<
+/Type /Font
+/Subtype /Type1
+/BaseFont /Helvetica
+>>
+endobj
+
+7 0 obj
+<<
+/Type /Font
+/Subtype /Type1
+/BaseFont /Helvetica-Oblique
+>>
+endobj
+
+xref
+0 8
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000274 00000 n 
+0000003274 00000 n 
+0000003524 00000 n 
+0000003774 00000 n 
+trailer
+<<
+/Size 8
+/Root 1 0 R
+>>
+startxref
+3875
+%%EOF

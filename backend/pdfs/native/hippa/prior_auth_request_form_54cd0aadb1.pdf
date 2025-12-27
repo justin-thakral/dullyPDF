@@ -1,0 +1,219 @@
+%PDF-1.4
+1 0 obj
+<<
+/Type /Catalog
+/Pages 2 0 R
+>>
+endobj
+
+2 0 obj
+<<
+/Type /Pages
+/Kids [3 0 R]
+/Count 1
+>>
+endobj
+
+3 0 obj
+<<
+/Type /Page
+/Parent 2 0 R
+/MediaBox [0 0 612 792]
+/Contents 4 0 R
+/Resources <<
+/Font <<
+/F1 5 0 R
+/F2 6 0 R
+/F3 7 0 R
+>>
+>>
+>>
+endobj
+
+4 0 obj
+<<
+/Length 3000
+>>
+stream
+BT
+/F1 18 Tf
+50 750 Td
+(PRIOR AUTHORIZATION REQUEST FORM) Tj
+0 -30 Td
+/F2 10 Tf
+(Please complete all sections. Incomplete forms will be returned.) Tj
+0 -40 Td
+/F1 14 Tf
+(1. PATIENT INFORMATION) Tj
+0 -20 Td
+/F2 10 Tf
+(Full Name: Sarah Elizabeth Wilson           DOB: 05/08/1972  Sex: M  F ) Tj
+0 -15 Td
+(Member ID: CIGNA456789012       Insurance: Cigna Health Insurance) Tj
+0 -15 Td
+(Address: 321 Elm Street, Phoenix, AZ 85001) Tj
+0 -15 Td
+(Phone: (602) 555-7890              Email: sarah.wilson@email.com) Tj
+0 -30 Td
+/F1 14 Tf
+(2. INSURANCE / PLAN INFORMATION) Tj
+0 -20 Td
+/F2 10 Tf
+(Insurance Company: Cigna Health Insurance    Plan Type: PPO  HMO  Medicare ) Tj
+0 -15 Td
+(Policy Number: CIG789012345      Group Number: GRP004) Tj
+0 -15 Td
+(Effective Date: 01/01/2024       Termination Date: 12/31/2024) Tj
+0 -30 Td
+/F1 14 Tf
+(3. PROVIDER INFORMATION) Tj
+0 -20 Td
+/F2 10 Tf
+(Requesting Provider: Dr. Jennifer Martinez, MD  NPI: 2233445566) Tj
+0 -15 Td
+(Specialty: Gastroenterology  Cardiology  Orthopedics  Other: _________________) Tj
+0 -15 Td
+(Phone: (602) 555-2468              Fax: (602) 555-2469) Tj
+0 -15 Td
+(Address: 654 Digestive Health Dr, Phoenix, AZ 85001) Tj
+0 -15 Td
+(Facility: Phoenix Digestive Institute    Tax ID: 22-3344556) Tj
+0 -30 Td
+/F1 14 Tf
+(4. SERVICE / PROCEDURE REQUESTED) Tj
+0 -20 Td
+/F2 10 Tf
+(Service Type: Colonoscopy with Biopsy) Tj
+0 -15 Td
+(CPT Code: 45380                   ICD-10 Code: K59.00 - Constipation) Tj
+0 -15 Td
+(Number of Treatments: 1           Requested Date: 01/25/2025) Tj
+0 -15 Td
+(Place of Service: Outpatient  Inpatient  Emergency  Other: _____________) Tj
+0 -30 Td
+/F1 14 Tf
+(5. CLINICAL JUSTIFICATION) Tj
+0 -20 Td
+/F2 10 Tf
+(Medical Necessity:) Tj
+0 -15 Td
+(Patient presents with chronic constipation and abdominal pain for) Tj
+0 -12 Td
+(4 months. Physical examination reveals mild abdominal tenderness) Tj
+0 -12 Td
+(in the left lower quadrant. Patient has family history of colon) Tj
+0 -12 Td
+(cancer (mother diagnosed at age 58). Colonoscopy with biopsy is) Tj
+0 -12 Td
+(medically necessary to evaluate for inflammatory bowel disease,) Tj
+0 -12 Td
+(diverticulosis, or other colonic pathology. Clinical guidelines) Tj
+0 -12 Td
+(support colonoscopy for patients with persistent GI symptoms) Tj
+0 -12 Td
+(and family history of colon cancer.) Tj
+0 -20 Td
+(Clinical Findings:) Tj
+0 -15 Td
+( Chronic constipation (4 months)   Abdominal pain    Family history) Tj
+0 -15 Td
+( Left lower quadrant tenderness   No fever          Normal vitals) Tj
+0 -20 Td
+(Prior Treatments:) Tj
+0 -15 Td
+( Dietary modifications (no relief)  Laxatives (minimal relief)  Other: _____________) Tj
+0 -30 Td
+/F1 14 Tf
+(6. SUPPORTING DOCUMENTATION) Tj
+0 -20 Td
+/F2 10 Tf
+(Attached Documents (check all that apply):) Tj
+0 -15 Td
+( Physician Notes (12/22/2024)     Laboratory Results (CBC, CMP)) Tj
+0 -15 Td
+( Previous Imaging (CT Abdomen)    Patient Medical History) Tj
+0 -15 Td
+( Insurance Card Copy              Family History Documentation) Tj
+0 -15 Td
+( Gastroenterology Consultation   Other: ________________________________) Tj
+0 -20 Td
+(Additional Notes:) Tj
+0 -15 Td
+(_____________________________________________________________________________) Tj
+0 -15 Td
+(_____________________________________________________________________________) Tj
+0 -30 Td
+/F1 14 Tf
+(7. AUTHORIZATION REQUEST DETAILS) Tj
+0 -20 Td
+/F2 10 Tf
+(Date of Request: 12/22/2024        Urgency:  Routine  Urgent  Emergency) Tj
+0 -15 Td
+(Requested Start Date: 01/25/2025   Requested End Date: 01/25/2025) Tj
+0 -15 Td
+(Alternative Treatment Considered:  Yes  No) Tj
+0 -15 Td
+(If Yes, please explain: ____________________________________________________) Tj
+0 -30 Td
+/F1 14 Tf
+(8. SIGNATURES) Tj
+0 -20 Td
+/F2 10 Tf
+(Provider Signature: Dr. Jennifer Martinez, MD  Date: 12/22/2024) Tj
+0 -15 Td
+(Patient Consent: Sarah E. Wilson                Date: 12/22/2024) Tj
+0 -15 Td
+(Electronic Signature: [E-Signature Applied]   Timestamp: 12/22/2024 11:30:45) Tj
+0 -30 Td
+/F3 8 Tf
+(Form ID: PA-2024-001237 | Submission Deadline: 5 business days prior to service) Tj
+0 -15 Td
+(For urgent requests, call (602) 800-AUTH | Online submission: www.cigna.com/pa) Tj
+0 -15 Td
+(Provider Portal: https://provider.cigna.com | Fax: (602) 800-FAX) Tj
+ET
+endstream
+endobj
+
+5 0 obj
+<<
+/Type /Font
+/Subtype /Type1
+/BaseFont /Helvetica-Bold
+>>
+endobj
+
+6 0 obj
+<<
+/Type /Font
+/Subtype /Type1
+/BaseFont /Helvetica
+>>
+endobj
+
+7 0 obj
+<<
+/Type /Font
+/Subtype /Type1
+/BaseFont /Helvetica-Oblique
+>>
+endobj
+
+xref
+0 8
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000274 00000 n 
+0000003274 00000 n 
+0000003524 00000 n 
+0000003774 00000 n 
+trailer
+<<
+/Size 8
+/Root 1 0 R
+>>
+startxref
+3875
+%%EOF

@@ -1,0 +1,219 @@
+%PDF-1.4
+1 0 obj
+<<
+/Type /Catalog
+/Pages 2 0 R
+>>
+endobj
+
+2 0 obj
+<<
+/Type /Pages
+/Kids [3 0 R]
+/Count 1
+>>
+endobj
+
+3 0 obj
+<<
+/Type /Page
+/Parent 2 0 R
+/MediaBox [0 0 612 792]
+/Contents 4 0 R
+/Resources <<
+/Font <<
+/F1 5 0 R
+/F2 6 0 R
+/F3 7 0 R
+>>
+>>
+>>
+endobj
+
+4 0 obj
+<<
+/Length 3000
+>>
+stream
+BT
+/F1 18 Tf
+50 750 Td
+(PRIOR AUTHORIZATION REQUEST FORM) Tj
+0 -30 Td
+/F2 10 Tf
+(Please complete all sections. Incomplete forms will be returned.) Tj
+0 -40 Td
+/F1 14 Tf
+(1. PATIENT INFORMATION) Tj
+0 -20 Td
+/F2 10 Tf
+(Full Name: David Michael Brown             DOB: 11/30/1968  Sex: M  F ) Tj
+0 -15 Td
+(Member ID: HUMANA567890123       Insurance: Humana Health Insurance) Tj
+0 -15 Td
+(Address: 987 Maple Avenue, Miami, FL 33101) Tj
+0 -15 Td
+(Phone: (305) 555-1234              Email: david.brown@email.com) Tj
+0 -30 Td
+/F1 14 Tf
+(2. INSURANCE / PLAN INFORMATION) Tj
+0 -20 Td
+/F2 10 Tf
+(Insurance Company: Humana Health Insurance    Plan Type: PPO  HMO  Medicare ) Tj
+0 -15 Td
+(Policy Number: HUM890123456      Group Number: GRP005) Tj
+0 -15 Td
+(Effective Date: 01/01/2024       Termination Date: 12/31/2024) Tj
+0 -30 Td
+/F1 14 Tf
+(3. PROVIDER INFORMATION) Tj
+0 -20 Td
+/F2 10 Tf
+(Requesting Provider: Dr. Christopher Lee, MD   NPI: 3344556677) Tj
+0 -15 Td
+(Specialty: Urology  Cardiology  Orthopedics  Other: _________________) Tj
+0 -15 Td
+(Phone: (305) 555-1357              Fax: (305) 555-1358) Tj
+0 -15 Td
+(Address: 147 Urology Center Dr, Miami, FL 33101) Tj
+0 -15 Td
+(Facility: Miami Urology Institute    Tax ID: 33-4455667) Tj
+0 -30 Td
+/F1 14 Tf
+(4. SERVICE / PROCEDURE REQUESTED) Tj
+0 -20 Td
+/F2 10 Tf
+(Service Type: Robotic Prostatectomy) Tj
+0 -15 Td
+(CPT Code: 55866                   ICD-10 Code: C61 - Prostate cancer) Tj
+0 -15 Td
+(Number of Treatments: 1           Requested Date: 02/15/2025) Tj
+0 -15 Td
+(Place of Service: Inpatient  Outpatient  Emergency  Other: _____________) Tj
+0 -30 Td
+/F1 14 Tf
+(5. CLINICAL JUSTIFICATION) Tj
+0 -20 Td
+/F2 10 Tf
+(Medical Necessity:) Tj
+0 -15 Td
+(Patient presents with localized prostate cancer (Gleason score 7).) Tj
+0 -12 Td
+(PSA level is 8.5 ng/mL. Digital rectal examination reveals) Tj
+0 -12 Td
+(a firm nodule in the right lobe. Prostate biopsy confirmed) Tj
+0 -12 Td
+(adenocarcinoma. Robotic prostatectomy is medically necessary) Tj
+0 -12 Td
+(for definitive treatment of localized prostate cancer. Clinical) Tj
+0 -12 Td
+(guidelines support surgical intervention for patients with) Tj
+0 -12 Td
+(localized disease and good performance status. Patient is) Tj
+0 -12 Td
+(55 years old with excellent functional status.) Tj
+0 -20 Td
+(Clinical Findings:) Tj
+0 -15 Td
+( PSA: 8.5 ng/mL                   Gleason score: 7) Tj
+0 -15 Td
+( Digital rectal exam: Firm nodule  No distant metastases) Tj
+0 -20 Td
+(Prior Treatments:) Tj
+0 -15 Td
+( Prostate biopsy (positive)       Active surveillance (6 months)  Other: _____________) Tj
+0 -30 Td
+/F1 14 Tf
+(6. SUPPORTING DOCUMENTATION) Tj
+0 -20 Td
+/F2 10 Tf
+(Attached Documents (check all that apply):) Tj
+0 -15 Td
+( Physician Notes (12/25/2024)     Laboratory Results (PSA, CMP)) Tj
+0 -15 Td
+( Prostate Biopsy Report (12/10/2024)  Patient Medical History) Tj
+0 -15 Td
+( Insurance Card Copy              Imaging Studies (CT, Bone scan)) Tj
+0 -15 Td
+( Urology Consultation            Other: ________________________________) Tj
+0 -20 Td
+(Additional Notes:) Tj
+0 -15 Td
+(_____________________________________________________________________________) Tj
+0 -15 Td
+(_____________________________________________________________________________) Tj
+0 -30 Td
+/F1 14 Tf
+(7. AUTHORIZATION REQUEST DETAILS) Tj
+0 -20 Td
+/F2 10 Tf
+(Date of Request: 12/25/2024        Urgency:  Routine  Urgent  Emergency) Tj
+0 -15 Td
+(Requested Start Date: 02/15/2025   Requested End Date: 02/15/2025) Tj
+0 -15 Td
+(Alternative Treatment Considered:  Yes  No) Tj
+0 -15 Td
+(If Yes, please explain: ____________________________________________________) Tj
+0 -30 Td
+/F1 14 Tf
+(8. SIGNATURES) Tj
+0 -20 Td
+/F2 10 Tf
+(Provider Signature: Dr. Christopher Lee, MD    Date: 12/25/2024) Tj
+0 -15 Td
+(Patient Consent: David M. Brown               Date: 12/25/2024) Tj
+0 -15 Td
+(Electronic Signature: [E-Signature Applied]   Timestamp: 12/25/2024 09:15:30) Tj
+0 -30 Td
+/F3 8 Tf
+(Form ID: PA-2024-001238 | Submission Deadline: 5 business days prior to service) Tj
+0 -15 Td
+(For urgent requests, call (305) 800-AUTH | Online submission: www.humana.com/pa) Tj
+0 -15 Td
+(Provider Portal: https://provider.humana.com | Fax: (305) 800-FAX) Tj
+ET
+endstream
+endobj
+
+5 0 obj
+<<
+/Type /Font
+/Subtype /Type1
+/BaseFont /Helvetica-Bold
+>>
+endobj
+
+6 0 obj
+<<
+/Type /Font
+/Subtype /Type1
+/BaseFont /Helvetica
+>>
+endobj
+
+7 0 obj
+<<
+/Type /Font
+/Subtype /Type1
+/BaseFont /Helvetica-Oblique
+>>
+endobj
+
+xref
+0 8
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000274 00000 n 
+0000003274 00000 n 
+0000003524 00000 n 
+0000003774 00000 n 
+trailer
+<<
+/Size 8
+/Root 1 0 R
+>>
+startxref
+3875
+%%EOF
