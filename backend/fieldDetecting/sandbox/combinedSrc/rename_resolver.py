@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 import math
 import os
+import random
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,6 +23,14 @@ logger = get_logger(__name__)
 DEFAULT_RENAME_MODEL = os.getenv("SANDBOX_RENAME_MODEL", "gpt-5.2")
 COMMONFORMS_CONFIDENCE_GREEN = float(os.getenv("COMMONFORMS_CONFIDENCE_GREEN", "0.8"))
 COMMONFORMS_CONFIDENCE_YELLOW = float(os.getenv("COMMONFORMS_CONFIDENCE_YELLOW", "0.65"))
+
+BASE32_TAG_ALPHABET = "23456789abcdefghjkmnpqrstuvwxyz"
+BASE32_TAGS = tuple(
+    a + b + c
+    for a in BASE32_TAG_ALPHABET
+    for b in BASE32_TAG_ALPHABET
+    for c in BASE32_TAG_ALPHABET
+)
 
 RENAME_LINE_RE = re.compile(
     r"^\s*\|\|\s*(?P<orig>[^|]+?)\s*\|\s*(?P<suggested>[^|]*?)\s*\|\s*(?P<rename_conf>[^|]*?)\s*\|\s*(?P<field_conf>[^|]*?)\s*$"
@@ -53,6 +63,20 @@ def _parse_confidence(value: str) -> float:
     if conf > 1.0:
         conf = conf / 100.0
     return max(0.0, min(1.0, conf))
+
+
+def _stable_seed(value: str) -> int:
+    digest = hashlib.sha256(value.encode("utf-8")).hexdigest()
+    return int(digest[:8], 16)
+
+
+def _generate_base32_tags(count: int, *, seed: int) -> List[str]:
+    if count <= 0:
+        return []
+    if count > len(BASE32_TAGS):
+        raise ValueError(f"Requested {count} tags, but only {len(BASE32_TAGS)} are available.")
+    rng = random.Random(seed)
+    return rng.sample(BASE32_TAGS, count)
 
 
 def _downscale_for_model(image_bgr: "cv2.Mat", *, max_dim: int) -> "cv2.Mat":
@@ -106,6 +130,30 @@ def _rect_distance(a: List[float], b: List[float]) -> float:
     return math.hypot(dx, dy)
 
 
+def _min_center_distance(rects: List[List[float]], *, early_stop: float | None = None) -> float | None:
+    if len(rects) < 2:
+        return None
+    centers = []
+    for rect in rects:
+        if len(rect) != 4:
+            continue
+        x1, y1, x2, y2 = [float(v) for v in rect]
+        centers.append(((x1 + x2) / 2.0, (y1 + y2) / 2.0))
+    if len(centers) < 2:
+        return None
+    min_dist = None
+    for i in range(len(centers)):
+        x1, y1 = centers[i]
+        for j in range(i + 1, len(centers)):
+            x2, y2 = centers[j]
+            dist = math.hypot(x2 - x1, y2 - y1)
+            if min_dist is None or dist < min_dist:
+                min_dist = dist
+                if early_stop is not None and min_dist <= early_stop:
+                    return min_dist
+    return min_dist
+
+
 def _label_context(
     rect: List[float],
     label_bboxes: List[List[float]],
@@ -131,6 +179,7 @@ def _label_context(
 
 
 def _build_overlay_fields(
+    page_idx: int,
     page_fields: List[Tuple[int, Dict[str, Any]]],
 ) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
     """
@@ -142,10 +191,12 @@ def _build_overlay_fields(
     overlay_fields: List[Dict[str, Any]] = []
     overlay_map: Dict[str, int] = {}
 
-    for ordinal, (field_index, field) in enumerate(page_fields, start=1):
+    seed = _stable_seed(f"{page_idx}:{len(page_fields)}")
+    tags = _generate_base32_tags(len(page_fields), seed=seed)
+
+    for (field_index, field), display in zip(page_fields, tags):
         # Use compact, deterministic IDs so they can be drawn inside fields without overlapping
         # nearby labels (especially in dense common forms).
-        display = f"f{ordinal}"
         overlay_map[display] = field_index
         overlay_fields.append(
             {
@@ -235,26 +286,32 @@ def _build_prompt(
     """
     system_message = (
         "You are a PDF form renaming assistant. You will receive a page image with an overlay.\n"
-        "Each detected field is drawn as a box and tagged with a short ID (e.g., f1, f2):\n"
+        "Each detected field is drawn as a box and tagged with a short 3-character ID "
+        "(base32, e.g., k7m):\n"
         "- Text/date/signature fields: the ID is printed centered *inside* the field box.\n"
-        "- Checkbox fields: the ID is shown in a small callout connected to the checkbox square, "
-        "and an arrow points from the checkbox to its option label text.\n"
+        "- Checkbox fields: the ID is shown in a small purple callout connected to the checkbox "
+        "square, and an arrow points from the checkbox to its option label text.\n"
         "Use that ID as originalFieldName. Do NOT invent IDs.\n"
         "Candidates with isItAfieldConfidence below 0.30 are treated as not-a-field and will be "
         "dropped from output.\n\n"
         "Output format (one line per field, no extra text):\n"
         "|| originalFieldName | suggestedRename | renameConfidence | isItAfieldConfidence\n"
         "Example format only (do not reuse names):\n"
-        "|| f1 | patient_name | 0.92 | 0.98\n\n"
+        "|| k7m | patient_name | 0.92 | 0.98\n\n"
         "Rules:\n"
         "- Output exactly one line for every originalFieldName provided, in the same order.\n"
         "- Only use originalFieldName values from the provided list.\n"
+        "- IDs are random (not sequential); do not assume ordering beyond the provided list.\n"
         "- Use snake_case for suggestedRename.\n"
         "- Checkbox names should start with 'i_'.\n"
         "- Confidence values must be between 0 and 1 (not percent).\n"
         "- If the item is not a real field, set isItAfieldConfidence < 0.30.\n"
         "- If isItAfieldConfidence < 0.30, keep suggestedRename equal to originalFieldName and "
         "set renameConfidence to 0.\n\n"
+        "Swap avoidance:\n"
+        "- Do not swap IDs between neighboring fields. The ID inside each box is authoritative.\n"
+        "- If a tight cluster makes the label ambiguous, keep suggestedRename equal to "
+        "originalFieldName and set renameConfidence to 0.0.\n\n"
         "Field-ness rules:\n"
         "- Real fields have an empty box/underline or a checkbox aligned with nearby option text.\n"
         "- Use the per-field metadata (label_dist, overlaps_label, w_ratio, h_ratio) as hints.\n"
@@ -420,6 +477,10 @@ def run_openai_rename_pipeline(
     overlay_format = (os.getenv("SANDBOX_RENAME_OVERLAY_FORMAT", overlay_format_default) or "").strip().lower()
     if not overlay_format:
         overlay_format = overlay_format_default
+    dense_field_count = int(os.getenv("SANDBOX_RENAME_DENSE_FIELD_COUNT", "20"))
+    dense_min_center_dist = float(os.getenv("SANDBOX_RENAME_DENSE_MIN_CENTER_DIST", "45"))
+    dense_max_dim = int(os.getenv("SANDBOX_RENAME_DENSE_MAX_DIM", "3200"))
+    dense_format = (os.getenv("SANDBOX_RENAME_DENSE_FORMAT", "png") or "").strip().lower()
 
     raw_label_max = (os.getenv("SANDBOX_RENAME_LABEL_MAX_DIST") or "").strip()
     label_max_dist_pts: float | None
@@ -454,11 +515,27 @@ def run_openai_rename_pipeline(
         if not page_fields:
             continue
         page_fields_sorted = sorted(page_fields, key=lambda item: _field_sort_key(item[1]))
-        overlay_fields, overlay_map = _build_overlay_fields(page_fields_sorted)
+        overlay_fields, overlay_map = _build_overlay_fields(page_idx, page_fields_sorted)
         page_candidates = candidates_by_page.get(page_idx)
         if page_candidates is None:
             continue
         overlay_fields = _attach_checkbox_label_hints(overlay_fields, page_candidates=page_candidates)
+
+        rects = [
+            rect
+            for _field_idx, field in page_fields_sorted
+            if isinstance((rect := field.get("rect")), list) and len(rect) == 4
+        ]
+        min_center_dist = _min_center_distance(rects, early_stop=dense_min_center_dist)
+        dense_page = len(page_fields_sorted) >= dense_field_count or (
+            min_center_dist is not None and min_center_dist <= dense_min_center_dist
+        )
+        page_overlay_max_dim = overlay_max_dim
+        page_overlay_format = overlay_format
+        if dense_page:
+            page_overlay_max_dim = max(overlay_max_dim, dense_max_dim)
+            if dense_format:
+                page_overlay_format = dense_format
 
         overlay_path = output_dir / f"page_{page_idx}.png"
         overlay = draw_overlay(
@@ -475,10 +552,10 @@ def run_openai_rename_pipeline(
         if overlay is None:
             raise RuntimeError(f"Failed to render overlay image: {overlay_path}")
 
-        overlay_for_model = _downscale_for_model(overlay, max_dim=overlay_max_dim)
+        overlay_for_model = _downscale_for_model(overlay, max_dim=page_overlay_max_dim)
         overlay_url = image_bgr_to_data_url(
             overlay_for_model,
-            format=overlay_format,
+            format=page_overlay_format,
             quality=overlay_quality,
         )
         system_message, user_message = _build_prompt(

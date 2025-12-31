@@ -10,6 +10,10 @@ type FieldInspectorPanelProps = {
   onUpdateField: (fieldId: string, updates: Partial<PdfField>) => void;
   onDeleteField: (fieldId: string) => void;
   onCreateField: (type: FieldType) => void;
+  canUndo: boolean;
+  canRedo: boolean;
+  onUndo: () => void;
+  onRedo: () => void;
 };
 
 export function FieldInspectorPanel({
@@ -19,6 +23,10 @@ export function FieldInspectorPanel({
   onUpdateField,
   onDeleteField,
   onCreateField,
+  canUndo,
+  canRedo,
+  onUndo,
+  onRedo,
 }: FieldInspectorPanelProps) {
   const selected = fields.find((field) => field.id === selectedFieldId) || null;
 
@@ -170,6 +178,29 @@ export function FieldInspectorPanel({
             ))}
           </div>
           <p className="panel__micro">New fields are placed on page {currentPage}.</p>
+        </div>
+
+        <div className="panel__section panel__section--divider">
+          <h3>Actions</h3>
+          <div className="panel__action-grid">
+            <button
+              className="ui-button ui-button--ghost ui-button--compact"
+              type="button"
+              onClick={onUndo}
+              disabled={!canUndo}
+            >
+              Undo
+            </button>
+            <button
+              className="ui-button ui-button--ghost ui-button--compact"
+              type="button"
+              onClick={onRedo}
+              disabled={!canRedo}
+            >
+              Redo
+            </button>
+          </div>
+          <p className="panel__micro">Undo or redo the last 10 field edits.</p>
         </div>
       </div>
     </aside>

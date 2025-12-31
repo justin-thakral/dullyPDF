@@ -19,6 +19,7 @@ type HeaderBarProps = {
   mappingInProgress?: boolean;
   mapDbInProgress?: boolean;
   mappingError?: string | null;
+  hasMappedDb?: boolean;
   onMapDb?: () => void;
   canMapDb?: boolean;
   onOpenSearchFill?: () => void;
@@ -48,6 +49,7 @@ export function HeaderBar({
   mappingInProgress = false,
   mapDbInProgress = false,
   mappingError,
+  hasMappedDb = false,
   onMapDb,
   canMapDb = false,
   onOpenSearchFill,
@@ -61,7 +63,7 @@ export function HeaderBar({
 }: HeaderBarProps) {
   const hasMappingControls = Boolean(onChooseDataSource || onMapDb || onOpenSearchFill);
   const userInitial = userEmail ? userEmail.charAt(0).toUpperCase() : null;
-  const mapDbLabel = mapDbInProgress ? 'Loading' : 'Map DB';
+  const mapDbLabel = mapDbInProgress ? 'Loading' : hasMappedDb ? 'Mapped' : 'Map DB';
   const disableMapDb = !canMapDb || mappingInProgress || mapDbInProgress;
   const disableSearch = !canSearchFill || mappingInProgress;
 

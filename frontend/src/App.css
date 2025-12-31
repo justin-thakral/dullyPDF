@@ -1578,16 +1578,47 @@
 
 .field-handle {
   position: absolute;
-  right: -5px;
-  bottom: -5px;
   width: 12px;
   height: 12px;
   border-radius: 5px;
   background: #0f172a;
   border: 2px solid #ffffff;
-  cursor: se-resize;
   opacity: 0;
   transition: opacity 0.2s ease;
+}
+
+.field-handle--br {
+  right: -5px;
+  bottom: -5px;
+  cursor: nwse-resize;
+}
+
+.field-handle--left {
+  left: -5px;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  cursor: ew-resize;
+}
+
+.field-handle--right {
+  right: -5px;
+  top: 50%;
+  transform: translate(50%, -50%);
+  cursor: ew-resize;
+}
+
+.field-handle--top {
+  top: -5px;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  cursor: ns-resize;
+}
+
+.field-handle--bottom {
+  bottom: -5px;
+  left: 50%;
+  transform: translate(-50%, 50%);
+  cursor: ns-resize;
 }
 
 .field-box:hover .field-handle,

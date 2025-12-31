@@ -28,6 +28,7 @@ import { PdfViewer } from './components/viewer/PdfViewer';
 import UploadComponent from './components/features/UploadComponent';
 
 const DEBUG_UI = false;
+const MAX_FIELD_HISTORY = 10;
 
 function debugLog(...args: unknown[]) {
   if (!DEBUG_UI) return;
@@ -147,6 +148,7 @@ function App() {
   const [mappingSessionId, setMappingSessionId] = useState<string | null>(null);
   const [mappingInProgress, setMappingInProgress] = useState(false);
   const [mapDbInProgress, setMapDbInProgress] = useState(false);
+  const [hasMappedDb, setHasMappedDb] = useState(false);
   const [dbError, setDbError] = useState<string | null>(null);
   const [connId, setConnId] = useState<string | null>(null);
   const [dataSourceKind, setDataSourceKind] = useState<DataSourceKind>('none');
@@ -164,6 +166,14 @@ function App() {
   const loadTokenRef = useRef(0);
   const csvInputRef = useRef<HTMLInputElement>(null);
   const excelInputRef = useRef<HTMLInputElement>(null);
+  const fieldsRef = useRef<PdfField[]>([]);
+  const historyRef = useRef<{ undo: PdfField[][]; redo: PdfField[][] }>({ undo: [], redo: [] });
+  const pendingHistoryRef = useRef<PdfField[] | null>(null);
+  const [historyTick, setHistoryTick] = useState(0);
+
+  useEffect(() => {
+    fieldsRef.current = fields;
+  }, [fields]);
 
   useEffect(() => {
     const unsubscribe = Auth.onAuthStateChanged(async (user) => {
@@ -187,6 +197,88 @@ function App() {
     return () => unsubscribe();
   }, []);
 
+  const pushFieldHistory = useCallback((snapshot: PdfField[]) => {
+    const history = historyRef.current;
+    history.undo = [...history.undo, snapshot].slice(-MAX_FIELD_HISTORY);
+    history.redo = [];
+    setHistoryTick((prev) => prev + 1);
+  }, []);
+
+  const resetFieldHistory = useCallback((nextFields: PdfField[] = []) => {
+    historyRef.current.undo = [];
+    historyRef.current.redo = [];
+    pendingHistoryRef.current = null;
+    fieldsRef.current = nextFields;
+    setFields(nextFields);
+    setHistoryTick((prev) => prev + 1);
+  }, []);
+
+  const updateFields = useCallback(
+    (nextFields: PdfField[], options?: { trackHistory?: boolean }) => {
+      const prev = fieldsRef.current;
+      if (nextFields === prev) return;
+      if (options?.trackHistory !== false) {
+        pushFieldHistory(prev);
+      }
+      fieldsRef.current = nextFields;
+      setFields(nextFields);
+    },
+    [pushFieldHistory],
+  );
+
+  const updateFieldsWith = useCallback(
+    (updater: (prev: PdfField[]) => PdfField[], options?: { trackHistory?: boolean }) => {
+      const prev = fieldsRef.current;
+      const next = updater(prev);
+      updateFields(next, options);
+    },
+    [updateFields],
+  );
+
+  const beginFieldHistory = useCallback(() => {
+    if (!pendingHistoryRef.current) {
+      pendingHistoryRef.current = fieldsRef.current;
+    }
+  }, []);
+
+  const commitFieldHistory = useCallback(() => {
+    const pending = pendingHistoryRef.current;
+    if (!pending) return;
+    pendingHistoryRef.current = null;
+    if (pending === fieldsRef.current) return;
+    pushFieldHistory(pending);
+  }, [pushFieldHistory]);
+
+  const handleUndo = useCallback(() => {
+    const history = historyRef.current;
+    if (!history.undo.length) return;
+    const previous = history.undo[history.undo.length - 1];
+    history.undo = history.undo.slice(0, -1);
+    history.redo = [...history.redo, fieldsRef.current].slice(-MAX_FIELD_HISTORY);
+    pendingHistoryRef.current = null;
+    fieldsRef.current = previous;
+    setFields(previous);
+    setHistoryTick((prev) => prev + 1);
+    setSelectedFieldId((currentId) =>
+      currentId && previous.some((field) => field.id === currentId) ? currentId : null,
+    );
+  }, []);
+
+  const handleRedo = useCallback(() => {
+    const history = historyRef.current;
+    if (!history.redo.length) return;
+    const next = history.redo[history.redo.length - 1];
+    history.redo = history.redo.slice(0, -1);
+    history.undo = [...history.undo, fieldsRef.current].slice(-MAX_FIELD_HISTORY);
+    pendingHistoryRef.current = null;
+    fieldsRef.current = next;
+    setFields(next);
+    setHistoryTick((prev) => prev + 1);
+    setSelectedFieldId((currentId) =>
+      currentId && next.some((field) => field.id === currentId) ? currentId : null,
+    );
+  }, []);
+
   const clearWorkspace = useCallback(() => {
     setPdfDoc(null);
     setPageSizes({});
@@ -194,7 +286,7 @@ function App() {
     setCurrentPage(1);
     setScale(1);
     setPendingPageJump(null);
-    setFields([]);
+    resetFieldHistory([]);
     setShowFields(true);
     setShowFieldNames(true);
     setShowFieldInfo(false);
@@ -202,6 +294,7 @@ function App() {
     setSelectedFieldId(null);
     setMappingSessionId(null);
     setMappingInProgress(false);
+    setHasMappedDb(false);
     setDbError(null);
     setConnId(null);
     setDataSourceKind('none');
@@ -219,7 +312,7 @@ function App() {
     setActiveSavedFormName(null);
     setPendingDetectFile(null);
     setShowPipelineModal(false);
-  }, []);
+  }, [resetFieldHistory]);
 
   const ensureMappingSessionId = useCallback(() => {
     if (mappingSessionId) return mappingSessionId;
@@ -251,6 +344,7 @@ function App() {
       setLoadError(null);
       setShowHomepage(false);
       setMappingSessionId(crypto.randomUUID());
+      setHasMappedDb(false);
       setDbError(null);
       setSourceFile(file);
       setSourceFileName(file.name);
@@ -293,7 +387,7 @@ function App() {
         setCurrentPage(1);
         setScale(1);
         setPendingPageJump(null);
-        setFields(detectedFields);
+        resetFieldHistory(detectedFields);
         setSelectedFieldId(null);
         setIsProcessing(false);
         debugLog('Loaded PDF', { name: file.name, pages: doc.numPages, fields: detectedFields.length });
@@ -306,7 +400,7 @@ function App() {
         debugLog('Failed to load PDF', message);
       }
     },
-    [clearWorkspace, detectionPipeline, useOpenAIRename],
+    [clearWorkspace, detectionPipeline, resetFieldHistory, useOpenAIRename],
   );
 
   const handleDetectUpload = useCallback((file: File) => {
@@ -335,6 +429,7 @@ function App() {
       setLoadError(null);
       setShowHomepage(false);
       setMappingSessionId(crypto.randomUUID());
+      setHasMappedDb(false);
       setDbError(null);
       setSourceFile(file);
       setSourceFileName(file.name);
@@ -350,7 +445,7 @@ function App() {
         setCurrentPage(1);
         setScale(1);
         setPendingPageJump(null);
-        setFields([]);
+        resetFieldHistory([]);
         setSelectedFieldId(null);
         setIsProcessing(false);
 
@@ -365,7 +460,7 @@ function App() {
           }
 
           if (loadTokenRef.current !== loadToken) return;
-          setFields(existingFields);
+          resetFieldHistory(existingFields);
           setSelectedFieldId(null);
           debugLog('Loaded fillable PDF', { name: file.name, pages: doc.numPages, fields: existingFields.length });
         })();
@@ -378,7 +473,7 @@ function App() {
         debugLog('Failed to load PDF', message);
       }
     },
-    [clearWorkspace],
+    [clearWorkspace, resetFieldHistory],
   );
 
   const handleSelectSavedForm = useCallback(
@@ -389,6 +484,7 @@ function App() {
       setLoadError(null);
       setShowHomepage(false);
       setMappingSessionId(crypto.randomUUID());
+      setHasMappedDb(false);
       setDbError(null);
 
       try {
@@ -407,7 +503,7 @@ function App() {
         setCurrentPage(1);
         setScale(1);
         setPendingPageJump(null);
-        setFields([]);
+        resetFieldHistory([]);
         setSelectedFieldId(null);
         setIsProcessing(false);
         setActiveSavedFormId(formId);
@@ -424,7 +520,7 @@ function App() {
           }
 
           if (loadTokenRef.current !== loadToken) return;
-          setFields(existingFields);
+          resetFieldHistory(existingFields);
           setSelectedFieldId(null);
           debugLog('Loaded saved form', { name, pages: doc.numPages, fields: existingFields.length });
         })();
@@ -437,7 +533,7 @@ function App() {
         debugLog('Failed to load saved form', message);
       }
     },
-    [clearWorkspace],
+    [clearWorkspace, resetFieldHistory],
   );
 
   const handleDeleteSavedForm = useCallback(
@@ -591,7 +687,7 @@ function App() {
   const applyFieldNameUpdates = useCallback((updatesByCurrentName: Map<string, FieldNameUpdate>) => {
     if (!updatesByCurrentName.size) return;
 
-    setFields((prev) => {
+    updateFieldsWith((prev) => {
       // Track existing names to avoid collisions when applying AI rename suggestions.
       const existingNames = new Set(prev.map((field) => field.name));
       return prev.map((field) => {
@@ -620,7 +716,7 @@ function App() {
         return { ...next, name: uniqueName };
       });
     });
-  }, []);
+  }, [updateFieldsWith]);
 
   const handleManualRename = useCallback(
     (oldName: string, newName: string, mappingConfidence?: number) => {
@@ -694,6 +790,7 @@ function App() {
       setDataColumns([]);
       setDataRows([]);
       setIdentifierKey(null);
+      setHasMappedDb(false);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to disconnect database.';
       setDbError(message);
@@ -718,6 +815,11 @@ function App() {
       return;
     }
 
+    if (hasMappedDb) {
+      const shouldRemap = window.confirm('Are you sure you want to map again?');
+      if (!shouldRemap) return;
+    }
+
     setDbError(null);
     setMappingInProgress(true);
     setMapDbInProgress(true);
@@ -726,6 +828,7 @@ function App() {
         dataSourceKind === 'sql' && connId ? await DB.fetchColumns(connId) : dataColumns;
       const mapped = await applyAiMappings(columns);
       if (mapped) {
+        setHasMappedDb(true);
         window.alert('Field mapping is done.');
       }
     } catch (error) {
@@ -735,7 +838,7 @@ function App() {
       setMapDbInProgress(false);
       setMappingInProgress(false);
     }
-  }, [applyAiMappings, connId, dataColumns, dataSourceKind]);
+  }, [applyAiMappings, connId, dataColumns, dataSourceKind, hasMappedDb]);
 
   const handleOpenFieldMapper = useCallback(() => {
     if (!mappingSessionId) {
@@ -746,6 +849,7 @@ function App() {
     setShowFieldMapper(true);
     setDataSourceKind('txt');
     setDataSourceLabel('TXT field list');
+    setHasMappedDb(false);
   }, [mappingSessionId]);
 
   const handleClearDataSource = useCallback(() => {
@@ -756,6 +860,7 @@ function App() {
     setDataColumns([]);
     setDataRows([]);
     setIdentifierKey(null);
+    setHasMappedDb(false);
   }, [dataSourceKind]);
 
   const handleChooseDataSource = useCallback(
@@ -799,6 +904,7 @@ function App() {
       setDataColumns(parsed.columns);
       setDataRows(parsed.rows);
       setIdentifierKey(pickIdentifierKey(parsed.columns));
+      setHasMappedDb(false);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to import CSV file.';
       setDbError(message);
@@ -826,6 +932,7 @@ function App() {
       setDataColumns(parsed.columns);
       setDataRows(parsed.rows);
       setIdentifierKey(pickIdentifierKey(parsed.columns));
+      setHasMappedDb(false);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to import Excel file.';
       setDbError(message);
@@ -856,7 +963,7 @@ function App() {
   }, []);
 
   const handleUpdateField = useCallback((fieldId: string, updates: Partial<PdfField>) => {
-    setFields((prev) =>
+    updateFieldsWith((prev) =>
       prev.map((field) => {
         if (field.id !== fieldId) return field;
         return {
@@ -867,30 +974,58 @@ function App() {
       }),
     );
     debugLog('Updated field', fieldId, updates);
-  }, []);
+  }, [updateFieldsWith]);
+
+  const handleUpdateFieldGeometry = useCallback(
+    (fieldId: string, updates: Partial<PdfField>) => {
+      updateFieldsWith(
+        (prev) =>
+          prev.map((field) => {
+            if (field.id !== fieldId) return field;
+            return {
+              ...field,
+              ...updates,
+              rect: updates.rect ? { ...field.rect, ...updates.rect } : field.rect,
+            };
+          }),
+        { trackHistory: false },
+      );
+    },
+    [updateFieldsWith],
+  );
 
   const handleDeleteField = useCallback((fieldId: string) => {
-    setFields((prev) => prev.filter((field) => field.id !== fieldId));
+    updateFieldsWith((prev) => prev.filter((field) => field.id !== fieldId));
     setSelectedFieldId((prev) => (prev === fieldId ? null : prev));
     debugLog('Deleted field', fieldId);
-  }, []);
+  }, [updateFieldsWith]);
 
   const handleCreateField = useCallback(
     (type: FieldType) => {
       const pageSize = pageSizes[currentPage];
       if (!pageSize) return;
-      const nextField = createField(type, currentPage, pageSize, fields);
-      setFields((prev) => [...prev, nextField]);
+      const nextField = createField(type, currentPage, pageSize, fieldsRef.current);
+      updateFieldsWith((prev) => [...prev, nextField]);
       setSelectedFieldId(nextField.id);
       debugLog('Created field', nextField);
     },
-    [currentPage, fields, pageSizes],
+    [currentPage, pageSizes, updateFieldsWith],
+  );
+
+  const handleFieldsChange = useCallback(
+    (nextFields: PdfField[]) => {
+      updateFields(nextFields);
+    },
+    [updateFields],
   );
 
   const visibleFields = useMemo(
     () => fields.filter((field) => confidenceFilter[fieldConfidenceTierForField(field)]),
     [confidenceFilter, fields],
   );
+
+  const canUndo = useMemo(() => historyRef.current.undo.length > 0, [historyTick]);
+  const canRedo = useMemo(() => historyRef.current.redo.length > 0, [historyTick]);
 
   const handleConfidenceFilterChange = useCallback((tier: ConfidenceTier, enabled: boolean) => {
     setConfidenceFilter((prev) => ({
@@ -920,6 +1055,44 @@ function App() {
       setShowFields(true);
     }
   }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (!pdfDoc || event.defaultPrevented) return;
+      const target = event.target as HTMLElement | null;
+      if (
+        target &&
+        (target.isContentEditable ||
+          target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT')
+      ) {
+        return;
+      }
+      const isMac = /Mac|iPhone|iPad|iPod/.test(navigator.platform);
+      const modifier = isMac ? event.metaKey : event.ctrlKey;
+      if (!modifier) return;
+      const key = event.key.toLowerCase();
+      if (key === 'z') {
+        event.preventDefault();
+        if (event.shiftKey) {
+          handleRedo();
+        } else {
+          handleUndo();
+        }
+      } else if (key === 'x') {
+        if (!selectedFieldId) return;
+        event.preventDefault();
+        handleDeleteField(selectedFieldId);
+      } else if (key === 'y') {
+        event.preventDefault();
+        handleRedo();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleDeleteField, handleRedo, handleUndo, pdfDoc, selectedFieldId]);
 
   const userEmail = useMemo(() => authUser?.email ?? undefined, [authUser]);
   const hasDocument = !!pdfDoc;
@@ -1105,6 +1278,7 @@ function App() {
         mappingInProgress={mappingInProgress}
         mapDbInProgress={mapDbInProgress}
         mappingError={dbError}
+        hasMappedDb={hasMappedDb}
         dataSourceKind={dataSourceKind}
         dataSourceLabel={dataSourceLabel}
         onChooseDataSource={handleChooseDataSource}
@@ -1162,6 +1336,9 @@ function App() {
               selectedFieldId={selectedFieldId}
               onSelectField={handleSelectField}
               onUpdateField={handleUpdateField}
+              onUpdateFieldGeometry={handleUpdateFieldGeometry}
+              onBeginFieldChange={beginFieldHistory}
+              onCommitFieldChange={commitFieldHistory}
               onPageChange={handlePageScroll}
               pendingPageJump={pendingPageJump}
               onPageJumpComplete={handlePageJumpComplete}
@@ -1175,6 +1352,10 @@ function App() {
           onUpdateField={handleUpdateField}
           onDeleteField={handleDeleteField}
           onCreateField={handleCreateField}
+          canUndo={canUndo}
+          canRedo={canRedo}
+          onUndo={handleUndo}
+          onRedo={handleRedo}
         />
       </div>
       {showConnectDb && (
@@ -1188,6 +1369,7 @@ function App() {
             setDataColumns(columns || []);
             setDataRows([]);
             setIdentifierKey(nextIdentifierKey ?? null);
+            setHasMappedDb(false);
           }}
         />
       )}
@@ -1226,7 +1408,7 @@ function App() {
           identifierKey={identifierKey}
           rows={dataRows}
           fields={fields}
-          onFieldsChange={setFields}
+          onFieldsChange={handleFieldsChange}
           onAfterFill={() => {
             setShowFieldInfo(true);
             setShowFieldNames(false);

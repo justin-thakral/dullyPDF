@@ -19,6 +19,9 @@ type PdfViewerProps = {
   selectedFieldId: string | null;
   onSelectField: (fieldId: string) => void;
   onUpdateField: (fieldId: string, updates: Partial<PdfField>) => void;
+  onUpdateFieldGeometry: (fieldId: string, updates: Partial<PdfField>) => void;
+  onBeginFieldChange: () => void;
+  onCommitFieldChange: () => void;
   onPageChange: (page: number) => void;
   pendingPageJump: number | null;
   onPageJumpComplete: () => void;
@@ -36,6 +39,9 @@ type PdfPageProps = {
   selectedFieldId: string | null;
   onSelectField: (fieldId: string) => void;
   onUpdateField: (fieldId: string, updates: Partial<PdfField>) => void;
+  onUpdateFieldGeometry: (fieldId: string, updates: Partial<PdfField>) => void;
+  onBeginFieldChange: () => void;
+  onCommitFieldChange: () => void;
   registerRef: (node: HTMLDivElement | null) => void;
   isActive: boolean;
 };
@@ -52,6 +58,9 @@ function PdfPage({
   selectedFieldId,
   onSelectField,
   onUpdateField,
+  onUpdateFieldGeometry,
+  onBeginFieldChange,
+  onCommitFieldChange,
   registerRef,
   isActive,
 }: PdfPageProps) {
@@ -136,7 +145,9 @@ function PdfPage({
               showFieldNames={showFieldNames}
               selectedFieldId={selectedFieldId}
               onSelectField={onSelectField}
-              onUpdateField={onUpdateField}
+              onUpdateField={onUpdateFieldGeometry}
+              onBeginFieldChange={onBeginFieldChange}
+              onCommitFieldChange={onCommitFieldChange}
             />
           ) : null}
           {showFieldInfo ? (
@@ -173,6 +184,9 @@ export function PdfViewer({
   selectedFieldId,
   onSelectField,
   onUpdateField,
+  onUpdateFieldGeometry,
+  onBeginFieldChange,
+  onCommitFieldChange,
   onPageChange,
   pendingPageJump,
   onPageJumpComplete,
@@ -369,6 +383,9 @@ export function PdfViewer({
             selectedFieldId={selectedFieldId}
             onSelectField={onSelectField}
             onUpdateField={onUpdateField}
+            onUpdateFieldGeometry={onUpdateFieldGeometry}
+            onBeginFieldChange={onBeginFieldChange}
+            onCommitFieldChange={onCommitFieldChange}
             registerRef={registerPageRef(page)}
             isActive={activePages.has(page)}
           />

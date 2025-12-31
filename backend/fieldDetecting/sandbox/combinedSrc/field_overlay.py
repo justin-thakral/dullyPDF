@@ -220,7 +220,7 @@ def _draw_checkbox_callout(
 
     tx = callout_x + pad
     ty = callout_y + pad + th
-    cv2.putText(canvas, label, (tx, ty), _FONT, 0.55, (0, 0, 0), 1, cv2.LINE_AA)
+    cv2.putText(canvas, label, (tx, ty), _FONT, 0.55, color_bgr, 1, cv2.LINE_AA)
 
     start = (int((x1 + x2) / 2), cy)
     end = (callout_x, cy) if place_right else (callout_x + box_w, cy)
@@ -262,6 +262,7 @@ def draw_overlay(
         "line": (255, 255, 0),
         "box": (0, 200, 0),
         "checkbox": (255, 0, 255),
+        "checkbox_tag": (180, 0, 180),
         "field_text": (0, 0, 255),
         "field_checkbox": (0, 165, 255),
         "field_other": (0, 120, 255),
@@ -430,7 +431,7 @@ def draw_overlay(
                     cb_px=(x1, y1, x2, y2),
                     image_width_px=image_width_px,
                     image_height_px=image_height_px,
-                    color_bgr=color,
+                    color_bgr=colors["checkbox_tag"],
                 )
                 if highlight_checkbox_labels and labels and isinstance(rect, list):
                     hint_bbox = f.get("labelHintBbox")
