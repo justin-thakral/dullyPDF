@@ -1,5 +1,6 @@
 import { type PointerEvent as ReactPointerEvent, useEffect, useRef } from 'react';
 import type { FieldRect, PdfField, PageSize } from '../../types';
+import { fieldConfidenceTierForField, nameConfidenceTierForField } from '../../utils/confidence';
 import { clampRectToPage, toViewportRect } from '../../utils/coords';
 
 type DragMode = 'move' | 'resize';
@@ -16,6 +17,7 @@ type FieldOverlayProps = {
   fields: PdfField[];
   pageSize: PageSize;
   scale: number;
+  showFieldNames: boolean;
   selectedFieldId: string | null;
   onSelectField: (fieldId: string) => void;
   onUpdateField: (fieldId: string, updates: Partial<PdfField>) => void;
@@ -25,6 +27,7 @@ export function FieldOverlay({
   fields,
   pageSize,
   scale,
+  showFieldNames,
   selectedFieldId,
   onSelectField,
   onUpdateField,
@@ -114,11 +117,24 @@ export function FieldOverlay({
       {fields.map((field) => {
         const rect = toViewportRect(field.rect, scale);
         const selected = field.id === selectedFieldId;
-        const className = ['field-box', `field-box--${field.type}`, selected ? 'field-box--active' : '']
+        const confidenceTier = fieldConfidenceTierForField(field);
+        const nameTier = nameConfidenceTierForField(field);
+        const className = [
+          'field-box',
+          `field-box--${field.type}`,
+          `field-box--conf-${confidenceTier}`,
+          selected ? 'field-box--active' : '',
+        ]
           .filter(Boolean)
           .join(' ');
-        const showLabel = field.type !== 'checkbox';
-        const labelClassName = ['field-label', `field-label--${field.type}`].join(' ');
+        const showLabel = showFieldNames && field.type !== 'checkbox';
+        const labelClassName = [
+          'field-label',
+          `field-label--${field.type}`,
+          nameTier && nameTier !== 'high' ? `field-label--conf-${nameTier}` : '',
+        ]
+          .filter(Boolean)
+          .join(' ');
 
         return (
           <div

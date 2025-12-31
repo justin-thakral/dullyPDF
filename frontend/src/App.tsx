@@ -1,9 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { ChangeEvent } from 'react';
 import type { User } from 'firebase/auth';
 import type { PDFDocumentProxy } from 'pdfjs-dist/types/src/display/api';
 import './App.css';
-import type { FieldType, PageSize, PdfField } from './types';
+import type { ConfidenceFilter, ConfidenceTier, FieldType, PageSize, PdfField } from './types';
 import { createField, ensureUniqueFieldName, makeId } from './utils/fields';
+import { fieldConfidenceTierForField, parseConfidence } from './utils/confidence';
+import { parseCsv } from './utils/csv';
+import { pickIdentifierKey } from './utils/dataSource';
+import { parseExcel } from './utils/excel';
 import { extractFieldsFromPdf, loadPageSizes, loadPdfFromFile } from './utils/pdf';
 import { detectFields } from './services/detectionApi';
 import { Auth } from './services/auth';
@@ -12,10 +17,11 @@ import { ApiService } from './api';
 import { DB } from './services/db';
 import Homepage from './components/pages/Homepage';
 import LoginPage from './components/pages/LoginPage';
-import { HeaderBar } from './components/layout/HeaderBar';
+import { HeaderBar, type DataSourceKind } from './components/layout/HeaderBar';
 import LegacyHeader from './components/layout/LegacyHeader';
 import ConnectDB from './components/features/ConnectDB';
 import FieldMapper from './components/features/FieldMapper';
+import SearchFillModal from './components/features/SearchFillModal';
 import { FieldInspectorPanel } from './components/panels/FieldInspectorPanel';
 import { FieldListPanel } from './components/panels/FieldListPanel';
 import { PdfViewer } from './components/viewer/PdfViewer';
@@ -68,18 +74,36 @@ function normaliseFormName(raw: string | null | undefined): string {
   return trimmed.replace(/\.pdf$/i, '');
 }
 
+function deriveMappingConfidence(originalName: string, nextName: string): number {
+  const normalise = (value: string) =>
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
+  const left = normalise(originalName);
+  const right = normalise(nextName);
+  if (!left || !right) return 0.7;
+  if (left === right) return 0.95;
+  if (left.includes(right) || right.includes(left)) return 0.85;
+  return 0.7;
+}
+
 function mapDetectionFields(payload: any): PdfField[] {
   const rawFields = Array.isArray(payload?.fields) ? payload.fields : [];
   return rawFields
     .map((field: any, index: number) => {
       const rect = rectToBox(field?.rect || field?.bbox);
       if (!rect) return null;
+      const fieldConfidence = parseConfidence(field?.isItAfieldConfidence ?? field?.confidence);
+      const renameConfidence = parseConfidence(field?.renameConfidence ?? field?.rename_confidence);
       return {
         id: makeId(),
         name: String(field?.name || `field_${index + 1}`),
         type: normaliseFieldType(field?.type),
         page: Number(field?.page) || 1,
         rect,
+        fieldConfidence,
+        renameConfidence,
       } as PdfField;
     })
     .filter(Boolean) as PdfField[];
@@ -90,6 +114,10 @@ function App() {
   const [authUser, setAuthUser] = useState<User | null>(null);
   const [showLogin, setShowLogin] = useState(false);
   const [showHomepage, setShowHomepage] = useState(true);
+  const [detectionPipeline, setDetectionPipeline] = useState<'sandbox' | 'commonforms'>('sandbox');
+  const [useOpenAIRename, setUseOpenAIRename] = useState(false);
+  const [pendingDetectFile, setPendingDetectFile] = useState<File | null>(null);
+  const [showPipelineModal, setShowPipelineModal] = useState(false);
 
   // Keep document metadata and field geometry together so the viewer and inspector stay in sync.
   const [pdfDoc, setPdfDoc] = useState<PDFDocumentProxy | null>(null);
@@ -101,6 +129,14 @@ function App() {
   const [pendingPageJump, setPendingPageJump] = useState<number | null>(null);
   // All fields live in one array so the list and page overlay share a single source of truth.
   const [fields, setFields] = useState<PdfField[]>([]);
+  const [showFields, setShowFields] = useState(true);
+  const [showFieldNames, setShowFieldNames] = useState(true);
+  const [showFieldInfo, setShowFieldInfo] = useState(false);
+  const [confidenceFilter, setConfidenceFilter] = useState<ConfidenceFilter>({
+    high: true,
+    medium: true,
+    low: true,
+  });
   const [selectedFieldId, setSelectedFieldId] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -113,13 +149,21 @@ function App() {
   const [mapDbInProgress, setMapDbInProgress] = useState(false);
   const [dbError, setDbError] = useState<string | null>(null);
   const [connId, setConnId] = useState<string | null>(null);
+  const [dataSourceKind, setDataSourceKind] = useState<DataSourceKind>('none');
+  const [dataSourceLabel, setDataSourceLabel] = useState<string | null>(null);
+  const [dataColumns, setDataColumns] = useState<string[]>([]);
+  const [dataRows, setDataRows] = useState<Array<Record<string, unknown>>>([]);
+  const [identifierKey, setIdentifierKey] = useState<string | null>(null);
   const [showConnectDb, setShowConnectDb] = useState(false);
   const [showFieldMapper, setShowFieldMapper] = useState(false);
+  const [showSearchFill, setShowSearchFill] = useState(false);
   const [sourceFile, setSourceFile] = useState<File | null>(null);
   const [sourceFileName, setSourceFileName] = useState<string | null>(null);
   const [saveInProgress, setSaveInProgress] = useState(false);
   const [downloadInProgress, setDownloadInProgress] = useState(false);
   const loadTokenRef = useRef(0);
+  const csvInputRef = useRef<HTMLInputElement>(null);
+  const excelInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const unsubscribe = Auth.onAuthStateChanged(async (user) => {
@@ -151,18 +195,30 @@ function App() {
     setScale(1);
     setPendingPageJump(null);
     setFields([]);
+    setShowFields(true);
+    setShowFieldNames(true);
+    setShowFieldInfo(false);
+    setConfidenceFilter({ high: true, medium: true, low: true });
     setSelectedFieldId(null);
     setMappingSessionId(null);
     setMappingInProgress(false);
     setDbError(null);
     setConnId(null);
+    setDataSourceKind('none');
+    setDataSourceLabel(null);
+    setDataColumns([]);
+    setDataRows([]);
+    setIdentifierKey(null);
     setShowConnectDb(false);
     setShowFieldMapper(false);
+    setShowSearchFill(false);
     setSourceFile(null);
     setSourceFileName(null);
     setSaveInProgress(false);
     setActiveSavedFormId(null);
     setActiveSavedFormName(null);
+    setPendingDetectFile(null);
+    setShowPipelineModal(false);
   }, []);
 
   const ensureMappingSessionId = useCallback(() => {
@@ -185,13 +241,11 @@ function App() {
     setShowHomepage(true);
   }, [clearWorkspace]);
 
-  const handleDetectUpload = useCallback(
+  const runDetectUpload = useCallback(
     async (file: File) => {
       const loadToken = loadTokenRef.current + 1;
       loadTokenRef.current = loadToken;
-      const shouldUseOpenAI = window.confirm(
-        'Enable OpenAI rename? This uses AI to refine field names and remove low-confidence candidates.',
-      );
+      const shouldUseOpenAI = useOpenAIRename;
 
       setIsProcessing(true);
       setLoadError(null);
@@ -210,7 +264,10 @@ function App() {
         let detectedFields: PdfField[] = [];
 
         try {
-          const detection = await detectFields(file, { useOpenAI: shouldUseOpenAI });
+          const detection = await detectFields(file, {
+            useOpenAI: shouldUseOpenAI,
+            pipeline: detectionPipeline,
+          });
           if (detection?.openaiError) {
             debugLog('OpenAI rename failed', detection.openaiError);
           }
@@ -249,8 +306,26 @@ function App() {
         debugLog('Failed to load PDF', message);
       }
     },
-    [clearWorkspace],
+    [clearWorkspace, detectionPipeline, useOpenAIRename],
   );
+
+  const handleDetectUpload = useCallback((file: File) => {
+    setPendingDetectFile(file);
+    setShowPipelineModal(true);
+  }, []);
+
+  const handlePipelineCancel = useCallback(() => {
+    setPendingDetectFile(null);
+    setShowPipelineModal(false);
+  }, []);
+
+  const handlePipelineConfirm = useCallback(() => {
+    if (!pendingDetectFile) return;
+    const file = pendingDetectFile;
+    setPendingDetectFile(null);
+    setShowPipelineModal(false);
+    void runDetectUpload(file);
+  }, [pendingDetectFile, runDetectUpload]);
 
   const handleFillableUpload = useCallback(
     async (file: File) => {
@@ -440,7 +515,7 @@ function App() {
         blob = sourceFile;
       } else {
         const data = await pdfDoc.getData();
-        blob = new Blob([data], { type: 'application/pdf' });
+        blob = new Blob([new Uint8Array(data)], { type: 'application/pdf' });
       }
       const generatedBlob = await ApiService.materializeFormPdf(blob, fields);
       const payload = await ApiService.saveFormToProfile(generatedBlob, saveName, mappingSessionId || undefined);
@@ -486,7 +561,7 @@ function App() {
         blob = sourceFile;
       } else {
         const data = await pdfDoc.getData();
-        blob = new Blob([data], { type: 'application/pdf' });
+        blob = new Blob([new Uint8Array(data)], { type: 'application/pdf' });
       }
       const generatedBlob = await ApiService.materializeFormPdf(blob, fields);
       const baseName = normaliseFormName(activeSavedFormName || sourceFileName || sourceFile?.name);
@@ -508,36 +583,53 @@ function App() {
     }
   }, [activeSavedFormName, authUser, fields, pdfDoc, sourceFile, sourceFileName]);
 
-  const applyRenameMap = useCallback((renameMap: Map<string, string>) => {
-    if (!renameMap.size) return;
+  type FieldNameUpdate = {
+    newName?: string;
+    mappingConfidence?: unknown;
+  };
+
+  const applyFieldNameUpdates = useCallback((updatesByCurrentName: Map<string, FieldNameUpdate>) => {
+    if (!updatesByCurrentName.size) return;
 
     setFields((prev) => {
       // Track existing names to avoid collisions when applying AI rename suggestions.
       const existingNames = new Set(prev.map((field) => field.name));
       return prev.map((field) => {
-        const desiredName = renameMap.get(field.name);
+        const update = updatesByCurrentName.get(field.name);
+        if (!update) return field;
+
+        let next = field;
+        const nextMappingConfidence = parseConfidence(update.mappingConfidence);
+        if (nextMappingConfidence !== undefined && nextMappingConfidence !== field.mappingConfidence) {
+          next = { ...next, mappingConfidence: nextMappingConfidence };
+        }
+
+        const desiredName = update.newName;
         if (!desiredName || desiredName === field.name) {
-          return field;
+          return next;
         }
 
         existingNames.delete(field.name);
         const uniqueName = ensureUniqueFieldName(desiredName, existingNames);
         existingNames.add(uniqueName);
 
-        return {
-          ...field,
-          name: uniqueName,
-        };
+        if (uniqueName === next.name) {
+          return next;
+        }
+
+        return { ...next, name: uniqueName };
       });
     });
   }, []);
 
   const handleManualRename = useCallback(
-    (oldName: string, newName: string) => {
-      const renameMap = new Map<string, string>([[oldName, newName]]);
-      applyRenameMap(renameMap);
+    (oldName: string, newName: string, mappingConfidence?: number) => {
+      const updates = new Map<string, FieldNameUpdate>([
+        [oldName, { newName, mappingConfidence }],
+      ]);
+      applyFieldNameUpdates(updates);
     },
-    [applyRenameMap],
+    [applyFieldNameUpdates],
   );
 
   const applyAiMappings = useCallback(
@@ -565,19 +657,20 @@ function App() {
         }
 
         const mappings = mappingResult.mappingResults?.mappings || [];
-        const renameMap = new Map<string, string>();
+        const updates = new Map<string, FieldNameUpdate>();
 
         for (const mapping of mappings) {
           if (!mapping || !mapping.pdfField) continue;
           const currentName = mapping.originalPdfField || mapping.pdfField;
           const desiredName = mapping.pdfField;
-          if (currentName && desiredName && currentName !== desiredName) {
-            renameMap.set(currentName, desiredName);
-          }
+          if (!currentName) continue;
+          const mappingConfidence =
+            parseConfidence(mapping.confidence) ?? deriveMappingConfidence(currentName, desiredName);
+          updates.set(currentName, { newName: desiredName, mappingConfidence });
         }
 
-        applyRenameMap(renameMap);
-        debugLog('Applied AI mappings', { total: renameMap.size });
+        applyFieldNameUpdates(updates);
+        debugLog('Applied AI mappings', { total: updates.size });
         return true;
       } catch (error) {
         const message = error instanceof Error ? error.message : 'AI mapping failed.';
@@ -586,13 +679,8 @@ function App() {
         return false;
       }
     },
-    [applyRenameMap, ensureMappingSessionId, fields],
+    [applyFieldNameUpdates, ensureMappingSessionId, fields],
   );
-
-  const handleConnectDb = useCallback(() => {
-    setDbError(null);
-    setShowConnectDb(true);
-  }, []);
 
   const handleDisconnectDb = useCallback(async () => {
     if (!connId) return;
@@ -601,6 +689,11 @@ function App() {
     try {
       await DB.disconnect(connId);
       setConnId(null);
+      setDataSourceKind('none');
+      setDataSourceLabel(null);
+      setDataColumns([]);
+      setDataRows([]);
+      setIdentifierKey(null);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to disconnect database.';
       setDbError(message);
@@ -610,15 +703,27 @@ function App() {
   }, [connId]);
 
   const handleMapFromDb = useCallback(async () => {
-    if (!connId) {
-      setDbError('Connect a database before running AI mapping.');
+    if (dataSourceKind === 'none') {
+      setDbError('Choose a data source before running AI mapping.');
       return;
     }
+
+    if (dataSourceKind === 'sql' && !connId) {
+      setDbError('Connect a SQL database before running AI mapping.');
+      return;
+    }
+
+    if ((dataSourceKind === 'csv' || dataSourceKind === 'excel') && dataColumns.length === 0) {
+      setDbError(`Import a ${dataSourceKind.toUpperCase()} file before running AI mapping.`);
+      return;
+    }
+
     setDbError(null);
     setMappingInProgress(true);
     setMapDbInProgress(true);
     try {
-      const columns = await DB.fetchColumns(connId);
+      const columns =
+        dataSourceKind === 'sql' && connId ? await DB.fetchColumns(connId) : dataColumns;
       const mapped = await applyAiMappings(columns);
       if (mapped) {
         window.alert('Field mapping is done.');
@@ -630,7 +735,7 @@ function App() {
       setMapDbInProgress(false);
       setMappingInProgress(false);
     }
-  }, [applyAiMappings, connId]);
+  }, [applyAiMappings, connId, dataColumns, dataSourceKind]);
 
   const handleOpenFieldMapper = useCallback(() => {
     if (!mappingSessionId) {
@@ -639,7 +744,95 @@ function App() {
     }
     setDbError(null);
     setShowFieldMapper(true);
+    setDataSourceKind('txt');
+    setDataSourceLabel('TXT field list');
   }, [mappingSessionId]);
+
+  const handleClearDataSource = useCallback(() => {
+    if (dataSourceKind === 'sql') return;
+    setDbError(null);
+    setDataSourceKind('none');
+    setDataSourceLabel(null);
+    setDataColumns([]);
+    setDataRows([]);
+    setIdentifierKey(null);
+  }, [dataSourceKind]);
+
+  const handleChooseDataSource = useCallback(
+    (kind: Exclude<DataSourceKind, 'none'>) => {
+      setDbError(null);
+      if (kind === 'sql') {
+        setShowConnectDb(true);
+        return;
+      }
+      if (kind === 'txt') {
+        void handleOpenFieldMapper();
+        return;
+      }
+      if (kind === 'csv') {
+        csvInputRef.current?.click();
+        return;
+      }
+      if (kind === 'excel') {
+        excelInputRef.current?.click();
+      }
+    },
+    [handleOpenFieldMapper],
+  );
+
+  const handleCsvFileSelected = useCallback(async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    setDbError(null);
+    setMappingInProgress(true);
+    try {
+      const text = await file.text();
+      const parsed = parseCsv(text);
+      if (!parsed.columns.length) {
+        throw new Error('CSV file has no header row.');
+      }
+      setConnId(null);
+      setDataSourceKind('csv');
+      setDataSourceLabel(`CSV: ${file.name}`);
+      setDataColumns(parsed.columns);
+      setDataRows(parsed.rows);
+      setIdentifierKey(pickIdentifierKey(parsed.columns));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to import CSV file.';
+      setDbError(message);
+    } finally {
+      setMappingInProgress(false);
+    }
+  }, []);
+
+  const handleExcelFileSelected = useCallback(async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+      setDbError(null);
+      setMappingInProgress(true);
+    try {
+      const buffer = await file.arrayBuffer();
+      const parsed = await parseExcel(buffer);
+      if (!parsed.columns.length) {
+        throw new Error('Excel sheet has no header row.');
+      }
+      setConnId(null);
+      setDataSourceKind('excel');
+      setDataSourceLabel(`Excel: ${file.name}${parsed.sheetName ? ` (${parsed.sheetName})` : ''}`);
+      setDataColumns(parsed.columns);
+      setDataRows(parsed.rows);
+      setIdentifierKey(pickIdentifierKey(parsed.columns));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to import Excel file.';
+      setDbError(message);
+    } finally {
+      setMappingInProgress(false);
+    }
+  }, []);
 
   const handleCloseFieldMapper = useCallback(() => {
     setShowFieldMapper(false);
@@ -694,10 +887,56 @@ function App() {
     [currentPage, fields, pageSizes],
   );
 
+  const visibleFields = useMemo(
+    () => fields.filter((field) => confidenceFilter[fieldConfidenceTierForField(field)]),
+    [confidenceFilter, fields],
+  );
+
+  const handleConfidenceFilterChange = useCallback((tier: ConfidenceTier, enabled: boolean) => {
+    setConfidenceFilter((prev) => ({
+      ...prev,
+      [tier]: enabled,
+    }));
+  }, []);
+
+  const handleShowFieldsChange = useCallback((enabled: boolean) => {
+    setShowFields(enabled);
+    if (!enabled) {
+      setShowFieldInfo(false);
+    }
+  }, []);
+
+  const handleShowFieldNamesChange = useCallback((enabled: boolean) => {
+    setShowFieldNames(enabled);
+    if (enabled) {
+      setShowFieldInfo(false);
+    }
+  }, []);
+
+  const handleShowFieldInfoChange = useCallback((enabled: boolean) => {
+    setShowFieldInfo(enabled);
+    if (enabled) {
+      setShowFieldNames(false);
+      setShowFields(true);
+    }
+  }, []);
+
   const userEmail = useMemo(() => authUser?.email ?? undefined, [authUser]);
   const hasDocument = !!pdfDoc;
   const canSaveToProfile = Boolean(pdfDoc && authUser);
   const canDownload = Boolean(pdfDoc && authUser);
+  const canMapDb = useMemo(() => {
+    if (!hasDocument || fields.length === 0) return false;
+    if (dataSourceKind === 'sql') return Boolean(connId);
+    if (dataSourceKind === 'csv' || dataSourceKind === 'excel') return dataColumns.length > 0;
+    return false;
+  }, [connId, dataColumns.length, dataSourceKind, fields.length, hasDocument]);
+  const canSearchFill = useMemo(() => {
+    if (!hasDocument) return false;
+    if (dataSourceKind === 'sql') return Boolean(connId);
+    if (dataSourceKind === 'csv' || dataSourceKind === 'excel') return dataRows.length > 0;
+    return false;
+  }, [connId, dataRows.length, dataSourceKind, hasDocument]);
   const currentView = showHomepage
     ? 'homepage'
     : isProcessing
@@ -740,6 +979,76 @@ function App() {
           )}
           {currentView === 'upload' && (
             <div className="upload-layout">
+              {showPipelineModal && (
+                <div
+                  className="pipeline-modal"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby="pipeline-modal-title"
+                >
+                  <div className="pipeline-modal__card">
+                    <div className="pipeline-modal__header">
+                      <h2 id="pipeline-modal-title" className="pipeline-modal__title">
+                        Choose your detection pipeline
+                      </h2>
+                      {pendingDetectFile && (
+                        <p className="pipeline-modal__subtitle">{pendingDetectFile.name}</p>
+                      )}
+                    </div>
+                    <div className="pipeline-modal__section">
+                      <span className="pipeline-modal__section-title">Detection pipeline</span>
+                      <label className="pipeline-modal__choice">
+                        <input
+                          type="radio"
+                          name="pipeline"
+                          value="sandbox"
+                          checked={detectionPipeline === 'sandbox'}
+                          onChange={() => setDetectionPipeline('sandbox')}
+                        />
+                        Sandbox (OpenCV + PDFPlumber)
+                      </label>
+                      <label className="pipeline-modal__choice">
+                        <input
+                          type="radio"
+                          name="pipeline"
+                          value="commonforms"
+                          checked={detectionPipeline === 'commonforms'}
+                          onChange={() => setDetectionPipeline('commonforms')}
+                        />
+                        CommonForms (FFDNet-L)
+                      </label>
+                    </div>
+                    <div className="pipeline-modal__section">
+                      <span className="pipeline-modal__section-title">Enhancements</span>
+                      <label className="pipeline-modal__choice">
+                        <input
+                          type="checkbox"
+                          checked={useOpenAIRename}
+                          onChange={(event) => setUseOpenAIRename(event.target.checked)}
+                        />
+                        Use OpenAI rename
+                      </label>
+                    </div>
+                    <div className="pipeline-modal__actions">
+                      <button
+                        className="ui-button ui-button--ghost"
+                        type="button"
+                        onClick={handlePipelineCancel}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        className="ui-button ui-button--primary"
+                        type="button"
+                        onClick={handlePipelineConfirm}
+                        disabled={!pendingDetectFile}
+                      >
+                        Continue
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
               <div className="upload-primary-grid">
                 <UploadComponent
                   variant="detect"
@@ -793,14 +1102,18 @@ function App() {
         scale={scale}
         onScaleChange={setScale}
         onNavigateHome={handleNavigateHome}
-        connId={connId}
         mappingInProgress={mappingInProgress}
         mapDbInProgress={mapDbInProgress}
         mappingError={dbError}
-        onConnectDb={handleConnectDb}
-        onDisconnectDb={handleDisconnectDb}
+        dataSourceKind={dataSourceKind}
+        dataSourceLabel={dataSourceLabel}
+        onChooseDataSource={handleChooseDataSource}
+        onDisconnectSql={connId ? handleDisconnectDb : undefined}
+        onClearDataSource={handleClearDataSource}
         onMapDb={handleMapFromDb}
-        onOpenFieldMapper={handleOpenFieldMapper}
+        canMapDb={canMapDb}
+        onOpenSearchFill={() => setShowSearchFill(true)}
+        canSearchFill={canSearchFill}
         onDownload={handleDownload}
         onSaveToProfile={handleSaveToProfile}
         downloadInProgress={downloadInProgress}
@@ -813,10 +1126,18 @@ function App() {
       />
       <div className="app-shell">
         <FieldListPanel
-          fields={fields}
+          fields={visibleFields}
           selectedFieldId={selectedFieldId}
           currentPage={currentPage}
           pageCount={pageCount}
+          showFields={showFields}
+          showFieldNames={showFieldNames}
+          showFieldInfo={showFieldInfo}
+          onShowFieldsChange={handleShowFieldsChange}
+          onShowFieldNamesChange={handleShowFieldNamesChange}
+          onShowFieldInfoChange={handleShowFieldInfoChange}
+          confidenceFilter={confidenceFilter}
+          onConfidenceFilterChange={handleConfidenceFilterChange}
           onSelectField={handleSelectField}
           onPageChange={handlePageJump}
         />
@@ -834,7 +1155,10 @@ function App() {
               pageNumber={currentPage}
               scale={scale}
               pageSizes={pageSizes}
-              fields={fields}
+              fields={visibleFields}
+              showFields={showFields}
+              showFieldNames={showFieldNames}
+              showFieldInfo={showFieldInfo}
               selectedFieldId={selectedFieldId}
               onSelectField={handleSelectField}
               onUpdateField={handleUpdateField}
@@ -857,8 +1181,13 @@ function App() {
         <ConnectDB
           open={showConnectDb}
           onClose={() => setShowConnectDb(false)}
-          onConnected={({ connId: id }) => {
+          onConnected={({ connId: id, columns, identifierKey: nextIdentifierKey, label }) => {
             setConnId(id);
+            setDataSourceKind('sql');
+            setDataSourceLabel(label || 'SQL database');
+            setDataColumns(columns || []);
+            setDataRows([]);
+            setIdentifierKey(nextIdentifierKey ?? null);
           }}
         />
       )}
@@ -886,6 +1215,40 @@ function App() {
           </div>
         </div>
       )}
+      {showSearchFill ? (
+        <SearchFillModal
+          open={showSearchFill}
+          onClose={() => setShowSearchFill(false)}
+          dataSourceKind={dataSourceKind}
+          dataSourceLabel={dataSourceLabel}
+          connId={connId}
+          columns={dataColumns}
+          identifierKey={identifierKey}
+          rows={dataRows}
+          fields={fields}
+          onFieldsChange={setFields}
+          onAfterFill={() => {
+            setShowFieldInfo(true);
+            setShowFieldNames(false);
+            setShowFields(true);
+          }}
+          onError={(message) => setDbError(message)}
+        />
+      ) : null}
+      <input
+        ref={csvInputRef}
+        type="file"
+        accept=".csv,text/csv"
+        style={{ display: 'none' }}
+        onChange={handleCsvFileSelected}
+      />
+      <input
+        ref={excelInputRef}
+        type="file"
+        accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+        style={{ display: 'none' }}
+        onChange={handleExcelFileSelected}
+      />
     </div>
   );
 }

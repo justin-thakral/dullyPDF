@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { ApiService } from '../../api';
+import { CONFIDENCE_THRESHOLDS, parseConfidence } from '../../utils/confidence';
 import './FieldMapper.css';
 
 const DEBUG_FIELD_MAPPER = false;
@@ -8,11 +9,25 @@ function debugLog(message: string, extra?: unknown) {
   console.log(`[field-mapper] ${message}`, extra ?? '');
 }
 
+function deriveMappingConfidence(originalName: string, nextName: string): number {
+  const normalise = (value: string) =>
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
+  const left = normalise(originalName);
+  const right = normalise(nextName);
+  if (!left || !right) return 0.7;
+  if (left === right) return 0.95;
+  if (left.includes(right) || right.includes(left)) return 0.85;
+  return 0.7;
+}
+
 interface FieldMapperProps {
   sessionId: string;
   pdfFormFields?: Array<{ name: string; type?: string; context?: string }>;
   onMappingsGenerated?: (mappings: any) => void;
-  onFieldRenamed?: (oldName: string, newName: string) => void;
+  onFieldRenamed?: (oldName: string, newName: string, mappingConfidence?: number) => void;
 }
 
 interface MappingResult {
@@ -152,11 +167,12 @@ const FieldMapper: React.FC<FieldMapperProps> = ({
 
   const applyMapping = async (mapping: MappingResult) => {
     try {
-      const currentName = mapping.originalPdfField || mapping.pdfField;
-      const desiredName = mapping.pdfField;
+      const currentName = mapping.originalPdfField || mapping.pdfField || '';
+      const desiredName = mapping.pdfField || '';
       debugLog('Applying mapping', { currentName, desiredName, databaseField: mapping.databaseField });
-
-      onFieldRenamed?.(currentName, desiredName);
+      const mappingConfidence =
+        parseConfidence(mapping.confidence) ?? deriveMappingConfidence(currentName, desiredName);
+      onFieldRenamed?.(currentName, desiredName, mappingConfidence);
 
       setMappingState((prev) => ({
         ...prev,
@@ -192,8 +208,8 @@ const FieldMapper: React.FC<FieldMapperProps> = ({
   };
 
   const getConfidenceColor = (confidence: number): string => {
-    if (confidence >= 0.8) return '#10b981';
-    if (confidence >= 0.6) return '#f59e0b';
+    if (confidence >= CONFIDENCE_THRESHOLDS.high) return '#10b981';
+    if (confidence >= CONFIDENCE_THRESHOLDS.low) return '#f59e0b';
     return '#ef4444';
   };
 

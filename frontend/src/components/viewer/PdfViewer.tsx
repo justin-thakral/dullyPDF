@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { PDFDocumentProxy, RenderTask } from 'pdfjs-dist/types/src/display/api';
 import type { PageSize, PdfField } from '../../types';
 import { FieldOverlay } from './FieldOverlay';
+import { FieldInputOverlay } from './FieldInputOverlay';
 
 const EMPTY_SIZE: PageSize = { width: 0, height: 0 };
 const RENDER_RADIUS = 2;
@@ -12,6 +13,9 @@ type PdfViewerProps = {
   scale: number;
   pageSizes: Record<number, PageSize>;
   fields: PdfField[];
+  showFields: boolean;
+  showFieldNames: boolean;
+  showFieldInfo: boolean;
   selectedFieldId: string | null;
   onSelectField: (fieldId: string) => void;
   onUpdateField: (fieldId: string, updates: Partial<PdfField>) => void;
@@ -26,6 +30,9 @@ type PdfPageProps = {
   scale: number;
   pageSize: PageSize;
   fields: PdfField[];
+  showFields: boolean;
+  showFieldNames: boolean;
+  showFieldInfo: boolean;
   selectedFieldId: string | null;
   onSelectField: (fieldId: string) => void;
   onUpdateField: (fieldId: string, updates: Partial<PdfField>) => void;
@@ -39,6 +46,9 @@ function PdfPage({
   scale,
   pageSize,
   fields,
+  showFields,
+  showFieldNames,
+  showFieldInfo,
   selectedFieldId,
   onSelectField,
   onUpdateField,
@@ -118,14 +128,27 @@ function PdfPage({
       {isActive ? (
         <>
           <canvas ref={canvasRef} className="viewer__canvas" />
-          <FieldOverlay
-            fields={fields}
-            pageSize={pageSize}
-            scale={scale}
-            selectedFieldId={selectedFieldId}
-            onSelectField={onSelectField}
-            onUpdateField={onUpdateField}
-          />
+          {showFields ? (
+            <FieldOverlay
+              fields={fields}
+              pageSize={pageSize}
+              scale={scale}
+              showFieldNames={showFieldNames}
+              selectedFieldId={selectedFieldId}
+              onSelectField={onSelectField}
+              onUpdateField={onUpdateField}
+            />
+          ) : null}
+          {showFieldInfo ? (
+            <FieldInputOverlay
+              fields={fields}
+              pageSize={pageSize}
+              scale={scale}
+              selectedFieldId={selectedFieldId}
+              onSelectField={onSelectField}
+              onUpdateField={onUpdateField}
+            />
+          ) : null}
           {isRendering ? <div className="viewer__status">Rendering page...</div> : null}
           {renderError ? <div className="viewer__error">{renderError}</div> : null}
         </>
@@ -144,6 +167,9 @@ export function PdfViewer({
   scale,
   pageSizes,
   fields,
+  showFields,
+  showFieldNames,
+  showFieldInfo,
   selectedFieldId,
   onSelectField,
   onUpdateField,
@@ -337,6 +363,9 @@ export function PdfViewer({
             scale={effectiveScale}
             pageSize={pageSizes[page] || EMPTY_SIZE}
             fields={fieldsByPage.get(page) || []}
+            showFields={showFields}
+            showFieldNames={showFieldNames}
+            showFieldInfo={showFieldInfo}
             selectedFieldId={selectedFieldId}
             onSelectField={onSelectField}
             onUpdateField={onUpdateField}

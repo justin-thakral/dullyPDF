@@ -1,0 +1,130 @@
+.searchfill-panel {
+  width: 760px;
+}
+
+.searchfill-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.searchfill-meta {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 10px 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #f9fafb;
+}
+
+.searchfill-source {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.searchfill-source__label {
+  font-size: 11px;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.searchfill-source__value {
+  font-size: 13px;
+  color: #111827;
+  font-weight: 600;
+}
+
+.searchfill-controls {
+  display: grid;
+  grid-template-columns: 170px 130px 1fr auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.searchfill-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.searchfill-label {
+  font-size: 12px;
+  color: #555;
+}
+
+.searchfill-field select,
+.searchfill-field input {
+  padding: 8px 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.searchfill-results {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 320px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.searchfill-results__empty {
+  font-size: 13px;
+  color: #6b7280;
+  padding: 10px 2px;
+}
+
+.searchfill-results__empty--not-found {
+  color: #dc2626;
+  font-weight: 600;
+}
+
+.searchfill-result {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: #ffffff;
+}
+
+.searchfill-result__text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.searchfill-result__title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #111827;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.searchfill-result__subtitle {
+  font-size: 12px;
+  color: #6b7280;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .searchfill-panel {
+    width: 95vw;
+  }
+
+  .searchfill-controls {
+    grid-template-columns: 1fr;
+  }
+}

@@ -3,6 +3,7 @@ import type { FieldRect, FieldType, PageSize, PdfField } from '../types';
 import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist';
 import workerSrc from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { clampRectToPage } from './coords';
+import { parseConfidence } from './confidence';
 import { ensureUniqueFieldName, makeId } from './fields';
 
 const DEBUG_PDF = false;
@@ -27,6 +28,33 @@ type PdfJsAnnotation = {
   radioButton?: boolean;
   pushButton?: boolean;
 };
+
+const CONFIDENCE_TAG_PREFIX = 'dullypdf:confidence=';
+
+function parseConfidenceTag(raw?: string): number | undefined {
+  if (!raw) return undefined;
+  const lower = raw.toLowerCase();
+  const idx = lower.indexOf(CONFIDENCE_TAG_PREFIX);
+  if (idx !== -1) {
+    const value = raw.slice(idx + CONFIDENCE_TAG_PREFIX.length).split(/[;\\s]/)[0];
+    return parseConfidence(value);
+  }
+  const match = raw.match(/confidence\\s*[:=]\\s*([0-9.]+)/i);
+  if (match) return parseConfidence(match[1]);
+  return undefined;
+}
+
+function isConfidenceTag(raw?: string): boolean {
+  if (!raw) return false;
+  return raw.toLowerCase().includes(CONFIDENCE_TAG_PREFIX);
+}
+
+function extractFieldConfidence(annotation: PdfJsAnnotation): number | undefined {
+  return (
+    parseConfidenceTag(annotation.alternativeText) ??
+    parseConfidenceTag(annotation.title)
+  );
+}
 
 export async function loadPdfFromFile(file: File): Promise<PDFDocumentProxy> {
   const buffer = await file.arrayBuffer();
@@ -116,10 +144,13 @@ export async function extractFieldsFromPdf(doc: PDFDocumentProxy): Promise<PdfFi
       const rect = buildRectFromAnnotation(annotation.rect || [], pageSize, viewport);
       if (!rect) continue;
 
-      const rawName = (annotation.fieldName || annotation.alternativeText || annotation.title || '').trim();
+      const altText = annotation.alternativeText?.trim();
+      const safeAltText = altText && !isConfidenceTag(altText) ? altText : '';
+      const rawName = (annotation.fieldName || safeAltText || annotation.title || '').trim();
       const baseName = rawName || `field_${pageNum}_${fieldIndex}`;
       const name = ensureUniqueFieldName(baseName, existingNames);
       const type = mapAnnotationType(annotation);
+      const fieldConfidence = extractFieldConfidence(annotation);
 
       fields.push({
         id: makeId(),
@@ -127,6 +158,7 @@ export async function extractFieldsFromPdf(doc: PDFDocumentProxy): Promise<PdfFi
         type,
         page: pageNum,
         rect,
+        ...(fieldConfidence !== undefined ? { fieldConfidence } : {}),
       });
 
       if (DEBUG_PDF && fieldIndex <= 6) {

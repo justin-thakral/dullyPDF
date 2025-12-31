@@ -1,3 +1,4 @@
+import io
 import json
 import os
 import re
@@ -12,19 +13,23 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from .app_database import create_template, delete_template, ensure_user, get_template, list_templates
-from .combinedSrc.config import get_logger
-from .combinedSrc.form_filler import inject_fields
-from .combinedSrc.output_layout import ensure_output_layout, temp_prefix_from_pdf
-from .combinedSrc.pipeline_router import run_pipeline
-from .combinedSrc.rename_resolver import run_openai_rename_pipeline
-from .db_proxy import disconnect as disconnect_connection
-from .db_proxy import fetch_columns as fetch_db_columns
-from .db_proxy import test_and_create_connection
-from .field_mapper import FieldMappingService
-from .debug_flags import debug_enabled, get_debug_password
-from .firebase_service import RequestUser, verify_id_token
-from .storage_service import (
+from .fieldDetecting.commonforms.commonForm import detect_commonforms_fields
+from .fieldDetecting.sandbox.combinedSrc.config import get_logger
+from .fieldDetecting.sandbox.combinedSrc.form_filler import inject_fields
+from .fieldDetecting.sandbox.combinedSrc.output_layout import ensure_output_layout, temp_prefix_from_pdf
+from .fieldDetecting.sandbox.combinedSrc.extract_labels import extract_labels
+from .fieldDetecting.sandbox.combinedSrc.pipeline_router import run_pipeline
+from .fieldDetecting.sandbox.combinedSrc.render_pdf import render_pdf_to_images
+from .fieldDetecting.sandbox.combinedSrc.rename_resolver import run_openai_rename_pipeline
+from .fieldDetecting.sandbox.debug_flags import debug_enabled, get_debug_password
+from .fieldDetecting.sandbox.field_mapper import FieldMappingService
+from .firebaseDB.app_database import create_template, delete_template, ensure_user, get_template, list_templates
+from .firebaseDB.db_proxy import disconnect as disconnect_connection
+from .firebaseDB.db_proxy import fetch_columns as fetch_db_columns
+from .firebaseDB.db_proxy import search_rows as search_db_rows
+from .firebaseDB.db_proxy import test_and_create_connection
+from .firebaseDB.firebase_service import RequestUser, verify_id_token
+from .firebaseDB.storage_service import (
     delete_pdf,
     is_gcs_path,
     stream_pdf,
@@ -33,6 +38,7 @@ from .storage_service import (
 )
 
 logger = get_logger(__name__)
+_API_SESSION_CACHE: Dict[str, Dict[str, Any]] = {}
 
 
 class PdfFormField(BaseModel):
@@ -342,11 +348,139 @@ async def health() -> Dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/api/health")
+async def api_health() -> Dict[str, str]:
+    return {"status": "ok"}
+
+
+@app.post("/api/process-pdf")
+async def process_pdf(
+    pdf: UploadFile = File(...),
+    pipeline: Optional[str] = None,
+    pipeline_form: Optional[str] = Form(None, alias="pipeline"),
+) -> Dict[str, Any]:
+    if not pdf:
+        raise HTTPException(status_code=400, detail="Missing PDF upload")
+
+    source_pdf = pdf.filename or "upload.pdf"
+    content_type = (pdf.content_type or "").lower()
+    if not source_pdf.lower().endswith(".pdf") and content_type not in {"application/pdf", "application/octet-stream"}:
+        raise HTTPException(status_code=400, detail="Only PDF uploads are supported")
+
+    session_id = str(uuid.uuid4())
+    max_mb, max_bytes = _resolve_upload_limit()
+    pdf_bytes = await _read_upload_bytes(
+        pdf,
+        max_bytes=max_bytes,
+        limit_message=f"PDF exceeds {max_mb}MB upload limit",
+    )
+    if not pdf_bytes:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty")
+
+    pipeline_choice = (pipeline or pipeline_form or "commonforms").strip().lower()
+    if pipeline_choice in {"sandbox", "auto"}:
+        pipeline_run = run_pipeline(
+            pdf_bytes,
+            session_id=session_id,
+            source_pdf=source_pdf,
+            pipeline="auto",
+        )
+        resolved = dict(pipeline_run.result)
+    elif pipeline_choice == "commonforms":
+        temp_path = Path(tempfile.mkstemp(suffix=".pdf")[1])
+        try:
+            temp_path.write_bytes(pdf_bytes)
+            resolved = detect_commonforms_fields(Path(temp_path))
+        finally:
+            temp_path.unlink(missing_ok=True)
+        resolved["pipeline"] = "commonforms"
+    else:
+        raise HTTPException(status_code=400, detail="Unsupported pipeline selection")
+
+    fields = resolved.get("fields", [])
+    _API_SESSION_CACHE[session_id] = {
+        "pdf_bytes": pdf_bytes,
+        "fields": fields,
+        "source_pdf": source_pdf,
+        "result": resolved,
+    }
+    return {
+        "success": True,
+        "sessionId": session_id,
+        "originalFilename": source_pdf,
+        "pipeline": resolved.get("pipeline", pipeline_choice),
+        "fieldCount": len(fields),
+        "fields": fields,
+        "result": resolved,
+    }
+
+
+@app.post("/api/register-fillable")
+async def register_fillable_pdf(
+    pdf: UploadFile = File(...),
+) -> Dict[str, Any]:
+    if not pdf:
+        raise HTTPException(status_code=400, detail="Missing PDF upload")
+
+    source_pdf = pdf.filename or "upload.pdf"
+    content_type = (pdf.content_type or "").lower()
+    if not source_pdf.lower().endswith(".pdf") and content_type not in {"application/pdf", "application/octet-stream"}:
+        raise HTTPException(status_code=400, detail="Only PDF uploads are supported")
+
+    session_id = str(uuid.uuid4())
+    max_mb, max_bytes = _resolve_upload_limit()
+    pdf_bytes = await _read_upload_bytes(
+        pdf,
+        max_bytes=max_bytes,
+        limit_message=f"PDF exceeds {max_mb}MB upload limit",
+    )
+    if not pdf_bytes:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty")
+
+    _API_SESSION_CACHE[session_id] = {
+        "pdf_bytes": pdf_bytes,
+        "fields": [],
+        "source_pdf": source_pdf,
+        "result": {},
+    }
+    return {
+        "success": True,
+        "sessionId": session_id,
+        "originalFilename": source_pdf,
+    }
+
+
+@app.get("/api/detected-fields")
+async def get_detected_fields(sessionId: str) -> Dict[str, Any]:
+    entry = _API_SESSION_CACHE.get(sessionId)
+    if not entry:
+        raise HTTPException(status_code=404, detail="Session not found")
+    fields = entry.get("fields", [])
+    return {
+        "success": True,
+        "sessionId": sessionId,
+        "items": fields,
+        "total": len(fields),
+    }
+
+
+@app.get("/download/{session_id}")
+async def download_session_pdf(session_id: str):
+    entry = _API_SESSION_CACHE.get(session_id)
+    if not entry:
+        raise HTTPException(status_code=404, detail="Session not found")
+    filename = _safe_pdf_download_filename(entry.get("source_pdf") or "document")
+    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+    return StreamingResponse(io.BytesIO(entry["pdf_bytes"]), media_type="application/pdf", headers=headers)
+
+
 @app.post("/detect-fields")
 async def detect_fields(
     file: UploadFile = File(...),
     openai: bool = False,
     use_openai: bool = Form(False),
+    pipeline: Optional[str] = None,
+    pipeline_form: Optional[str] = Form(None, alias="pipeline"),
     authorization: Optional[str] = Header(default=None),
 ) -> Dict[str, Any]:
     auth_payload = _verify_token(authorization)
@@ -371,43 +505,102 @@ async def detect_fields(
         logger.info("Session %s -> request by %s", session_id, auth_payload["uid"])
     logger.info("Session %s -> starting detection for %s", session_id, source_pdf)
 
-    pipeline_run = run_pipeline(
-        pdf_bytes,
-        session_id=session_id,
-        source_pdf=source_pdf,
-        pipeline="auto",
-    )
-    resolved = dict(pipeline_run.result)
-
+    pipeline_choice = (pipeline or pipeline_form or "sandbox").strip().lower()
     run_openai = openai or use_openai
-    if run_openai:
-        logger.info("Session %s -> running OpenAI rename pass", session_id)
-        try:
-            output_root = Path(__file__).resolve().parent / "outputArtifacts"
-            layout = ensure_output_layout(output_root)
-            prefix = temp_prefix_from_pdf(Path(source_pdf), fallback=session_id)
-            rename_dir = layout.overlays_dir / f"{prefix}_openai"
-            rename_report, renamed_fields = run_openai_rename_pipeline(
-                pipeline_run.artifacts.rendered_pages,
-                pipeline_run.artifacts.candidates,
-                resolved.get("fields", []),
-                output_dir=rename_dir,
-            )
-            resolved["fields"] = renamed_fields
-            resolved["renames"] = rename_report.get("renames", [])
-            resolved["openaiModel"] = rename_report.get("model")
-            resolved["openaiDropped"] = rename_report.get("dropped", [])
-        except Exception as exc:
-            logger.exception("Session %s -> OpenAI rename failed: %s", session_id, exc)
-            resolved["openaiError"] = str(exc)
 
-    logger.info(
-        "Session %s -> %s final fields produced (%s pipeline)",
-        session_id,
-        len(resolved.get("fields", [])),
-        pipeline_run.pipeline,
-    )
-    return resolved
+    if pipeline_choice in {"sandbox", "auto"}:
+        pipeline_run = run_pipeline(
+            pdf_bytes,
+            session_id=session_id,
+            source_pdf=source_pdf,
+            pipeline="auto",
+        )
+        resolved = dict(pipeline_run.result)
+
+        if run_openai:
+            logger.info("Session %s -> running OpenAI rename pass", session_id)
+            try:
+                output_root = Path(__file__).resolve().parent / "fieldDetecting" / "outputArtifacts"
+                layout = ensure_output_layout(output_root)
+                prefix = temp_prefix_from_pdf(Path(source_pdf), fallback=session_id)
+                rename_dir = layout.overlays_dir / f"{prefix}_openai"
+                rename_report, renamed_fields = run_openai_rename_pipeline(
+                    pipeline_run.artifacts.rendered_pages,
+                    pipeline_run.artifacts.candidates,
+                    resolved.get("fields", []),
+                    output_dir=rename_dir,
+                )
+                resolved["fields"] = renamed_fields
+                resolved["renames"] = rename_report.get("renames", [])
+                resolved["openaiModel"] = rename_report.get("model")
+                resolved["openaiDropped"] = rename_report.get("dropped", [])
+            except Exception as exc:
+                logger.exception("Session %s -> OpenAI rename failed: %s", session_id, exc)
+                resolved["openaiError"] = str(exc)
+
+        logger.info(
+            "Session %s -> %s final fields produced (%s pipeline)",
+            session_id,
+            len(resolved.get("fields", [])),
+            pipeline_run.pipeline,
+        )
+        return resolved
+
+    if pipeline_choice == "commonforms":
+        temp_path = Path(tempfile.mkstemp(suffix=".pdf")[1])
+        try:
+            temp_path.write_bytes(pdf_bytes)
+            resolved = detect_commonforms_fields(Path(temp_path))
+        finally:
+            temp_path.unlink(missing_ok=True)
+
+        if run_openai:
+            logger.info("Session %s -> running OpenAI rename pass (commonforms)", session_id)
+            try:
+                output_root = Path(__file__).resolve().parent / "fieldDetecting" / "outputArtifacts"
+                layout = ensure_output_layout(output_root)
+                prefix = temp_prefix_from_pdf(Path(source_pdf), fallback=session_id)
+                rename_dir = layout.overlays_dir / f"{prefix}_openai_commonforms"
+                rendered_pages = render_pdf_to_images(pdf_bytes)
+                labels_by_page = extract_labels(pdf_bytes, rendered_pages=rendered_pages)
+                candidates = []
+                for page in rendered_pages:
+                    page_idx = int(page.get("page_index") or 1)
+                    candidates.append(
+                        {
+                            "page": page_idx,
+                            "pageWidth": float(page.get("width_points") or 0.0),
+                            "pageHeight": float(page.get("height_points") or 0.0),
+                            "rotation": int(page.get("rotation") or 0),
+                            "imageWidthPx": int(page.get("image_width_px") or 0),
+                            "imageHeightPx": int(page.get("image_height_px") or 0),
+                            "labels": labels_by_page.get(page_idx, []),
+                        }
+                    )
+                rename_report, renamed_fields = run_openai_rename_pipeline(
+                    rendered_pages,
+                    candidates,
+                    resolved.get("fields", []),
+                    output_dir=rename_dir,
+                    confidence_profile="commonforms",
+                    adjust_field_confidence=True,
+                )
+                resolved["fields"] = renamed_fields
+                resolved["renames"] = rename_report.get("renames", [])
+                resolved["openaiModel"] = rename_report.get("model")
+                resolved["openaiDropped"] = rename_report.get("dropped", [])
+            except Exception as exc:
+                logger.exception("Session %s -> OpenAI rename failed (commonforms): %s", session_id, exc)
+                resolved["openaiError"] = str(exc)
+        resolved["pipeline"] = "commonforms"
+        logger.info(
+            "Session %s -> %s final fields produced (commonforms pipeline)",
+            session_id,
+            len(resolved.get("fields", [])),
+        )
+        return resolved
+
+    raise HTTPException(status_code=400, detail="Unsupported pipeline selection")
 
 
 @app.post("/api/upload-fields")
@@ -759,6 +952,31 @@ async def get_columns(
         logger.error("/api/db/columns failed: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     return {"columns": cols}
+
+
+@app.get("/api/db/search")
+async def search_db(
+    connId: Optional[str] = None,
+    key: Optional[str] = None,
+    query: Optional[str] = None,
+    mode: Optional[str] = "contains",
+    limit: Optional[int] = 25,
+    authorization: Optional[str] = Header(default=None),
+    x_admin_token: Optional[str] = Header(default=None),
+) -> Dict[str, Any]:
+    _require_admin(authorization, x_admin_token)
+    if not connId:
+        raise HTTPException(status_code=400, detail="connId is required")
+    if not key:
+        raise HTTPException(status_code=400, detail="key is required")
+    if query is None:
+        raise HTTPException(status_code=400, detail="query is required")
+    try:
+        rows = search_db_rows(connId, key, query, mode=mode or "contains", limit=limit or 25)
+    except Exception as exc:
+        logger.error("/api/db/search failed: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return {"rows": rows}
 
 
 @app.delete("/api/connections/{conn_id}")

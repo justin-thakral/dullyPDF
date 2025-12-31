@@ -1,4 +1,4 @@
-import { getAuthToken } from './authTokenStore';
+import { apiFetch, apiJsonFetch } from './apiConfig';
 
 const DEFAULT_DETECTION_API = 'http://localhost:8000';
 
@@ -12,6 +12,7 @@ export function getDetectionApiBase(): string {
 
 type DetectOptions = {
   useOpenAI?: boolean;
+  pipeline?: 'sandbox' | 'commonforms';
 };
 
 export async function detectFields(
@@ -20,6 +21,12 @@ export async function detectFields(
 ): Promise<any> {
   const formData = new FormData();
   formData.append('file', file);
+  if (options.pipeline) {
+    formData.append('pipeline', options.pipeline);
+  }
+  if (options.useOpenAI) {
+    formData.append('use_openai', 'true');
+  }
 
   const params = new URLSearchParams();
   if (options.useOpenAI) {
@@ -27,28 +34,9 @@ export async function detectFields(
   }
   const suffix = params.toString() ? `?${params.toString()}` : '';
 
-  const response = await fetch(`${getDetectionApiBase()}/detect-fields${suffix}`, {
-    method: 'POST',
-    headers: (() => {
-      const headers = new Headers();
-      const token = getAuthToken();
-      if (token) headers.set('Authorization', `Bearer ${token}`);
-      return headers;
-    })(),
+  const response = await apiFetch('POST', `${getDetectionApiBase()}/detect-fields${suffix}`, {
     body: formData,
   });
 
-  if (!response.ok) {
-    let message = `Field detection failed (${response.status})`;
-    try {
-      const data = await response.json();
-      if (data?.detail) message = data.detail;
-      if (data?.error) message = data.error;
-    } catch {
-      // ignore parse errors
-    }
-    throw new Error(message);
-  }
-
-  return response.json();
+  return apiJsonFetch(response);
 }

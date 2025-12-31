@@ -1,5 +1,12 @@
 import { useMemo, useState, type ChangeEvent } from 'react';
-import type { FieldType, PdfField } from '../../types';
+import type { ConfidenceFilter, ConfidenceTier, FieldType, PdfField } from '../../types';
+import {
+  fieldConfidenceForField,
+  fieldConfidenceTierForField,
+  nameConfidenceForField,
+  nameConfidenceTierForField,
+  hasAnyConfidence,
+} from '../../utils/confidence';
 import { formatSize } from '../../utils/fields';
 import { FIELD_TYPES, fieldTypeLabel } from '../../utils/fieldUi';
 
@@ -10,6 +17,14 @@ type FieldListPanelProps = {
   selectedFieldId: string | null;
   currentPage: number;
   pageCount: number;
+  showFields: boolean;
+  showFieldNames: boolean;
+  showFieldInfo: boolean;
+  onShowFieldsChange: (enabled: boolean) => void;
+  onShowFieldNamesChange: (enabled: boolean) => void;
+  onShowFieldInfoChange: (enabled: boolean) => void;
+  confidenceFilter: ConfidenceFilter;
+  onConfidenceFilterChange: (tier: ConfidenceTier, enabled: boolean) => void;
   onSelectField: (fieldId: string) => void;
   onPageChange: (page: number) => void;
 };
@@ -24,6 +39,14 @@ export function FieldListPanel({
   selectedFieldId,
   currentPage,
   pageCount,
+  showFields,
+  showFieldNames,
+  showFieldInfo,
+  onShowFieldsChange,
+  onShowFieldNamesChange,
+  onShowFieldInfoChange,
+  confidenceFilter,
+  onConfidenceFilterChange,
   onSelectField,
   onPageChange,
 }: FieldListPanelProps) {
@@ -120,17 +143,69 @@ export function FieldListPanel({
         </div>
 
         <div className="panel__section panel__section--tight">
-          <div className="panel__row panel__row--space">
-            <label className="panel__toggle">
+          <div className="panel__toggle-row" role="group" aria-label="Field display controls">
+            <label
+              className={`panel-pill-toggle${showFields ? ' panel-pill-toggle--active' : ''}`}
+              title="Show field overlays on the PDF"
+            >
               <input
-                className="panel__toggle-input"
+                type="checkbox"
+                checked={showFields}
+                onChange={(event) => onShowFieldsChange(event.target.checked)}
+              />
+              <span>Fields</span>
+            </label>
+            <label
+              className={`panel-pill-toggle${showFieldNames ? ' panel-pill-toggle--active' : ''}`}
+              title="Show field names on the PDF overlay"
+            >
+              <input
+                type="checkbox"
+                checked={showFieldNames}
+                onChange={(event) => onShowFieldNamesChange(event.target.checked)}
+              />
+              <span>Names</span>
+            </label>
+            <label
+              className={`panel-pill-toggle${showAllPages ? ' panel-pill-toggle--active' : ''}`}
+              title="Show fields from every page in the list"
+            >
+              <input
                 type="checkbox"
                 checked={showAllPages}
                 onChange={(event) => setShowAllPages(event.target.checked)}
               />
-              <span className="panel__toggle-track" aria-hidden="true" />
-              <span className="panel__toggle-text">Show all pages</span>
+              <span>All</span>
             </label>
+            <label
+              className={`panel-pill-toggle${showFieldInfo ? ' panel-pill-toggle--active' : ''}`}
+              title="Fill values for fields (data entry mode)"
+            >
+              <input
+                type="checkbox"
+                checked={showFieldInfo}
+                onChange={(event) => onShowFieldInfoChange(event.target.checked)}
+              />
+              <span>Info</span>
+            </label>
+          </div>
+          <div>
+            <span className="panel__label">Confidence</span>
+            <div className="confidence-filter confidence-filter--compact" role="group" aria-label="Filter by confidence">
+              {(['high', 'medium', 'low'] as const).map((tier) => (
+                <label
+                  key={tier}
+                  className={`confidence-filter__option confidence-filter__option--${tier}`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={confidenceFilter[tier]}
+                    onChange={(event) => onConfidenceFilterChange(tier, event.target.checked)}
+                  />
+                  <span>{tier.charAt(0).toUpperCase() + tier.slice(1)}</span>
+                </label>
+              ))}
+            </div>
           </div>
           <div className="panel__controls">
             <div>
@@ -171,25 +246,76 @@ export function FieldListPanel({
             {filtered.length === 0 ? (
               <p className="panel__empty">{emptyMessage}</p>
             ) : (
-              filtered.map((field) => (
-                <button
-                  key={field.id}
-                  className={field.id === selectedFieldId ? 'field-row field-row--active' : 'field-row'}
-                  type="button"
-                  onClick={() => onSelectField(field.id)}
-                >
-                  <div className="field-row__main">
-                    <span className="field-row__name">{field.name}</span>
-                    <span className="field-row__meta">
-                      <span className={`field-row__type field-row__type--${field.type}`}>
-                        {fieldTypeLabel(field.type)}
+              filtered.map((field) => {
+                const fieldConfidence = fieldConfidenceForField(field);
+                const nameConfidence = nameConfidenceForField(field);
+                const fieldTier = fieldConfidenceTierForField(field);
+                const nameTier = nameConfidenceTierForField(field);
+                const showConfidence = hasAnyConfidence(field);
+                const fieldConfidenceText =
+                  typeof fieldConfidence === 'number'
+                    ? `${Math.round(fieldConfidence * 100)}% field`
+                    : null;
+                const nameLabel = typeof field.mappingConfidence === 'number' ? 'field remap' : 'name';
+                const nameConfidenceText =
+                  typeof nameConfidence === 'number'
+                    ? `${Math.round(nameConfidence * 100)}% ${nameLabel}`
+                    : null;
+                const nameClassName =
+                  nameTier && nameTier !== 'high' ? `field-row__name--conf-${nameTier}` : '';
+                const rowClassName = [
+                  'field-row',
+                  field.id === selectedFieldId ? 'field-row--active' : '',
+                  `field-row--conf-${fieldTier}`,
+                ]
+                  .filter(Boolean)
+                  .join(' ');
+
+                return (
+                  <button
+                    key={field.id}
+                    className={rowClassName}
+                    type="button"
+                    onClick={() => {
+                      if (showAllPages && field.page !== currentPage) {
+                        onPageChange(field.page);
+                      }
+                      onSelectField(field.id);
+                    }}
+                  >
+                    <div className="field-row__main">
+                      <span className={['field-row__name', nameClassName].filter(Boolean).join(' ')}>
+                        {field.name}
                       </span>
-                      <span className="field-row__page">Page {field.page}</span>
-                    </span>
-                  </div>
-                  <span className="field-row__size">{formatSize(field.rect)}</span>
-                </button>
-              ))
+                      <span className="field-row__meta">
+                        <span className={`field-row__type field-row__type--${field.type}`}>
+                          {fieldTypeLabel(field.type)}
+                        </span>
+                        <span className="field-row__page">Page {field.page}</span>
+                        {showConfidence ? (
+                          <span className="field-row__confidence-group">
+                            {fieldConfidenceText ? (
+                              <span className={`field-row__confidence field-row__confidence--${fieldTier}`}>
+                                {fieldConfidenceText}
+                              </span>
+                            ) : null}
+                            {nameConfidenceText ? (
+                              <span
+                                className={`field-row__confidence field-row__confidence--${
+                                  nameTier || 'high'
+                                }`}
+                              >
+                                {nameConfidenceText}
+                              </span>
+                            ) : null}
+                          </span>
+                        ) : null}
+                      </span>
+                    </div>
+                    <span className="field-row__size">{formatSize(field.rect)}</span>
+                  </button>
+                );
+              })
             )}
           </div>
         </div>

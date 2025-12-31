@@ -6,7 +6,7 @@ import type { DbConnectionConfig, DbType } from '../../services/db';
 interface Props {
   open: boolean;
   onClose: () => void;
-  onConnected: (result: { connId: string; columns: string[]; identifierKey?: string }) => void;
+  onConnected: (result: { connId: string; columns: string[]; identifierKey?: string; label?: string }) => void;
 }
 
 const ConnectDB: React.FC<Props> = ({ open, onClose, onConnected }) => {
@@ -56,7 +56,11 @@ const ConnectDB: React.FC<Props> = ({ open, onClose, onConnected }) => {
         trustServerCertificate: type === 'sqlserver' ? trustServerCert : undefined,
       };
       const out = await DB.testAndCreate(cfg);
-      onConnected({ connId: out.connId, columns: out.columns, identifierKey: out.identifierKey });
+      const schemaLabel = (schema.trim() || (type === 'postgres' ? 'public' : 'dbo')).trim();
+      const viewLabel = view.trim();
+      const dbLabel = database.trim();
+      const label = `SQL: ${dbLabel}.${schemaLabel}.${viewLabel}`;
+      onConnected({ connId: out.connId, columns: out.columns, identifierKey: out.identifierKey, label });
       onClose();
     } catch (e: any) {
       setError(e?.message || 'Connection failed');
