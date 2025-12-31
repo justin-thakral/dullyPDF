@@ -41,6 +41,24 @@ function ensureIdTokenListener() {
 
 ensureIdTokenListener();
 
+export async function getFreshIdToken(forceRefresh = false): Promise<string | null> {
+  ensureIdTokenListener();
+  const user = firebaseAuth.currentUser;
+  if (!user) {
+    setAuthToken(null);
+    return null;
+  }
+  try {
+    const token = await user.getIdToken(forceRefresh);
+    setAuthToken(token);
+    return token;
+  } catch (error) {
+    console.error('[auth] Failed to fetch ID token', error);
+    setAuthToken(null);
+    return null;
+  }
+}
+
 export const Auth = {
   onAuthStateChanged(callback: AuthStateListener) {
     ensureIdTokenListener();

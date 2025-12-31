@@ -1,3 +1,7 @@
+import { useEffect, useRef, useState } from 'react';
+
+export type DataSourceKind = 'sql' | 'csv' | 'excel' | 'txt' | 'none';
+
 type HeaderBarProps = {
   pageCount: number;
   currentPage: number;
@@ -7,14 +11,18 @@ type HeaderBarProps = {
   onSignOut?: () => void;
   onScaleChange: (next: number) => void;
   onNavigateHome: () => void;
-  connId?: string | null;
+  dataSourceKind?: DataSourceKind;
+  dataSourceLabel?: string | null;
+  onChooseDataSource?: (kind: Exclude<DataSourceKind, 'none'>) => void;
+  onDisconnectSql?: () => void;
+  onClearDataSource?: () => void;
   mappingInProgress?: boolean;
   mapDbInProgress?: boolean;
   mappingError?: string | null;
-  onConnectDb?: () => void;
-  onDisconnectDb?: () => void;
   onMapDb?: () => void;
-  onOpenFieldMapper?: () => void;
+  canMapDb?: boolean;
+  onOpenSearchFill?: () => void;
+  canSearchFill?: boolean;
   onDownload?: () => void;
   onSaveToProfile?: () => void;
   downloadInProgress?: boolean;
@@ -32,14 +40,18 @@ export function HeaderBar({
   onSignOut,
   onScaleChange,
   onNavigateHome,
-  connId,
+  dataSourceKind = 'none',
+  dataSourceLabel,
+  onChooseDataSource,
+  onDisconnectSql,
+  onClearDataSource,
   mappingInProgress = false,
   mapDbInProgress = false,
   mappingError,
-  onConnectDb,
-  onDisconnectDb,
   onMapDb,
-  onOpenFieldMapper,
+  canMapDb = false,
+  onOpenSearchFill,
+  canSearchFill = false,
   onDownload,
   onSaveToProfile,
   downloadInProgress = false,
@@ -47,10 +59,33 @@ export function HeaderBar({
   canDownload = false,
   canSave = false,
 }: HeaderBarProps) {
-  const hasMappingControls = Boolean(onConnectDb || onDisconnectDb || onMapDb || onOpenFieldMapper);
+  const hasMappingControls = Boolean(onChooseDataSource || onMapDb || onOpenSearchFill);
   const userInitial = userEmail ? userEmail.charAt(0).toUpperCase() : null;
   const mapDbLabel = mapDbInProgress ? 'Loading' : 'Map DB';
-  const disableMapDb = !connId || mappingInProgress || mapDbInProgress;
+  const disableMapDb = !canMapDb || mappingInProgress || mapDbInProgress;
+  const disableSearch = !canSearchFill || mappingInProgress;
+
+  const [showDataMenu, setShowDataMenu] = useState(false);
+  const isConnected = dataSourceKind !== 'none';
+  const connectedKind =
+    dataSourceKind === 'excel' ? 'XLS' : dataSourceKind.toUpperCase();
+  const dataSourceTitle = isConnected ? `Connected ${connectedKind}` : 'Database';
+  const dataSourceSubtitle = isConnected ? null : 'SQL/CSV/XLS/TXT';
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const handleClick = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+      if (!menuRef.current) return;
+      if (menuRef.current.contains(target)) return;
+      setShowDataMenu(false);
+    };
+    if (showDataMenu) {
+      window.addEventListener('mousedown', handleClick);
+    }
+    return () => window.removeEventListener('mousedown', handleClick);
+  }, [showDataMenu]);
 
   return (
     <header className="ui-header">
@@ -91,7 +126,7 @@ export function HeaderBar({
         </div>
       </div>
       <div className="ui-header__actions">
-        <div className="ui-header__actions-col ui-header__actions-col--left">
+        <div className="ui-header__actions-top">
           {userEmail ? (
             <div className="header-account">
               <div className="user-avatar" aria-hidden="true">
@@ -113,17 +148,117 @@ export function HeaderBar({
               Sign in
             </button>
           ) : null}
-          {hasMappingControls ? (
-            <div className="ui-header__tools-row">
+          <div className="header-logo">
+            <img className="logo-image" src="/DullyPDF.png" alt="DullyPDF" />
+            <span className="logo-text">DullyPDF</span>
+          </div>
+        </div>
+        {hasMappingControls || onSaveToProfile ? (
+          <div className="ui-header__actions-bottom">
+            {hasMappingControls ? (
               <div className="ui-header__tools">
-                <button
-                  className="ui-button ui-button--ghost ui-button--compact"
-                  type="button"
-                  onClick={connId ? onDisconnectDb : onConnectDb}
-                  disabled={mappingInProgress}
-                >
-                  {connId ? 'Disconnect DB' : 'Connect DB'}
-                </button>
+                <div className="data-source" ref={menuRef}>
+                  <button
+                    className="ui-button ui-button--ghost ui-button--compact data-source__button"
+                    type="button"
+                    onClick={() => setShowDataMenu((prev) => !prev)}
+                    disabled={mappingInProgress}
+                    aria-haspopup="menu"
+                    aria-expanded={showDataMenu}
+                  >
+                    <span className="data-source__title">{dataSourceTitle}</span>
+                    {dataSourceSubtitle ? (
+                      <span className="data-source__subtitle">{dataSourceSubtitle}</span>
+                    ) : null}
+                    <span className="data-source__caret" aria-hidden="true">
+                      ▾
+                    </span>
+                  </button>
+                  {showDataMenu ? (
+                    <div className="data-source__menu" role="menu" aria-label="Choose data source">
+                      {dataSourceLabel ? (
+                        <div className="data-source__current" aria-label="Current source">
+                          <span className="data-source__current-label">Current:</span>
+                          <span className="data-source__current-value">{dataSourceLabel}</span>
+                        </div>
+                      ) : null}
+                      <button
+                        type="button"
+                        className="data-source__item"
+                        role="menuitem"
+                        onClick={() => {
+                          setShowDataMenu(false);
+                          onChooseDataSource?.('sql');
+                        }}
+                      >
+                        <span className="data-source__badge">SQL</span>
+                        <span>SQL database…</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="data-source__item"
+                        role="menuitem"
+                        onClick={() => {
+                          setShowDataMenu(false);
+                          onChooseDataSource?.('csv');
+                        }}
+                      >
+                        <span className="data-source__badge">CSV</span>
+                        <span>CSV file…</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="data-source__item"
+                        role="menuitem"
+                        onClick={() => {
+                          setShowDataMenu(false);
+                          onChooseDataSource?.('excel');
+                        }}
+                      >
+                        <span className="data-source__badge">XLS</span>
+                        <span>Excel file…</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="data-source__item"
+                        role="menuitem"
+                        onClick={() => {
+                          setShowDataMenu(false);
+                          onChooseDataSource?.('txt');
+                        }}
+                      >
+                        <span className="data-source__badge">TXT</span>
+                        <span>TXT field list…</span>
+                      </button>
+                      {dataSourceKind === 'sql' && onDisconnectSql ? (
+                        <button
+                          type="button"
+                          className="data-source__item data-source__item--danger"
+                          role="menuitem"
+                          onClick={() => {
+                            setShowDataMenu(false);
+                            onDisconnectSql?.();
+                          }}
+                        >
+                          Disconnect SQL
+                        </button>
+                      ) : null}
+                      {dataSourceKind !== 'none' && dataSourceKind !== 'sql' && onClearDataSource ? (
+                        <button
+                          type="button"
+                          className="data-source__item data-source__item--danger"
+                          role="menuitem"
+                          onClick={() => {
+                            setShowDataMenu(false);
+                            onClearDataSource?.();
+                          }}
+                        >
+                          Clear data source
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
                 <button
                   className="ui-button ui-button--ghost ui-button--compact"
                   type="button"
@@ -132,47 +267,43 @@ export function HeaderBar({
                 >
                   {mapDbLabel}
                 </button>
-                <button
-                  className="ui-button ui-button--ghost ui-button--compact"
-                  type="button"
-                  onClick={onOpenFieldMapper}
-                  disabled={mappingInProgress}
-                >
-                  Map via .txt
-                </button>
+                {onOpenSearchFill ? (
+                  <button
+                    className="ui-button ui-button--ghost ui-button--compact"
+                    type="button"
+                    onClick={onOpenSearchFill}
+                    disabled={disableSearch}
+                  >
+                    Search &amp; Fill
+                  </button>
+                ) : null}
               </div>
-              {mappingError ? <span className="ui-header__error">{mappingError}</span> : null}
-            </div>
-          ) : null}
-        </div>
-        <div className="ui-header__actions-col ui-header__actions-col--right">
-          <div className="header-logo">
-            <img className="logo-image" src="/DullyPDF.png" alt="DullyPDF" />
-            <span className="logo-text">DullyPDF</span>
-          </div>
-          {onSaveToProfile ? (
-            <div className="ui-header__save-row">
-              {onDownload ? (
+            ) : null}
+            {onSaveToProfile ? (
+              <div className="ui-header__save-row ui-header__save-row--inline">
+                {onDownload ? (
+                  <button
+                    className="ui-button ui-button--primary ui-button--compact ui-header__save"
+                    type="button"
+                    onClick={onDownload}
+                    disabled={!canDownload || downloadInProgress}
+                  >
+                    {downloadInProgress ? 'Downloading...' : 'Download'}
+                  </button>
+                ) : null}
                 <button
                   className="ui-button ui-button--primary ui-button--compact ui-header__save"
                   type="button"
-                  onClick={onDownload}
-                  disabled={!canDownload || downloadInProgress}
+                  onClick={onSaveToProfile}
+                  disabled={!canSave || saveInProgress}
                 >
-                  {downloadInProgress ? 'Downloading...' : 'Download'}
+                  {saveInProgress ? 'Saving...' : 'Save'}
                 </button>
-              ) : null}
-              <button
-                className="ui-button ui-button--primary ui-button--compact ui-header__save"
-                type="button"
-                onClick={onSaveToProfile}
-                disabled={!canSave || saveInProgress}
-              >
-                {saveInProgress ? 'Saving...' : 'Save'}
-              </button>
-            </div>
-          ) : null}
-        </div>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+        {mappingError ? <span className="ui-header__error">{mappingError}</span> : null}
       </div>
     </header>
   );

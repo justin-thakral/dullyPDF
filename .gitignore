@@ -10,6 +10,10 @@ frontend/dist/
 frontend/.vite/
 
 # Env files (local-only)
+/env/
+/.env
+/.env.*
+!/.env.db.example
 /.env.cloudsql
 backend/.env
 backend/.env.*
@@ -25,13 +29,17 @@ backend/**/*.pyc
 backend/.pytest_cache/
 
 # Backend output artifacts + temp files
-backend/outputArtifacts/
-backend/logs/
+backend/fieldDetecting/outputArtifacts/
+backend/fieldDetecting/logs/
 backend/uploads/
 backend/temp/
 
 # ML training datasets (raw PDFs, images, tiles)
-backend/ML/data/
+backend/fieldDetecting/ML/data/
+backend/fieldDetecting/sandbox/ML/data/
+
+# Local generated assets
+mcp-screenshots/
 
 # OS + misc
 .DS_Store

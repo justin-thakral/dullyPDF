@@ -1,4 +1,4 @@
-import { getAuthToken } from './authTokenStore';
+import { getFreshIdToken } from './auth';
 
 const DEFAULT_API_BASE = 'http://localhost:8000';
 
@@ -31,6 +31,15 @@ export interface ApiFetchOptions extends RequestInit {
   allowStatuses?: number[];
 }
 
+async function attachAuthHeader(headers: Headers, forceRefresh = false): Promise<string | null> {
+  if (headers.has('Authorization')) return null;
+  const token = await getFreshIdToken(forceRefresh);
+  if (token) {
+    headers.set('Authorization', `Bearer ${token}`);
+  }
+  return token;
+}
+
 // Wrap fetch to inject auth headers and standardize error handling.
 export async function apiFetch(
   method: string,
@@ -39,13 +48,19 @@ export async function apiFetch(
 ): Promise<Response> {
   const { allowStatuses, headers, ...requestInit } = options;
   const requestHeaders = new Headers(headers || {});
-  if (!requestHeaders.has('Authorization')) {
-    const token = getAuthToken();
-    if (token) {
-      requestHeaders.set('Authorization', `Bearer ${token}`);
+  const managedAuth = !requestHeaders.has('Authorization');
+  const initialToken = await attachAuthHeader(requestHeaders, false);
+  let response = await fetch(url, { method, headers: requestHeaders, ...requestInit });
+
+  if (response.status === 401 && managedAuth) {
+    const refreshedToken = await getFreshIdToken(true);
+    if (refreshedToken && refreshedToken !== initialToken) {
+      const retryHeaders = new Headers(requestHeaders);
+      retryHeaders.set('Authorization', `Bearer ${refreshedToken}`);
+      response = await fetch(url, { method, headers: retryHeaders, ...requestInit });
     }
   }
-  const response = await fetch(url, { method, headers: requestHeaders, ...requestInit });
+
   const allowed = allowStatuses?.includes(response.status);
   if (!response.ok && !allowed) {
     let message = `${response.status}`;
@@ -53,6 +68,7 @@ export async function apiFetch(
       const data = await response.clone().json();
       if (data?.message) message = data.message;
       else if (data?.error) message = data.error;
+      else if (data?.detail) message = data.detail;
     } catch {
       if (response.statusText) message = response.statusText;
     }

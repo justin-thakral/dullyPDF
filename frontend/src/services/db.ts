@@ -61,6 +61,26 @@ export const DB = {
     return Array.isArray(data?.columns) ? data.columns : [];
   },
 
+  async searchRows(
+    connId: string,
+    key: string,
+    query: string,
+    options?: { mode?: 'equals' | 'contains'; limit?: number },
+  ): Promise<Array<Record<string, unknown>>> {
+    const resolvedToken = resolveAdminToken();
+    const url = new URL(buildApiUrl('api', 'db', 'search'));
+    url.searchParams.set('connId', connId);
+    url.searchParams.set('key', key);
+    url.searchParams.set('query', query);
+    url.searchParams.set('mode', options?.mode || 'contains');
+    url.searchParams.set('limit', String(options?.limit ?? 25));
+    const res = await apiFetch('GET', url.toString(), {
+      headers: resolvedToken ? { 'x-admin-token': resolvedToken } : undefined,
+    });
+    const data = await apiJsonFetch<{ rows?: Array<Record<string, unknown>> }>(res);
+    return Array.isArray(data?.rows) ? data.rows : [];
+  },
+
   async disconnect(connId: string, adminToken?: string): Promise<void> {
     const resolvedToken = resolveAdminToken(adminToken);
     await apiFetch('DELETE', buildApiUrl('api', 'connections', connId), {
