@@ -40,6 +40,15 @@ WIDGET_DEDUPE_TOL = float(os.getenv("SANDBOX_WIDGET_DEDUPE_TOL", "0.5"))
 STRIP_EXISTING_FIELDS = os.getenv("SANDBOX_STRIP_EXISTING_FIELDS", "false").lower() == "true"
 DEDUP_EXISTING_WIDGETS = os.getenv("SANDBOX_DEDUP_EXISTING_WIDGETS", "true").lower() == "true"
 CONFIDENCE_TAG_PREFIX = "dullypdf:confidence="
+ROOT_KEYS_TO_PRESERVE = (
+    "/OCProperties",
+    "/Metadata",
+    "/ViewerPreferences",
+    "/Names",
+    "/PageLayout",
+    "/PageMode",
+    "/Outlines",
+)
 
 
 def _resolve_origin(template: Dict[str, Any]) -> str:
@@ -805,6 +814,20 @@ def inject_fields_from_template(
     reader = PdfReader(str(input_pdf))
     writer = PdfWriter()
     writer.append_pages_from_reader(reader)
+    root_src = reader.trailer.get("/Root")
+    if root_src is not None:
+        try:
+            root_src = root_src.get_object()
+        except AttributeError:
+            pass
+        root_dst = writer._root_object  # pylint: disable=protected-access
+        for key in ROOT_KEYS_TO_PRESERVE:
+            if key in root_src:
+                # Preserve root entries like optional content groups (layers).
+                entry = root_src.raw_get(key) if hasattr(root_src, "raw_get") else None
+                if entry is None:
+                    entry = root_src.get(key)
+                root_dst[NameObject(key)] = entry.clone(writer)
 
     acroform = _ensure_acroform(writer)
     if STRIP_EXISTING_FIELDS:

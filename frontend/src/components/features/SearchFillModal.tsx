@@ -18,8 +18,18 @@ type SearchFillModalProps = {
   rows: Array<Record<string, unknown>>;
   fields: PdfField[];
   onFieldsChange: (next: PdfField[]) => void;
+  onClearFields: () => void;
   onAfterFill: () => void;
   onError: (message: string) => void;
+};
+
+const CHECKBOX_ALIASES: Record<string, string[]> = {
+  allergies: ['allergy', 'has_allergies'],
+  drug_use: ['substance_use', 'illicit_drug_use', 'has_drug_use'],
+  alcohol_use: ['drinks_alcohol', 'etoh_use', 'has_alcohol_use'],
+  tobacco_use: ['smoking', 'smoker', 'smoking_status', 'has_tobacco_use'],
+  pregnant: ['pregnancy', 'pregnancy_status', 'is_pregnant'],
+  medications: ['current_medications', 'takes_medications'],
 };
 
 function coerceValue(value: unknown): string | number | boolean | null {
@@ -28,6 +38,18 @@ function coerceValue(value: unknown): string | number | boolean | null {
   if (typeof value === 'number' || typeof value === 'boolean') return value;
   if (value instanceof Date) return value.toISOString().slice(0, 10);
   return String(value);
+}
+
+function coerceBoolean(value: unknown): boolean | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value !== 0;
+  if (typeof value === 'string') {
+    const norm = value.trim().toLowerCase();
+    if (['true', '1', 'yes', 'y', 'on', 'checked'].includes(norm)) return true;
+    if (['false', '0', 'no', 'n', 'off', 'unchecked'].includes(norm)) return false;
+  }
+  return null;
 }
 
 function parseDateFromUnknown(value: unknown): Date | null {
@@ -93,6 +115,7 @@ export default function SearchFillModal({
   rows,
   fields,
   onFieldsChange,
+  onClearFields,
   onAfterFill,
   onError,
 }: SearchFillModalProps) {
@@ -174,6 +197,23 @@ export default function SearchFillModal({
     }
   }, [availableKeys, canSearchAnyColumn, connId, dataSourceKind, hasData, query, rows, searchKey, searchMode]);
 
+  const canClearFields = useMemo(
+    () =>
+      fields.some((field) => {
+        const value = field.value;
+        if (value === null || value === undefined) return false;
+        if (typeof value === 'string') return value.trim().length > 0;
+        if (typeof value === 'boolean') return value;
+        return true;
+      }),
+    [fields],
+  );
+
+  const handleClear = useCallback(() => {
+    onClearFields();
+    setLocalError(null);
+  }, [onClearFields]);
+
   const handleFill = useCallback(
     async (row: Record<string, unknown>) => {
       setLocalError(null);
@@ -182,11 +222,162 @@ export default function SearchFillModal({
       for (const [key, value] of Object.entries(row)) {
         normalizedRow.set(normaliseDataKey(key), value);
       }
+      const normalizedRowKeys = Array.from(normalizedRow.keys());
 
       const resolveValueForField = (field: PdfField): unknown | undefined => {
         const normalizedName = normaliseDataKey(field.name);
+        const getRowValue = (...keys: string[]): unknown | undefined => {
+          for (const key of keys) {
+            const value = normalizedRow.get(normaliseDataKey(key));
+            if (value !== undefined) return value;
+          }
+          return undefined;
+        };
+
+        const resolveCheckboxValue = (baseName: string): boolean | null => {
+          const bases = new Set<string>();
+          const addBase = (value: string) => {
+            const normalized = normaliseDataKey(value);
+            if (normalized) bases.add(normalized);
+          };
+          addBase(baseName);
+          if (baseName.endsWith('ies')) addBase(`${baseName.slice(0, -3)}y`);
+          if (baseName.endsWith('s')) addBase(baseName.slice(0, -1));
+          else addBase(`${baseName}s`);
+
+          const aliases = CHECKBOX_ALIASES[baseName] || [];
+          for (const alias of aliases) addBase(alias);
+
+          const candidates = new Set<string>();
+          for (const base of bases) {
+            candidates.add(base);
+            candidates.add(`has_${base}`);
+            candidates.add(`is_${base}`);
+            candidates.add(`takes_${base}`);
+            candidates.add(`${base}_flag`);
+            candidates.add(`${base}_status`);
+          }
+
+          for (const key of candidates) {
+            const value = normalizedRow.get(key);
+            if (value === undefined) continue;
+            const boolValue = coerceBoolean(value);
+            if (boolValue !== null) return boolValue;
+          }
+
+          for (const base of bases) {
+            const pattern = new RegExp(`(^|_)${base}(_|$)`);
+            for (const key of normalizedRowKeys) {
+              if (!pattern.test(key)) continue;
+              if (
+                key !== base &&
+                !key.startsWith('has_') &&
+                !key.startsWith('is_') &&
+                !key.startsWith('takes_') &&
+                !key.endsWith('_flag') &&
+                !key.endsWith('_status')
+              ) {
+                continue;
+              }
+              const value = normalizedRow.get(key);
+              if (value === undefined) continue;
+              const boolValue = coerceBoolean(value);
+              if (boolValue !== null) return boolValue;
+            }
+          }
+
+          return null;
+        };
+
         const direct = normalizedRow.get(normalizedName);
-        if (direct !== undefined) return direct;
+        if (direct !== undefined) {
+          if (field.type === 'checkbox') {
+            const boolValue = coerceBoolean(direct);
+            if (boolValue !== null) return boolValue;
+          }
+          return direct;
+        }
+
+        if (field.type === 'checkbox') {
+          const checkboxName = normalizedName.startsWith('i_')
+            ? normalizedName.slice(2)
+            : normalizedName;
+          const yesNoMatch = checkboxName.match(/^(.*)_(yes|no|true|false)$/);
+          if (yesNoMatch) {
+            const baseName = yesNoMatch[1];
+            const desired = yesNoMatch[2] === 'yes' || yesNoMatch[2] === 'true';
+            const boolValue = resolveCheckboxValue(baseName);
+            if (boolValue !== null) return boolValue === desired;
+          }
+          const boolValue = resolveCheckboxValue(checkboxName);
+          if (boolValue !== null) return boolValue;
+        }
+
+        const addressLine1 = getRowValue(
+          'address_line_1',
+          'address_line1',
+          'address1',
+          'street_address',
+          'street',
+          'mailing_address',
+          'home_address',
+          'address',
+        );
+        const addressLine2 = getRowValue(
+          'address_line_2',
+          'address_line2',
+          'address2',
+          'apt',
+          'apartment',
+          'suite',
+          'unit',
+        );
+        const city = getRowValue('city', 'town');
+        const state = getRowValue('state', 'province', 'region');
+        const zip = getRowValue('zip', 'zip_code', 'postal_code', 'postcode');
+
+        if (
+          [
+            'address_line_1',
+            'address_line1',
+            'address1',
+            'street_address',
+            'street',
+            'mailing_address',
+            'home_address',
+          ].includes(
+            normalizedName,
+          )
+        ) {
+          if (addressLine1 !== undefined) return addressLine1;
+        }
+        if (
+          ['address_line_2', 'address_line2', 'address2', 'apt', 'apartment', 'suite', 'unit'].includes(
+            normalizedName,
+          )
+        ) {
+          if (addressLine2 !== undefined) return addressLine2;
+        }
+        if (normalizedName === 'address' || normalizedName === 'full_address') {
+          const parts = [addressLine1, addressLine2].filter(Boolean);
+          if (parts.length) return parts.join(' ');
+          const locality = [city, state, zip].filter(Boolean);
+          if (locality.length) return locality.join(', ');
+        }
+        if (normalizedName === 'city' && city !== undefined) return city;
+        if (normalizedName === 'state' && state !== undefined) return state;
+        if (
+          ['zip', 'zip_code', 'postal_code', 'postcode'].includes(normalizedName) &&
+          zip !== undefined
+        ) {
+          return zip;
+        }
+        if (
+          ['city_state_zip', 'city_state_zipcode', 'city_state_zip_code'].includes(normalizedName)
+        ) {
+          const locality = [city, state, zip].filter(Boolean);
+          if (locality.length) return locality.join(', ');
+        }
 
         const suffixMatch = normalizedName.match(/^(.*)_\d+$/);
         if (suffixMatch) {
@@ -254,7 +445,7 @@ export default function SearchFillModal({
       <div className="connectdb-backdrop" onClick={onClose} />
       <div className="connectdb-panel searchfill-panel">
         <div className="connectdb-header">
-          <h3>Search &amp; Fill</h3>
+          <h3>Search, Fill &amp; Clear</h3>
           <button className="connectdb-close" onClick={onClose} type="button" aria-label="Close">
             ×
           </button>
@@ -336,6 +527,14 @@ export default function SearchFillModal({
               disabled={!hasData || searching}
             >
               {searching ? 'Searching…' : 'Search'}
+            </button>
+            <button
+              type="button"
+              className="connectdb-button-secondary"
+              onClick={handleClear}
+              disabled={!canClearFields || searching}
+            >
+              Clear inputs
             </button>
           </div>
 

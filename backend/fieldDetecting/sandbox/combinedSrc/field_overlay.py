@@ -137,15 +137,33 @@ def _draw_centered_label(
 ) -> None:
     if not label:
         return
-    inner_w = max(1, (x2 - x1) - 6)
-    inner_h = max(1, (y2 - y1) - 6)
-    fitted, scale = _fit_text_in_box(label, max_width=inner_w, max_height=inner_h)
-    if not fitted:
+    box_w = max(1, x2 - x1)
+    box_h = max(1, y2 - y1)
+    pad_x = max(2, int(round(box_w * 0.05)))
+    pad_y = max(2, int(round(box_h * 0.05)))
+    inner_w = max(1, box_w - (pad_x * 2))
+    inner_h = max(1, box_h - (pad_y * 2))
+    target_h = inner_h
+    (base_w, base_h), base_baseline = cv2.getTextSize(label, _FONT, 1.0, 1)
+    if base_w <= 0 or base_h <= 0:
         return
-    (tw, th), _baseline = cv2.getTextSize(fitted, _FONT, scale, 1)
+    scale_by_height = target_h / max(1.0, base_h + base_baseline)
+    scale_by_width = inner_w / max(1.0, base_w)
+    scale = max(0.4, min(scale_by_height, scale_by_width, 8.0))
+    (tw, th), _baseline = cv2.getTextSize(label, _FONT, scale, 1)
     tx = int(x1 + (x2 - x1 - tw) / 2)
     ty = int(y1 + (y2 - y1 + th) / 2)
-    _draw_text_with_outline(canvas, fitted, (tx, ty), font_scale=scale, color_bgr=(255, 255, 255))
+    thickness = 2 if scale >= 1.2 else 1
+    outline = 5 if scale >= 1.4 else 4
+    _draw_text_with_outline(
+        canvas,
+        label,
+        (tx, ty),
+        font_scale=scale,
+        color_bgr=(255, 255, 255),
+        thickness=thickness,
+        outline_thickness=outline,
+    )
 
 
 def _pick_checkbox_label(
@@ -187,44 +205,32 @@ def _pick_checkbox_label(
     return best
 
 
-def _draw_checkbox_callout(
+def _draw_checkbox_tag(
     canvas: np.ndarray,
     *,
     label: str,
     cb_px: Tuple[int, int, int, int],
-    image_width_px: int,
-    image_height_px: int,
     color_bgr: Tuple[int, int, int],
+    tag_scale: float = 1.6,
 ) -> None:
     x1, y1, x2, y2 = cb_px
-    if x2 <= x1 or y2 <= y1:
+    if x2 <= x1 or y2 <= y1 or not label:
         return
-    (tw, th), baseline = cv2.getTextSize(label, _FONT, 0.55, 1)
-    pad = 5
-    box_w = tw + pad * 2
-    box_h = th + baseline + pad * 2
-
-    cy = int((y1 + y2) / 2)
-    callout_x = x2 + 10
-    place_right = True
-    if callout_x + box_w >= image_width_px:
-        callout_x = max(1, x1 - 10 - box_w)
-        place_right = False
-    callout_y = cy - box_h // 2
-    callout_y = max(1, min(image_height_px - box_h - 1, callout_y))
-
-    pt1 = (callout_x, callout_y)
-    pt2 = (callout_x + box_w, callout_y + box_h)
-    cv2.rectangle(canvas, pt1, pt2, (255, 255, 255), -1)
-    cv2.rectangle(canvas, pt1, pt2, color_bgr, 1)
-
-    tx = callout_x + pad
-    ty = callout_y + pad + th
-    cv2.putText(canvas, label, (tx, ty), _FONT, 0.55, color_bgr, 1, cv2.LINE_AA)
-
-    start = (int((x1 + x2) / 2), cy)
-    end = (callout_x, cy) if place_right else (callout_x + box_w, cy)
-    cv2.arrowedLine(canvas, start, end, color_bgr, 1, tipLength=0.2)
+    scale = max(0.6, min(3.0, float(tag_scale)))
+    (tw, th), _baseline = cv2.getTextSize(label, _FONT, scale, 1)
+    tx = int(round(x1 + (x2 - x1 - tw) / 2))
+    ty = int(round(y1 + (y2 - y1 + th) / 2))
+    thickness = 2 if scale >= 1.2 else 1
+    outline = 4 if scale >= 1.2 else 3
+    _draw_text_with_outline(
+        canvas,
+        label,
+        (tx, ty),
+        font_scale=scale,
+        color_bgr=color_bgr,
+        thickness=thickness,
+        outline_thickness=outline,
+    )
 
 
 def draw_overlay(
@@ -238,6 +244,7 @@ def draw_overlay(
     field_labels_inside: bool = False,
     label_max_dist_pts: float | None = None,
     highlight_checkbox_labels: bool = False,
+    checkbox_tag_scale: float = 1.6,
     return_image: bool = False,
 ) -> Optional[np.ndarray]:
     """
@@ -425,13 +432,12 @@ def draw_overlay(
             cv2.rectangle(canvas, (x1, y1), (x2, y2), color, 2)
 
             if ftype == "checkbox":
-                _draw_checkbox_callout(
+                _draw_checkbox_tag(
                     canvas,
                     label=label_text,
                     cb_px=(x1, y1, x2, y2),
-                    image_width_px=image_width_px,
-                    image_height_px=image_height_px,
                     color_bgr=colors["checkbox_tag"],
+                    tag_scale=checkbox_tag_scale,
                 )
                 if highlight_checkbox_labels and labels and isinstance(rect, list):
                     hint_bbox = f.get("labelHintBbox")

@@ -23,6 +23,8 @@ type PdfJsAnnotation = {
   fieldName?: string;
   alternativeText?: string;
   title?: string;
+  fieldValue?: unknown;
+  defaultFieldValue?: unknown;
   rect?: number[];
   checkBox?: boolean;
   radioButton?: boolean;
@@ -151,6 +153,23 @@ export async function extractFieldsFromPdf(doc: PDFDocumentProxy): Promise<PdfFi
       const name = ensureUniqueFieldName(baseName, existingNames);
       const type = mapAnnotationType(annotation);
       const fieldConfidence = extractFieldConfidence(annotation);
+      const rawValue = annotation.fieldValue ?? annotation.defaultFieldValue;
+      let value: PdfField['value'] | undefined;
+      if (rawValue !== undefined && rawValue !== null) {
+        if (Array.isArray(rawValue)) {
+          value = rawValue.join(', ');
+        } else if (
+          typeof rawValue === 'string' ||
+          typeof rawValue === 'number' ||
+          typeof rawValue === 'boolean'
+        ) {
+          value = rawValue;
+        } else {
+          value = String(rawValue);
+        }
+      }
+      const hasValue =
+        value !== undefined && (typeof value !== 'string' || value.trim() !== '');
 
       fields.push({
         id: makeId(),
@@ -159,6 +178,7 @@ export async function extractFieldsFromPdf(doc: PDFDocumentProxy): Promise<PdfFi
         page: pageNum,
         rect,
         ...(fieldConfidence !== undefined ? { fieldConfidence } : {}),
+        ...(hasValue ? { value } : {}),
       });
 
       if (DEBUG_PDF && fieldIndex <= 6) {

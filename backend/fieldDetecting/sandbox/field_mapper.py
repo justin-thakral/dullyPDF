@@ -13,7 +13,7 @@ logger = get_logger(__name__)
 
 MAX_AI_DB_FIELDS = int(os.getenv("MAX_AI_DB_FIELDS", "500"))
 MAX_AI_PDF_FIELDS = int(os.getenv("MAX_AI_PDF_FIELDS", "1500"))
-OPENAI_MODEL = os.getenv("OPENAI_FIELD_MAPPING_MODEL", "gpt-5-mini")
+OPENAI_MODEL = os.getenv("OPENAI_FIELD_MAPPING_MODEL", "gpt-5.2")
 
 ALLOWED_TEMPLATE_OPERATIONS = {
     "copy",
@@ -560,6 +560,10 @@ class FieldMappingService:
             '  "identifierKey": "mrn",\n'
             '  "notes": "Any additional observations"\n'
             "}\n\n"
+            "**Confidence tiers (for your reference)**\n"
+            "- High: >= 0.80\n"
+            "- Medium: 0.65–0.79\n"
+            "- Low: < 0.65\n\n"
             "**Guidelines**\n"
             "- Find and map ALL exact matches first.\n"
             "- Emit direct mappings only when confidence ≥ 0.6.\n"

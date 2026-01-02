@@ -89,6 +89,25 @@ function deriveMappingConfidence(originalName: string, nextName: string): number
   return 0.7;
 }
 
+function normaliseFieldValueForMaterialize(field: PdfField): PdfField['value'] {
+  const value = field.value;
+  if (field.type === 'checkbox') {
+    if (value === null || value === undefined) return false;
+    if (typeof value === 'string' && value.trim().length === 0) return false;
+    return value;
+  }
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string' && value.trim().length === 0) return '';
+  return value;
+}
+
+function prepareFieldsForMaterialize(fields: PdfField[]): PdfField[] {
+  return fields.map((field) => {
+    const value = normaliseFieldValueForMaterialize(field);
+    return value === field.value ? field : { ...field, value };
+  });
+}
+
 function mapDetectionFields(payload: any): PdfField[] {
   const rawFields = Array.isArray(payload?.fields) ? payload.fields : [];
   return rawFields
@@ -613,7 +632,8 @@ function App() {
         const data = await pdfDoc.getData();
         blob = new Blob([new Uint8Array(data)], { type: 'application/pdf' });
       }
-      const generatedBlob = await ApiService.materializeFormPdf(blob, fields);
+      const fieldsForSave = prepareFieldsForMaterialize(fields);
+      const generatedBlob = await ApiService.materializeFormPdf(blob, fieldsForSave);
       const payload = await ApiService.saveFormToProfile(generatedBlob, saveName, mappingSessionId || undefined);
       if (deleteAfterSaveId && payload?.id && payload.id !== deleteAfterSaveId) {
         await ApiService.deleteSavedForm(deleteAfterSaveId);
@@ -945,9 +965,17 @@ function App() {
     setShowFieldMapper(false);
   }, []);
 
-  const handleSelectField = useCallback((fieldId: string) => {
-    setSelectedFieldId(fieldId);
-  }, []);
+  const handleSelectField = useCallback(
+    (fieldId: string) => {
+      setSelectedFieldId(fieldId);
+      const field = fieldsRef.current.find((entry) => entry.id === fieldId);
+      if (!field) return;
+      if (field.page && field.page !== currentPage) {
+        setCurrentPage(field.page);
+      }
+    },
+    [currentPage],
+  );
 
   const handlePageJump = useCallback((page: number) => {
     setCurrentPage(page);
@@ -1018,6 +1046,33 @@ function App() {
     },
     [updateFields],
   );
+
+  const hasFieldValues = useMemo(
+    () =>
+      fields.some((field) => {
+        const value = field.value;
+        if (value === null || value === undefined) return false;
+        if (typeof value === 'string') return value.trim().length > 0;
+        if (typeof value === 'boolean') return value;
+        return true;
+      }),
+    [fields],
+  );
+
+  const handleClearFieldValues = useCallback(() => {
+    updateFieldsWith((prev) => {
+      let changed = false;
+      const next = prev.map((field) => {
+        const value = field.value;
+        if (value === null || value === undefined) return field;
+        if (typeof value === 'string' && value.trim().length === 0) return field;
+        if (typeof value === 'boolean' && value === false) return field;
+        changed = true;
+        return { ...field, value: null };
+      });
+      return changed ? next : prev;
+    });
+  }, [updateFieldsWith]);
 
   const visibleFields = useMemo(
     () => fields.filter((field) => confidenceFilter[fieldConfidenceTierForField(field)]),
@@ -1269,6 +1324,18 @@ function App() {
 
   return (
     <div className="app">
+      {dbError ? (
+        <div className="ui-alert" role="alert" aria-live="assertive">
+          <p className="ui-alert__message">{dbError}</p>
+          <button
+            className="ui-alert__dismiss"
+            type="button"
+            onClick={() => setDbError(null)}
+          >
+            Dismiss
+          </button>
+        </div>
+      ) : null}
       <HeaderBar
         pageCount={pageCount}
         currentPage={currentPage}
@@ -1277,7 +1344,6 @@ function App() {
         onNavigateHome={handleNavigateHome}
         mappingInProgress={mappingInProgress}
         mapDbInProgress={mapDbInProgress}
-        mappingError={dbError}
         hasMappedDb={hasMappedDb}
         dataSourceKind={dataSourceKind}
         dataSourceLabel={dataSourceLabel}
@@ -1310,6 +1376,8 @@ function App() {
           onShowFieldsChange={handleShowFieldsChange}
           onShowFieldNamesChange={handleShowFieldNamesChange}
           onShowFieldInfoChange={handleShowFieldInfoChange}
+          canClearInputs={hasFieldValues}
+          onClearInputs={handleClearFieldValues}
           confidenceFilter={confidenceFilter}
           onConfidenceFilterChange={handleConfidenceFilterChange}
           onSelectField={handleSelectField}
@@ -1409,6 +1477,7 @@ function App() {
           rows={dataRows}
           fields={fields}
           onFieldsChange={handleFieldsChange}
+          onClearFields={handleClearFieldValues}
           onAfterFill={() => {
             setShowFieldInfo(true);
             setShowFieldNames(false);

@@ -25,7 +25,14 @@ function coerceToCheckbox(value: PdfField['value']): boolean {
   if (typeof value === 'number') return value !== 0;
   if (typeof value === 'string') {
     const norm = value.trim().toLowerCase();
-    return norm === 'true' || norm === '1' || norm === 'yes' || norm === 'y' || norm === 'checked';
+    return (
+      norm === 'true' ||
+      norm === '1' ||
+      norm === 'yes' ||
+      norm === 'y' ||
+      norm === 'checked' ||
+      norm === 'on'
+    );
   }
   return false;
 }

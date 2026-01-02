@@ -37,6 +37,8 @@ backend/temp/
 # ML training datasets (raw PDFs, images, tiles)
 backend/fieldDetecting/ML/data/
 backend/fieldDetecting/sandbox/ML/data/
+# Explicit sandbox raw dataset paths (large, generated)
+backend/fieldDetecting/sandbox/ML/data/raw/
 
 # Local generated assets
 mcp-screenshots/

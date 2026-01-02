@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { AnnotationMode } from 'pdfjs-dist';
 import type { PDFDocumentProxy, RenderTask } from 'pdfjs-dist/types/src/display/api';
 import type { PageSize, PdfField } from '../../types';
 import { FieldOverlay } from './FieldOverlay';
@@ -89,12 +90,21 @@ function PdfPage({
           throw new Error('Unable to get canvas context.');
         }
 
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
+        const outputScale = window.devicePixelRatio || 1;
+        const scaledWidth = Math.floor(viewport.width * outputScale);
+        const scaledHeight = Math.floor(viewport.height * outputScale);
+
+        canvas.width = scaledWidth;
+        canvas.height = scaledHeight;
         canvas.style.width = `${viewport.width}px`;
         canvas.style.height = `${viewport.height}px`;
 
-        renderTask = page.render({ canvasContext: context, viewport });
+        renderTask = page.render({
+          canvasContext: context,
+          viewport,
+          annotationMode: AnnotationMode.ENABLE_FORMS,
+          transform: outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : undefined,
+        });
         await renderTask.promise;
       } catch (error) {
         if (!cancelled) {
@@ -230,7 +240,8 @@ export function PdfViewer({
     if (!containerSize.width || !containerSize.height) return 1;
     const widthScale = containerSize.width / maxPageSize.width;
     const heightScale = containerSize.height / maxPageSize.height;
-    return Math.min(widthScale, heightScale);
+    const isPortrait = maxPageSize.height >= maxPageSize.width;
+    return isPortrait ? widthScale : Math.min(widthScale, heightScale);
   }, [containerSize, maxPageSize]);
 
   const effectiveScale = fitScale * scale;

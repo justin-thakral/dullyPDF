@@ -1,4 +1,4 @@
-import { useMemo, useState, type ChangeEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import type { ConfidenceFilter, ConfidenceTier, FieldType, PdfField } from '../../types';
 import {
   fieldConfidenceForField,
@@ -23,6 +23,8 @@ type FieldListPanelProps = {
   onShowFieldsChange: (enabled: boolean) => void;
   onShowFieldNamesChange: (enabled: boolean) => void;
   onShowFieldInfoChange: (enabled: boolean) => void;
+  canClearInputs: boolean;
+  onClearInputs: () => void;
   confidenceFilter: ConfidenceFilter;
   onConfidenceFilterChange: (tier: ConfidenceTier, enabled: boolean) => void;
   onSelectField: (fieldId: string) => void;
@@ -45,6 +47,8 @@ export function FieldListPanel({
   onShowFieldsChange,
   onShowFieldNamesChange,
   onShowFieldInfoChange,
+  canClearInputs,
+  onClearInputs,
   confidenceFilter,
   onConfidenceFilterChange,
   onSelectField,
@@ -53,6 +57,7 @@ export function FieldListPanel({
   const [query, setQuery] = useState('');
   const [filterType, setFilterType] = useState<FieldType | 'all'>('all');
   const [showAllPages, setShowAllPages] = useState(false);
+  const rowRefs = useRef(new Map<string, HTMLButtonElement | null>());
 
   const baseFields = useMemo(
     () => (showAllPages ? fields : fields.filter((field) => field.page === currentPage)),
@@ -77,6 +82,15 @@ export function FieldListPanel({
       : 'No fields match the current filter.';
 
   const inputValue = pageCount === 0 ? '' : String(currentPage);
+
+  useEffect(() => {
+    if (!selectedFieldId) return;
+    const node = rowRefs.current.get(selectedFieldId);
+    if (!node) return;
+    requestAnimationFrame(() => {
+      node.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    });
+  }, [filtered, selectedFieldId]);
 
   const handlePageInput = (event: ChangeEvent<HTMLInputElement>) => {
     const raw = Number(event.target.value);
@@ -188,6 +202,15 @@ export function FieldListPanel({
               />
               <span>Info</span>
             </label>
+            <button
+              className="panel-pill-toggle panel-pill-toggle--action"
+              type="button"
+              onClick={onClearInputs}
+              disabled={!canClearInputs}
+              title="Clear all field inputs"
+            >
+              Clear
+            </button>
           </div>
           <div>
             <span className="panel__label">Confidence</span>
@@ -276,6 +299,13 @@ export function FieldListPanel({
                     key={field.id}
                     className={rowClassName}
                     type="button"
+                    ref={(node) => {
+                      if (node) {
+                        rowRefs.current.set(field.id, node);
+                      } else {
+                        rowRefs.current.delete(field.id);
+                      }
+                    }}
                     onClick={() => {
                       if (showAllPages && field.page !== currentPage) {
                         onPageChange(field.page);
