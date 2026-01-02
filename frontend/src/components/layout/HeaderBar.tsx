@@ -18,7 +18,6 @@ type HeaderBarProps = {
   onClearDataSource?: () => void;
   mappingInProgress?: boolean;
   mapDbInProgress?: boolean;
-  mappingError?: string | null;
   hasMappedDb?: boolean;
   onMapDb?: () => void;
   canMapDb?: boolean;
@@ -48,7 +47,6 @@ export function HeaderBar({
   onClearDataSource,
   mappingInProgress = false,
   mapDbInProgress = false,
-  mappingError,
   hasMappedDb = false,
   onMapDb,
   canMapDb = false,
@@ -118,8 +116,8 @@ export function HeaderBar({
           <input
             className="ui-zoom"
             type="range"
-            min={0.6}
-            max={2}
+            min={0.25}
+            max={10}
             step={0.05}
             value={scale}
             onChange={(event) => onScaleChange(Number(event.target.value))}
@@ -155,158 +153,157 @@ export function HeaderBar({
             <span className="logo-text">DullyPDF</span>
           </div>
         </div>
-        {hasMappingControls || onSaveToProfile ? (
-          <div className="ui-header__actions-bottom">
-            {hasMappingControls ? (
-              <div className="ui-header__tools">
-                <div className="data-source" ref={menuRef}>
-                  <button
-                    className="ui-button ui-button--ghost ui-button--compact data-source__button"
-                    type="button"
-                    onClick={() => setShowDataMenu((prev) => !prev)}
-                    disabled={mappingInProgress}
-                    aria-haspopup="menu"
-                    aria-expanded={showDataMenu}
-                  >
-                    <span className="data-source__title">{dataSourceTitle}</span>
-                    {dataSourceSubtitle ? (
-                      <span className="data-source__subtitle">{dataSourceSubtitle}</span>
-                    ) : null}
-                    <span className="data-source__caret" aria-hidden="true">
-                      ▾
-                    </span>
-                  </button>
-                  {showDataMenu ? (
-                    <div className="data-source__menu" role="menu" aria-label="Choose data source">
-                      {dataSourceLabel ? (
-                        <div className="data-source__current" aria-label="Current source">
-                          <span className="data-source__current-label">Current:</span>
-                          <span className="data-source__current-value">{dataSourceLabel}</span>
-                        </div>
-                      ) : null}
-                      <button
-                        type="button"
-                        className="data-source__item"
-                        role="menuitem"
-                        onClick={() => {
-                          setShowDataMenu(false);
-                          onChooseDataSource?.('sql');
-                        }}
-                      >
-                        <span className="data-source__badge">SQL</span>
-                        <span>SQL database…</span>
-                      </button>
-                      <button
-                        type="button"
-                        className="data-source__item"
-                        role="menuitem"
-                        onClick={() => {
-                          setShowDataMenu(false);
-                          onChooseDataSource?.('csv');
-                        }}
-                      >
-                        <span className="data-source__badge">CSV</span>
-                        <span>CSV file…</span>
-                      </button>
-                      <button
-                        type="button"
-                        className="data-source__item"
-                        role="menuitem"
-                        onClick={() => {
-                          setShowDataMenu(false);
-                          onChooseDataSource?.('excel');
-                        }}
-                      >
-                        <span className="data-source__badge">XLS</span>
-                        <span>Excel file…</span>
-                      </button>
-                      <button
-                        type="button"
-                        className="data-source__item"
-                        role="menuitem"
-                        onClick={() => {
-                          setShowDataMenu(false);
-                          onChooseDataSource?.('txt');
-                        }}
-                      >
-                        <span className="data-source__badge">TXT</span>
-                        <span>TXT field list…</span>
-                      </button>
-                      {dataSourceKind === 'sql' && onDisconnectSql ? (
-                        <button
-                          type="button"
-                          className="data-source__item data-source__item--danger"
-                          role="menuitem"
-                          onClick={() => {
-                            setShowDataMenu(false);
-                            onDisconnectSql?.();
-                          }}
-                        >
-                          Disconnect SQL
-                        </button>
-                      ) : null}
-                      {dataSourceKind !== 'none' && dataSourceKind !== 'sql' && onClearDataSource ? (
-                        <button
-                          type="button"
-                          className="data-source__item data-source__item--danger"
-                          role="menuitem"
-                          onClick={() => {
-                            setShowDataMenu(false);
-                            onClearDataSource?.();
-                          }}
-                        >
-                          Clear data source
-                        </button>
-                      ) : null}
-                    </div>
+      </div>
+      {hasMappingControls || onSaveToProfile ? (
+        <div className="ui-header__actions-bottom">
+          {hasMappingControls ? (
+            <div className="ui-header__tools">
+              <div className="data-source" ref={menuRef}>
+                <button
+                  className="ui-button ui-button--ghost ui-button--compact data-source__button"
+                  type="button"
+                  onClick={() => setShowDataMenu((prev) => !prev)}
+                  disabled={mappingInProgress}
+                  aria-haspopup="menu"
+                  aria-expanded={showDataMenu}
+                >
+                  <span className="data-source__title">{dataSourceTitle}</span>
+                  {dataSourceSubtitle ? (
+                    <span className="data-source__subtitle">{dataSourceSubtitle}</span>
                   ) : null}
-                </div>
+                  <span className="data-source__caret" aria-hidden="true">
+                    ▾
+                  </span>
+                </button>
+                {showDataMenu ? (
+                  <div className="data-source__menu" role="menu" aria-label="Choose data source">
+                    {dataSourceLabel ? (
+                      <div className="data-source__current" aria-label="Current source">
+                        <span className="data-source__current-label">Current:</span>
+                        <span className="data-source__current-value">{dataSourceLabel}</span>
+                      </div>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="data-source__item"
+                      role="menuitem"
+                      onClick={() => {
+                        setShowDataMenu(false);
+                        onChooseDataSource?.('sql');
+                      }}
+                    >
+                      <span className="data-source__badge">SQL</span>
+                      <span>SQL database…</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="data-source__item"
+                      role="menuitem"
+                      onClick={() => {
+                        setShowDataMenu(false);
+                        onChooseDataSource?.('csv');
+                      }}
+                    >
+                      <span className="data-source__badge">CSV</span>
+                      <span>CSV file…</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="data-source__item"
+                      role="menuitem"
+                      onClick={() => {
+                        setShowDataMenu(false);
+                        onChooseDataSource?.('excel');
+                      }}
+                    >
+                      <span className="data-source__badge">XLS</span>
+                      <span>Excel file…</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="data-source__item"
+                      role="menuitem"
+                      onClick={() => {
+                        setShowDataMenu(false);
+                        onChooseDataSource?.('txt');
+                      }}
+                    >
+                      <span className="data-source__badge">TXT</span>
+                      <span>TXT field list…</span>
+                    </button>
+                    {dataSourceKind === 'sql' && onDisconnectSql ? (
+                      <button
+                        type="button"
+                        className="data-source__item data-source__item--danger"
+                        role="menuitem"
+                        onClick={() => {
+                          setShowDataMenu(false);
+                          onDisconnectSql?.();
+                        }}
+                      >
+                        Disconnect SQL
+                      </button>
+                    ) : null}
+                    {dataSourceKind !== 'none' && dataSourceKind !== 'sql' && onClearDataSource ? (
+                      <button
+                        type="button"
+                        className="data-source__item data-source__item--danger"
+                        role="menuitem"
+                        onClick={() => {
+                          setShowDataMenu(false);
+                          onClearDataSource?.();
+                        }}
+                      >
+                        Clear data source
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+              <button
+                className="ui-button ui-button--ghost ui-button--compact"
+                type="button"
+                onClick={onMapDb}
+                disabled={disableMapDb}
+              >
+                {mapDbLabel}
+              </button>
+              {onOpenSearchFill ? (
                 <button
                   className="ui-button ui-button--ghost ui-button--compact"
                   type="button"
-                  onClick={onMapDb}
-                  disabled={disableMapDb}
+                  onClick={onOpenSearchFill}
+                  disabled={disableSearch}
                 >
-                  {mapDbLabel}
+                  Search, Fill &amp; Clear
                 </button>
-                {onOpenSearchFill ? (
-                  <button
-                    className="ui-button ui-button--ghost ui-button--compact"
-                    type="button"
-                    onClick={onOpenSearchFill}
-                    disabled={disableSearch}
-                  >
-                    Search &amp; Fill
-                  </button>
-                ) : null}
-              </div>
-            ) : null}
-            {onSaveToProfile ? (
-              <div className="ui-header__save-row ui-header__save-row--inline">
-                {onDownload ? (
-                  <button
-                    className="ui-button ui-button--primary ui-button--compact ui-header__save"
-                    type="button"
-                    onClick={onDownload}
-                    disabled={!canDownload || downloadInProgress}
-                  >
-                    {downloadInProgress ? 'Downloading...' : 'Download'}
-                  </button>
-                ) : null}
+              ) : null}
+            </div>
+          ) : null}
+          {onSaveToProfile ? (
+            <div className="ui-header__save-row ui-header__save-row--inline">
+              {onDownload ? (
                 <button
                   className="ui-button ui-button--primary ui-button--compact ui-header__save"
                   type="button"
-                  onClick={onSaveToProfile}
-                  disabled={!canSave || saveInProgress}
+                  onClick={onDownload}
+                  disabled={!canDownload || downloadInProgress}
                 >
-                  {saveInProgress ? 'Saving...' : 'Save'}
+                  {downloadInProgress ? 'Downloading...' : 'Download'}
                 </button>
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-        {mappingError ? <span className="ui-header__error">{mappingError}</span> : null}
-      </div>
+              ) : null}
+              <button
+                className="ui-button ui-button--primary ui-button--compact ui-header__save"
+                type="button"
+                onClick={onSaveToProfile}
+                disabled={!canSave || saveInProgress}
+              >
+                {saveInProgress ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </header>
   );
 }

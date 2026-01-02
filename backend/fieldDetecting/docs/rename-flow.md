@@ -27,7 +27,7 @@ The OpenAI response is line-based to avoid JSON parsing failures:
 `|| originalFieldName | suggestedRename | renameConfidence | isItAfieldConfidence`
 
 Files:
-- `backend/fieldDetecting/sandbox/combinedSrc/field_overlay.py`: renders the overlay image and prints the field name above each field.
+- `backend/fieldDetecting/sandbox/combinedSrc/field_overlay.py`: renders the overlay image with field IDs centered inside field boxes and centered on checkbox squares.
 - `backend/fieldDetecting/sandbox/combinedSrc/rename_resolver.py`: calls OpenAI and applies renames to fields.
 
 ## Confidence gating

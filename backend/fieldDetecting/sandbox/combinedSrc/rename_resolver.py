@@ -92,6 +92,39 @@ def _downscale_for_model(image_bgr: "cv2.Mat", *, max_dim: int) -> "cv2.Mat":
     return cv2.resize(image_bgr, (new_w, new_h), interpolation=cv2.INTER_AREA)
 
 
+def _crop_prev_page_context(image_bgr: "cv2.Mat", *, fraction: float) -> "cv2.Mat":
+    if image_bgr is None or image_bgr.size == 0:
+        return image_bgr
+    if fraction <= 0 or fraction > 1:
+        return image_bgr
+    height = image_bgr.shape[0]
+    crop_height = max(1, int(round(height * fraction)))
+    start = max(0, height - crop_height)
+    return image_bgr[start:height, :].copy()
+
+
+def _should_include_prev_context(
+    page_fields: List[Tuple[int, Dict[str, Any]]],
+    *,
+    page_height: float,
+    top_fraction: float,
+) -> bool:
+    if not page_fields or page_height <= 0 or top_fraction <= 0:
+        return False
+    threshold = page_height * top_fraction
+    for _idx, field in page_fields:
+        rect = field.get("rect")
+        if not isinstance(rect, list) or len(rect) != 4:
+            continue
+        try:
+            y1 = float(rect[1])
+        except (TypeError, ValueError):
+            continue
+        if y1 <= threshold:
+            return True
+    return False
+
+
 def _commonforms_thresholds() -> Tuple[float, float]:
     high = COMMONFORMS_CONFIDENCE_GREEN
     medium = COMMONFORMS_CONFIDENCE_YELLOW
@@ -219,9 +252,9 @@ def _attach_checkbox_label_hints(
     """
     Attach a best-effort label hint to checkbox fields.
 
-    Checkboxes are too small to host long IDs + label context. We draw a callout for the
-    checkbox ID in the overlay, then use the hint bbox/text to draw an arrow pointing at the
-    likely option label on the page.
+    Checkboxes are too small to host long IDs + label context. We draw the checkbox ID
+    centered on the checkbox in the overlay and attach a nearby label hint for prompt
+    context (or optional debug arrows).
     """
     labels = [
         entry
@@ -285,12 +318,16 @@ def _build_prompt(
     Build the system/user prompt text for the rename pass.
     """
     system_message = (
-        "You are a PDF form renaming assistant. You will receive a page image with an overlay.\n"
+        "You are a PDF form renaming assistant. You will receive:\n"
+        "1) The original PDF page image (no overlays).\n"
+        "2) The same page image with an overlay of field IDs.\n"
         "Each detected field is drawn as a box and tagged with a short 3-character ID "
         "(base32, e.g., k7m):\n"
         "- Text/date/signature fields: the ID is printed centered *inside* the field box.\n"
-        "- Checkbox fields: the ID is shown in a small purple callout connected to the checkbox "
-        "square, and an arrow points from the checkbox to its option label text.\n"
+        "- Checkbox fields: the ID is centered on the checkbox square (no callout box).\n"
+        "- If present, a third image shows the bottom of the previous page (no overlays). "
+        "It is context only—do NOT label or rename fields from that image.\n"
+        "- Use the previous-page image only to recognize labels that belong to the prior page.\n"
         "Use that ID as originalFieldName. Do NOT invent IDs.\n"
         "Candidates with isItAfieldConfidence below 0.30 are treated as not-a-field and will be "
         "dropped from output.\n\n"
@@ -311,7 +348,34 @@ def _build_prompt(
         "Swap avoidance:\n"
         "- Do not swap IDs between neighboring fields. The ID inside each box is authoritative.\n"
         "- If a tight cluster makes the label ambiguous, keep suggestedRename equal to "
-        "originalFieldName and set renameConfidence to 0.0.\n\n"
+        "originalFieldName and set renameConfidence to 0.0.\n"
+        "- Do not shift label associations downward because of labels from the previous page.\n\n"
+        "Row alignment (CRITICAL, highest priority):\n"
+        "- For text fields, the correct label is directly to the left on the same horizontal line.\n"
+        "- Never assign a label below/above a field if a same-row label exists for the neighboring field.\n"
+        "- Before final output, perform a global shift check: if most fields look shifted by one "
+        "row/column (up/down/left/right), correct the shift so each field aligns to its same-row label.\n"
+        "- If the topmost field has no same-row label and the next label aligns with the next field, "
+        "mark the topmost field as not-a-field (isItAfieldConfidence < 0.30) instead of shifting all names.\n"
+        "- If any row is ambiguous, keep suggestedRename = originalFieldName and renameConfidence = 0.0.\n"
+        "- Never cascade a one-row mistake across the page; alignment beats ordering every time.\n"
+        "- In extreme misalignment cases, you may lower isItAfieldConfidence to medium/low even if the "
+        "detector was confident; reserve < 0.30 for clear non-fields.\n\n"
+        "Missing-field rule:\n"
+        "- If matching labels would require shifting every field down/up by one to make room for "
+        "a suspected missing field, treat that suspected field as not-a-field "
+        "(isItAfieldConfidence < 0.30) and keep the original per-box alignments.\n\n"
+        "Common field naming:\n"
+        "- Address line 1 (street/mailing address/line 1): use street_address.\n"
+        "- Address line 2 (apt/unit/suite/line 2): use address_line_2.\n"
+        "- City: city. State/province: state. Zip/postal: postal_code or zip.\n"
+        "- Yes/No checkbox pairs should be named i_<base>_yes and i_<base>_no.\n"
+        "- Single boolean checkboxes should be named i_<base>.\n\n"
+        "Confidence tiers:\n"
+        "- Green (>= 0.80) = confident.\n"
+        "- Yellow (0.65–0.79) = double-check alignment and labels.\n"
+        "- Red (< 0.65) = uncertain; avoid renaming unless the label is obvious.\n"
+        "- If CommonForms thresholds are provided below, use those values instead.\n\n"
         "Field-ness rules:\n"
         "- Real fields have an empty box/underline or a checkbox aligned with nearby option text.\n"
         "- Use the per-field metadata (label_dist, overlaps_label, w_ratio, h_ratio) as hints.\n"
@@ -459,16 +523,16 @@ def run_openai_rename_pipeline(
         raise RuntimeError("OPENAI_API_KEY not set; cannot run OpenAI rename.")
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    overlay_quality_default = 80
-    overlay_max_dim_default = 2400
-    overlay_format_default = "jpg"
+    overlay_quality_default = 92
+    overlay_max_dim_default = 6000
+    overlay_format_default = "png"
     label_max_dist_default: float | None = None
 
     if confidence_profile == "commonforms":
         # CommonForms pages tend to be dense with many nearby widgets. Use higher-resolution,
         # less-lossy overlays so field IDs remain readable and alignment errors are reduced.
-        overlay_quality_default = 92
-        overlay_max_dim_default = 3200
+        overlay_quality_default = 96
+        overlay_max_dim_default = 7000
         overlay_format_default = "png"
         label_max_dist_default = 140.0
 
@@ -479,8 +543,10 @@ def run_openai_rename_pipeline(
         overlay_format = overlay_format_default
     dense_field_count = int(os.getenv("SANDBOX_RENAME_DENSE_FIELD_COUNT", "20"))
     dense_min_center_dist = float(os.getenv("SANDBOX_RENAME_DENSE_MIN_CENTER_DIST", "45"))
-    dense_max_dim = int(os.getenv("SANDBOX_RENAME_DENSE_MAX_DIM", "3200"))
+    dense_max_dim = int(os.getenv("SANDBOX_RENAME_DENSE_MAX_DIM", "7000"))
     dense_format = (os.getenv("SANDBOX_RENAME_DENSE_FORMAT", "png") or "").strip().lower()
+    prev_page_fraction = float(os.getenv("SANDBOX_RENAME_PREV_PAGE_FRACTION", "0.2"))
+    prev_page_top_fraction = float(os.getenv("SANDBOX_RENAME_PREV_PAGE_TOP_FRACTION", "0.15"))
 
     raw_label_max = (os.getenv("SANDBOX_RENAME_LABEL_MAX_DIST") or "").strip()
     label_max_dist_pts: float | None
@@ -508,6 +574,8 @@ def run_openai_rename_pipeline(
 
     tasks: List[Dict[str, Any]] = []
     page_contexts: Dict[int, Dict[str, Any]] = {}
+
+    rendered_by_page = {int(p.get("page_index") or 0): p for p in rendered_pages}
 
     for page in rendered_pages:
         page_idx = int(page.get("page_index") or 1)
@@ -546,18 +614,46 @@ def run_openai_rename_pipeline(
             draw_candidates=False,
             field_labels_inside=True,
             label_max_dist_pts=label_max_dist_pts,
-            highlight_checkbox_labels=True,
+            highlight_checkbox_labels=False,
+            checkbox_tag_scale=1.6,
             return_image=True,
         )
         if overlay is None:
             raise RuntimeError(f"Failed to render overlay image: {overlay_path}")
 
+        clean_page_for_model = _downscale_for_model(page.get("image"), max_dim=page_overlay_max_dim)
+        clean_page_url = image_bgr_to_data_url(
+            clean_page_for_model,
+            format=page_overlay_format,
+            quality=overlay_quality,
+        )
         overlay_for_model = _downscale_for_model(overlay, max_dim=page_overlay_max_dim)
         overlay_url = image_bgr_to_data_url(
             overlay_for_model,
             format=page_overlay_format,
             quality=overlay_quality,
         )
+        prev_page_url = None
+        if page_idx > 1 and prev_page_fraction > 0:
+            prev_page = rendered_by_page.get(page_idx - 1)
+            if prev_page:
+                page_height = float(page_candidates.get("pageHeight") or 0.0)
+                include_prev = _should_include_prev_context(
+                    page_fields_sorted,
+                    page_height=page_height,
+                    top_fraction=prev_page_top_fraction,
+                )
+                if include_prev:
+                    prev_crop = _crop_prev_page_context(
+                        prev_page.get("image"),
+                        fraction=prev_page_fraction,
+                    )
+                    prev_crop = _downscale_for_model(prev_crop, max_dim=page_overlay_max_dim)
+                    prev_page_url = image_bgr_to_data_url(
+                        prev_crop,
+                        format=page_overlay_format,
+                        quality=overlay_quality,
+                    )
         system_message, user_message = _build_prompt(
             page_idx,
             overlay_fields,
@@ -569,21 +665,30 @@ def run_openai_rename_pipeline(
             "overlay_map": overlay_map,
             "system_message": system_message,
             "user_message": user_message,
+            "clean_page_url": clean_page_url,
             "overlay_url": overlay_url,
+            "prev_page_url": prev_page_url,
         }
         tasks.append({"page_idx": page_idx})
 
     def _run_page(task: Dict[str, Any]) -> Dict[str, Any]:
         page_idx = task["page_idx"]
         context = page_contexts[page_idx]
+        user_content = [
+            {"type": "input_text", "text": context["user_message"]},
+            {"type": "input_image", "image_url": context["clean_page_url"], "detail": "high"},
+            {"type": "input_image", "image_url": context["overlay_url"], "detail": "high"},
+        ]
+        if context.get("prev_page_url"):
+            user_content.append(
+                {"type": "input_image", "image_url": context["prev_page_url"], "detail": "low"}
+            )
+
         messages = [
             {"role": "system", "content": [{"type": "input_text", "text": context["system_message"]}]},
             {
                 "role": "user",
-                "content": [
-                    {"type": "input_text", "text": context["user_message"]},
-                    {"type": "input_image", "image_url": context["overlay_url"], "detail": "high"},
-                ],
+                "content": user_content,
             },
         ]
         client = OpenAI()
@@ -632,7 +737,6 @@ def run_openai_rename_pipeline(
                 entries_by_index[idx] = entry
 
     renamed_fields: List[Dict[str, Any]] = []
-    renames_report: List[Dict[str, Any]] = []
     dropped: List[str] = []
 
     for idx, field in enumerate(fields):
@@ -660,19 +764,21 @@ def run_openai_rename_pipeline(
         updated["name"] = _normalize_name(suggested, str(updated.get("type") or "text").lower())
         renamed_fields.append(updated)
 
+    _dedupe_field_names(renamed_fields)
+
+    renames_report: List[Dict[str, Any]] = []
+    for field in renamed_fields:
         renames_report.append(
             {
                 "page": int(field.get("page") or 1),
                 "candidateId": field.get("candidateId"),
-                "originalFieldName": original_name,
-                "overlayId": entry.get("originalFieldName") if entry else None,
-                "suggestedRename": updated["name"],
-                "renameConfidence": rename_conf,
-                "isItAfieldConfidence": field_conf,
+                "originalFieldName": field.get("originalName") or "",
+                "overlayId": field.get("overlayId"),
+                "suggestedRename": field.get("name") or "",
+                "renameConfidence": float(field.get("renameConfidence") or 0.0),
+                "isItAfieldConfidence": float(field.get("isItAfieldConfidence") or 0.0),
             }
         )
-
-    _dedupe_field_names(renamed_fields)
 
     return (
         {
