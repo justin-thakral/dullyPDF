@@ -1,3 +1,6 @@
+/**
+ * Legacy header layout for the older multi-step flow.
+ */
 import React from 'react';
 import './LegacyHeader.css';
 
@@ -10,6 +13,9 @@ interface LegacyHeaderProps {
   onSignIn?: () => void;
 }
 
+/**
+ * Render the legacy header based on the current view.
+ */
 const LegacyHeader: React.FC<LegacyHeaderProps> = ({
   currentView,
   onNavigateHome,
@@ -18,6 +24,9 @@ const LegacyHeader: React.FC<LegacyHeaderProps> = ({
   onSignOut,
   onSignIn,
 }) => {
+  /**
+   * Map view names to display titles.
+   */
   const getTitle = () => {
     switch (currentView) {
       case 'homepage':
@@ -33,6 +42,9 @@ const LegacyHeader: React.FC<LegacyHeaderProps> = ({
     }
   };
 
+  /**
+   * Map view names to descriptive subtitle text.
+   */
   const getDescription = () => {
     switch (currentView) {
       case 'homepage':

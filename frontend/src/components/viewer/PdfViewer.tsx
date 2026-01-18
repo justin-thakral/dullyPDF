@@ -1,9 +1,13 @@
+/**
+ * PDF canvas renderer with field overlay layers.
+ */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AnnotationMode } from 'pdfjs-dist';
 import type { PDFDocumentProxy, RenderTask } from 'pdfjs-dist/types/src/display/api';
 import type { PageSize, PdfField } from '../../types';
 import { FieldOverlay } from './FieldOverlay';
 import { FieldInputOverlay } from './FieldInputOverlay';
+import { Alert } from '../ui/Alert';
 
 const EMPTY_SIZE: PageSize = { width: 0, height: 0 };
 const RENDER_RADIUS = 2;
@@ -47,6 +51,9 @@ type PdfPageProps = {
   isActive: boolean;
 };
 
+/**
+ * Render a single PDF page plus optional overlays.
+ */
 function PdfPage({
   pdfDoc,
   pageNumber,
@@ -171,7 +178,11 @@ function PdfPage({
             />
           ) : null}
           {isRendering ? <div className="viewer__status">Rendering page...</div> : null}
-          {renderError ? <div className="viewer__error">{renderError}</div> : null}
+          {renderError ? (
+            <div className="viewer__alert">
+              <Alert tone="error" variant="pill" message={renderError} />
+            </div>
+          ) : null}
         </>
       ) : (
         <div className="viewer__page-placeholder">
@@ -182,6 +193,9 @@ function PdfPage({
   );
 }
 
+/**
+ * Scrollable PDF viewer that virtualizes page rendering by radius.
+ */
 export function PdfViewer({
   pdfDoc,
   pageNumber,
@@ -208,11 +222,13 @@ export function PdfViewer({
   const scaleRef = useRef(1);
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
 
+  // Build the page index list once per document.
   const pages = useMemo(() => {
     if (!pdfDoc) return [] as number[];
     return Array.from({ length: pdfDoc.numPages }, (_, idx) => idx + 1);
   }, [pdfDoc]);
 
+  // Only render a window of pages around the active page to limit canvas cost.
   const activePages = useMemo(() => {
     if (!pages.length) return new Set<number>();
     const anchor = pendingPageJump || pageNumber;
@@ -225,6 +241,7 @@ export function PdfViewer({
     return active;
   }, [pages, pageNumber, pendingPageJump]);
 
+  // Track the largest page size to determine fit-to-container scaling.
   const maxPageSize = useMemo(() => {
     let maxWidth = 0;
     let maxHeight = 0;
@@ -235,6 +252,7 @@ export function PdfViewer({
     return { width: maxWidth, height: maxHeight };
   }, [pageSizes]);
 
+  // Compute the baseline scale that fits the largest page inside the viewport.
   const fitScale = useMemo(() => {
     if (!maxPageSize.width || !maxPageSize.height) return 1;
     if (!containerSize.width || !containerSize.height) return 1;
@@ -246,6 +264,7 @@ export function PdfViewer({
 
   const effectiveScale = fitScale * scale;
 
+  // Bucket fields by page for faster overlay rendering.
   const fieldsByPage = useMemo(() => {
     const map = new Map<number, PdfField[]>();
     fields.forEach((field) => {
@@ -283,6 +302,30 @@ export function PdfViewer({
 
     return () => window.clearTimeout(timeout);
   }, [pendingPageJump, onPageJumpComplete]);
+
+  useEffect(() => {
+    if (!scrollRef.current) return;
+    if (!selectedFieldId) return;
+    if (pendingPageJump) return;
+    const field = fields.find((entry) => entry.id === selectedFieldId);
+    if (!field) return;
+
+    const safeId =
+      typeof CSS !== 'undefined' && typeof CSS.escape === 'function'
+        ? CSS.escape(selectedFieldId)
+        : selectedFieldId.replace(/["\\]/g, '\\$&');
+    const container = scrollRef.current;
+    const node = container.querySelector<HTMLElement>(`[data-field-id="${safeId}"]`);
+    const target = node || pageRefs.current.get(field.page);
+    if (!target) return;
+
+    scrollLockRef.current = true;
+    target.scrollIntoView({ behavior: 'smooth', block: node ? 'center' : 'start' });
+    const timeout = window.setTimeout(() => {
+      scrollLockRef.current = false;
+    }, 250);
+    return () => window.clearTimeout(timeout);
+  }, [fields, pendingPageJump, selectedFieldId, showFieldInfo, showFields]);
 
   useEffect(() => {
     if (!scrollRef.current || pages.length === 0) return;

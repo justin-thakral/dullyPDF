@@ -1,3 +1,6 @@
+/**
+ * Geometry helpers for field positioning.
+ */
 import type { FieldRect, PageSize } from '../types';
 
 export function clamp(value: number, min: number, max: number) {

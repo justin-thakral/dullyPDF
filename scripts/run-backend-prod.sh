@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ENV_FILE="${1:-env/backend.prod.env}"
+EXAMPLE="config/backend.prod.env.example"
+if [[ ! -f "$ENV_FILE" ]]; then
+  if [[ -f "$EXAMPLE" ]]; then
+    mkdir -p "env"
+    cp "$EXAMPLE" "$ENV_FILE"
+    echo "Created $ENV_FILE from $EXAMPLE. Update values as needed."
+    exit 1
+  fi
+  echo "Missing $ENV_FILE and $EXAMPLE."
+  exit 1
+fi
+
+set -a
+source "$ENV_FILE"
+set +a
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/_load_firebase_secret.sh"
+load_firebase_secret
+
+VENV_UVICORN="backend/.venv/bin/uvicorn"
+if [[ -x "$VENV_UVICORN" ]]; then
+  exec "$VENV_UVICORN" backend.main:app --host 0.0.0.0 --port "${PORT:-8000}"
+fi
+echo "Warning: backend/.venv not found. Using system python may break CommonForms." >&2
+exec uvicorn backend.main:app --host 0.0.0.0 --port "${PORT:-8000}"

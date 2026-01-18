@@ -1,3 +1,6 @@
+/**
+ * Confidence parsing and tiering helpers for detection and mapping.
+ */
 import type { ConfidenceTier, PdfField } from '../types';
 
 export const CONFIDENCE_THRESHOLDS = {

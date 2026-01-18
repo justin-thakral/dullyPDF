@@ -1,3 +1,4 @@
+/** Shared type definitions for the frontend. */
 // Supported field categories used by the editor and overlay styling.
 export type FieldType = 'text' | 'checkbox' | 'signature' | 'date';
 
@@ -26,7 +27,7 @@ export type PdfField = {
    */
   fieldConfidence?: number;
   /**
-   * Confidence of the DB mapping/rename suggestion (0..1). Populated by Map DB / .txt mapping.
+   * Confidence of the schema mapping/rename suggestion (0..1).
    */
   mappingConfidence?: number;
   /**
@@ -37,6 +38,24 @@ export type PdfField = {
    * Optional field value to inject when generating a filled PDF.
    */
   value?: string | number | boolean | null;
+  /**
+   * Checkbox grouping metadata used for schema mapping and search/fill rules.
+   */
+  groupKey?: string;
+  optionKey?: string;
+  optionLabel?: string;
+  groupLabel?: string;
+};
+
+export type CheckboxRule = {
+  databaseField: string;
+  groupKey: string;
+  operation: 'yes_no' | 'enum' | 'list' | 'presence';
+  trueOption?: string;
+  falseOption?: string;
+  valueMap?: Record<string, string>;
+  confidence?: number;
+  reasoning?: string;
 };
 
 // Cached page dimensions for rendering and clamping.

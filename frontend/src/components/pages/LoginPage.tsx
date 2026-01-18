@@ -1,7 +1,11 @@
+/**
+ * Auth page for sign-in/sign-up flows.
+ */
 import React, { useMemo, useState } from 'react';
 import type { FirebaseError } from 'firebase/app';
 import './LoginPage.css';
 import { Auth } from '../../services/auth';
+import { Alert } from '../ui/Alert';
 
 interface LoginPageProps {
   onAuthenticated?: () => void;
@@ -17,6 +21,9 @@ const INITIAL_STATE = {
   displayName: '',
 };
 
+/**
+ * Map Firebase errors into user-friendly messages.
+ */
 function getFriendlyError(error: unknown, mode: AuthMode): string {
   if (!error) return 'Something went wrong. Please try again.';
   const fbError = error as FirebaseError & { message?: string };
@@ -38,6 +45,9 @@ function getFriendlyError(error: unknown, mode: AuthMode): string {
   }
 }
 
+/**
+ * Render the authentication form with sign-in and sign-up modes.
+ */
 const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated, onCancel }) => {
   const [mode, setMode] = useState<AuthMode>('signin');
   const [form, setForm] = useState(INITIAL_STATE);
@@ -54,21 +64,33 @@ const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated, onCancel }) => {
     [mode],
   );
 
+  /**
+   * Update form state for a single field.
+   */
   const handleChange = (field: keyof typeof form) => (event: React.ChangeEvent<HTMLInputElement>) => {
     setForm((prev) => ({ ...prev, [field]: event.target.value }));
   };
 
+  /**
+   * Clear any inline error/info messages.
+   */
   const resetMessages = () => {
     setError(null);
     setInfo(null);
   };
 
+  /**
+   * Switch between sign-in and sign-up mode.
+   */
   const handleModeChange = (nextMode: AuthMode) => {
     if (nextMode === mode) return;
     setMode(nextMode);
     resetMessages();
   };
 
+  /**
+   * Submit the auth form and handle sign-in/sign-up requests.
+   */
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     resetMessages();
@@ -93,6 +115,9 @@ const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated, onCancel }) => {
     }
   };
 
+  /**
+   * Trigger a password reset email flow.
+   */
   const handleForgotPassword = async () => {
     resetMessages();
     if (!form.email.trim()) {
@@ -202,8 +227,12 @@ const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated, onCancel }) => {
               </div>
             )}
 
-            {error && <div className="form-alert error">{error}</div>}
-            {info && <div className="form-alert info">{info}</div>}
+            {error || info ? (
+              <div className="auth-alerts">
+                {error ? <Alert tone="error" variant="inline" message={error} /> : null}
+                {info ? <Alert tone="info" variant="inline" message={info} /> : null}
+              </div>
+            ) : null}
 
             <button type="submit" className="primary-action" disabled={isSubmitting}>
               {isSubmitting ? 'Just a moment…' : mode === 'signin' ? 'Sign in' : 'Create account'}

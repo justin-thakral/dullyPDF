@@ -1,7 +1,13 @@
+/**
+ * Detection API helpers for field extraction.
+ */
 import { apiFetch, apiJsonFetch } from './apiConfig';
 
 const DEFAULT_DETECTION_API = 'http://localhost:8000';
 
+/**
+ * Resolve the detection API base URL from env with fallback.
+ */
 export function getDetectionApiBase(): string {
   const env = (import.meta as any)?.env;
   const raw = env?.VITE_DETECTION_API_URL || env?.VITE_SANDBOX_API_URL;
@@ -11,10 +17,12 @@ export function getDetectionApiBase(): string {
 }
 
 type DetectOptions = {
-  useOpenAI?: boolean;
-  pipeline?: 'sandbox' | 'commonforms';
+  pipeline?: 'commonforms';
 };
 
+/**
+ * Upload a PDF and request field detection.
+ */
 export async function detectFields(
   file: File,
   options: DetectOptions = {},
@@ -24,17 +32,8 @@ export async function detectFields(
   if (options.pipeline) {
     formData.append('pipeline', options.pipeline);
   }
-  if (options.useOpenAI) {
-    formData.append('use_openai', 'true');
-  }
 
-  const params = new URLSearchParams();
-  if (options.useOpenAI) {
-    params.set('openai', 'true');
-  }
-  const suffix = params.toString() ? `?${params.toString()}` : '';
-
-  const response = await apiFetch('POST', `${getDetectionApiBase()}/detect-fields${suffix}`, {
+  const response = await apiFetch('POST', `${getDetectionApiBase()}/detect-fields`, {
     body: formData,
   });
 

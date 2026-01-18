@@ -19,6 +19,9 @@ interface HomepageProps {
   onStartWorkflow: () => void;
 }
 
+/**
+ * Landing page describing the end-to-end workflow.
+ */
 const Homepage: React.FC<HomepageProps> = ({ onStartWorkflow }) => {
   return (
     <div className="homepage-container">
@@ -31,9 +34,8 @@ const Homepage: React.FC<HomepageProps> = ({ onStartWorkflow }) => {
             <div className="description-text">
               <p className="lead-description">
                 This software converts raw PDFs into fillable forms with writable areas at all input fields.
-                Once you have your fillable form, you can connect your database and map field names to those
-                in your database. Now, you can specify any item/person in your database and fill their
-                information into the PDF automatically.
+                Once you have your fillable form, you can upload a CSV, Excel, or TXT schema file locally and map
+                field names to the PDF. CSV/Excel rows stay in the browser for Search &amp; Fill.
               </p>
 
               <div className="features-section">
@@ -76,11 +78,10 @@ const Homepage: React.FC<HomepageProps> = ({ onStartWorkflow }) => {
                   <div className="feature-item">
                     <span className="feature-number">4</span>
                     <div className="feature-content">
-                      <h4>Database Integration & Auto-Fill</h4>
+                      <h4>Schema Mapping & Auto-Fill</h4>
                       <p>
-                        Connect your database and map PDF field names to your database schema.
-                        Specify any record ID to automatically populate all PDF fields with
-                        corresponding data from your database for streamlined data entry.
+                        Upload a CSV/Excel/TXT schema file locally, map PDF field names to your schema, and
+                        choose a local record to populate the form for streamlined data entry.
                       </p>
                     </div>
                   </div>

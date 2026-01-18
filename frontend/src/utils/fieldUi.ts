@@ -1,5 +1,9 @@
+/**
+ * UI labels and options for field types.
+ */
 import type { FieldType } from '../types';
 
+// Order matters for dropdown display.
 export const FIELD_TYPES: FieldType[] = ['text', 'date', 'signature', 'checkbox'];
 
 export function fieldTypeLabel(type: FieldType) {

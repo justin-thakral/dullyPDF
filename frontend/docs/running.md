@@ -1,24 +1,32 @@
-# Running the UI
+# Running the Frontend
 
 ## From repo root
 
 ```bash
-npm run start sandbox
+npm run frontend:dev
 ```
 
-This uses the existing start script and launches the sandbox UI dev server.
+This starts the frontend dev server using `scripts/use-frontend-env.sh` to load the correct env vars.
 
-## From the sandbox UI folder
+## From the frontend folder
 
 ```bash
-cd "sandbox UI"
+cd frontend
 npm install
-npm run start
+npm run dev
 ```
 
-Vite will use the next available port (typically `http://localhost:5174` if `5173` is already in use).
+Vite will use the next available port (typically `http://localhost:5173`).
 
-## Optional overrides
+## Running full stack
 
-- Use `npm run build` to produce a production build.
-- Use `npm run preview` to serve the production bundle locally.
+```bash
+npm run dev
+```
+
+This runs backend + frontend together via `concurrently`.
+
+## Optional builds
+
+- Dev build: `npm run build:dev`
+- Prod build: `npm run build:prod`

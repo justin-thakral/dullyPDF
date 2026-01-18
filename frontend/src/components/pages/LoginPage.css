@@ -175,23 +175,10 @@
   font-size: 0.85rem;
 }
 
-.form-alert {
-  padding: 0.85rem 1rem;
-  border-radius: 12px;
-  font-size: 0.9rem;
-  line-height: 1.4;
-}
-
-.form-alert.error {
-  background: #fef2f2;
-  border: 1px solid #fecaca;
-  color: #b91c1c;
-}
-
-.form-alert.info {
-  background: #eff6ff;
-  border: 1px solid #bfdbfe;
-  color: #1e3a8a;
+.auth-alerts {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
 }
 
 .primary-action {

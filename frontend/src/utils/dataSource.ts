@@ -1,3 +1,6 @@
+/**
+ * Pick a likely identifier column from a list using common heuristics.
+ */
 export function pickIdentifierKey(columns: string[]): string | null {
   if (!columns.length) return null;
   const lowerToOriginal = new Map(columns.map((col) => [col.toLowerCase(), col]));
@@ -22,4 +25,3 @@ export function normaliseDataKey(raw: string): string {
     .replace(/[\s-]+/g, '_')
     .replace(/[^a-z0-9_]/g, '');
 }
-

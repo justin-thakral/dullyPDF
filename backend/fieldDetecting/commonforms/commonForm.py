@@ -1,3 +1,10 @@
+"""
+CommonForms ML detector integration for PDF field detection.
+
+This module wraps the CommonForms library, converts model outputs into the
+canonical field schema, and optionally writes fillable PDFs for debugging.
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -11,9 +18,9 @@ from typing import Any, Dict, Iterable, List
 
 from pypdf import PdfReader
 
-from ..sandbox.combinedSrc.config import get_logger
-from ..sandbox.combinedSrc.form_filler import inject_fields_from_template
-from ..sandbox.combinedSrc.output_layout import ensure_output_layout, temp_prefix_from_pdf
+from ..rename_pipeline.combinedSrc.config import get_logger
+from ..rename_pipeline.combinedSrc.form_filler import inject_fields_from_template
+from ..rename_pipeline.combinedSrc.output_layout import ensure_output_layout, temp_prefix_from_pdf
 
 logger = get_logger(__name__)
 
@@ -30,6 +37,13 @@ COMMONFORMS_CONFIDENCE_YELLOW = float(os.getenv("COMMONFORMS_CONFIDENCE_YELLOW",
 
 @dataclass(frozen=True)
 class DetectedWidget:
+    """
+    Lightweight detection record produced by CommonForms.
+
+    Data structures:
+    - bounding_box is a normalized (0..1) box in image coordinates.
+    """
+
     widget_type: str
     bounding_box: Any
     page_idx: int
@@ -37,6 +51,9 @@ class DetectedWidget:
 
 
 def _import_commonforms():
+    """
+    Import CommonForms modules with runtime guards for optional backends.
+    """
     # Prevent optional backends from loading if present in the environment.
     os.environ.setdefault("TRANSFORMERS_NO_TF", "1")
     os.environ.setdefault("USE_TF", "0")
@@ -96,6 +113,9 @@ def _import_commonforms():
 
 
 def _category_for_confidence(confidence: float) -> str:
+    """
+    Map a confidence score into green/yellow/red buckets.
+    """
     high = COMMONFORMS_CONFIDENCE_GREEN
     medium = COMMONFORMS_CONFIDENCE_YELLOW
     if medium > high:
@@ -108,11 +128,19 @@ def _category_for_confidence(confidence: float) -> str:
 
 
 def _batch(items: List[Any], size: int) -> Iterable[List[Any]]:
+    """
+    Yield fixed-size batches from a list for model inference.
+    """
     for idx in range(0, len(items), size):
         yield items[idx : idx + size]
 
 
 def _sort_detected_widgets(widgets: List[DetectedWidget]) -> List[DetectedWidget]:
+    """
+    Sort widgets top-to-bottom, left-to-right for stable downstream ordering.
+
+    We first sort by y/x, then regroup widgets into scanline-like rows.
+    """
     if not widgets:
         return []
     sorted_widgets = sorted(
@@ -151,6 +179,9 @@ def _detect_ffdetr(
     batch_size: int,
     bounding_box_cls: Any,
 ) -> Dict[int, List[DetectedWidget]]:
+    """
+    Run FFDetr detection and return widgets grouped by page index.
+    """
     results: List[Any] = []
     images = [p.image for p in pages]
     for batch in _batch(images, size=batch_size):
@@ -202,6 +233,9 @@ def _detect_ffdnet(
     image_size: int,
     bounding_box_cls: Any,
 ) -> Dict[int, List[DetectedWidget]]:
+    """
+    Run FFDNet detection and return widgets grouped by page index.
+    """
     if detector.fast:
         results = [
             detector.model.predict(
@@ -255,6 +289,9 @@ def _detect_ffdnet(
 
 
 def _page_sizes(pdf_path: Path) -> Dict[int, tuple[float, float]]:
+    """
+    Read page dimensions from the PDF for bbox conversion.
+    """
     reader = PdfReader(str(pdf_path))
     sizes: Dict[int, tuple[float, float]] = {}
     for idx, page in enumerate(reader.pages):
@@ -268,6 +305,9 @@ def _bbox_to_rect(
     page_width: float,
     page_height: float,
 ) -> List[float]:
+    """
+    Convert a normalized (0..1) bounding box into originTop PDF points.
+    """
     x0 = max(0.0, min(1.0, float(bounding_box.x0))) * page_width
     x1 = max(0.0, min(1.0, float(bounding_box.x1))) * page_width
     y0 = max(0.0, min(1.0, float(bounding_box.y0))) * page_height
@@ -276,6 +316,9 @@ def _bbox_to_rect(
 
 
 def _field_type(widget_type: str, *, use_signature_fields: bool) -> str:
+    """
+    Normalize CommonForms widget types into the field schema.
+    """
     if widget_type == "TextBox":
         return "text"
     if widget_type == "ChoiceButton":
@@ -292,6 +335,9 @@ def _build_fields(
     model: str,
     use_signature_fields: bool,
 ) -> List[Dict[str, Any]]:
+    """
+    Build field dicts from detected widgets and page sizes.
+    """
     fields: List[Dict[str, Any]] = []
 
     for page_idx in sorted(widgets_by_page.keys()):
@@ -335,6 +381,9 @@ def detect_commonforms_fields(
     keep_existing_fields: bool = False,
     use_signature_fields: bool = False,
 ) -> Dict[str, Any]:
+    """
+    Run CommonForms detection and return the standardized field payload.
+    """
     if not pdf_path.exists():
         raise FileNotFoundError(f"PDF not found: {pdf_path}")
 
@@ -405,6 +454,9 @@ def detect_commonforms_fields(
 
 
 def _resolve_output_root(output: Path | None, output_dir: Path | None) -> Path:
+    """
+    Pick an output root for JSON/overlay artifacts.
+    """
     if output_dir is not None:
         return output_dir
     if output is not None:
@@ -416,8 +468,11 @@ def _resolve_output_root(output: Path | None, output_dir: Path | None) -> Path:
 
 
 def main() -> None:
+    """
+    CLI entrypoint for CommonForms detection.
+    """
     parser = argparse.ArgumentParser(
-        description="Run CommonForms detection and emit sandbox JSON."
+        description="Run CommonForms detection and emit JSON artifacts."
     )
     parser.add_argument("pdf", type=Path, help="Path to input PDF")
     parser.add_argument(

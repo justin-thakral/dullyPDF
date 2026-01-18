@@ -1,3 +1,6 @@
+/**
+ * Side panel that lists fields and controls visibility/filtering.
+ */
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import type { ConfidenceFilter, ConfidenceTier, FieldType, PdfField } from '../../types';
 import {
@@ -31,11 +34,17 @@ type FieldListPanelProps = {
   onPageChange: (page: number) => void;
 };
 
+/**
+ * Clamp requested page numbers into valid ranges.
+ */
 function clampPage(value: number, pageCount: number) {
   if (pageCount <= 0) return MIN_PAGE;
   return Math.min(Math.max(value, MIN_PAGE), pageCount);
 }
 
+/**
+ * Render the field list UI with filtering and selection.
+ */
 export function FieldListPanel({
   fields,
   selectedFieldId,

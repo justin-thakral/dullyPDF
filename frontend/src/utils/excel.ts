@@ -1,3 +1,6 @@
+/**
+ * XLSX parsing helpers for local schema + Search & Fill data.
+ */
 export type ParsedExcel = {
   columns: string[];
   rows: Array<Record<string, string>>;
@@ -9,6 +12,9 @@ type ParseExcelOptions = {
   maxRows?: number;
 };
 
+/**
+ * Parse an Excel workbook buffer into columns and row records.
+ */
 export async function parseExcel(buffer: ArrayBuffer, options: ParseExcelOptions = {}): Promise<ParsedExcel> {
   // Kept as a separate lazy-loaded chunk so the editor doesn't pay XLSX cost unless needed.
   const XLSX = await import('xlsx');

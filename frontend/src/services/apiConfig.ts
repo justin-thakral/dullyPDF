@@ -1,10 +1,95 @@
+/**
+ * API configuration utilities with auth token handling.
+ */
 import { getFreshIdToken } from './auth';
 
 const DEFAULT_API_BASE = 'http://localhost:8000';
 
 let cachedBase: string | null = null;
 
-// Resolve the backend base URL once to avoid repeated env parsing.
+type ApiErrorPayload = {
+  message?: string;
+  error?: string;
+  detail?: string | { message?: string };
+  code?: string;
+  error_code?: string;
+};
+
+const DEFAULT_STATUS_MESSAGES: Record<number, string> = {
+  400: 'Request could not be completed. Check the provided details and try again.',
+  401: 'Please sign in again to continue.',
+  403: 'You do not have access to this resource.',
+  404: 'We could not find that resource.',
+  413: 'The uploaded file is too large. Please upload a smaller PDF.',
+  429: 'Too many requests. Please wait a moment and try again.',
+  500: 'Something went wrong on our side. Please try again.',
+};
+
+export class ApiError extends Error {
+  status: number;
+  code?: string;
+  payload?: unknown;
+
+  constructor(message: string, status: number, code?: string, payload?: unknown) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.code = code;
+    this.payload = payload;
+  }
+}
+
+function extractErrorMessage(payload?: ApiErrorPayload | null): string | null {
+  if (!payload) return null;
+  if (typeof payload.message === 'string' && payload.message.trim()) return payload.message.trim();
+  if (typeof payload.error === 'string' && payload.error.trim()) return payload.error.trim();
+  if (typeof payload.detail === 'string' && payload.detail.trim()) return payload.detail.trim();
+  if (payload.detail && typeof payload.detail === 'object') {
+    const detailMessage = payload.detail.message;
+    if (typeof detailMessage === 'string' && detailMessage.trim()) return detailMessage.trim();
+  }
+  return null;
+}
+
+function normalizeErrorMessage(status: number, payload: ApiErrorPayload | null, statusText?: string): string {
+  const fallback = DEFAULT_STATUS_MESSAGES[status] || `Request failed (${status}).`;
+  const raw = extractErrorMessage(payload);
+  if (!raw || raw === String(status)) {
+    return fallback;
+  }
+  if (status === 401) {
+    return DEFAULT_STATUS_MESSAGES[401];
+  }
+  if (status === 404 && raw.toLowerCase() === 'not found') {
+    return DEFAULT_STATUS_MESSAGES[404];
+  }
+  if (status === 403 && raw.toLowerCase() === 'session access denied') {
+    return DEFAULT_STATUS_MESSAGES[403];
+  }
+  return raw || statusText || fallback;
+}
+
+/**
+ * Resolve an admin token from env or localStorage in dev.
+ */
+function resolveAdminToken(): string | null {
+  const env = (import.meta as any)?.env;
+  const isDev = Boolean(env?.DEV);
+  if (!isDev) return null;
+  const raw = typeof env?.VITE_ADMIN_TOKEN === 'string' ? env.VITE_ADMIN_TOKEN.trim() : '';
+  if (raw) return raw;
+  if (typeof window === 'undefined') return null;
+  try {
+    const stored = window.localStorage?.getItem('dullypdf_admin_token');
+    return stored && stored.trim() ? stored.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolve and cache the API base URL.
+ */
 export function getApiBaseUrl(): string {
   if (cachedBase) return cachedBase;
   const env = (import.meta as any)?.env;
@@ -15,7 +100,9 @@ export function getApiBaseUrl(): string {
   return cachedBase;
 }
 
-// Build a normalized URL from path segments to keep callers concise.
+/**
+ * Build a URL by joining path segments onto the API base.
+ */
 export function buildApiUrl(...segments: Array<string>): string {
   const base = getApiBaseUrl();
   if (!segments.length) return base;
@@ -31,6 +118,9 @@ export interface ApiFetchOptions extends RequestInit {
   allowStatuses?: number[];
 }
 
+/**
+ * Attach a Bearer token header if one is available.
+ */
 async function attachAuthHeader(headers: Headers, forceRefresh = false): Promise<string | null> {
   if (headers.has('Authorization')) return null;
   const token = await getFreshIdToken(forceRefresh);
@@ -40,7 +130,9 @@ async function attachAuthHeader(headers: Headers, forceRefresh = false): Promise
   return token;
 }
 
-// Wrap fetch to inject auth headers and standardize error handling.
+/**
+ * Fetch wrapper that handles auth refresh and error normalization.
+ */
 export async function apiFetch(
   method: string,
   url: string,
@@ -49,6 +141,10 @@ export async function apiFetch(
   const { allowStatuses, headers, ...requestInit } = options;
   const requestHeaders = new Headers(headers || {});
   const managedAuth = !requestHeaders.has('Authorization');
+  const adminToken = resolveAdminToken();
+  if (adminToken && !requestHeaders.has('x-admin-token')) {
+    requestHeaders.set('x-admin-token', adminToken);
+  }
   const initialToken = await attachAuthHeader(requestHeaders, false);
   let response = await fetch(url, { method, headers: requestHeaders, ...requestInit });
 
@@ -63,20 +159,26 @@ export async function apiFetch(
 
   const allowed = allowStatuses?.includes(response.status);
   if (!response.ok && !allowed) {
-    let message = `${response.status}`;
+    let payload: ApiErrorPayload | null = null;
     try {
-      const data = await response.clone().json();
-      if (data?.message) message = data.message;
-      else if (data?.error) message = data.error;
-      else if (data?.detail) message = data.detail;
+      payload = (await response.clone().json()) as ApiErrorPayload;
     } catch {
-      if (response.statusText) message = response.statusText;
+      payload = null;
     }
-    throw new Error(message);
+    const message = normalizeErrorMessage(response.status, payload, response.statusText);
+    const code =
+      (payload && typeof payload.code === 'string' && payload.code.trim()) ||
+      (payload && typeof payload.error_code === 'string' && payload.error_code.trim())
+        ? (payload?.code || payload?.error_code)
+        : undefined;
+    throw new ApiError(message, response.status, code, payload ?? undefined);
   }
   return response;
 }
 
+/**
+ * Parse a JSON response into a typed payload.
+ */
 export async function apiJsonFetch<T = any>(response: Response): Promise<T> {
   return response.json() as Promise<T>;
 }

@@ -1,3 +1,6 @@
+/**
+ * Overlay layer that renders input elements aligned to PDF fields.
+ */
 import { type ChangeEvent, type FocusEvent } from 'react';
 import type { PdfField, PageSize } from '../../types';
 import { fieldConfidenceTierForField } from '../../utils/confidence';
@@ -12,6 +15,9 @@ type FieldInputOverlayProps = {
   onUpdateField: (fieldId: string, updates: Partial<PdfField>) => void;
 };
 
+/**
+ * Normalize field values into text for input controls.
+ */
 function coerceToString(value: PdfField['value']): string {
   if (value === null || value === undefined) return '';
   if (typeof value === 'string') return value;
@@ -20,6 +26,9 @@ function coerceToString(value: PdfField['value']): string {
   return String(value);
 }
 
+/**
+ * Normalize field values into a checkbox boolean.
+ */
 function coerceToCheckbox(value: PdfField['value']): boolean {
   if (typeof value === 'boolean') return value;
   if (typeof value === 'number') return value !== 0;
@@ -37,6 +46,9 @@ function coerceToCheckbox(value: PdfField['value']): boolean {
   return false;
 }
 
+/**
+ * Render input fields for overlay editing.
+ */
 export function FieldInputOverlay({
   fields,
   pageSize,
@@ -45,6 +57,9 @@ export function FieldInputOverlay({
   onSelectField,
   onUpdateField,
 }: FieldInputOverlayProps) {
+  /**
+   * Generate focus handlers that keep selection in sync.
+   */
   const handleFocus = (fieldId: string) => () => onSelectField(fieldId);
 
   const handleTextChange =
@@ -90,14 +105,21 @@ export function FieldInputOverlay({
           .filter(Boolean)
           .join(' ');
 
-        const commonProps = {
+        const trimmedName = field.name.trim();
+        const inputName = trimmedName || field.id;
+        const inputId = `field-input-${field.id}`;
+        const commonInputProps = {
           onFocus: handleFocus(field.id),
+          id: inputId,
+          name: inputName,
+          'aria-label': inputName,
         };
 
         return (
           <div
             key={field.id}
             className={boxClassName}
+            data-field-id={field.id}
             style={{
               left: rect.x,
               top: rect.y,
@@ -108,7 +130,7 @@ export function FieldInputOverlay({
           >
             {field.type === 'checkbox' ? (
               <input
-                {...commonProps}
+                {...commonInputProps}
                 className="field-input field-input--checkbox"
                 type="checkbox"
                 checked={coerceToCheckbox(field.value)}
@@ -116,7 +138,7 @@ export function FieldInputOverlay({
               />
             ) : field.type === 'date' ? (
               <input
-                {...commonProps}
+                {...commonInputProps}
                 className="field-input"
                 type="date"
                 value={coerceToString(field.value)}
@@ -125,7 +147,7 @@ export function FieldInputOverlay({
               />
             ) : (
               <input
-                {...commonProps}
+                {...commonInputProps}
                 className="field-input"
                 type="text"
                 value={coerceToString(field.value)}

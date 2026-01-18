@@ -1,40 +1,66 @@
+/**
+ * App shell that orchestrates PDF detection, mapping, and viewer state.
+ */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { ChangeEvent } from 'react';
+import type { ChangeEvent, ReactNode } from 'react';
 import type { User } from 'firebase/auth';
 import type { PDFDocumentProxy } from 'pdfjs-dist/types/src/display/api';
 import './App.css';
-import type { ConfidenceFilter, ConfidenceTier, FieldType, PageSize, PdfField } from './types';
+import type { CheckboxRule, ConfidenceFilter, ConfidenceTier, FieldType, PageSize, PdfField } from './types';
 import { createField, ensureUniqueFieldName, makeId } from './utils/fields';
 import { fieldConfidenceTierForField, parseConfidence } from './utils/confidence';
 import { parseCsv } from './utils/csv';
 import { pickIdentifierKey } from './utils/dataSource';
+import { inferSchemaFromRows, parseSchemaText } from './utils/schema';
 import { parseExcel } from './utils/excel';
 import { extractFieldsFromPdf, loadPageSizes, loadPdfFromFile } from './utils/pdf';
+import { ALERT_MESSAGES, buildImportFileBeforeMapping } from './utils/alertMessages';
 import { detectFields } from './services/detectionApi';
 import { Auth } from './services/auth';
 import { setAuthToken } from './services/authTokenStore';
 import { ApiService } from './api';
-import { DB } from './services/db';
 import Homepage from './components/pages/Homepage';
 import LoginPage from './components/pages/LoginPage';
 import { HeaderBar, type DataSourceKind } from './components/layout/HeaderBar';
 import LegacyHeader from './components/layout/LegacyHeader';
-import ConnectDB from './components/features/ConnectDB';
-import FieldMapper from './components/features/FieldMapper';
 import SearchFillModal from './components/features/SearchFillModal';
 import { FieldInspectorPanel } from './components/panels/FieldInspectorPanel';
 import { FieldListPanel } from './components/panels/FieldListPanel';
 import { PdfViewer } from './components/viewer/PdfViewer';
 import UploadComponent from './components/features/UploadComponent';
+import { Alert, type AlertTone } from './components/ui/Alert';
+import { ConfirmDialog, PromptDialog, type DialogTone } from './components/ui/Dialog';
 
 const DEBUG_UI = false;
 const MAX_FIELD_HISTORY = 10;
+const SAVED_FORMS_RETRY_LIMIT = 3;
+const SAVED_FORMS_RETRY_BASE_MS = 500;
+const SAVED_FORMS_RETRY_MAX_MS = 4000;
+const env = (import.meta as any)?.env ?? {};
+const PROCESSING_AD_VIDEO_URL =
+  typeof env.VITE_PROCESSING_AD_VIDEO_URL === 'string' ? env.VITE_PROCESSING_AD_VIDEO_URL.trim() : '';
+const PROCESSING_AD_POSTER_URL =
+  typeof env.VITE_PROCESSING_AD_POSTER_URL === 'string' ? env.VITE_PROCESSING_AD_POSTER_URL.trim() : '';
 
+type ProcessingMode = 'detect' | 'fillable' | 'saved' | null;
+type SchemaPayload = {
+  name?: string;
+  fields: Array<{ name: string; type?: string }>;
+  source?: string;
+  sampleCount?: number;
+};
+
+/**
+ * Conditional UI debug logger.
+ */
 function debugLog(...args: unknown[]) {
   if (!DEBUG_UI) return;
   console.log('[dullypdf-ui]', ...args);
 }
 
+/**
+ * Normalize backend field types into UI field categories.
+ */
 function normaliseFieldType(raw: unknown): FieldType {
   const candidate = String(raw || '').toLowerCase();
   if (candidate === 'checkbox') return 'checkbox';
@@ -43,6 +69,9 @@ function normaliseFieldType(raw: unknown): FieldType {
   return 'text';
 }
 
+/**
+ * Coerce rect inputs into a consistent {x,y,width,height} shape.
+ */
 function rectToBox(rect: unknown): { x: number; y: number; width: number; height: number } | null {
   if (!rect) return null;
   if (Array.isArray(rect) && rect.length === 4) {
@@ -69,12 +98,18 @@ function rectToBox(rect: unknown): { x: number; y: number; width: number; height
   return null;
 }
 
+/**
+ * Convert raw filenames into a display-friendly saved form name.
+ */
 function normaliseFormName(raw: string | null | undefined): string {
   const trimmed = String(raw || '').trim();
   if (!trimmed.length) return 'Saved form';
   return trimmed.replace(/\.pdf$/i, '');
 }
 
+/**
+ * Estimate confidence for a rename mapping based on string similarity.
+ */
 function deriveMappingConfidence(originalName: string, nextName: string): number {
   const normalise = (value: string) =>
     value
@@ -89,6 +124,9 @@ function deriveMappingConfidence(originalName: string, nextName: string): number
   return 0.7;
 }
 
+/**
+ * Normalize values so fillable PDFs receive consistent defaults.
+ */
 function normaliseFieldValueForMaterialize(field: PdfField): PdfField['value'] {
   const value = field.value;
   if (field.type === 'checkbox') {
@@ -101,6 +139,9 @@ function normaliseFieldValueForMaterialize(field: PdfField): PdfField['value'] {
   return value;
 }
 
+/**
+ * Apply value normalization across all fields before materialization.
+ */
 function prepareFieldsForMaterialize(fields: PdfField[]): PdfField[] {
   return fields.map((field) => {
     const value = normaliseFieldValueForMaterialize(field);
@@ -108,6 +149,79 @@ function prepareFieldsForMaterialize(fields: PdfField[]): PdfField[] {
   });
 }
 
+type FieldNameUpdate = {
+  newName?: string;
+  mappingConfidence?: unknown;
+};
+
+type BannerNotice = {
+  tone: AlertTone;
+  message: string;
+  autoDismissMs?: number;
+};
+
+type ConfirmDialogOptions = {
+  title: string;
+  message: ReactNode;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  tone?: DialogTone;
+};
+
+type PromptDialogOptions = {
+  title: string;
+  message: ReactNode;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  tone?: DialogTone;
+  defaultValue?: string;
+  placeholder?: string;
+  requireValue?: boolean;
+};
+
+type DialogRequest =
+  | ({ kind: 'confirm' } & ConfirmDialogOptions)
+  | ({ kind: 'prompt' } & PromptDialogOptions);
+
+/**
+ * Apply rename updates while enforcing unique field names.
+ */
+function applyFieldNameUpdatesToList(
+  fields: PdfField[],
+  updatesByCurrentName: Map<string, FieldNameUpdate>,
+): PdfField[] {
+  if (!updatesByCurrentName.size) return fields;
+  const existingNames = new Set(fields.map((field) => field.name));
+  return fields.map((field) => {
+    const update = updatesByCurrentName.get(field.name);
+    if (!update) return field;
+
+    let next = field;
+    const nextMappingConfidence = parseConfidence(update.mappingConfidence);
+    if (nextMappingConfidence !== undefined && nextMappingConfidence !== field.mappingConfidence) {
+      next = { ...next, mappingConfidence: nextMappingConfidence };
+    }
+
+    const desiredName = update.newName;
+    if (!desiredName || desiredName === field.name) {
+      return next;
+    }
+
+    existingNames.delete(field.name);
+    const uniqueName = ensureUniqueFieldName(desiredName, existingNames);
+    existingNames.add(uniqueName);
+
+    if (uniqueName === next.name) {
+      return next;
+    }
+
+    return { ...next, name: uniqueName };
+  });
+}
+
+/**
+ * Convert backend detection payloads into client field models.
+ */
 function mapDetectionFields(payload: any): PdfField[] {
   const rawFields = Array.isArray(payload?.fields) ? payload.fields : [];
   return rawFields
@@ -124,30 +238,37 @@ function mapDetectionFields(payload: any): PdfField[] {
         rect,
         fieldConfidence,
         renameConfidence,
+        groupKey: field?.groupKey ?? field?.group_key,
+        optionKey: field?.optionKey ?? field?.option_key,
+        optionLabel: field?.optionLabel ?? field?.option_label,
+        groupLabel: field?.groupLabel ?? field?.group_label,
       } as PdfField;
     })
     .filter(Boolean) as PdfField[];
 }
 
+/**
+ * Main application component that coordinates auth, detection, and editing.
+ */
 function App() {
   const [authReady, setAuthReady] = useState(false);
   const [authUser, setAuthUser] = useState<User | null>(null);
   const [showLogin, setShowLogin] = useState(false);
   const [showHomepage, setShowHomepage] = useState(true);
-  const [detectionPipeline, setDetectionPipeline] = useState<'sandbox' | 'commonforms'>('sandbox');
-  const [useOpenAIRename, setUseOpenAIRename] = useState(false);
+  const detectionPipeline: 'commonforms' = 'commonforms';
   const [pendingDetectFile, setPendingDetectFile] = useState<File | null>(null);
   const [showPipelineModal, setShowPipelineModal] = useState(false);
+  const [pipelineError, setPipelineError] = useState<string | null>(null);
+  const [uploadWantsRename, setUploadWantsRename] = useState(false);
+  const [uploadWantsMap, setUploadWantsMap] = useState(false);
+  const [detectSessionId, setDetectSessionId] = useState<string | null>(null);
 
-  // Keep document metadata and field geometry together so the viewer and inspector stay in sync.
   const [pdfDoc, setPdfDoc] = useState<PDFDocumentProxy | null>(null);
-  // Page sizes are cached by page number to avoid recomputing viewports on every render.
   const [pageSizes, setPageSizes] = useState<Record<number, PageSize>>({});
   const [pageCount, setPageCount] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
   const [scale, setScale] = useState(1);
   const [pendingPageJump, setPendingPageJump] = useState<number | null>(null);
-  // All fields live in one array so the list and page overlay share a single source of truth.
   const [fields, setFields] = useState<PdfField[]>([]);
   const [showFields, setShowFields] = useState(true);
   const [showFieldNames, setShowFieldNames] = useState(true);
@@ -159,6 +280,7 @@ function App() {
   });
   const [selectedFieldId, setSelectedFieldId] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [processingMode, setProcessingMode] = useState<ProcessingMode>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [savedForms, setSavedForms] = useState<Array<{ id: string; name: string; createdAt: string }>>([]);
   const [activeSavedFormId, setActiveSavedFormId] = useState<string | null>(null);
@@ -166,25 +288,36 @@ function App() {
   const [deletingFormId, setDeletingFormId] = useState<string | null>(null);
   const [mappingSessionId, setMappingSessionId] = useState<string | null>(null);
   const [mappingInProgress, setMappingInProgress] = useState(false);
-  const [mapDbInProgress, setMapDbInProgress] = useState(false);
-  const [hasMappedDb, setHasMappedDb] = useState(false);
-  const [dbError, setDbError] = useState<string | null>(null);
-  const [connId, setConnId] = useState<string | null>(null);
+  const [mapSchemaInProgress, setMapSchemaInProgress] = useState(false);
+  const [hasMappedSchema, setHasMappedSchema] = useState(false);
+  const [renameInProgress, setRenameInProgress] = useState(false);
+  const [hasRenamedFields, setHasRenamedFields] = useState(false);
+  const [checkboxRules, setCheckboxRules] = useState<CheckboxRule[]>([]);
+  const [schemaError, setSchemaError] = useState<string | null>(null);
+  const [openAiError, setOpenAiError] = useState<string | null>(null);
+  const [bannerNotice, setBannerNotice] = useState<BannerNotice | null>(null);
+  const [dialogRequest, setDialogRequest] = useState<DialogRequest | null>(null);
+  const [schemaId, setSchemaId] = useState<string | null>(null);
+  const [pendingSchemaPayload, setPendingSchemaPayload] = useState<SchemaPayload | null>(null);
   const [dataSourceKind, setDataSourceKind] = useState<DataSourceKind>('none');
   const [dataSourceLabel, setDataSourceLabel] = useState<string | null>(null);
+  const [schemaUploadInProgress, setSchemaUploadInProgress] = useState(false);
   const [dataColumns, setDataColumns] = useState<string[]>([]);
   const [dataRows, setDataRows] = useState<Array<Record<string, unknown>>>([]);
   const [identifierKey, setIdentifierKey] = useState<string | null>(null);
-  const [showConnectDb, setShowConnectDb] = useState(false);
-  const [showFieldMapper, setShowFieldMapper] = useState(false);
   const [showSearchFill, setShowSearchFill] = useState(false);
   const [sourceFile, setSourceFile] = useState<File | null>(null);
   const [sourceFileName, setSourceFileName] = useState<string | null>(null);
   const [saveInProgress, setSaveInProgress] = useState(false);
   const [downloadInProgress, setDownloadInProgress] = useState(false);
   const loadTokenRef = useRef(0);
+  const dialogResolverRef = useRef<((value: any) => void) | null>(null);
+  const authUserRef = useRef<User | null>(null);
+  const savedFormsRetryRef = useRef(0);
+  const savedFormsRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const csvInputRef = useRef<HTMLInputElement>(null);
   const excelInputRef = useRef<HTMLInputElement>(null);
+  const txtInputRef = useRef<HTMLInputElement>(null);
   const fieldsRef = useRef<PdfField[]>([]);
   const historyRef = useRef<{ undo: PdfField[][]; redo: PdfField[][] }>({ undo: [], redo: [] });
   const pendingHistoryRef = useRef<PdfField[] | null>(null);
@@ -195,26 +328,88 @@ function App() {
   }, [fields]);
 
   useEffect(() => {
+    authUserRef.current = authUser;
+  }, [authUser]);
+
+  const clearSavedFormsRetry = useCallback(() => {
+    if (savedFormsRetryTimerRef.current) {
+      clearTimeout(savedFormsRetryTimerRef.current);
+      savedFormsRetryTimerRef.current = null;
+    }
+    savedFormsRetryRef.current = 0;
+  }, []);
+
+  const refreshSavedForms = useCallback(
+    async (options?: { allowRetry?: boolean }) => {
+      const currentUser = authUserRef.current;
+      if (!currentUser) return;
+      try {
+        const forms = await ApiService.getSavedForms({ suppressErrors: false });
+        setSavedForms(forms || []);
+        clearSavedFormsRetry();
+      } catch (error) {
+        if (!options?.allowRetry || !(error instanceof TypeError)) {
+          debugLog('Failed to load saved forms', error);
+          return;
+        }
+        const attempt = savedFormsRetryRef.current + 1;
+        if (attempt > SAVED_FORMS_RETRY_LIMIT) {
+          debugLog('Saved forms retry limit reached', error);
+          return;
+        }
+        savedFormsRetryRef.current = attempt;
+        const delay = Math.min(
+          SAVED_FORMS_RETRY_MAX_MS,
+          SAVED_FORMS_RETRY_BASE_MS * 2 ** (attempt - 1),
+        );
+        if (savedFormsRetryTimerRef.current) {
+          clearTimeout(savedFormsRetryTimerRef.current);
+        }
+        savedFormsRetryTimerRef.current = setTimeout(() => {
+          void refreshSavedForms(options);
+        }, delay);
+      }
+    },
+    [clearSavedFormsRetry],
+  );
+
+  useEffect(() => {
     const unsubscribe = Auth.onAuthStateChanged(async (user) => {
+      authUserRef.current = user;
       setAuthUser(user);
       setAuthReady(true);
 
       if (!user) {
+        clearSavedFormsRetry();
         setSavedForms([]);
         return;
       }
 
       try {
-        const token = await user.getIdToken();
-        setAuthToken(token);
-        const forms = await ApiService.getSavedForms();
-        setSavedForms(forms || []);
+        const tokenResult = await user.getIdTokenResult(true);
+        setAuthToken(tokenResult.token);
+        await refreshSavedForms({ allowRetry: true });
       } catch (error) {
         console.error('Failed to load saved forms', error);
       }
     });
-    return () => unsubscribe();
-  }, []);
+    return () => {
+      clearSavedFormsRetry();
+      unsubscribe();
+    };
+  }, [clearSavedFormsRetry, refreshSavedForms]);
+
+  useEffect(() => {
+    if (openAiError || schemaError) {
+      setBannerNotice(null);
+    }
+  }, [openAiError, schemaError]);
+
+  useEffect(() => {
+    if (!bannerNotice?.autoDismissMs) return undefined;
+    const timer = setTimeout(() => setBannerNotice(null), bannerNotice.autoDismissMs);
+    return () => clearTimeout(timer);
+  }, [bannerNotice]);
 
   const pushFieldHistory = useCallback((snapshot: PdfField[]) => {
     const history = historyRef.current;
@@ -311,18 +506,20 @@ function App() {
     setShowFieldInfo(false);
     setConfidenceFilter({ high: true, medium: true, low: true });
     setSelectedFieldId(null);
+    setProcessingMode(null);
     setMappingSessionId(null);
     setMappingInProgress(false);
-    setHasMappedDb(false);
-    setDbError(null);
-    setConnId(null);
+    setHasMappedSchema(false);
+    setCheckboxRules([]);
+    setSchemaError(null);
+    setSchemaId(null);
+    setPendingSchemaPayload(null);
     setDataSourceKind('none');
     setDataSourceLabel(null);
+    setSchemaUploadInProgress(false);
     setDataColumns([]);
     setDataRows([]);
     setIdentifierKey(null);
-    setShowConnectDb(false);
-    setShowFieldMapper(false);
     setShowSearchFill(false);
     setSourceFile(null);
     setSourceFileName(null);
@@ -331,14 +528,49 @@ function App() {
     setActiveSavedFormName(null);
     setPendingDetectFile(null);
     setShowPipelineModal(false);
-  }, [resetFieldHistory]);
+    setPipelineError(null);
+    setUploadWantsRename(false);
+    setUploadWantsMap(false);
+    setDetectSessionId(null);
+    setRenameInProgress(false);
+    setHasRenamedFields(false);
+    setOpenAiError(null);
+    setBannerNotice(null);
+    if (dialogResolverRef.current) {
+      const fallback =
+        dialogRequest?.kind === 'confirm'
+          ? false
+          : dialogRequest?.kind === 'prompt'
+            ? null
+            : null;
+      dialogResolverRef.current(fallback);
+    }
+    dialogResolverRef.current = null;
+    setDialogRequest(null);
+  }, [dialogRequest, resetFieldHistory]);
 
-  const ensureMappingSessionId = useCallback(() => {
-    if (mappingSessionId) return mappingSessionId;
-    const nextId = crypto.randomUUID();
-    setMappingSessionId(nextId);
-    return nextId;
-  }, [mappingSessionId]);
+  const resolveDialog = useCallback((value: any) => {
+    const resolver = dialogResolverRef.current;
+    dialogResolverRef.current = null;
+    setDialogRequest(null);
+    if (resolver) {
+      resolver(value);
+    }
+  }, []);
+
+  const requestConfirm = useCallback((options: ConfirmDialogOptions) => {
+    return new Promise<boolean>((resolve) => {
+      dialogResolverRef.current = resolve;
+      setDialogRequest({ kind: 'confirm', ...options });
+    });
+  }, []);
+
+  const requestPrompt = useCallback((options: PromptDialogOptions) => {
+    return new Promise<string | null>((resolve) => {
+      dialogResolverRef.current = resolve;
+      setDialogRequest({ kind: 'prompt', ...options });
+    });
+  }, []);
 
   const handleSignOut = useCallback(async () => {
     await Auth.signOut();
@@ -353,103 +585,21 @@ function App() {
     setShowHomepage(true);
   }, [clearWorkspace]);
 
-  const runDetectUpload = useCallback(
-    async (file: File) => {
-      const loadToken = loadTokenRef.current + 1;
-      loadTokenRef.current = loadToken;
-      const shouldUseOpenAI = useOpenAIRename;
-
-      setIsProcessing(true);
-      setLoadError(null);
-      setShowHomepage(false);
-      setMappingSessionId(crypto.randomUUID());
-      setHasMappedDb(false);
-      setDbError(null);
-      setSourceFile(file);
-      setSourceFileName(file.name);
-      setActiveSavedFormId(null);
-      setActiveSavedFormName(null);
-      try {
-        const doc = await loadPdfFromFile(file);
-        const sizes = await loadPageSizes(doc);
-        if (loadTokenRef.current !== loadToken) return;
-
-        let detectedFields: PdfField[] = [];
-
-        try {
-          const detection = await detectFields(file, {
-            useOpenAI: shouldUseOpenAI,
-            pipeline: detectionPipeline,
-          });
-          if (detection?.openaiError) {
-            debugLog('OpenAI rename failed', detection.openaiError);
-          }
-          detectedFields = mapDetectionFields(detection);
-          debugLog('Field detection returned', { total: detectedFields.length });
-        } catch (error) {
-          debugLog('Field detection failed', error);
-        }
-
-        if (!detectedFields.length) {
-          try {
-            detectedFields = await extractFieldsFromPdf(doc);
-            debugLog('Fallback PDF field extraction returned', { total: detectedFields.length });
-          } catch (error) {
-            debugLog('Failed to extract existing fields', error);
-          }
-        }
-
-        if (loadTokenRef.current !== loadToken) return;
-        setPdfDoc(doc);
-        setPageSizes(sizes);
-        setPageCount(doc.numPages);
-        setCurrentPage(1);
-        setScale(1);
-        setPendingPageJump(null);
-        resetFieldHistory(detectedFields);
-        setSelectedFieldId(null);
-        setIsProcessing(false);
-        debugLog('Loaded PDF', { name: file.name, pages: doc.numPages, fields: detectedFields.length });
-      } catch (error) {
-        if (loadTokenRef.current !== loadToken) return;
-        const message = error instanceof Error ? error.message : 'Unable to load PDF.';
-        clearWorkspace();
-        setIsProcessing(false);
-        setLoadError(message);
-        debugLog('Failed to load PDF', message);
-      }
-    },
-    [clearWorkspace, detectionPipeline, resetFieldHistory, useOpenAIRename],
-  );
-
-  const handleDetectUpload = useCallback((file: File) => {
-    setPendingDetectFile(file);
-    setShowPipelineModal(true);
-  }, []);
-
-  const handlePipelineCancel = useCallback(() => {
-    setPendingDetectFile(null);
-    setShowPipelineModal(false);
-  }, []);
-
-  const handlePipelineConfirm = useCallback(() => {
-    if (!pendingDetectFile) return;
-    const file = pendingDetectFile;
-    setPendingDetectFile(null);
-    setShowPipelineModal(false);
-    void runDetectUpload(file);
-  }, [pendingDetectFile, runDetectUpload]);
-
   const handleFillableUpload = useCallback(
     async (file: File) => {
       const loadToken = loadTokenRef.current + 1;
       loadTokenRef.current = loadToken;
+      setProcessingMode('fillable');
       setIsProcessing(true);
       setLoadError(null);
       setShowHomepage(false);
       setMappingSessionId(crypto.randomUUID());
-      setHasMappedDb(false);
-      setDbError(null);
+      setDetectSessionId(null);
+      setHasRenamedFields(false);
+      setHasMappedSchema(false);
+      setCheckboxRules([]);
+      setSchemaError(null);
+      setOpenAiError(null);
       setSourceFile(file);
       setSourceFileName(file.name);
       setActiveSavedFormId(null);
@@ -467,6 +617,7 @@ function App() {
         resetFieldHistory([]);
         setSelectedFieldId(null);
         setIsProcessing(false);
+        setProcessingMode(null);
 
         void (async () => {
           let existingFields: PdfField[] = [];
@@ -488,6 +639,7 @@ function App() {
         const message = error instanceof Error ? error.message : 'Unable to load PDF.';
         clearWorkspace();
         setIsProcessing(false);
+        setProcessingMode(null);
         setLoadError(message);
         debugLog('Failed to load PDF', message);
       }
@@ -499,12 +651,16 @@ function App() {
     async (formId: string) => {
       const loadToken = loadTokenRef.current + 1;
       loadTokenRef.current = loadToken;
+      setProcessingMode('saved');
       setIsProcessing(true);
       setLoadError(null);
       setShowHomepage(false);
       setMappingSessionId(crypto.randomUUID());
-      setHasMappedDb(false);
-      setDbError(null);
+      setDetectSessionId(null);
+      setHasRenamedFields(false);
+      setHasMappedSchema(false);
+      setSchemaError(null);
+      setOpenAiError(null);
 
       try {
         const savedMeta = await ApiService.loadSavedForm(formId);
@@ -525,6 +681,7 @@ function App() {
         resetFieldHistory([]);
         setSelectedFieldId(null);
         setIsProcessing(false);
+        setProcessingMode(null);
         setActiveSavedFormId(formId);
         setActiveSavedFormName(savedMeta?.name || null);
 
@@ -548,6 +705,7 @@ function App() {
         const message = error instanceof Error ? error.message : 'Unable to load saved form.';
         clearWorkspace();
         setIsProcessing(false);
+        setProcessingMode(null);
         setLoadError(message);
         debugLog('Failed to load saved form', message);
       }
@@ -559,7 +717,13 @@ function App() {
     async (formId: string) => {
       const target = savedForms.find((form) => form.id === formId);
       const name = target?.name ? `"${target.name}"` : 'this saved form';
-      const confirmDelete = window.confirm(`Delete ${name}? This removes it from your saved forms.`);
+      const confirmDelete = await requestConfirm({
+        title: 'Delete saved form?',
+        message: `Delete ${name}? This removes it from your saved forms.`,
+        confirmLabel: 'Delete',
+        cancelLabel: 'Cancel',
+        tone: 'danger',
+      });
       if (!confirmDelete) return;
 
       setDeletingFormId(formId);
@@ -578,7 +742,7 @@ function App() {
         setDeletingFormId(null);
       }
     },
-    [activeSavedFormId, savedForms],
+    [activeSavedFormId, requestConfirm, savedForms],
   );
 
   const handleSaveToProfile = useCallback(async () => {
@@ -592,8 +756,16 @@ function App() {
     }
     setLoadError(null);
     const defaultName = normaliseFormName(activeSavedFormName || sourceFileName || sourceFile?.name);
-    const promptForName = () => {
-      const raw = window.prompt('Name this saved form:', defaultName);
+    const promptForName = async () => {
+      const raw = await requestPrompt({
+        title: 'Name this saved form',
+        message: 'Enter a name to store this PDF in your saved forms list.',
+        defaultValue: defaultName,
+        placeholder: 'Saved form name',
+        confirmLabel: 'Save',
+        cancelLabel: 'Cancel',
+        requireValue: true,
+      });
       if (raw === null) return null;
       const trimmed = raw.trim();
       if (!trimmed) {
@@ -606,18 +778,22 @@ function App() {
     let saveName = defaultName;
     let shouldOverwrite = false;
     if (activeSavedFormId) {
-      const overwrite = window.confirm(
-        'This form is already saved. Click OK to overwrite it, or Cancel to save a new copy.',
-      );
+      const overwrite = await requestConfirm({
+        title: 'Overwrite saved form?',
+        message: 'This form is already saved. Overwrite it or save a new copy with a different name.',
+        confirmLabel: 'Overwrite',
+        cancelLabel: 'Save new copy',
+        tone: 'danger',
+      });
       if (overwrite) {
         shouldOverwrite = true;
       } else {
-        const nextName = promptForName();
+        const nextName = await promptForName();
         if (!nextName) return;
         saveName = nextName;
       }
     } else {
-      const nextName = promptForName();
+      const nextName = await promptForName();
       if (!nextName) return;
       saveName = nextName;
     }
@@ -640,8 +816,7 @@ function App() {
       }
       setActiveSavedFormId(payload?.id || null);
       setActiveSavedFormName(saveName);
-      const forms = await ApiService.getSavedForms();
-      setSavedForms(forms || []);
+      await refreshSavedForms();
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to save form to profile.';
       setLoadError(message);
@@ -656,6 +831,9 @@ function App() {
     fields,
     mappingSessionId,
     pdfDoc,
+    refreshSavedForms,
+    requestConfirm,
+    requestPrompt,
     sourceFile,
     sourceFileName,
   ]);
@@ -699,210 +877,665 @@ function App() {
     }
   }, [activeSavedFormName, authUser, fields, pdfDoc, sourceFile, sourceFileName]);
 
-  type FieldNameUpdate = {
-    newName?: string;
-    mappingConfidence?: unknown;
-  };
-
   const applyFieldNameUpdates = useCallback((updatesByCurrentName: Map<string, FieldNameUpdate>) => {
     if (!updatesByCurrentName.size) return;
-
-    updateFieldsWith((prev) => {
-      // Track existing names to avoid collisions when applying AI rename suggestions.
-      const existingNames = new Set(prev.map((field) => field.name));
-      return prev.map((field) => {
-        const update = updatesByCurrentName.get(field.name);
-        if (!update) return field;
-
-        let next = field;
-        const nextMappingConfidence = parseConfidence(update.mappingConfidence);
-        if (nextMappingConfidence !== undefined && nextMappingConfidence !== field.mappingConfidence) {
-          next = { ...next, mappingConfidence: nextMappingConfidence };
-        }
-
-        const desiredName = update.newName;
-        if (!desiredName || desiredName === field.name) {
-          return next;
-        }
-
-        existingNames.delete(field.name);
-        const uniqueName = ensureUniqueFieldName(desiredName, existingNames);
-        existingNames.add(uniqueName);
-
-        if (uniqueName === next.name) {
-          return next;
-        }
-
-        return { ...next, name: uniqueName };
-      });
-    });
+    updateFieldsWith((prev) => applyFieldNameUpdatesToList(prev, updatesByCurrentName));
   }, [updateFieldsWith]);
 
-  const handleManualRename = useCallback(
-    (oldName: string, newName: string, mappingConfidence?: number) => {
-      const updates = new Map<string, FieldNameUpdate>([
-        [oldName, { newName, mappingConfidence }],
-      ]);
-      applyFieldNameUpdates(updates);
+  const applyMappingResults = useCallback(
+    (mappingResults?: any) => {
+      if (!mappingResults) return;
+      const mappings = mappingResults.mappings || [];
+      const updates = new Map<string, FieldNameUpdate>();
+
+      for (const mapping of mappings) {
+        if (!mapping || !mapping.pdfField) continue;
+        const currentName = mapping.originalPdfField || mapping.pdfField;
+        const desiredName = mapping.pdfField;
+        if (!currentName) continue;
+        const mappingConfidence =
+          parseConfidence(mapping.confidence) ?? deriveMappingConfidence(currentName, desiredName);
+        updates.set(currentName, { newName: desiredName, mappingConfidence });
+      }
+
+      if (updates.size) {
+        applyFieldNameUpdates(updates);
+        debugLog('Applied AI mappings', { total: updates.size });
+      }
+
+      const rules = Array.isArray(mappingResults.checkboxRules) ? mappingResults.checkboxRules : [];
+      setCheckboxRules(rules);
     },
     [applyFieldNameUpdates],
   );
 
-  const applyAiMappings = useCallback(
-    async (databaseFields: string[]): Promise<boolean> => {
-      if (!databaseFields.length) {
-        setDbError('No database fields available for mapping.');
+  const buildTemplateFields = useCallback(
+    (sourceFields: PdfField[]) =>
+      sourceFields.map((field) => ({
+        name: field.name,
+        type: field.type,
+        page: field.page,
+        rect: field.rect,
+        groupKey: field.groupKey,
+        optionKey: field.optionKey,
+        optionLabel: field.optionLabel,
+        groupLabel: field.groupLabel,
+      })),
+    [],
+  );
+
+  const applyRenameResults = useCallback(
+    (renamedFieldsPayload?: Array<Record<string, any>>): PdfField[] | null => {
+      if (!Array.isArray(renamedFieldsPayload) || !renamedFieldsPayload.length) return null;
+      const renamesByOriginal = new Map<string, Record<string, any>>();
+      for (const entry of renamedFieldsPayload) {
+        const original =
+          entry.originalName || entry.original_name || entry.originalFieldName || entry.name;
+        if (typeof original === 'string' && original.trim()) {
+          renamesByOriginal.set(original, entry);
+        }
+      }
+
+      if (!renamesByOriginal.size) return null;
+
+      const updated: PdfField[] = [];
+      for (const field of fieldsRef.current) {
+        const rename = renamesByOriginal.get(field.name);
+        if (!rename) continue;
+        const renameConfidence = parseConfidence(rename.renameConfidence ?? rename.rename_confidence);
+        const fieldConfidence = parseConfidence(
+          rename.isItAfieldConfidence ?? rename.is_it_a_field_confidence,
+        );
+        const hasMappingConfidence =
+          Object.prototype.hasOwnProperty.call(rename, 'mappingConfidence') ||
+          Object.prototype.hasOwnProperty.call(rename, 'mapping_confidence');
+        const mappingConfidence = parseConfidence(
+          rename.mappingConfidence ?? rename.mapping_confidence,
+        );
+        const nextName = String(rename.name || rename.suggestedRename || field.name).trim() || field.name;
+        updated.push({
+          ...field,
+          name: nextName,
+          mappingConfidence: hasMappingConfidence ? mappingConfidence : field.mappingConfidence,
+          renameConfidence: renameConfidence ?? field.renameConfidence,
+          fieldConfidence: fieldConfidence ?? field.fieldConfidence,
+          groupKey: rename.groupKey ?? field.groupKey,
+          optionKey: rename.optionKey ?? field.optionKey,
+          optionLabel: rename.optionLabel ?? field.optionLabel,
+          groupLabel: rename.groupLabel ?? field.groupLabel,
+        });
+      }
+      resetFieldHistory(updated);
+      setSelectedFieldId(null);
+      return updated;
+    },
+    [resetFieldHistory],
+  );
+
+  const applySchemaMappings = useCallback(
+    async ({
+      fieldsOverride,
+      schemaIdOverride,
+    }: { fieldsOverride?: PdfField[]; schemaIdOverride?: string | null } = {}): Promise<boolean> => {
+      if (!authUser) {
+        setSchemaError(ALERT_MESSAGES.signInToRunSchemaMapping);
+        return false;
+      }
+      const activeSchemaId = schemaIdOverride ?? schemaId;
+      if (!activeSchemaId) {
+        setSchemaError(ALERT_MESSAGES.schemaRequiredForMapping);
+        return false;
+      }
+      const activeFields = fieldsOverride ?? fieldsRef.current;
+      if (!activeFields.length) {
+        setSchemaError(ALERT_MESSAGES.noPdfFieldsToMap);
         return false;
       }
 
-      if (!fields.length) {
-        setDbError('No PDF fields available to map.');
-        return false;
-      }
-
-      setDbError(null);
+      setSchemaError(null);
       try {
-        const sessionId = ensureMappingSessionId();
-        const pdfFormFields = fields.map((field) => ({
-          name: field.name,
-          type: field.type,
-        }));
-        const mappingResult = await ApiService.mapFields(sessionId, databaseFields, pdfFormFields);
+        const templateFields = buildTemplateFields(activeFields);
+        const mappingResult = await ApiService.mapSchema(
+          activeSchemaId,
+          templateFields,
+          activeSavedFormId || undefined,
+          detectSessionId || undefined,
+        );
         if (!mappingResult?.success) {
           throw new Error(mappingResult?.error || 'Mapping generation failed');
         }
-
-        const mappings = mappingResult.mappingResults?.mappings || [];
-        const updates = new Map<string, FieldNameUpdate>();
-
-        for (const mapping of mappings) {
-          if (!mapping || !mapping.pdfField) continue;
-          const currentName = mapping.originalPdfField || mapping.pdfField;
-          const desiredName = mapping.pdfField;
-          if (!currentName) continue;
-          const mappingConfidence =
-            parseConfidence(mapping.confidence) ?? deriveMappingConfidence(currentName, desiredName);
-          updates.set(currentName, { newName: desiredName, mappingConfidence });
-        }
-
-        applyFieldNameUpdates(updates);
-        debugLog('Applied AI mappings', { total: updates.size });
+        applyMappingResults(mappingResult.mappingResults);
         return true;
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'AI mapping failed.';
-        setDbError(message);
-        debugLog('AI mapping failed', message);
-        return false;
-      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Schema mapping failed.';
+      setSchemaError(message);
+      debugLog('Schema mapping failed', message);
+      return false;
+    }
     },
-    [applyFieldNameUpdates, ensureMappingSessionId, fields],
+    [activeSavedFormId, applyMappingResults, authUser, buildTemplateFields, detectSessionId, schemaId],
   );
 
-  const handleDisconnectDb = useCallback(async () => {
-    if (!connId) return;
-    setMappingInProgress(true);
-    setDbError(null);
-    try {
-      await DB.disconnect(connId);
-      setConnId(null);
-      setDataSourceKind('none');
-      setDataSourceLabel(null);
-      setDataColumns([]);
-      setDataRows([]);
-      setIdentifierKey(null);
-      setHasMappedDb(false);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to disconnect database.';
-      setDbError(message);
-    } finally {
-      setMappingInProgress(false);
-    }
-  }, [connId]);
+  const handleMappingSuccess = useCallback(() => {
+    setHasMappedSchema(true);
+    setBannerNotice({
+      tone: 'success',
+      message: ALERT_MESSAGES.mappingDone,
+      autoDismissMs: 5000,
+    });
+  }, []);
 
-  const handleMapFromDb = useCallback(async () => {
-    if (dataSourceKind === 'none') {
-      setDbError('Choose a data source before running AI mapping.');
-      return;
-    }
-
-    if (dataSourceKind === 'sql' && !connId) {
-      setDbError('Connect a SQL database before running AI mapping.');
-      return;
-    }
-
-    if ((dataSourceKind === 'csv' || dataSourceKind === 'excel') && dataColumns.length === 0) {
-      setDbError(`Import a ${dataSourceKind.toUpperCase()} file before running AI mapping.`);
-      return;
-    }
-
-    if (hasMappedDb) {
-      const shouldRemap = window.confirm('Are you sure you want to map again?');
-      if (!shouldRemap) return;
-    }
-
-    setDbError(null);
-    setMappingInProgress(true);
-    setMapDbInProgress(true);
-    try {
-      const columns =
-        dataSourceKind === 'sql' && connId ? await DB.fetchColumns(connId) : dataColumns;
-      const mapped = await applyAiMappings(columns);
-      if (mapped) {
-        setHasMappedDb(true);
-        window.alert('Field mapping is done.');
+  const runOpenAiRename = useCallback(
+    async ({
+      confirm = true,
+      sessionId,
+      schemaId: renameSchemaId,
+    }: {
+      confirm?: boolean;
+      sessionId?: string | null;
+      schemaId?: string | null;
+    } = {}): Promise<PdfField[] | null> => {
+      if (!authUser) {
+        setOpenAiError(ALERT_MESSAGES.signInToRunOpenAiRename);
+        return null;
       }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to fetch database columns.';
-      setDbError(message);
+      const activeSessionId = sessionId || detectSessionId;
+      if (!activeSessionId) {
+        setOpenAiError(ALERT_MESSAGES.uploadPdfForRename);
+        return null;
+      }
+      if (!fieldsRef.current.length) {
+        setOpenAiError(ALERT_MESSAGES.noPdfFieldsToRename);
+        return null;
+      }
+      if (confirm) {
+        const ok = await requestConfirm({
+          title: 'Send to OpenAI?',
+          message:
+            'This PDF and its field tags will be sent to OpenAI. No row data or field values are sent.',
+          confirmLabel: 'Continue',
+          cancelLabel: 'Cancel',
+        });
+        if (!ok) return null;
+      }
+
+      const hasSchemaForMap = Boolean(renameSchemaId);
+      setOpenAiError(null);
+      setMappingInProgress(true);
+      setRenameInProgress(true);
+      if (hasSchemaForMap) {
+        setMapSchemaInProgress(true);
+      }
+      try {
+        const templateFields = buildTemplateFields(fieldsRef.current);
+        const result = await ApiService.renameFields({
+          sessionId: activeSessionId,
+          schemaId: renameSchemaId || undefined,
+          templateFields,
+        });
+        if (!result?.success) {
+          throw new Error(result?.error || 'OpenAI rename failed.');
+        }
+        const updated = applyRenameResults(result.fields);
+        if (!updated || updated.length === 0) {
+          throw new Error('OpenAI rename returned no fields.');
+        }
+        setCheckboxRules(Array.isArray(result.checkboxRules) ? result.checkboxRules : []);
+        setHasRenamedFields(true);
+        return updated;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'OpenAI rename failed.';
+        setOpenAiError(message);
+        debugLog('OpenAI rename failed', message);
+        return null;
+      } finally {
+        setRenameInProgress(false);
+        setMappingInProgress(false);
+        if (hasSchemaForMap) {
+          setMapSchemaInProgress(false);
+        }
+      }
+    },
+    [
+      applyRenameResults,
+      authUser,
+      buildTemplateFields,
+      detectSessionId,
+      requestConfirm,
+    ],
+  );
+
+  const persistSchemaPayload = useCallback(
+    async (payload: SchemaPayload): Promise<string | null> => {
+      if (!authUser) return null;
+      try {
+        const created = await ApiService.createSchema(payload);
+        const nextSchemaId = created.schemaId || null;
+        setSchemaId(nextSchemaId);
+        if (nextSchemaId) {
+          setPendingSchemaPayload(null);
+        }
+        return nextSchemaId;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to store schema metadata.';
+        setSchemaError(message);
+        setSchemaId(null);
+        return null;
+      }
+    },
+    [authUser],
+  );
+
+  const resolveSchemaForMapping = useCallback(
+    async (mode: 'map' | 'renameAndMap'): Promise<string | null> => {
+      if (!authUser) {
+        if (mode === 'renameAndMap') {
+          setOpenAiError(ALERT_MESSAGES.signInToRunOpenAiRenameAndMap);
+        } else {
+          setSchemaError(ALERT_MESSAGES.signInToRunSchemaMapping);
+        }
+        return null;
+      }
+      if (dataSourceKind === 'none') {
+        const message =
+          mode === 'renameAndMap'
+            ? ALERT_MESSAGES.chooseSchemaFileForRenameAndMap
+            : ALERT_MESSAGES.chooseSchemaFileForMapping;
+        setSchemaError(message);
+        return null;
+      }
+      if (
+        (dataSourceKind === 'csv' || dataSourceKind === 'excel' || dataSourceKind === 'txt') &&
+        dataColumns.length === 0
+      ) {
+        setSchemaError(buildImportFileBeforeMapping(dataSourceKind));
+        return null;
+      }
+      if (schemaId) {
+        return schemaId;
+      }
+      if (!pendingSchemaPayload) {
+        const message =
+          mode === 'renameAndMap'
+            ? ALERT_MESSAGES.chooseSchemaFileForRenameAndMap
+            : ALERT_MESSAGES.chooseSchemaFileForMapping;
+        setSchemaError(message);
+        return null;
+      }
+      setSchemaUploadInProgress(true);
+      try {
+        return await persistSchemaPayload(pendingSchemaPayload);
+      } finally {
+        setSchemaUploadInProgress(false);
+      }
+    },
+    [
+      authUser,
+      dataColumns.length,
+      dataSourceKind,
+      pendingSchemaPayload,
+      persistSchemaPayload,
+      schemaId,
+    ],
+  );
+
+  const confirmRemap = useCallback(async () => {
+    if (!hasMappedSchema) return true;
+    return requestConfirm({
+      title: 'Remap fields?',
+      message: 'A mapping already exists for this schema. Do you want to map again?',
+      confirmLabel: 'Remap',
+      cancelLabel: 'Cancel',
+    });
+  }, [hasMappedSchema, requestConfirm]);
+
+  const handleMapSchema = useCallback(async () => {
+    const resolvedSchemaId = await resolveSchemaForMapping('map');
+    if (!resolvedSchemaId) return;
+    const ok = await requestConfirm({
+      title: 'Send to OpenAI?',
+      message:
+        'Your database field headers and PDF field tags will be sent to OpenAI. No row data or field values are sent.',
+      confirmLabel: 'Continue',
+      cancelLabel: 'Cancel',
+    });
+    if (!ok) return;
+    const shouldRemap = await confirmRemap();
+    if (!shouldRemap) return;
+
+    setSchemaError(null);
+    setOpenAiError(null);
+    setMappingInProgress(true);
+    setMapSchemaInProgress(true);
+    try {
+      const mapped = await applySchemaMappings({ schemaIdOverride: resolvedSchemaId });
+      if (mapped) {
+        handleMappingSuccess();
+      }
     } finally {
-      setMapDbInProgress(false);
+      setMapSchemaInProgress(false);
       setMappingInProgress(false);
     }
-  }, [applyAiMappings, connId, dataColumns, dataSourceKind, hasMappedDb]);
+  }, [
+    applySchemaMappings,
+    confirmRemap,
+    handleMappingSuccess,
+    requestConfirm,
+    resolveSchemaForMapping,
+  ]);
 
-  const handleOpenFieldMapper = useCallback(() => {
-    if (!mappingSessionId) {
-      setDbError('Upload a PDF before running AI mapping.');
-      return;
+  const handleRename = useCallback(async () => {
+    await runOpenAiRename({
+      confirm: true,
+    });
+  }, [runOpenAiRename]);
+
+  const handleRenameAndMap = useCallback(async () => {
+    const resolvedSchemaId = await resolveSchemaForMapping('renameAndMap');
+    if (!resolvedSchemaId) return;
+    const ok = await requestConfirm({
+      title: 'Send to OpenAI?',
+      message:
+        'This PDF and your database field headers will be sent to OpenAI. No row data or field values are sent.',
+      confirmLabel: 'Continue',
+      cancelLabel: 'Cancel',
+    });
+    if (!ok) return;
+    const shouldRemap = await confirmRemap();
+    if (!shouldRemap) return;
+
+    setSchemaError(null);
+    setOpenAiError(null);
+    const renamed = await runOpenAiRename({
+      confirm: false,
+      schemaId: resolvedSchemaId,
+    });
+    if (!renamed) return;
+    handleMappingSuccess();
+  }, [
+    confirmRemap,
+    handleMappingSuccess,
+    requestConfirm,
+    resolveSchemaForMapping,
+    runOpenAiRename,
+  ]);
+
+  const runDetectUpload = useCallback(
+    async (
+      file: File,
+      options: { autoRename?: boolean; autoMap?: boolean; schemaIdOverride?: string | null } = {},
+    ) => {
+      const loadToken = loadTokenRef.current + 1;
+      loadTokenRef.current = loadToken;
+
+      setProcessingMode('detect');
+      setIsProcessing(true);
+      setLoadError(null);
+      setShowHomepage(false);
+      setMappingSessionId(crypto.randomUUID());
+      setDetectSessionId(null);
+      setHasRenamedFields(false);
+      setHasMappedSchema(false);
+      setCheckboxRules([]);
+      setSchemaError(null);
+      setOpenAiError(null);
+      setSourceFile(file);
+      setSourceFileName(file.name);
+      setActiveSavedFormId(null);
+      setActiveSavedFormName(null);
+      try {
+        const doc = await loadPdfFromFile(file);
+        const sizes = await loadPageSizes(doc);
+        if (loadTokenRef.current !== loadToken) return;
+        const activeSchemaId = options.schemaIdOverride ?? schemaId;
+
+        let detectedFields: PdfField[] = [];
+        let detectedSessionId: string | null = null;
+
+        try {
+          const detection = await detectFields(file, {
+            pipeline: detectionPipeline,
+          });
+          detectedSessionId = detection?.sessionId || null;
+          detectedFields = mapDetectionFields(detection);
+          debugLog('Field detection returned', { total: detectedFields.length });
+        } catch (error) {
+          debugLog('Field detection failed', error);
+        }
+
+        if (!detectedFields.length) {
+          try {
+            detectedFields = await extractFieldsFromPdf(doc);
+            debugLog('Fallback PDF field extraction returned', { total: detectedFields.length });
+          } catch (error) {
+            debugLog('Failed to extract existing fields', error);
+          }
+        }
+
+        if (loadTokenRef.current !== loadToken) return;
+        setPdfDoc(doc);
+        setPageSizes(sizes);
+        setPageCount(doc.numPages);
+        setCurrentPage(1);
+        setScale(1);
+        setPendingPageJump(null);
+        resetFieldHistory(detectedFields);
+        setSelectedFieldId(null);
+        setIsProcessing(false);
+        setProcessingMode(null);
+        setDetectSessionId(detectedSessionId);
+        if (detectedSessionId) {
+          setMappingSessionId(detectedSessionId);
+        }
+        debugLog('Loaded PDF', { name: file.name, pages: doc.numPages, fields: detectedFields.length });
+
+        if (loadTokenRef.current !== loadToken) return;
+        if (!options.autoRename && !options.autoMap) return;
+
+        if (options.autoRename && options.autoMap) {
+          const renamed = await runOpenAiRename({
+            confirm: false,
+            sessionId: detectedSessionId,
+            schemaId: activeSchemaId,
+          });
+          if (renamed) {
+            handleMappingSuccess();
+          }
+          return;
+        }
+        if (options.autoRename) {
+          await runOpenAiRename({
+            confirm: false,
+            sessionId: detectedSessionId,
+          });
+        }
+        if (options.autoMap) {
+          const mapped = await applySchemaMappings({ schemaIdOverride: activeSchemaId });
+          if (mapped) {
+            handleMappingSuccess();
+          }
+        }
+      } catch (error) {
+        if (loadTokenRef.current !== loadToken) return;
+        const message = error instanceof Error ? error.message : 'Unable to load PDF.';
+        clearWorkspace();
+        setIsProcessing(false);
+        setProcessingMode(null);
+        setLoadError(message);
+        debugLog('Failed to load PDF', message);
+      }
+    },
+    [
+      applySchemaMappings,
+      clearWorkspace,
+      handleMappingSuccess,
+      resetFieldHistory,
+      runOpenAiRename,
+      schemaId,
+    ],
+  );
+
+  const handleDetectUpload = useCallback((file: File) => {
+    setPendingDetectFile(file);
+    setShowPipelineModal(true);
+    setPipelineError(null);
+    setUploadWantsRename(false);
+    setUploadWantsMap(false);
+  }, []);
+
+  const handlePipelineCancel = useCallback(() => {
+    setPendingDetectFile(null);
+    setShowPipelineModal(false);
+    setPipelineError(null);
+  }, []);
+
+  const handlePipelineConfirm = useCallback(async () => {
+    if (!pendingDetectFile) return;
+    let resolvedSchemaId = schemaId;
+    if (uploadWantsMap) {
+      if (schemaUploadInProgress) {
+        setPipelineError('Schema file is still processing. Please wait.');
+        return;
+      }
+      if (!resolvedSchemaId) {
+        if (!pendingSchemaPayload) {
+          setPipelineError('Upload a schema file before running mapping.');
+          return;
+        }
+        if (!authUser) {
+          setPipelineError('Sign in to upload a schema file before running mapping.');
+          return;
+        }
+        setSchemaUploadInProgress(true);
+        try {
+          resolvedSchemaId = await persistSchemaPayload(pendingSchemaPayload);
+        } finally {
+          setSchemaUploadInProgress(false);
+        }
+        if (!resolvedSchemaId) {
+          setPipelineError('Failed to store schema metadata. Please re-upload your schema file.');
+          return;
+        }
+      }
     }
-    setDbError(null);
-    setShowFieldMapper(true);
-    setDataSourceKind('txt');
-    setDataSourceLabel('TXT field list');
-    setHasMappedDb(false);
-  }, [mappingSessionId]);
+    const file = pendingDetectFile;
+    setPendingDetectFile(null);
+    setShowPipelineModal(false);
+    setPipelineError(null);
+    void runDetectUpload(file, {
+      autoRename: uploadWantsRename,
+      autoMap: uploadWantsMap,
+      schemaIdOverride: resolvedSchemaId,
+    });
+  }, [
+    authUser,
+    pendingDetectFile,
+    pendingSchemaPayload,
+    persistSchemaPayload,
+    runDetectUpload,
+    schemaId,
+    schemaUploadInProgress,
+    uploadWantsMap,
+    uploadWantsRename,
+  ]);
 
   const handleClearDataSource = useCallback(() => {
-    if (dataSourceKind === 'sql') return;
-    setDbError(null);
+    setSchemaError(null);
+    setSchemaId(null);
+    setPendingSchemaPayload(null);
     setDataSourceKind('none');
     setDataSourceLabel(null);
+    setSchemaUploadInProgress(false);
     setDataColumns([]);
     setDataRows([]);
     setIdentifierKey(null);
-    setHasMappedDb(false);
-  }, [dataSourceKind]);
+    setHasMappedSchema(false);
+  }, []);
 
   const handleChooseDataSource = useCallback(
     (kind: Exclude<DataSourceKind, 'none'>) => {
-      setDbError(null);
-      if (kind === 'sql') {
-        setShowConnectDb(true);
-        return;
-      }
-      if (kind === 'txt') {
-        void handleOpenFieldMapper();
-        return;
-      }
+      setSchemaError(null);
       if (kind === 'csv') {
         csvInputRef.current?.click();
         return;
       }
       if (kind === 'excel') {
         excelInputRef.current?.click();
+        return;
+      }
+      if (kind === 'txt') {
+        txtInputRef.current?.click();
       }
     },
-    [handleOpenFieldMapper],
+    [],
+  );
+
+  const applySchemaMetadata = useCallback(
+    async ({
+      kind,
+      label,
+      schema,
+      rows = [],
+      fileName,
+      source,
+    }: {
+      kind: Exclude<DataSourceKind, 'none'>;
+      label: string;
+      schema: { fields: Array<{ name: string; type?: string }>; sampleCount: number };
+      rows?: Array<Record<string, unknown>>;
+      fileName: string;
+      source: 'csv' | 'excel' | 'txt';
+    }) => {
+      const columns = schema.fields.map((field) => field.name);
+      setDataSourceKind(kind);
+      setDataSourceLabel(label);
+      setDataColumns(columns);
+      setDataRows(rows);
+      setIdentifierKey(pickIdentifierKey(columns));
+      setHasMappedSchema(false);
+      setSchemaId(null);
+      const payload: SchemaPayload = {
+        name: fileName,
+        fields: schema.fields,
+        source,
+        sampleCount: schema.sampleCount,
+      };
+      setPendingSchemaPayload(payload);
+      if (!authUser) {
+        return;
+      }
+      await persistSchemaPayload(payload);
+    },
+    [authUser, persistSchemaPayload],
+  );
+
+  const applyParsedDataSource = useCallback(
+    async ({
+      kind,
+      label,
+      columns,
+      rows,
+      fileName,
+      source,
+    }: {
+      kind: Exclude<DataSourceKind, 'none'>;
+      label: string;
+      columns: string[];
+      rows: Array<Record<string, unknown>>;
+      fileName: string;
+      source: 'csv' | 'excel';
+    }) => {
+      const schema = inferSchemaFromRows(columns, rows);
+      await applySchemaMetadata({
+        kind,
+        label,
+        schema,
+        rows,
+        fileName,
+        source,
+      });
+    },
+    [applySchemaMetadata],
   );
 
   const handleCsvFileSelected = useCallback(async (event: ChangeEvent<HTMLInputElement>) => {
@@ -910,60 +1543,93 @@ function App() {
     event.target.value = '';
     if (!file) return;
 
-    setDbError(null);
+    setSchemaError(null);
     setMappingInProgress(true);
+    setSchemaUploadInProgress(true);
     try {
       const text = await file.text();
       const parsed = parseCsv(text);
       if (!parsed.columns.length) {
         throw new Error('CSV file has no header row.');
       }
-      setConnId(null);
-      setDataSourceKind('csv');
-      setDataSourceLabel(`CSV: ${file.name}`);
-      setDataColumns(parsed.columns);
-      setDataRows(parsed.rows);
-      setIdentifierKey(pickIdentifierKey(parsed.columns));
-      setHasMappedDb(false);
+      await applyParsedDataSource({
+        kind: 'csv',
+        label: `CSV: ${file.name}`,
+        columns: parsed.columns,
+        rows: parsed.rows,
+        fileName: file.name,
+        source: 'csv',
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to import CSV file.';
-      setDbError(message);
+      setSchemaError(message);
     } finally {
+      setSchemaUploadInProgress(false);
       setMappingInProgress(false);
     }
-  }, []);
+  }, [applyParsedDataSource]);
 
   const handleExcelFileSelected = useCallback(async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file) return;
 
-      setDbError(null);
-      setMappingInProgress(true);
+    setSchemaError(null);
+    setMappingInProgress(true);
+    setSchemaUploadInProgress(true);
     try {
       const buffer = await file.arrayBuffer();
       const parsed = await parseExcel(buffer);
       if (!parsed.columns.length) {
         throw new Error('Excel sheet has no header row.');
       }
-      setConnId(null);
-      setDataSourceKind('excel');
-      setDataSourceLabel(`Excel: ${file.name}${parsed.sheetName ? ` (${parsed.sheetName})` : ''}`);
-      setDataColumns(parsed.columns);
-      setDataRows(parsed.rows);
-      setIdentifierKey(pickIdentifierKey(parsed.columns));
-      setHasMappedDb(false);
+      await applyParsedDataSource({
+        kind: 'excel',
+        label: `Excel: ${file.name}${parsed.sheetName ? ` (${parsed.sheetName})` : ''}`,
+        columns: parsed.columns,
+        rows: parsed.rows,
+        fileName: file.name,
+        source: 'excel',
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to import Excel file.';
-      setDbError(message);
+      setSchemaError(message);
     } finally {
+      setSchemaUploadInProgress(false);
       setMappingInProgress(false);
     }
-  }, []);
+  }, [applyParsedDataSource]);
 
-  const handleCloseFieldMapper = useCallback(() => {
-    setShowFieldMapper(false);
-  }, []);
+  const handleTxtFileSelected = useCallback(async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    setSchemaError(null);
+    setMappingInProgress(true);
+    setSchemaUploadInProgress(true);
+    try {
+      const text = await file.text();
+      const schema = parseSchemaText(text);
+      if (!schema.fields.length) {
+        throw new Error('TXT schema file has no field names.');
+      }
+      await applySchemaMetadata({
+        kind: 'txt',
+        label: `TXT: ${file.name}`,
+        schema,
+        rows: [],
+        fileName: file.name,
+        source: 'txt',
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to import TXT schema file.';
+      setSchemaError(message);
+    } finally {
+      setSchemaUploadInProgress(false);
+      setMappingInProgress(false);
+    }
+  }, [applySchemaMetadata]);
 
   const handleSelectField = useCallback(
     (fieldId: string) => {
@@ -1039,6 +1705,16 @@ function App() {
     },
     [currentPage, pageSizes, updateFieldsWith],
   );
+
+  const handleDismissBanner = useCallback(() => {
+    if (openAiError || schemaError) {
+      setSchemaError(null);
+      setOpenAiError(null);
+    }
+    if (bannerNotice) {
+      setBannerNotice(null);
+    }
+  }, [bannerNotice, openAiError, schemaError]);
 
   const handleFieldsChange = useCallback(
     (nextFields: PdfField[]) => {
@@ -1153,18 +1829,101 @@ function App() {
   const hasDocument = !!pdfDoc;
   const canSaveToProfile = Boolean(pdfDoc && authUser);
   const canDownload = Boolean(pdfDoc && authUser);
-  const canMapDb = useMemo(() => {
+  const canMapSchema = useMemo(() => {
+    if (!authUser) return false;
     if (!hasDocument || fields.length === 0) return false;
-    if (dataSourceKind === 'sql') return Boolean(connId);
-    if (dataSourceKind === 'csv' || dataSourceKind === 'excel') return dataColumns.length > 0;
+    if (dataSourceKind === 'csv' || dataSourceKind === 'excel' || dataSourceKind === 'txt') {
+      return dataColumns.length > 0 && Boolean(schemaId || pendingSchemaPayload);
+    }
     return false;
-  }, [connId, dataColumns.length, dataSourceKind, fields.length, hasDocument]);
+  }, [
+    authUser,
+    dataColumns.length,
+    dataSourceKind,
+    fields.length,
+    hasDocument,
+    pendingSchemaPayload,
+    schemaId,
+  ]);
+  const canRename = useMemo(() => {
+    if (!authUser) return false;
+    if (!hasDocument || fields.length === 0) return false;
+    if (!detectSessionId) return false;
+    return true;
+  }, [authUser, detectSessionId, fields.length, hasDocument]);
+  const canRenameAndMap = useMemo(() => {
+    if (!canRename) return false;
+    return canMapSchema;
+  }, [canMapSchema, canRename]);
   const canSearchFill = useMemo(() => {
     if (!hasDocument) return false;
-    if (dataSourceKind === 'sql') return Boolean(connId);
     if (dataSourceKind === 'csv' || dataSourceKind === 'excel') return dataRows.length > 0;
     return false;
-  }, [connId, dataRows.length, dataSourceKind, hasDocument]);
+  }, [dataRows.length, dataSourceKind, hasDocument]);
+  const activeErrorMessage = openAiError ?? schemaError;
+  const bannerAlert: BannerNotice | null = activeErrorMessage
+    ? { tone: 'error', message: activeErrorMessage }
+    : bannerNotice;
+  const dialogContent = (() => {
+    if (!dialogRequest) return null;
+    if (dialogRequest.kind === 'confirm') {
+      return (
+        <ConfirmDialog
+          open
+          title={dialogRequest.title}
+          description={dialogRequest.message}
+          confirmLabel={dialogRequest.confirmLabel}
+          cancelLabel={dialogRequest.cancelLabel}
+          tone={dialogRequest.tone}
+          onConfirm={() => resolveDialog(true)}
+          onCancel={() => resolveDialog(false)}
+        />
+      );
+    }
+    if (dialogRequest.kind === 'prompt') {
+      return (
+        <PromptDialog
+          open
+          title={dialogRequest.title}
+          description={dialogRequest.message}
+          confirmLabel={dialogRequest.confirmLabel}
+          cancelLabel={dialogRequest.cancelLabel}
+          tone={dialogRequest.tone}
+          defaultValue={dialogRequest.defaultValue}
+          placeholder={dialogRequest.placeholder}
+          requireValue={dialogRequest.requireValue}
+          onSubmit={(value) => resolveDialog(value)}
+          onCancel={() => resolveDialog(null)}
+        />
+      );
+    }
+    return null;
+  })();
+  const dataSourceInputs = (
+    <>
+      <input
+        ref={csvInputRef}
+        type="file"
+        accept=".csv,text/csv"
+        style={{ display: 'none' }}
+        onChange={handleCsvFileSelected}
+      />
+      <input
+        ref={excelInputRef}
+        type="file"
+        accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+        style={{ display: 'none' }}
+        onChange={handleExcelFileSelected}
+      />
+      <input
+        ref={txtInputRef}
+        type="file"
+        accept=".txt,text/plain"
+        style={{ display: 'none' }}
+        onChange={handleTxtFileSelected}
+      />
+    </>
+  );
   const currentView = showHomepage
     ? 'homepage'
     : isProcessing
@@ -1172,6 +1931,7 @@ function App() {
     : hasDocument
       ? 'editor'
       : 'upload';
+  const shouldShowProcessingAd = processingMode === 'detect' && Boolean(PROCESSING_AD_VIDEO_URL);
 
   if (!authReady) {
     return (
@@ -1193,6 +1953,15 @@ function App() {
   if (currentView !== 'editor') {
     return (
       <div className="homepage-shell">
+        {bannerAlert ? (
+          <Alert
+            tone={bannerAlert.tone}
+            variant="banner"
+            message={bannerAlert.message}
+            onDismiss={handleDismissBanner}
+          />
+        ) : null}
+        {dialogContent}
         <LegacyHeader
           currentView={currentView}
           onNavigateHome={handleNavigateHome}
@@ -1229,34 +1998,82 @@ function App() {
                         <input
                           type="radio"
                           name="pipeline"
-                          value="sandbox"
-                          checked={detectionPipeline === 'sandbox'}
-                          onChange={() => setDetectionPipeline('sandbox')}
-                        />
-                        Sandbox (OpenCV + PDFPlumber)
-                      </label>
-                      <label className="pipeline-modal__choice">
-                        <input
-                          type="radio"
-                          name="pipeline"
                           value="commonforms"
-                          checked={detectionPipeline === 'commonforms'}
-                          onChange={() => setDetectionPipeline('commonforms')}
+                          checked
+                          disabled
                         />
                         CommonForms (FFDNet-L)
                       </label>
                     </div>
                     <div className="pipeline-modal__section">
-                      <span className="pipeline-modal__section-title">Enhancements</span>
+                      <span className="pipeline-modal__section-title">OpenAI actions</span>
+                      <p className="pipeline-modal__notice">
+                        Rename sends PDF pages and detected field tags. Mapping sends schema header names and field
+                        tags. If both are selected, OpenAI receives the PDF pages and schema headers to standardize
+                        names. No row data or field values are sent.
+                      </p>
                       <label className="pipeline-modal__choice">
                         <input
                           type="checkbox"
-                          checked={useOpenAIRename}
-                          onChange={(event) => setUseOpenAIRename(event.target.checked)}
+                          checked={uploadWantsRename}
+                          onChange={(event) => setUploadWantsRename(event.target.checked)}
                         />
-                        Use OpenAI rename
+                        Rename fields with OpenAI
                       </label>
+                      <label className="pipeline-modal__choice">
+                        <input
+                          type="checkbox"
+                          checked={uploadWantsMap}
+                          onChange={(event) => setUploadWantsMap(event.target.checked)}
+                        />
+                        Map to schema (CSV/Excel/TXT)
+                      </label>
+                      {uploadWantsRename || uploadWantsMap ? (
+                        <p className="pipeline-modal__hint">
+                          {uploadWantsRename && uploadWantsMap
+                            ? 'OpenAI will receive the PDF pages, detected field tags, and your database field headers. No row data or field values are sent.'
+                            : uploadWantsRename
+                              ? 'OpenAI will receive the PDF pages and detected field tags. No row data or field values are sent.'
+                              : 'OpenAI will receive your database field headers and detected field tags. No row data or field values are sent.'}
+                        </p>
+                      ) : null}
+                      {uploadWantsMap ? (
+                        <div className="pipeline-modal__schema-block">
+                          <div className="pipeline-modal__source-row">
+                            <button
+                              type="button"
+                              className="ui-button ui-button--ghost ui-button--compact"
+                              onClick={() => handleChooseDataSource('csv')}
+                            >
+                              CSV
+                            </button>
+                            <button
+                              type="button"
+                              className="ui-button ui-button--ghost ui-button--compact"
+                              onClick={() => handleChooseDataSource('excel')}
+                            >
+                              Excel
+                            </button>
+                            <button
+                              type="button"
+                              className="ui-button ui-button--ghost ui-button--compact"
+                              onClick={() => handleChooseDataSource('txt')}
+                            >
+                              TXT
+                            </button>
+                          </div>
+                          <span className="pipeline-modal__status pipeline-modal__status--center">
+                            Schema file: {dataSourceLabel || 'None selected'}
+                            {schemaUploadInProgress ? ' (processing)' : ''}
+                          </span>
+                        </div>
+                      ) : null}
                     </div>
+                    {pipelineError ? (
+                      <div className="pipeline-modal__alert">
+                        <Alert tone="error" variant="inline" size="sm" message={pipelineError} />
+                      </div>
+                    ) : null}
                     <div className="pipeline-modal__actions">
                       <button
                         className="ui-button ui-button--ghost"
@@ -1269,7 +2086,7 @@ function App() {
                         className="ui-button ui-button--primary"
                         type="button"
                         onClick={handlePipelineConfirm}
-                        disabled={!pendingDetectFile}
+                        disabled={!pendingDetectFile || (uploadWantsMap && schemaUploadInProgress)}
                       >
                         Continue
                       </button>
@@ -1307,7 +2124,11 @@ function App() {
                   />
                 </section>
               )}
-              {loadError && <div className="upload-error">{loadError}</div>}
+              {loadError ? (
+                <div className="upload-alert">
+                  <Alert tone="error" variant="inline" message={loadError} />
+                </div>
+              ) : null}
             </div>
           )}
           {currentView === 'processing' && (
@@ -1315,27 +2136,43 @@ function App() {
               <div className="spinner"></div>
               <h3>Preparing your form…</h3>
               <p>Detecting fields and building the editor.</p>
+              {shouldShowProcessingAd ? (
+                <div className="processing-ad" aria-live="polite">
+                  <video
+                    className="processing-ad__video"
+                    src={PROCESSING_AD_VIDEO_URL}
+                    poster={PROCESSING_AD_POSTER_URL || undefined}
+                    autoPlay
+                    muted
+                    loop
+                    playsInline
+                    preload="auto"
+                  />
+                  <p className="processing-ad__note">
+                    This short video runs while field detection finishes on the backend. It helps
+                    cover hosting so the tool can stay free.
+                  </p>
+                </div>
+              ) : null}
             </div>
           )}
         </main>
+        {dataSourceInputs}
       </div>
     );
   }
 
   return (
     <div className="app">
-      {dbError ? (
-        <div className="ui-alert" role="alert" aria-live="assertive">
-          <p className="ui-alert__message">{dbError}</p>
-          <button
-            className="ui-alert__dismiss"
-            type="button"
-            onClick={() => setDbError(null)}
-          >
-            Dismiss
-          </button>
-        </div>
+      {bannerAlert ? (
+        <Alert
+          tone={bannerAlert.tone}
+          variant="banner"
+          message={bannerAlert.message}
+          onDismiss={handleDismissBanner}
+        />
       ) : null}
+      {dialogContent}
       <HeaderBar
         pageCount={pageCount}
         currentPage={currentPage}
@@ -1343,16 +2180,21 @@ function App() {
         onScaleChange={setScale}
         onNavigateHome={handleNavigateHome}
         mappingInProgress={mappingInProgress}
-        mapDbInProgress={mapDbInProgress}
-        hasMappedDb={hasMappedDb}
+        mapSchemaInProgress={mapSchemaInProgress}
+        hasMappedSchema={hasMappedSchema}
+        renameInProgress={renameInProgress}
+        hasRenamedFields={hasRenamedFields}
         dataSourceKind={dataSourceKind}
         dataSourceLabel={dataSourceLabel}
         onChooseDataSource={handleChooseDataSource}
-        onDisconnectSql={connId ? handleDisconnectDb : undefined}
         onClearDataSource={handleClearDataSource}
-        onMapDb={handleMapFromDb}
-        canMapDb={canMapDb}
-        onOpenSearchFill={() => setShowSearchFill(true)}
+        onRename={handleRename}
+        onRenameAndMap={handleRenameAndMap}
+        onMapSchema={handleMapSchema}
+        canMapSchema={canMapSchema}
+        canRename={canRename}
+        canRenameAndMap={canRenameAndMap}
+        onOpenSearchFill={canSearchFill ? () => setShowSearchFill(true) : undefined}
         canSearchFill={canSearchFill}
         onDownload={handleDownload}
         onSaveToProfile={handleSaveToProfile}
@@ -1388,7 +2230,7 @@ function App() {
             <div className="viewer viewer--empty">
               <div className="viewer__placeholder viewer__placeholder--error">
                 <h2>Unable to load PDF</h2>
-                <p>{loadError}</p>
+                <Alert tone="error" variant="inline" message={loadError} />
               </div>
             </div>
           ) : (
@@ -1426,56 +2268,17 @@ function App() {
           onRedo={handleRedo}
         />
       </div>
-      {showConnectDb && (
-        <ConnectDB
-          open={showConnectDb}
-          onClose={() => setShowConnectDb(false)}
-          onConnected={({ connId: id, columns, identifierKey: nextIdentifierKey, label }) => {
-            setConnId(id);
-            setDataSourceKind('sql');
-            setDataSourceLabel(label || 'SQL database');
-            setDataColumns(columns || []);
-            setDataRows([]);
-            setIdentifierKey(nextIdentifierKey ?? null);
-            setHasMappedDb(false);
-          }}
-        />
-      )}
-      {showFieldMapper && mappingSessionId && (
-        <div className="mapper-modal" role="dialog" aria-modal="true">
-          <div className="mapper-backdrop" onClick={handleCloseFieldMapper} />
-          <div className="mapper-panel">
-            <div className="mapper-header">
-              <div>
-                <h3>AI Field Mapper</h3>
-                <p>Upload database field names and apply AI renames.</p>
-              </div>
-              <button type="button" className="mapper-close" onClick={handleCloseFieldMapper}>
-                ×
-              </button>
-            </div>
-            {dbError ? <div className="mapper-error">{dbError}</div> : null}
-            <div className="mapper-body">
-              <FieldMapper
-                sessionId={mappingSessionId}
-                pdfFormFields={fields.map((field) => ({ name: field.name, type: field.type }))}
-                onFieldRenamed={handleManualRename}
-              />
-            </div>
-          </div>
-        </div>
-      )}
       {showSearchFill ? (
         <SearchFillModal
           open={showSearchFill}
           onClose={() => setShowSearchFill(false)}
           dataSourceKind={dataSourceKind}
           dataSourceLabel={dataSourceLabel}
-          connId={connId}
           columns={dataColumns}
           identifierKey={identifierKey}
           rows={dataRows}
           fields={fields}
+          checkboxRules={checkboxRules}
           onFieldsChange={handleFieldsChange}
           onClearFields={handleClearFieldValues}
           onAfterFill={() => {
@@ -1483,23 +2286,10 @@ function App() {
             setShowFieldNames(false);
             setShowFields(true);
           }}
-          onError={(message) => setDbError(message)}
+          onError={(message) => setSchemaError(message)}
         />
       ) : null}
-      <input
-        ref={csvInputRef}
-        type="file"
-        accept=".csv,text/csv"
-        style={{ display: 'none' }}
-        onChange={handleCsvFileSelected}
-      />
-      <input
-        ref={excelInputRef}
-        type="file"
-        accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
-        style={{ display: 'none' }}
-        onChange={handleExcelFileSelected}
-      />
+      {dataSourceInputs}
     </div>
   );
 }
