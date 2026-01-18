@@ -1666,6 +1666,12 @@ function App() {
   const handlePageJump = useCallback((page: number) => {
     setCurrentPage(page);
     setPendingPageJump(page);
+    setSelectedFieldId((prev) => {
+      if (!prev) return prev;
+      const field = fieldsRef.current.find((entry) => entry.id === prev);
+      if (!field) return prev;
+      return field.page === page ? prev : null;
+    });
   }, []);
 
   const handlePageScroll = useCallback((page: number) => {
