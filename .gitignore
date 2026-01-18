@@ -9,6 +9,12 @@ pnpm-debug.log*
 frontend/dist/
 frontend/.vite/
 
+# Local PDFs (keep untracked)
+*.pdf
+*.PDF
+!quickTestFiles/
+!quickTestFiles/**
+
 # Env files (local-only)
 /env/
 /.env
@@ -40,8 +46,14 @@ backend/fieldDetecting/sandbox/ML/data/
 # Explicit sandbox raw dataset paths (large, generated)
 backend/fieldDetecting/sandbox/ML/data/raw/
 
+# Sample datasets (local-only)
+samples/
+
 # Local generated assets
-mcp-screenshots/
+mcpDebugging/
+mcp/.env.local
+mcp/.env.*.local
+legacy/
 
 # OS + misc
 .DS_Store
@@ -52,3 +64,4 @@ Thumbs.db
 .gcloud/
 firebase-adminsdk-*.json
 *service_account*.json
+serviceAccounts/

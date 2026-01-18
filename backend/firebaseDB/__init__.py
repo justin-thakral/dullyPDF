@@ -1,1 +1,2 @@
-"""Firebase auth and database utilities."""
+"""Firebase auth, storage, and Firestore utilities.
+"""

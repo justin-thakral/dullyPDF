@@ -1,3 +1,6 @@
+/**
+ * Overlay layer for draggable/resizable field boxes.
+ */
 import { type PointerEvent as ReactPointerEvent, useEffect, useRef } from 'react';
 import type { FieldRect, PdfField, PageSize } from '../../types';
 import { fieldConfidenceTierForField, nameConfidenceTierForField } from '../../utils/confidence';
@@ -27,6 +30,9 @@ type FieldOverlayProps = {
   onCommitFieldChange: () => void;
 };
 
+/**
+ * Render editable field boxes and pointer-driven geometry updates.
+ */
 export function FieldOverlay({
   fields,
   pageSize,
@@ -136,6 +142,9 @@ export function FieldOverlay({
     };
   }, [onCommitFieldChange, onUpdateField]);
 
+  /**
+   * Capture initial drag state and signal change start.
+   */
   const startDrag = (
     event: ReactPointerEvent<HTMLElement>,
     field: PdfField,
@@ -188,6 +197,7 @@ export function FieldOverlay({
           <div
             key={field.id}
             className={className}
+            data-field-id={field.id}
             style={{
               left: rect.x,
               top: rect.y,

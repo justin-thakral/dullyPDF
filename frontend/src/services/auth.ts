@@ -1,3 +1,6 @@
+/**
+ * Firebase auth wrappers used across the UI.
+ */
 import {
   createUserWithEmailAndPassword,
   onAuthStateChanged,
@@ -11,16 +14,13 @@ import type { User } from 'firebase/auth';
 import { firebaseAuth } from './firebaseClient';
 import { setAuthToken } from './authTokenStore';
 
-/**
- * Centralized authentication helper built on Firebase Identity Platform.
- * Exposes thin wrappers used across the application to sign users in/out
- * and listen for state changes.
- */
-
 export type AuthStateListener = (user: User | null) => void;
 
 let idTokenListenerInitialised = false;
 
+/**
+ * Register a token refresh listener once per app session.
+ */
 function ensureIdTokenListener() {
   if (idTokenListenerInitialised) return;
   idTokenListenerInitialised = true;
@@ -41,6 +41,9 @@ function ensureIdTokenListener() {
 
 ensureIdTokenListener();
 
+/**
+ * Fetch the current user's ID token, optionally forcing a refresh.
+ */
 export async function getFreshIdToken(forceRefresh = false): Promise<string | null> {
   ensureIdTokenListener();
   const user = firebaseAuth.currentUser;
@@ -60,11 +63,17 @@ export async function getFreshIdToken(forceRefresh = false): Promise<string | nu
 }
 
 export const Auth = {
+  /**
+   * Subscribe to auth state changes.
+   */
   onAuthStateChanged(callback: AuthStateListener) {
     ensureIdTokenListener();
     return onAuthStateChanged(firebaseAuth, callback);
   },
 
+  /**
+   * Sign a user in with email/password and cache the token.
+   */
   async signIn(email: string, password: string): Promise<User> {
     ensureIdTokenListener();
     const credential = await signInWithEmailAndPassword(firebaseAuth, email, password);
@@ -73,6 +82,9 @@ export const Auth = {
     return credential.user;
   },
 
+  /**
+   * Register a new user and optionally set display name.
+   */
   async signUp(email: string, password: string, displayName?: string): Promise<User> {
     ensureIdTokenListener();
     const credential = await createUserWithEmailAndPassword(firebaseAuth, email, password);
@@ -84,15 +96,24 @@ export const Auth = {
     return credential.user;
   },
 
+  /**
+   * Send a password reset email.
+   */
   async sendPasswordReset(email: string): Promise<void> {
     await sendPasswordResetEmail(firebaseAuth, email);
   },
 
+  /**
+   * Sign the current user out and clear tokens.
+   */
   async signOut(): Promise<void> {
     await firebaseSignOut(firebaseAuth);
     setAuthToken(null);
   },
 
+  /**
+   * Return the current authenticated user, if any.
+   */
   getCurrentUser(): User | null {
     return firebaseAuth.currentUser;
   },

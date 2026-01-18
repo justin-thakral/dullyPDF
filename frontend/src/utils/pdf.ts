@@ -1,3 +1,6 @@
+/**
+ * PDF.js utilities for loading documents and extracting existing widgets.
+ */
 import type { PDFDocumentProxy } from 'pdfjs-dist/types/src/display/api';
 import type { FieldRect, FieldType, PageSize, PdfField } from '../types';
 import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist';
@@ -78,7 +81,6 @@ export async function loadPdfFromFile(file: File): Promise<PDFDocumentProxy> {
 }
 
 export async function loadPageSizes(doc: PDFDocumentProxy): Promise<Record<number, PageSize>> {
-  // Cache page sizes by page number so the UI can clamp fields without reloading pages.
   const sizes: Record<number, PageSize> = {};
   for (let pageNum = 1; pageNum <= doc.numPages; pageNum += 1) {
     const page = await doc.getPage(pageNum);
@@ -90,7 +92,6 @@ export async function loadPageSizes(doc: PDFDocumentProxy): Promise<Record<numbe
 }
 
 function mapAnnotationType(annotation: PdfJsAnnotation): FieldType {
-  // Convert PDF widget field types into the simplified UI field categories.
   if (annotation.fieldType === 'Sig') {
     return 'signature';
   }
@@ -138,7 +139,6 @@ export async function extractFieldsFromPdf(doc: PDFDocumentProxy): Promise<PdfFi
     let fieldIndex = 1;
 
     for (const annotation of annotations) {
-      // Widget annotations are the PDF fields we want to edit in the overlay.
       const isWidget =
         annotation.subtype === 'Widget' || annotation.annotationType === 20 || !!annotation.fieldType;
       if (!isWidget) continue;

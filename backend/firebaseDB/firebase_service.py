@@ -1,3 +1,6 @@
+"""Firebase Admin initialization and auth utilities.
+"""
+
 import json
 import os
 from dataclasses import dataclass
@@ -7,7 +10,7 @@ import jwt
 from firebase_admin import auth as firebase_auth
 from firebase_admin import credentials, firestore, initialize_app, storage
 
-from ..fieldDetecting.sandbox.combinedSrc.config import DEBUG_MODE, get_logger
+from ..fieldDetecting.rename_pipeline.combinedSrc.config import DEBUG_MODE, get_logger
 
 
 logger = get_logger(__name__)
@@ -23,6 +26,7 @@ class RequestUser:
     app_user_id: str
     email: Optional[str] = None
     display_name: Optional[str] = None
+    role: Optional[str] = None
 
 
 def _load_firebase_credentials() -> Tuple[Optional[credentials.Base], Optional[str]]:
@@ -58,8 +62,19 @@ def _load_firebase_credentials() -> Tuple[Optional[credentials.Base], Optional[s
     return credentials.Certificate(payload), project_id
 
 
+def _check_revoked_enabled() -> bool:
+    """
+    Decide whether revocation checks are enabled (explicit env override or prod default).
+    """
+    raw = os.getenv("FIREBASE_CHECK_REVOKED", "").strip()
+    if raw:
+        return raw.lower() in {"1", "true", "yes"}
+    return (os.getenv("ENV") or "").strip().lower() in {"prod", "production"}
+
+
 def init_firebase() -> None:
-    """Initialize Firebase Admin once and cache failures."""
+    """Initialize Firebase Admin once and cache failures.
+    """
     global _firebase_app
     global _firebase_init_error
     global _firebase_project_id
@@ -88,6 +103,8 @@ def init_firebase() -> None:
 
 
 def get_firestore_client() -> firestore.Client:
+    """Return a Firestore client, initializing Firebase if needed.
+    """
     init_firebase()
     if _firebase_init_error:
         raise RuntimeError("Firebase authentication is not configured")
@@ -95,6 +112,8 @@ def get_firestore_client() -> firestore.Client:
 
 
 def get_storage_bucket(bucket_name: str):
+    """Return a Storage bucket client after Firebase initialization.
+    """
     init_firebase()
     if _firebase_init_error:
         raise RuntimeError("Firebase authentication is not configured")
@@ -123,7 +142,12 @@ def verify_id_token(authorization: Optional[str]) -> Dict[str, Any]:
         skew_seconds = 60
 
     try:
-        return firebase_auth.verify_id_token(token, app=_firebase_app, clock_skew_seconds=skew_seconds)
+        return firebase_auth.verify_id_token(
+            token,
+            app=_firebase_app,
+            clock_skew_seconds=skew_seconds,
+            check_revoked=_check_revoked_enabled(),
+        )
     except Exception as exc:
         if DEBUG_MODE:
             try:

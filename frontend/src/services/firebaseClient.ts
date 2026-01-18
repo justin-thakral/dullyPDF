@@ -1,3 +1,6 @@
+/**
+ * Firebase client initialization for the frontend.
+ */
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { firebaseConfig } from '../config/firebaseConfig';

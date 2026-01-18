@@ -1,3 +1,6 @@
+/**
+ * Field inspector panel for editing geometry and metadata.
+ */
 import type { FieldRect, FieldType, PdfField } from '../../types';
 import { FIELD_TYPES, fieldTypeLabel } from '../../utils/fieldUi';
 
@@ -16,6 +19,9 @@ type FieldInspectorPanelProps = {
   onRedo: () => void;
 };
 
+/**
+ * Render editable metadata and geometry controls for the selected field.
+ */
 export function FieldInspectorPanel({
   fields,
   selectedFieldId,
@@ -30,6 +36,9 @@ export function FieldInspectorPanel({
 }: FieldInspectorPanelProps) {
   const selected = fields.find((field) => field.id === selectedFieldId) || null;
 
+  /**
+   * Patch rect properties while keeping the rest of the geometry intact.
+   */
   const updateRect = (fieldId: string, patch: Partial<FieldRect>) => {
     const field = fields.find((entry) => entry.id === fieldId);
     if (!field) return;

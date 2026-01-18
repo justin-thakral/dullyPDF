@@ -1,3 +1,6 @@
+/**
+ * CSV parsing helpers for local schema + Search & Fill data.
+ */
 export type ParsedCsv = {
   columns: string[];
   rows: Array<Record<string, string>>;
@@ -8,6 +11,9 @@ type ParseCsvOptions = {
   maxRows?: number;
 };
 
+/**
+ * Parse CSV text into columns and row records.
+ */
 export function parseCsv(text: string, options: ParseCsvOptions = {}): ParsedCsv {
   const delimiter = options.delimiter ?? ',';
   const maxRows = options.maxRows ?? 5000;
@@ -83,4 +89,3 @@ export function parseCsv(text: string, options: ParseCsvOptions = {}): ParsedCsv
 
   return { columns, rows: outRows };
 }
-

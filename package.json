@@ -3,15 +3,20 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "start": "npm run db:up && npm run dev",
+    "start": "npm run dev",
     "start:fast": "npm run kill-old && node scripts/wsl_warn.js && npm run dev",
     "dev": "concurrently \"npm run backend:dev\" \"npm run frontend:dev\"",
+    "build:dev": "npm run frontend:build:dev",
+    "build:prod": "npm run frontend:build:prod",
     "kill-old": "bash scripts/kill_old_processes.sh",
-    "db:up": "docker compose up -d postgres",
-    "frontend:dev": "cd frontend && npm run dev",
-    "backend:dev": "uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir backend"
+    "frontend:dev": "bash scripts/use-frontend-env.sh dev && cd frontend && npm run dev",
+    "frontend:build:dev": "bash scripts/use-frontend-env.sh dev && cd frontend && npm run build",
+    "frontend:build:prod": "bash scripts/use-frontend-env.sh prod && cd frontend && npm run build",
+    "backend:dev": "bash scripts/run-backend-dev.sh",
+    "backend:prod": "bash scripts/run-backend-prod.sh"
   },
   "devDependencies": {
+    "@playwright/test": "^1.57.0",
     "concurrently": "^8.2.2"
   }
 }

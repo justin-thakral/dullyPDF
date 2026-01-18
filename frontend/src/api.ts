@@ -1,3 +1,6 @@
+/**
+ * API wrapper for backend endpoints used by the UI.
+ */
 import type { PdfField } from './types';
 import { apiFetch, apiJsonFetch, buildApiUrl } from './services/apiConfig';
 
@@ -8,39 +11,108 @@ export type SavedFormSummary = {
 };
 
 export class ApiService {
-  static async uploadDatabaseFields(
-    file: File,
-  ): Promise<{ filename: string; databaseFields: string[]; totalFields: number }> {
-    const formData = new FormData();
-    formData.append('fields', file);
-
-    const response = await apiFetch('POST', buildApiUrl('api', 'upload-fields'), {
-      body: formData,
+  /**
+   * Store schema metadata (headers/types) for mapping.
+   */
+  static async createSchema(payload: {
+    name?: string;
+    fields: Array<{ name: string; type?: string }>;
+    source?: string;
+    sampleCount?: number;
+  }): Promise<{ schemaId: string; fieldCount: number; fields: Array<{ name: string; type: string }> }> {
+    const response = await apiFetch('POST', buildApiUrl('api', 'schemas'), {
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
     });
 
     return apiJsonFetch(response);
   }
 
-  static async mapFields(
-    sessionId: string,
-    databaseFields: string[],
-    pdfFormFields?: Array<{ name: string; type?: string; context?: string }>,
+  /**
+   * Request AI-assisted mapping between schema and PDF template tags.
+   */
+  static async mapSchema(
+    schemaId: string,
+    templateFields: Array<{
+      name: string;
+      type?: string;
+      page?: number;
+      rect?: { x: number; y: number; width: number; height: number };
+      groupKey?: string;
+      optionKey?: string;
+      optionLabel?: string;
+      groupLabel?: string;
+    }>,
+    templateId?: string,
+    sessionId?: string,
   ): Promise<any> {
-    const response = await apiFetch('POST', buildApiUrl('api', 'map-fields'), {
+    const response = await apiFetch('POST', buildApiUrl('api', 'schema-mappings', 'ai'), {
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
+        schemaId,
+        templateId,
+        templateFields,
         sessionId,
-        databaseFields,
-        ...(pdfFormFields && pdfFormFields.length ? { pdfFormFields } : {}),
       }),
     });
 
     return apiJsonFetch(response);
   }
 
-  static async getSavedForms(): Promise<SavedFormSummary[]> {
+  /**
+   * Request OpenAI rename using a cached PDF session.
+   */
+  static async renameFields(payload: {
+    sessionId: string;
+    schemaId?: string;
+    templateFields?: Array<{
+      name: string;
+      type?: string;
+      page?: number;
+      rect?: { x: number; y: number; width: number; height: number };
+      groupKey?: string;
+      optionKey?: string;
+      optionLabel?: string;
+      groupLabel?: string;
+    }>;
+  }): Promise<any> {
+    const response = await apiFetch('POST', buildApiUrl('api', 'renames', 'ai'), {
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    return apiJsonFetch(response);
+  }
+
+  /**
+   * Store an approved schema mapping payload.
+   */
+  static async createSchemaMapping(payload: {
+    schemaId: string;
+    templateId?: string;
+    mappingResults: Record<string, unknown>;
+  }): Promise<{ mappingId: string }> {
+    const response = await apiFetch('POST', buildApiUrl('api', 'schema-mappings'), {
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    return apiJsonFetch(response);
+  }
+
+  /**
+   * Fetch saved form summaries for the current user.
+   */
+  static async getSavedForms(options?: { suppressErrors?: boolean }): Promise<SavedFormSummary[]> {
+    const suppressErrors = options?.suppressErrors ?? true;
     try {
       const response = await apiFetch('GET', buildApiUrl('api', 'saved-forms'), {
         allowStatuses: [401],
@@ -49,16 +121,25 @@ export class ApiService {
       const payload = await apiJsonFetch<{ forms?: SavedFormSummary[] }>(response);
       return payload?.forms || [];
     } catch (err) {
-      console.warn('Failed to fetch saved forms', err);
-      return [];
+      if (suppressErrors) {
+        console.warn('Failed to fetch saved forms', err);
+        return [];
+      }
+      throw err;
     }
   }
 
+  /**
+   * Fetch metadata for a saved form and session reference.
+   */
   static async loadSavedForm(formId: string): Promise<{ url: string; name: string; sessionId?: string }> {
     const response = await apiFetch('GET', buildApiUrl('api', 'saved-forms', formId));
     return apiJsonFetch(response);
   }
 
+  /**
+   * Download the saved form PDF.
+   */
   static async downloadSavedForm(formId: string): Promise<Blob> {
     const response = await apiFetch('GET', buildApiUrl('api', 'saved-forms', formId, 'download'));
     if (!response.ok) {
@@ -67,11 +148,17 @@ export class ApiService {
     return response.blob();
   }
 
+  /**
+   * Delete a saved form by id.
+   */
   static async deleteSavedForm(formId: string): Promise<{ success: boolean }> {
     const response = await apiFetch('DELETE', buildApiUrl('api', 'saved-forms', formId));
     return apiJsonFetch(response);
   }
 
+  /**
+   * Save a form PDF to the user's profile.
+   */
   static async saveFormToProfile(
     blob: Blob,
     name: string,
@@ -91,6 +178,9 @@ export class ApiService {
     return apiJsonFetch(response);
   }
 
+  /**
+   * Ask the backend to materialize a fillable PDF with values.
+   */
   static async materializeFormPdf(blob: Blob, fields: PdfField[]): Promise<Blob> {
     const formData = new FormData();
     formData.append('pdf', blob, 'form.pdf');

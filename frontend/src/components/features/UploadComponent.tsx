@@ -1,3 +1,6 @@
+/**
+ * Upload panel for PDF detection or saved form selection.
+ */
 import React, { useRef, useState } from 'react';
 import './UploadComponent.css';
 
@@ -13,6 +16,9 @@ interface UploadComponentProps {
   deletingFormId?: string | null;
 }
 
+/**
+ * Render upload dropzone or saved forms list by variant.
+ */
 const UploadComponent: React.FC<UploadComponentProps> = ({
   onFileUpload,
   onValidationError,
@@ -27,6 +33,9 @@ const UploadComponent: React.FC<UploadComponentProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragActive, setDragActive] = useState(false);
 
+  /**
+   * Validate file type/size before passing it upstream.
+   */
   const handleFileSelect = (file: File) => {
     const name = file.name.toLowerCase();
     const isPdf =
@@ -47,6 +56,9 @@ const UploadComponent: React.FC<UploadComponentProps> = ({
     onFileUpload?.(file);
   };
 
+  /**
+   * Handle native file input changes.
+   */
   const handleFileInput = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
@@ -55,6 +67,9 @@ const UploadComponent: React.FC<UploadComponentProps> = ({
     event.target.value = '';
   };
 
+  /**
+   * Toggle drag state for dropzone UI.
+   */
   const handleDrag = (event: React.DragEvent) => {
     event.preventDefault();
     event.stopPropagation();
@@ -65,6 +80,9 @@ const UploadComponent: React.FC<UploadComponentProps> = ({
     }
   };
 
+  /**
+   * Process a dropped file and validate it.
+   */
   const handleDrop = (event: React.DragEvent) => {
     event.preventDefault();
     event.stopPropagation();
@@ -76,6 +94,9 @@ const UploadComponent: React.FC<UploadComponentProps> = ({
     }
   };
 
+  /**
+   * Open the file picker, using showPicker when supported.
+   */
   const openFileDialog = () => {
     const input = fileInputRef.current;
     if (!input) return;

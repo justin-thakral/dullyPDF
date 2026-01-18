@@ -27,6 +27,27 @@ body {
   --radius-lg: 18px;
   --radius-md: 14px;
   --radius-sm: 10px;
+  --alert-error-bg: #fef2f2;
+  --alert-error-border: #fecaca;
+  --alert-error-accent: #dc2626;
+  --alert-error-ink: #991b1b;
+  --alert-warning-bg: #fff7ed;
+  --alert-warning-border: #fed7aa;
+  --alert-warning-accent: #f97316;
+  --alert-warning-ink: #9a3412;
+  --alert-info-bg: #eff6ff;
+  --alert-info-border: #bfdbfe;
+  --alert-info-accent: #2563eb;
+  --alert-info-ink: #1e3a8a;
+  --alert-success-bg: #ecfdf3;
+  --alert-success-border: #bbf7d0;
+  --alert-success-accent: #22c55e;
+  --alert-success-ink: #166534;
+  --alert-banner-bg: rgba(15, 23, 42, 0.96);
+  --alert-banner-border: rgba(148, 163, 184, 0.35);
+  --alert-banner-ink: #f8fafc;
+  --alert-banner-muted: rgba(226, 232, 240, 0.92);
+  --alert-shadow: 0 18px 45px rgba(15, 23, 42, 0.32);
 
   font-family: var(--font-body);
   line-height: 1.5;

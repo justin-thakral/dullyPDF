@@ -1,3 +1,6 @@
+/**
+ * Field helpers for creation, naming, and formatting.
+ */
 import type { FieldRect, FieldType, PageSize, PdfField } from '../types';
 import { clampRectToPage } from './coords';
 

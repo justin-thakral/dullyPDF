@@ -1,25 +1,6 @@
 version: '3.9'
 
 services:
-  postgres:
-    image: postgres:16
-    container_name: pg-ai
-    restart: unless-stopped
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-healthdb}
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-      - ./db/init:/docker-entrypoint-initdb.d:ro
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-healthdb}"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-
   sqlserver:
     image: mcr.microsoft.com/mssql/server:2022-latest
     container_name: mssql-ai
@@ -40,7 +21,5 @@ services:
       retries: 20
 
 volumes:
-  pgdata:
-    driver: local
   mssqldata:
     driver: local

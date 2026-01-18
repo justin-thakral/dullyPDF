@@ -1,6 +1,9 @@
+/**
+ * Top navigation bar with zoom, user info, and data source actions.
+ */
 import { useEffect, useRef, useState } from 'react';
 
-export type DataSourceKind = 'sql' | 'csv' | 'excel' | 'txt' | 'none';
+export type DataSourceKind = 'csv' | 'excel' | 'txt' | 'none';
 
 type HeaderBarProps = {
   pageCount: number;
@@ -14,13 +17,18 @@ type HeaderBarProps = {
   dataSourceKind?: DataSourceKind;
   dataSourceLabel?: string | null;
   onChooseDataSource?: (kind: Exclude<DataSourceKind, 'none'>) => void;
-  onDisconnectSql?: () => void;
   onClearDataSource?: () => void;
   mappingInProgress?: boolean;
-  mapDbInProgress?: boolean;
-  hasMappedDb?: boolean;
-  onMapDb?: () => void;
-  canMapDb?: boolean;
+  mapSchemaInProgress?: boolean;
+  hasMappedSchema?: boolean;
+  onMapSchema?: () => void;
+  canMapSchema?: boolean;
+  renameInProgress?: boolean;
+  hasRenamedFields?: boolean;
+  onRename?: () => void;
+  onRenameAndMap?: () => void;
+  canRename?: boolean;
+  canRenameAndMap?: boolean;
   onOpenSearchFill?: () => void;
   canSearchFill?: boolean;
   onDownload?: () => void;
@@ -31,6 +39,9 @@ type HeaderBarProps = {
   canSave?: boolean;
 };
 
+/**
+ * Render header controls for navigation, mapping, and account actions.
+ */
 export function HeaderBar({
   pageCount,
   currentPage,
@@ -43,13 +54,18 @@ export function HeaderBar({
   dataSourceKind = 'none',
   dataSourceLabel,
   onChooseDataSource,
-  onDisconnectSql,
   onClearDataSource,
   mappingInProgress = false,
-  mapDbInProgress = false,
-  hasMappedDb = false,
-  onMapDb,
-  canMapDb = false,
+  mapSchemaInProgress = false,
+  hasMappedSchema = false,
+  onMapSchema,
+  canMapSchema = false,
+  renameInProgress = false,
+  hasRenamedFields = false,
+  onRename,
+  onRenameAndMap,
+  canRename = false,
+  canRenameAndMap = false,
   onOpenSearchFill,
   canSearchFill = false,
   onDownload,
@@ -59,18 +75,29 @@ export function HeaderBar({
   canDownload = false,
   canSave = false,
 }: HeaderBarProps) {
-  const hasMappingControls = Boolean(onChooseDataSource || onMapDb || onOpenSearchFill);
+  const hasMappingControls = Boolean(
+    onChooseDataSource || onMapSchema || onRename || onRenameAndMap || onOpenSearchFill,
+  );
   const userInitial = userEmail ? userEmail.charAt(0).toUpperCase() : null;
-  const mapDbLabel = mapDbInProgress ? 'Loading' : hasMappedDb ? 'Mapped' : 'Map DB';
-  const disableMapDb = !canMapDb || mappingInProgress || mapDbInProgress;
+  const mapSchemaLabel = mapSchemaInProgress ? 'Mapping' : hasMappedSchema ? 'Mapped' : 'Map Schema';
+  const renameLabel = renameInProgress ? 'Renaming' : hasRenamedFields ? 'Renamed' : 'Rename';
+  const renameAndMapLabel = mapSchemaInProgress ? 'Mapping' : 'Rename + Map';
+  const disableMapSchema = !canMapSchema || mappingInProgress || mapSchemaInProgress;
+  const disableRename = !canRename || mappingInProgress || renameInProgress || mapSchemaInProgress;
+  const disableRenameAndMap =
+    !canRenameAndMap || mappingInProgress || renameInProgress || mapSchemaInProgress;
   const disableSearch = !canSearchFill || mappingInProgress;
 
   const [showDataMenu, setShowDataMenu] = useState(false);
   const isConnected = dataSourceKind !== 'none';
   const connectedKind =
-    dataSourceKind === 'excel' ? 'XLS' : dataSourceKind.toUpperCase();
-  const dataSourceTitle = isConnected ? `Connected ${connectedKind}` : 'Database';
-  const dataSourceSubtitle = isConnected ? null : 'SQL/CSV/XLS/TXT';
+    dataSourceKind === 'excel'
+      ? 'XLS'
+      : dataSourceKind === 'txt'
+        ? 'TXT'
+        : dataSourceKind.toUpperCase();
+  const dataSourceTitle = isConnected ? `Connected ${connectedKind}` : 'Schema';
+  const dataSourceSubtitle = isConnected ? null : 'CSV/XLS/TXT';
   const menuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -189,18 +216,6 @@ export function HeaderBar({
                       role="menuitem"
                       onClick={() => {
                         setShowDataMenu(false);
-                        onChooseDataSource?.('sql');
-                      }}
-                    >
-                      <span className="data-source__badge">SQL</span>
-                      <span>SQL database…</span>
-                    </button>
-                    <button
-                      type="button"
-                      className="data-source__item"
-                      role="menuitem"
-                      onClick={() => {
-                        setShowDataMenu(false);
                         onChooseDataSource?.('csv');
                       }}
                     >
@@ -229,22 +244,9 @@ export function HeaderBar({
                       }}
                     >
                       <span className="data-source__badge">TXT</span>
-                      <span>TXT field list…</span>
+                      <span>TXT schema…</span>
                     </button>
-                    {dataSourceKind === 'sql' && onDisconnectSql ? (
-                      <button
-                        type="button"
-                        className="data-source__item data-source__item--danger"
-                        role="menuitem"
-                        onClick={() => {
-                          setShowDataMenu(false);
-                          onDisconnectSql?.();
-                        }}
-                      >
-                        Disconnect SQL
-                      </button>
-                    ) : null}
-                    {dataSourceKind !== 'none' && dataSourceKind !== 'sql' && onClearDataSource ? (
+                    {dataSourceKind !== 'none' && onClearDataSource ? (
                       <button
                         type="button"
                         className="data-source__item data-source__item--danger"
@@ -260,14 +262,34 @@ export function HeaderBar({
                   </div>
                 ) : null}
               </div>
+              {onRename ? (
+                <button
+                  className="ui-button ui-button--ghost ui-button--compact"
+                  type="button"
+                  onClick={onRename}
+                  disabled={disableRename}
+                >
+                  {renameLabel}
+                </button>
+              ) : null}
               <button
                 className="ui-button ui-button--ghost ui-button--compact"
                 type="button"
-                onClick={onMapDb}
-                disabled={disableMapDb}
+                onClick={onMapSchema}
+                disabled={disableMapSchema}
               >
-                {mapDbLabel}
+                {mapSchemaLabel}
               </button>
+              {onRenameAndMap ? (
+                <button
+                  className="ui-button ui-button--ghost ui-button--compact"
+                  type="button"
+                  onClick={onRenameAndMap}
+                  disabled={disableRenameAndMap}
+                >
+                  {renameAndMapLabel}
+                </button>
+              ) : null}
               {onOpenSearchFill ? (
                 <button
                   className="ui-button ui-button--ghost ui-button--compact"

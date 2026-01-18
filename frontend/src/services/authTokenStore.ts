@@ -1,6 +1,5 @@
 /**
- * Simple in-memory store for the latest Firebase ID token so API calls can
- * attach Authorization headers without each caller fetching tokens manually.
+ * Simple in-memory store for the latest Firebase ID token.
  */
 
 type TokenListener = (token: string | null) => void;
@@ -8,10 +7,16 @@ type TokenListener = (token: string | null) => void;
 let currentToken: string | null = null;
 const listeners = new Set<TokenListener>();
 
+/**
+ * Return the cached auth token.
+ */
 export function getAuthToken(): string | null {
   return currentToken;
 }
 
+/**
+ * Update the token and notify listeners.
+ */
 export function setAuthToken(token: string | null): void {
   currentToken = token;
   for (const listener of listeners) {
@@ -23,6 +28,9 @@ export function setAuthToken(token: string | null): void {
   }
 }
 
+/**
+ * Register a listener for token changes.
+ */
 export function onTokenChanged(listener: TokenListener): () => void {
   listeners.add(listener);
   return () => {
