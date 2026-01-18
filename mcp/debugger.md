@@ -159,3 +159,6 @@ Stop and ask for guidance if:
 - You discover sensitive data exposure.
 - A change would require destructive actions in prod.
 - The backend is down or returns repeated 5xx errors.
+
+# file cleanup
+If a bug from type 2 or 3 is found and then fixed, move it into fixed dir

@@ -27,7 +27,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import BackgroundTasks, FastAPI, File, Form, Header, HTTPException, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from firebase_admin import auth as firebase_auth
@@ -251,6 +251,18 @@ class RenameFieldsRequest(BaseModel):
     templateFields: Optional[List[TemplateOverlayField]] = None
 
 
+_DEFAULT_CORS_ORIGINS = [
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "http://localhost:5175",
+    "http://localhost:5176",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:5174",
+    "http://127.0.0.1:5175",
+    "http://127.0.0.1:5176",
+]
+
+
 def _resolve_cors_origins() -> list[str]:
     """
     Resolve CORS origins from environment with a debug-only wildcard option.
@@ -260,18 +272,27 @@ def _resolve_cors_origins() -> list[str]:
         if debug_enabled():
             return ["*"]
         raw = ""
-    if raw:
-        return [origin.strip() for origin in raw.split(",") if origin.strip()]
-    return [
-        "http://localhost:5173",
-        "http://localhost:5174",
-        "http://localhost:5175",
-        "http://localhost:5176",
-        "http://127.0.0.1:5173",
-        "http://127.0.0.1:5174",
-        "http://127.0.0.1:5175",
-        "http://127.0.0.1:5176",
-    ]
+    origins = [origin.strip() for origin in raw.split(",") if origin.strip()] if raw else []
+    if not _is_prod():
+        origins.extend(_DEFAULT_CORS_ORIGINS)
+    if not origins:
+        return list(_DEFAULT_CORS_ORIGINS)
+    seen: set[str] = set()
+    return [origin for origin in origins if not (origin in seen or seen.add(origin))]
+
+
+def _resolve_stream_cors_headers(origin: Optional[str]) -> Dict[str, str]:
+    """
+    Add explicit CORS headers for streaming responses when the origin is allowlisted.
+    """
+    if not origin:
+        return {}
+    allowed = _resolve_cors_origins()
+    if "*" in allowed:
+        return {"Access-Control-Allow-Origin": "*"}
+    if origin in allowed:
+        return {"Access-Control-Allow-Origin": origin, "Vary": "Origin"}
+    return {}
 
 
 def _verify_token(authorization: Optional[str]) -> Dict[str, Any]:
@@ -383,7 +404,8 @@ def _safe_pdf_download_filename(name: str, fallback: str = "document") -> str:
         trimmed = safe_base[:180]
         if not trimmed.lower().endswith(".pdf"):
             trimmed = f"{trimmed[:176]}.pdf"
-    return trimmed
+        return trimmed
+    return safe_base
 
 
 def _log_pdf_label(name: str) -> str:
@@ -394,7 +416,6 @@ def _log_pdf_label(name: str) -> str:
     digest = hashlib.sha256(safe.encode("utf-8")).hexdigest()[:10]
     suffix = ".pdf" if safe.lower().endswith(".pdf") else ""
     return f"pdf{suffix}#{digest}"
-    return safe_base
 
 
 def _cleanup_paths(paths: List[Path]) -> None:
@@ -1311,6 +1332,7 @@ async def create_schema_mapping(
 @app.post("/api/forms/materialize")
 async def materialize_form(
     background_tasks: BackgroundTasks,
+    request: Request,
     pdf: UploadFile = File(...),
     fields: str = Form(...),
     authorization: Optional[str] = Header(default=None),
@@ -1351,12 +1373,14 @@ async def materialize_form(
     if not raw_fields:
         background_tasks.add_task(_cleanup_paths, [temp_path])
         output_name = _safe_pdf_download_filename(filename, "form")
-        return FileResponse(
+        response = FileResponse(
             str(temp_path),
             media_type="application/pdf",
             filename=output_name,
             background=background_tasks,
         )
+        response.headers.update(_resolve_stream_cors_headers(request.headers.get("origin")))
+        return response
 
     template.setdefault("coordinateSystem", "originTop")
     template["fields"] = _coerce_field_payloads(raw_fields)
@@ -1378,12 +1402,14 @@ async def materialize_form(
 
     stem = os.path.splitext(filename)[0] or "form"
     output_name = _safe_pdf_download_filename(f"{stem}-fillable", "form")
-    return FileResponse(
+    response = FileResponse(
         str(output_path),
         media_type="application/pdf",
         filename=output_name,
         background=background_tasks,
     )
+    response.headers.update(_resolve_stream_cors_headers(request.headers.get("origin")))
+    return response
 
 
 @app.get("/api/saved-forms")
@@ -1423,7 +1449,11 @@ async def get_saved_form(form_id: str, authorization: Optional[str] = Header(def
 
 
 @app.get("/api/saved-forms/{form_id}/download")
-async def download_saved_form(form_id: str, authorization: Optional[str] = Header(default=None)):
+async def download_saved_form(
+    form_id: str,
+    request: Request,
+    authorization: Optional[str] = Header(default=None),
+):
     """
     Stream a saved form PDF from storage.
     """
@@ -1440,6 +1470,7 @@ async def download_saved_form(form_id: str, authorization: Optional[str] = Heade
     stream = stream_pdf(template.pdf_bucket_path)
     filename = _safe_pdf_download_filename(template.name or template.pdf_bucket_path or "form", "form")
     headers = {"Content-Disposition": f'inline; filename="{filename}"'}
+    headers.update(_resolve_stream_cors_headers(request.headers.get("origin")))
     return StreamingResponse(stream, media_type="application/pdf", headers=headers)
 
 

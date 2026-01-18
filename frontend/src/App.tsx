@@ -306,6 +306,7 @@ function App() {
   const [dataRows, setDataRows] = useState<Array<Record<string, unknown>>>([]);
   const [identifierKey, setIdentifierKey] = useState<string | null>(null);
   const [showSearchFill, setShowSearchFill] = useState(false);
+  const [searchFillSessionId, setSearchFillSessionId] = useState(0);
   const [sourceFile, setSourceFile] = useState<File | null>(null);
   const [sourceFileName, setSourceFileName] = useState<string | null>(null);
   const [saveInProgress, setSaveInProgress] = useState(false);
@@ -521,6 +522,7 @@ function App() {
     setDataRows([]);
     setIdentifierKey(null);
     setShowSearchFill(false);
+    setSearchFillSessionId((prev) => prev + 1);
     setSourceFile(null);
     setSourceFileName(null);
     setSaveInProgress(false);
@@ -589,6 +591,8 @@ function App() {
     async (file: File) => {
       const loadToken = loadTokenRef.current + 1;
       loadTokenRef.current = loadToken;
+      setShowSearchFill(false);
+      setSearchFillSessionId((prev) => prev + 1);
       setProcessingMode('fillable');
       setIsProcessing(true);
       setLoadError(null);
@@ -651,6 +655,8 @@ function App() {
     async (formId: string) => {
       const loadToken = loadTokenRef.current + 1;
       loadTokenRef.current = loadToken;
+      setShowSearchFill(false);
+      setSearchFillSessionId((prev) => prev + 1);
       setProcessingMode('saved');
       setIsProcessing(true);
       setLoadError(null);
@@ -994,6 +1000,7 @@ function App() {
 
       setSchemaError(null);
       try {
+        const mappingLoadToken = loadTokenRef.current;
         const templateFields = buildTemplateFields(activeFields);
         const mappingResult = await ApiService.mapSchema(
           activeSchemaId,
@@ -1001,6 +1008,9 @@ function App() {
           activeSavedFormId || undefined,
           detectSessionId || undefined,
         );
+        if (loadTokenRef.current !== mappingLoadToken) {
+          return false;
+        }
         if (!mappingResult?.success) {
           throw new Error(mappingResult?.error || 'Mapping generation failed');
         }
@@ -1067,12 +1077,16 @@ function App() {
         setMapSchemaInProgress(true);
       }
       try {
+        const renameLoadToken = loadTokenRef.current;
         const templateFields = buildTemplateFields(fieldsRef.current);
         const result = await ApiService.renameFields({
           sessionId: activeSessionId,
           schemaId: renameSchemaId || undefined,
           templateFields,
         });
+        if (loadTokenRef.current !== renameLoadToken) {
+          return null;
+        }
         if (!result?.success) {
           throw new Error(result?.error || 'OpenAI rename failed.');
         }
@@ -1267,6 +1281,8 @@ function App() {
     ) => {
       const loadToken = loadTokenRef.current + 1;
       loadTokenRef.current = loadToken;
+      setShowSearchFill(false);
+      setSearchFillSessionId((prev) => prev + 1);
 
       setProcessingMode('detect');
       setIsProcessing(true);
@@ -1391,8 +1407,10 @@ function App() {
 
   const handlePipelineConfirm = useCallback(async () => {
     if (!pendingDetectFile) return;
-    let resolvedSchemaId = schemaId;
-    if (uploadWantsMap) {
+    const wantsRename = uploadWantsRename;
+    const wantsMap = uploadWantsMap;
+    let resolvedSchemaId = wantsMap ? schemaId : null;
+    if (wantsMap) {
       if (schemaUploadInProgress) {
         setPipelineError('Schema file is still processing. Please wait.');
         return;
@@ -1422,10 +1440,12 @@ function App() {
     setPendingDetectFile(null);
     setShowPipelineModal(false);
     setPipelineError(null);
+    setUploadWantsRename(false);
+    setUploadWantsMap(false);
     void runDetectUpload(file, {
-      autoRename: uploadWantsRename,
-      autoMap: uploadWantsMap,
-      schemaIdOverride: resolvedSchemaId,
+      autoRename: wantsRename,
+      autoMap: wantsMap,
+      schemaIdOverride: wantsMap ? resolvedSchemaId : null,
     });
   }, [
     authUser,
@@ -1933,6 +1953,11 @@ function App() {
       : 'upload';
   const shouldShowProcessingAd = processingMode === 'detect' && Boolean(PROCESSING_AD_VIDEO_URL);
 
+  useEffect(() => {
+    if (currentView === 'editor') return;
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+  }, [currentView]);
+
   if (!authReady) {
     return (
       <div className="auth-loading-screen">
@@ -2272,6 +2297,7 @@ function App() {
         <SearchFillModal
           open={showSearchFill}
           onClose={() => setShowSearchFill(false)}
+          sessionId={searchFillSessionId}
           dataSourceKind={dataSourceKind}
           dataSourceLabel={dataSourceLabel}
           columns={dataColumns}

@@ -51,6 +51,8 @@ Please push back against "bad ideas." If a prompt isn't a good idea or would be 
 
 You may be working with other codex terminals. Don't worry if they made changes you didn't make, I have it setup to NOT overlap with code you are using. Just understand the changes.
 
+When you are told to test changes (via an MCP) assume that there is an existing terminal than ran npm run dev. 
+
 ## Commenting Structure
 
 Never use emojis. Write descriptive comments that explain approaches or non-obvious logic in English, helping someone quickly analyze the strategy. Call out key data structures and algorithms when they are important to understanding the flow. Anyone with strong programming fundamentals should be able to understand what is going on from these comments even if they are not too familiar with the specific language. Make sure you mention time complexity too, don't mention it if it's obvious and explicit, just for a complex workflow or algorithm where it be helpful to know. 

@@ -13,6 +13,7 @@ type SearchMode = 'contains' | 'equals';
 type SearchFillModalProps = {
   open: boolean;
   onClose: () => void;
+  sessionId?: number;
   dataSourceKind: DataSourceKind;
   dataSourceLabel: string | null;
   columns: string[];
@@ -195,6 +196,7 @@ function rowPreview(row: Record<string, unknown>, identifierKey: string | null):
 export default function SearchFillModal({
   open,
   onClose,
+  sessionId,
   dataSourceKind,
   dataSourceLabel,
   columns,
@@ -233,7 +235,7 @@ export default function SearchFillModal({
     setLocalError(null);
     setSearchMode('contains');
     setHasSearched(false);
-  }, [availableKeys, identifierKey, open]);
+  }, [availableKeys, identifierKey, open, sessionId]);
 
   /**
    * Execute a search against local rows.
