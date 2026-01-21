@@ -17,8 +17,8 @@ The legacy OpenCV pipeline is archived under `legacy/` and not used.
 Components:
 - Frontend (React + Vite): `frontend/` -> Firebase Hosting.
 - Backend (FastAPI): `backend/main.py` -> Cloud Run.
-- Detector (FastAPI): `backend/detector_main.py` -> Cloud Run.
-- Cloud Tasks: dispatches detection jobs to the detector service.
+- Detector services (FastAPI): `backend/detector_main.py` -> Cloud Run (light + heavy profiles).
+- Cloud Tasks: dispatches detection jobs to the light/heavy detector services.
 - Firebase Auth: client sign-in, ID tokens used by the backend.
 - Firestore: user roles, OpenAI credits, schema + template metadata.
 - Cloud Storage: stored PDFs and templates.
@@ -59,14 +59,14 @@ Files that implement auth and credentials:
 
 1) Build and tag backend + detector images from the same git SHA, then run the
    local smoke test (backend + detector + frontend) to validate auth + detection.
-2) Create the Cloud Tasks queue and grant the Cloud Tasks service agent
+2) Create the Cloud Tasks queues (light/heavy) and grant the Cloud Tasks service agent
    `roles/iam.serviceAccountTokenCreator` on `DETECTOR_TASKS_SERVICE_ACCOUNT`.
-3) Deploy the detector service from `Dockerfile.detector` with
+3) Deploy the detector services from `Dockerfile.detector` with
    `--no-allow-unauthenticated` and `--ingress all`, set the detector env vars,
-   and record the Cloud Run URL for `DETECTOR_TASKS_AUDIENCE`.
+   and record the Cloud Run URLs for `DETECTOR_TASKS_AUDIENCE_LIGHT/HEAVY`.
 4) Deploy the main backend from `Dockerfile` with `DETECTOR_MODE=tasks`, the
-   Cloud Tasks env vars (`DETECTOR_TASKS_*`, `DETECTOR_SERVICE_URL`), and
-   `roles/run.invoker` on the detector service.
+   Cloud Tasks env vars (`DETECTOR_TASKS_*`, `DETECTOR_SERVICE_URL_*`), and
+   `roles/run.invoker` on both detector services.
 5) Deploy the frontend with the Cloud Run URL and verify detection/rename flows.
 6) Run the smoke test in section 14 and monitor logs for task failures.
 
@@ -108,10 +108,18 @@ gcloud services enable \
   --project dullypdf
 ```
 
-Create the detection queue:
+Create the detection queues:
 ```
-gcloud tasks queues create commonforms-detect \
+gcloud tasks queues create commonforms-detect-light \
   --location us-central1 \
+  --max-attempts 5 \
+  --max-concurrent-dispatches=5 \
+  --project dullypdf
+
+gcloud tasks queues create commonforms-detect-heavy \
+  --location us-central1 \
+  --max-attempts 5 \
+  --max-concurrent-dispatches=2 \
   --project dullypdf
 ```
 
@@ -167,8 +175,8 @@ gcloud projects add-iam-policy-binding dullypdf \
 ```
 
 Detector service invoker:
-- Grant `roles/run.invoker` on the detector service to the same backend runtime SA.
-- If the detector service uses a dedicated runtime SA, grant it Firestore + Storage roles as well.
+- Grant `roles/run.invoker` on both detector services to the same backend runtime SA.
+- If the detector services use a dedicated runtime SA, grant it Firestore + Storage roles as well.
 
 ### B) Admin role management (custom claims)
 The backend runtime does not need Firebase Auth admin permissions.
@@ -184,7 +192,6 @@ Assign this only to an admin user or a dedicated admin SA.
 Store secrets in Secret Manager:
 - `dullypdf-prod-openai-key`
 - `dullypdf-prod-admin-token`
-- (Optional) `dullypdf-prod-hf-token` (HuggingFace token for seeding CommonForms weights)
 - (Optional) `dullypdf-prod-firebase-admin` for local prod testing or non-GCP runs
 
 Commands:
@@ -252,8 +259,13 @@ These must be set on Cloud Run:
 - `DETECTOR_MODE=tasks`
 - `DETECTOR_TASKS_PROJECT=dullypdf`
 - `DETECTOR_TASKS_LOCATION=us-central1`
-- `DETECTOR_TASKS_QUEUE=commonforms-detect`
-- `DETECTOR_SERVICE_URL=https://dullypdf-detector-xxxxx-uc.a.run.app`
+- `DETECTOR_TASKS_QUEUE_LIGHT=commonforms-detect-light`
+- `DETECTOR_TASKS_QUEUE_HEAVY=commonforms-detect-heavy`
+- `DETECTOR_SERVICE_URL_LIGHT=https://dullypdf-detector-light-xxxxx-uc.a.run.app`
+- `DETECTOR_SERVICE_URL_HEAVY=https://dullypdf-detector-heavy-xxxxx-uc.a.run.app`
+- `DETECTOR_TASKS_AUDIENCE_LIGHT=https://dullypdf-detector-light-xxxxx-uc.a.run.app`
+- `DETECTOR_TASKS_AUDIENCE_HEAVY=https://dullypdf-detector-heavy-xxxxx-uc.a.run.app`
+- `DETECTOR_TASKS_HEAVY_PAGE_THRESHOLD=10`
 - `DETECTOR_TASKS_SERVICE_ACCOUNT=dullypdf-backend-runtime@dullypdf.iam.gserviceaccount.com`
 
 If you use Secret Manager for keys:
@@ -263,19 +275,25 @@ If you use Secret Manager for keys:
 If you use ADC:
 - Do not set `FIREBASE_CREDENTIALS` or `GOOGLE_APPLICATION_CREDENTIALS`.
 
+Note:
+- If you only deploy one detector service, set `DETECTOR_TASKS_QUEUE` and
+  `DETECTOR_SERVICE_URL` instead of the light/heavy variants.
+
 ---
 
 ## 8) Detector env vars (prod)
 
-These must be set on the detector Cloud Run service:
+These must be set on each detector Cloud Run service:
 - `ENV=prod`
 - `FIREBASE_PROJECT_ID=dullypdf`
 - `FIREBASE_USE_ADC=true`
 - `FORMS_BUCKET=dullypdf-forms`
 - `TEMPLATES_BUCKET=dullypdf-templates`
-- `DETECTOR_TASKS_AUDIENCE=https://dullypdf-detector-xxxxx-uc.a.run.app`
+- `DETECTOR_TASKS_AUDIENCE=https://<this-service-url>`
 - `DETECTOR_CALLER_SERVICE_ACCOUNT=dullypdf-backend-runtime@dullypdf.iam.gserviceaccount.com`
 - `DETECTOR_ALLOW_UNAUTHENTICATED=false`
+- `DETECTOR_TASKS_MAX_ATTEMPTS=5`
+- `DETECTOR_RETRY_AFTER_SECONDS=5`
 - `COMMONFORMS_MODEL=FFDNet-L`
 - `COMMONFORMS_MODEL_GCS_URI=gs://dullypdf-models/commonforms/FFDNet-L.pt`
 - `COMMONFORMS_WEIGHTS_CACHE_DIR=/tmp/commonforms-models`
@@ -296,17 +314,34 @@ gcloud builds submit \
   .
 ```
 
-2) Deploy:
+2) Deploy light (standard CPU):
 ```
-gcloud run deploy dullypdf-detector \
+gcloud run deploy dullypdf-detector-light \
   --image us-central1-docker.pkg.dev/dullypdf/dullypdf-detector/dullypdf-detector:latest \
   --region us-central1 \
   --project dullypdf \
   --service-account dullypdf-backend-runtime@dullypdf.iam.gserviceaccount.com \
   --ingress all \
   --no-allow-unauthenticated \
-  --memory 2Gi \
-  --set-env-vars ENV=prod,FIREBASE_PROJECT_ID=dullypdf,FIREBASE_USE_ADC=true,FORMS_BUCKET=dullypdf-forms,TEMPLATES_BUCKET=dullypdf-templates,DETECTOR_TASKS_AUDIENCE=https://dullypdf-detector-xxxxx-uc.a.run.app,DETECTOR_CALLER_SERVICE_ACCOUNT=dullypdf-backend-runtime@dullypdf.iam.gserviceaccount.com,DETECTOR_ALLOW_UNAUTHENTICATED=false,COMMONFORMS_MODEL=FFDNet-L,COMMONFORMS_MODEL_GCS_URI=gs://dullypdf-models/commonforms/FFDNet-L.pt,COMMONFORMS_WEIGHTS_CACHE_DIR=/tmp/commonforms-models,COMMONFORMS_WEIGHTS_LOCK_TIMEOUT_SECONDS=600
+  --cpu 2 \
+  --memory 4Gi \
+  --max-instances 5 \
+  --set-env-vars ENV=prod,FIREBASE_PROJECT_ID=dullypdf,FIREBASE_USE_ADC=true,FORMS_BUCKET=dullypdf-forms,TEMPLATES_BUCKET=dullypdf-templates,DETECTOR_TASKS_AUDIENCE=https://dullypdf-detector-light-xxxxx-uc.a.run.app,DETECTOR_CALLER_SERVICE_ACCOUNT=dullypdf-backend-runtime@dullypdf.iam.gserviceaccount.com,DETECTOR_ALLOW_UNAUTHENTICATED=false,DETECTOR_TASKS_MAX_ATTEMPTS=5,DETECTOR_RETRY_AFTER_SECONDS=5,COMMONFORMS_MODEL=FFDNet-L,COMMONFORMS_MODEL_GCS_URI=gs://dullypdf-models/commonforms/FFDNet-L.pt,COMMONFORMS_WEIGHTS_CACHE_DIR=/tmp/commonforms-models,COMMONFORMS_WEIGHTS_LOCK_TIMEOUT_SECONDS=600
+```
+
+3) Deploy heavy (high-capacity CPU):
+```
+gcloud run deploy dullypdf-detector-heavy \
+  --image us-central1-docker.pkg.dev/dullypdf/dullypdf-detector/dullypdf-detector:latest \
+  --region us-central1 \
+  --project dullypdf \
+  --service-account dullypdf-backend-runtime@dullypdf.iam.gserviceaccount.com \
+  --ingress all \
+  --no-allow-unauthenticated \
+  --cpu 4 \
+  --memory 8Gi \
+  --max-instances 2 \
+  --set-env-vars ENV=prod,FIREBASE_PROJECT_ID=dullypdf,FIREBASE_USE_ADC=true,FORMS_BUCKET=dullypdf-forms,TEMPLATES_BUCKET=dullypdf-templates,DETECTOR_TASKS_AUDIENCE=https://dullypdf-detector-heavy-xxxxx-uc.a.run.app,DETECTOR_CALLER_SERVICE_ACCOUNT=dullypdf-backend-runtime@dullypdf.iam.gserviceaccount.com,DETECTOR_ALLOW_UNAUTHENTICATED=false,DETECTOR_TASKS_MAX_ATTEMPTS=5,DETECTOR_RETRY_AFTER_SECONDS=5,COMMONFORMS_MODEL=FFDNet-L,COMMONFORMS_MODEL_GCS_URI=gs://dullypdf-models/commonforms/FFDNet-L.pt,COMMONFORMS_WEIGHTS_CACHE_DIR=/tmp/commonforms-models,COMMONFORMS_WEIGHTS_LOCK_TIMEOUT_SECONDS=600
 ```
 
 Security notes:
@@ -325,7 +360,7 @@ gcloud run deploy dullypdf-backend \
   --project dullypdf \
   --service-account dullypdf-backend-runtime@dullypdf.iam.gserviceaccount.com \
   --allow-unauthenticated \
-  --set-env-vars ENV=prod,FIREBASE_PROJECT_ID=dullypdf,FIREBASE_USE_ADC=true,FORMS_BUCKET=dullypdf-forms,TEMPLATES_BUCKET=dullypdf-templates,SANDBOX_CORS_ORIGINS=https://your-domain.com,SANDBOX_LOG_OPENAI_RESPONSE=false,BASE_OPENAI_CREDITS=10 \
+  --set-env-vars ENV=prod,FIREBASE_PROJECT_ID=dullypdf,FIREBASE_USE_ADC=true,FORMS_BUCKET=dullypdf-forms,TEMPLATES_BUCKET=dullypdf-templates,SANDBOX_CORS_ORIGINS=https://your-domain.com,SANDBOX_LOG_OPENAI_RESPONSE=false,BASE_OPENAI_CREDITS=10,DETECTOR_MODE=tasks,DETECTOR_TASKS_PROJECT=dullypdf,DETECTOR_TASKS_LOCATION=us-central1,DETECTOR_TASKS_QUEUE_LIGHT=commonforms-detect-light,DETECTOR_TASKS_QUEUE_HEAVY=commonforms-detect-heavy,DETECTOR_SERVICE_URL_LIGHT=https://dullypdf-detector-light-xxxxx-uc.a.run.app,DETECTOR_SERVICE_URL_HEAVY=https://dullypdf-detector-heavy-xxxxx-uc.a.run.app,DETECTOR_TASKS_AUDIENCE_LIGHT=https://dullypdf-detector-light-xxxxx-uc.a.run.app,DETECTOR_TASKS_AUDIENCE_HEAVY=https://dullypdf-detector-heavy-xxxxx-uc.a.run.app,DETECTOR_TASKS_SERVICE_ACCOUNT=dullypdf-backend-runtime@dullypdf.iam.gserviceaccount.com,DETECTOR_TASKS_HEAVY_PAGE_THRESHOLD=10 \
   --set-secrets OPENAI_API_KEY=dullypdf-prod-openai-key:latest,ADMIN_TOKEN=dullypdf-prod-admin-token:latest
 ```
 

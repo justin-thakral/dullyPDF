@@ -3,9 +3,9 @@
 import json
 from typing import Any, Dict, Optional
 
-from google.protobuf import duration_pb2
+from google.protobuf import duration_pb2, timestamp_pb2
 
-from .env_utils import env_value, int_env
+from .env_utils import env_truthy, env_value, int_env
 
 
 DETECTOR_TASK_HANDLER = "/internal/detect"
@@ -100,5 +100,8 @@ def enqueue_detection_task(payload: Dict[str, Any], *, profile: Optional[str] = 
             deadline_seconds = 0
         if deadline_seconds > 0:
             task["dispatch_deadline"] = duration_pb2.Duration(seconds=deadline_seconds)
+    if env_truthy("DETECTOR_TASKS_FORCE_IMMEDIATE"):
+        # Schedule tasks in the past to dispatch immediately even if host clock skew exists.
+        task["schedule_time"] = timestamp_pb2.Timestamp(seconds=0)
     response = client.create_task(request={"parent": parent, "task": task})
     return response.name

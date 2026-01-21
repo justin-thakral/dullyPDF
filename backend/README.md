@@ -48,6 +48,7 @@ FastAPI service for PDF field detection, schema-only OpenAI mapping, and saved-f
 - `DETECTOR_TASKS_SERVICE_ACCOUNT`
 - `DETECTOR_TASKS_AUDIENCE`, `DETECTOR_TASKS_AUDIENCE_LIGHT`, `DETECTOR_TASKS_AUDIENCE_HEAVY` (optional)
 - `DETECTOR_TASKS_DISPATCH_DEADLINE_SECONDS_LIGHT`, `DETECTOR_TASKS_DISPATCH_DEADLINE_SECONDS_HEAVY` (optional)
+- `DETECTOR_TASKS_FORCE_IMMEDIATE` (optional; schedule tasks in the past to bypass host clock skew)
 
 Detector env examples:
 - `config/detector.dev.env.example`
