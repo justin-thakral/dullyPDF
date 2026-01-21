@@ -28,6 +28,8 @@ admin tokens, or auth headers (search terms: `FIREBASE_`, `GOOGLE_APPLICATION_CR
 3) **Admin override token (backend only)**
    - `ADMIN_TOKEN` in `env/backend.dev.env` / `env/backend.prod.env`.
    - Optional dev override for admin-only endpoints.
+   - Ignored when `ENV=prod`.
+   - Set `SANDBOX_ALLOW_ADMIN_OVERRIDE=false` to disable in dev (prod-like runs).
    - Frontend can attach it only in dev via `VITE_ADMIN_TOKEN` (never in prod).
 
 4) **Firebase ID tokens (client auth)**
@@ -36,9 +38,10 @@ admin tokens, or auth headers (search terms: `FIREBASE_`, `GOOGLE_APPLICATION_CR
    - Attached to API requests in `frontend/src/services/apiConfig.ts`.
    - Verified on backend in `backend/firebaseDB/firebase_service.py` via `verify_id_token`.
 
-5) **Schema metadata + mapping payloads (server stored)**
+5) **Schema metadata (server stored, TTL)**
    - Derived from client-side CSV parsing (headers/types only).
-   - Stored in Firestore via `backend/firebaseDB/schema_database.py`.
+   - Stored in Firestore via `backend/firebaseDB/schema_database.py` with TTL expiry
+     (`SANDBOX_SCHEMA_TTL_SECONDS`, `schema_metadata.expires_at`).
    - CSV rows and field values are never uploaded to the server.
 
 ### Dev flow (local)
@@ -52,15 +55,26 @@ admin tokens, or auth headers (search terms: `FIREBASE_`, `GOOGLE_APPLICATION_CR
 5) Client ID tokens are attached as `Authorization: Bearer <token>` to backend calls.
 6) Dev-only `VITE_ADMIN_TOKEN` can be injected into `x-admin-token` headers
    by `frontend/src/services/apiConfig.ts`.
+7) Detector service can set `DETECTOR_ALLOW_UNAUTHENTICATED=true` for local testing
+   (ignored in prod).
 
 ### Prod flow (runtime)
 
-1) Backend should start with a runtime service account that has access to Secret Manager
-   (recommended) or injects `FIREBASE_CREDENTIALS` securely.
+1) Backend should start with a runtime service account and `FIREBASE_USE_ADC=true`
+   on Cloud Run (recommended). Use `FIREBASE_CREDENTIALS` only for non-GCP runs.
 2) `scripts/run-backend-prod.sh` can be used for local prod testing; in real prod,
    prefer ADC (no JSON keys on disk).
 3) Frontend uses `config/frontend.prod.env.example` values (Firebase web config).
 4) `VITE_ADMIN_TOKEN` must not be set in prod builds.
+
+### Detector service auth (prod)
+
+1) Main API enqueues detection jobs via Cloud Tasks with an OIDC token.
+2) Cloud Tasks uses `DETECTOR_TASKS_SERVICE_ACCOUNT` to mint the token.
+3) Detector service validates the token audience (`DETECTOR_TASKS_AUDIENCE` or detector URL).
+4) Optionally restrict callers with `DETECTOR_CALLER_SERVICE_ACCOUNT`.
+5) Run the detector service with private ingress and allow only the main API
+   service account to invoke it (no public access).
 
 ### File-by-file map (credential + auth related)
 
@@ -79,9 +93,10 @@ Firebase Admin + auth:
 - `backend/main.py` enforces auth checks for schema mapping endpoints.
 
 Schema mapping data:
-- `backend/firebaseDB/schema_database.py` stores schema metadata + mapping payloads.
+- `backend/firebaseDB/schema_database.py` stores schema metadata (headers/types only).
 - `backend/ai/schema_mapping.py` builds allowlist payloads for schema mapping requests.
-- `backend/firebaseDB/schema_database.py` stores OpenAI rename request metadata only.
+- `backend/firebaseDB/schema_database.py` stores OpenAI rename/mapping request metadata only.
+- `backend/firebaseDB/detection_database.py` stores detection request metadata only.
 
 Frontend auth:
 - `frontend/src/config/firebaseConfig.ts` loads public Firebase config.
@@ -98,22 +113,26 @@ Repo hygiene:
 
 - Firebase Admin credentials are stored in Secret Manager and not in git.
 - `serviceAccounts/` and common key patterns are gitignored.
-- Admin override tokens are only injected in dev (`env.DEV` gates admin headers).
+- Admin override tokens are only injected in dev (`env.DEV` gates admin headers) and ignored when `ENV=prod`.
 - Revocation checks are enabled in prod by default (`FIREBASE_CHECK_REVOKED` or `ENV=prod`).
+- Password-based logins are blocked until the email is verified; OAuth providers are treated as verified.
 - Schema metadata is stored without CSV rows or field values.
 - Storage paths are allowlisted and validated in `backend/firebaseDB/storage_service.py`.
 
 ### Things to review or tighten further
 
-- **Logging**: ensure schema metadata and mapping payloads are the only stored OpenAI metadata.
+- **Logging**: ensure schema metadata and request metadata are the only stored OpenAI metadata.
+- **Retention**: OpenAI + detection logs expire via `SANDBOX_OPENAI_LOG_TTL_SECONDS` and Firestore TTL on
+  `openai_requests.expires_at`, `openai_rename_requests.expires_at`, `detection_requests.expires_at`.
 - **Credits**: base users start with 10 lifetime OpenAI credits; credits are consumed per page.
 - **Secret access**: restrict `roles/secretmanager.secretAccessor` to only the backend runtime SA.
-- **Keyless prod**: prefer ADC/Workload Identity in production to avoid JSON keys entirely.
+- **Keyless prod**: prefer ADC/Workload Identity in production to avoid JSON keys entirely
+  (`FIREBASE_USE_ADC=true` on Cloud Run).
 
 ## 1) God-mode endpoints: do not expose admin tokens to the client
 
 Current behavior:
-- The backend can accept an `ADMIN_TOKEN` (or `SANDBOX_DEBUG_PASSWORD` with `--debug`) as a god-mode override.
+- The backend can accept an `ADMIN_TOKEN` (or `SANDBOX_DEBUG_PASSWORD` with `--debug`) as a god-mode override in dev.
 - The frontend can optionally send an `x-admin-token` header in development.
 
 Production hardening:
@@ -121,6 +140,7 @@ Production hardening:
 2) **Set `ADMIN_TOKEN` only on the backend server** (via environment or secret manager).
 3) **Use Firebase custom claims for server-side role checks.**
    - Keep any admin override on the server only.
+4) **Disable the override in prod-like environments** by setting `SANDBOX_ALLOW_ADMIN_OVERRIDE=false`.
 
 ## 2) Firebase token revocation enforcement
 
@@ -141,6 +161,7 @@ Debug-only behavior should never be enabled in production.
 
 Checklist:
 - Use `--debug` only for local development.
+- Debug flags are ignored when `ENV=prod`.
 - Keep `SANDBOX_CORS_ORIGINS=*` disabled in production.
 - Keep `SANDBOX_LOG_OPENAI_RESPONSE` disabled in production.
 - `SANDBOX_ENABLE_LEGACY_ENDPOINTS` controls legacy `/api/process-pdf` and `/api/register-fillable` in dev; it is ignored in prod (always disabled).
@@ -160,15 +181,18 @@ Production hardening:
 ## 4b) Session cache retention
 
 Current behavior:
-- Detection sessions are cached in memory with PDF bytes for follow-on rename/mapping.
-- Entries expire after `SANDBOX_SESSION_TTL_SECONDS` (default 3600) with sweeps every
-  `SANDBOX_SESSION_SWEEP_INTERVAL_SECONDS`.
-- Cache size is capped by `SANDBOX_SESSION_MAX_ENTRIES` using LRU eviction.
+- Detection sessions are cached in memory (L1) with PDF bytes for follow-on rename/mapping.
+- Session metadata and artifacts are persisted in Firestore + GCS (L2) for multi-instance access.
+- L1 entries expire after `SANDBOX_SESSION_TTL_SECONDS` (default 3600) with sweeps every
+  `SANDBOX_SESSION_SWEEP_INTERVAL_SECONDS`, and LRU eviction at `SANDBOX_SESSION_MAX_ENTRIES`.
+- L2 entries should expire via Firestore TTL and a scheduled cleanup job that deletes
+  session artifacts in GCS aligned to the same TTL.
+- Sessions without an owning `user_id` are denied access by user-authenticated endpoints.
 
 Production hardening:
 1) Keep the TTL short enough to minimize retention of sensitive PDFs.
 2) Keep `SANDBOX_SESSION_MAX_ENTRIES` low enough to bound memory use.
-3) Consider externalizing sessions to a secure store if multi-instance access is required.
+3) Ensure `SANDBOX_SESSION_L2_TOUCH_SECONDS` throttles L2 updates to limit Firestore writes.
 
 ## 4c) Detection rate limiting
 

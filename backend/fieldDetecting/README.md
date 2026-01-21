@@ -1,7 +1,7 @@
 ## CommonForms PDF Field Detection
 
-This backend runs the CommonForms detector and supports schema-only OpenAI mapping via
-separate endpoints. The legacy OpenCV sandbox pipeline has been moved into
+This backend runs the CommonForms detector (via a dedicated detector service) and supports
+schema-only OpenAI mapping via separate endpoints. The legacy OpenCV sandbox pipeline has been moved into
 `legacy/fieldDetecting/` and is not part of the main pipeline.
 
 Docs:
@@ -35,7 +35,8 @@ When rename is enabled, artifacts land under `backend/fieldDetecting/outputArtif
 
 - Python 3.10+
 - Create a venv at `backend/.venv`: `python3 -m venv backend/.venv`
-- Install deps: `backend/.venv/bin/pip install -r backend/requirements.txt`
+- Install deps: `backend/.venv/bin/pip install -r backend/requirements.txt` (main API) or
+  `backend/.venv/bin/pip install -r backend/requirements-detector.txt` (detector service).
 - Export your API key for the optional rename + schema mapping passes: `export OPENAI_API_KEY=sk-...`
 - Configure Firebase Admin for request authentication:
   - `export FIREBASE_CREDENTIALS='{"type":"service_account", ...}'` (JSON string), or
@@ -49,7 +50,7 @@ When rename is enabled, artifacts land under `backend/fieldDetecting/outputArtif
   - `export FORMS_BUCKET=dullypdf-forms`
   - `export TEMPLATES_BUCKET=dullypdf-templates`
 - Optional admin override (dev only):
-  - `export ADMIN_TOKEN=some-secret` (clients send `Authorization: Bearer <token>` or `x-admin-token`)
+  - `export ADMIN_TOKEN=some-secret` (clients send `Authorization: Bearer <token>` or `x-admin-token`; ignored in prod or when `SANDBOX_ALLOW_ADMIN_OVERRIDE=false`)
 
 ### Roles
 
@@ -64,12 +65,15 @@ Roles are reserved for admin workflows; schema/template access is enforced per u
 ### CommonForms tuning
 
 - `COMMONFORMS_MODEL` (default `FFDNet-L`)
+- `COMMONFORMS_MODEL_GCS_URI` (optional; GCS URI to model weights)
 - `COMMONFORMS_CONFIDENCE` (default `0.3`)
 - `COMMONFORMS_IMAGE_SIZE` (default `1600`)
 - `COMMONFORMS_DEVICE` (default `cpu`)
 - `COMMONFORMS_FAST` (default `false`)
 - `COMMONFORMS_MULTILINE` (default `false`)
 - `COMMONFORMS_BATCH_SIZE` (default `4`)
+- `COMMONFORMS_WEIGHTS_CACHE_DIR` (default `/tmp/commonforms-models`)
+- `COMMONFORMS_WEIGHTS_LOCK_TIMEOUT_SECONDS` (default `600`)
 
 ### Run the service
 
@@ -79,9 +83,19 @@ Roles are reserved for admin workflows; schema/template access is enforced per u
 
 ### Detect fields
 
+Tip: avoid pasting real tokens into shell history. Export a token in your environment
+and reference it in the header (for example, `-H "Authorization: Bearer ${FIREBASE_ID_TOKEN}"`).
+
 ```
 curl -X POST http://localhost:8000/detect-fields \
   -H "Authorization: Bearer <firebase-id-token>" \
   -F "file=@sample.pdf" \
   -F "pipeline=commonforms"
+```
+
+Poll for results:
+
+```
+curl -X GET http://localhost:8000/detect-fields/<sessionId> \
+  -H "Authorization: Bearer <firebase-id-token>"
 ```

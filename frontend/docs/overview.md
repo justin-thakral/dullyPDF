@@ -6,13 +6,15 @@ The frontend is a React + TypeScript workspace for visualizing PDFs, editing det
 
 - Loads local PDFs via PDF.js and renders pages to canvas.
 - Imports existing AcroForm widgets when present.
-- Calls `/detect-fields` (CommonForms detection only).
+- Calls `/detect-fields` to enqueue CommonForms detection and polls `/detect-fields/{sessionId}` for results.
 - Calls `/api/renames/ai` for OpenAI field rename (PDF page images + overlay tags; schema headers are included for rename+map).
 - Lets you drag, resize, rename, and retype fields.
 - Maps schema columns to PDF fields using OpenAI mapping of schema headers + template tags; the UI warns users before sending headers.
 - Consumes OpenAI credits per PDF page for rename or mapping (combined counts once per page).
 - Runs Search & Fill to populate values from a selected local record.
 - Saves filled forms to your profile via the backend.
+- Uses FirebaseUI for email/password + Google + GitHub login; password logins require email verification before access.
+- Shows a profile view with tier limits, credits, and saved forms.
 
 ## What it does not do
 

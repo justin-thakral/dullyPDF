@@ -15,7 +15,7 @@ $chrome=@((Join-Path $env:ProgramFiles 'Google\Chrome\Application\chrome.exe'),(
 ### Linux/macOS
 
 ```bash
-google-chrome --remote-debugging-port=9222 --user-data-dir=/tmp/chrome-codex http://localhost:5173
+google-chrome --remote-debugging-port=9222 --remote-debugging-address=127.0.0.1 --user-data-dir=/tmp/chrome-codex http://localhost:5173
 ```
 
 ## Multiple instances (recommended for parallel terminals)
@@ -106,6 +106,21 @@ Then verify from WSL:
 
 ```bash
 curl http://172.19.240.1:9222/json/version
+```
+
+Security note: the portproxy + firewall rule exposes DevTools to any host that can reach the
+listen address. Remove the rule when you are done:
+
+```powershell
+netsh interface portproxy delete v4tov4 listenaddress=172.19.240.1 listenport=9222
+netsh advfirewall firewall delete rule name="Chrome Remote Debugging 9222"
+```
+
+Cleanup when done:
+
+```powershell
+netsh interface portproxy delete v4tov4 listenaddress=172.19.240.1 listenport=9222
+netsh advfirewall firewall delete rule name="Chrome Remote Debugging 9222"
 ```
 
 ## Notes

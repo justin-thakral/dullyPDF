@@ -11,7 +11,12 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
-import { REPO_ROOT, asAbsolutePath, assertWorkingDirectoryWithinRepo } from './repo-paths.js';
+import {
+  REPO_ROOT,
+  asAbsolutePath,
+  assertPathWithinRepo,
+  assertWorkingDirectoryWithinRepo,
+} from './repo-paths.js';
 
 dotenv.config({ path: path.join(REPO_ROOT, 'mcp', '.env.local') });
 assertWorkingDirectoryWithinRepo('dullypdf-mcp');
@@ -26,6 +31,32 @@ const HTTP_METHODS = new Set([
   'HEAD',
   'OPTIONS',
 ]);
+const LOCALHOST_SUFFIX = '.localhost';
+
+const normalizeUrl = (value) => {
+  if (!value) return '';
+  return value.includes('://') ? value : `http://${value}`;
+};
+
+const isLocalHost = (hostname) => {
+  if (!hostname) return false;
+  if (hostname === 'localhost' || hostname === '::1' || hostname === '0.0.0.0') {
+    return true;
+  }
+  if (hostname.startsWith('127.')) {
+    return true;
+  }
+  return hostname.endsWith(LOCALHOST_SUFFIX);
+};
+
+const isLocalUrl = (value) => {
+  try {
+    const url = new URL(normalizeUrl(value));
+    return isLocalHost(url.hostname);
+  } catch (error) {
+    return false;
+  }
+};
 
 class DullyPdfMcpServer {
   constructor() {
@@ -41,8 +72,10 @@ class DullyPdfMcpServer {
       }
     );
 
-    this.envName = (process.env.DULLY_MCP_ENV || 'dev').toLowerCase();
     this.apiBaseUrl = process.env.DULLY_MCP_API_BASE_URL || 'http://localhost:8000';
+    const explicitEnv = process.env.DULLY_MCP_ENV;
+    const inferredEnv = explicitEnv || (isLocalUrl(this.apiBaseUrl) ? 'dev' : 'prod');
+    this.envName = inferredEnv.toLowerCase();
     this.frontendUrl = process.env.DULLY_MCP_FRONTEND_URL || 'http://localhost:5173';
     this.openApiUrl =
       process.env.DULLY_MCP_OPENAPI_URL || `${this.apiBaseUrl.replace(/\/$/, '')}/openapi.json`;
@@ -412,6 +445,7 @@ class DullyPdfMcpServer {
     if (!resolved || !fs.existsSync(resolved)) {
       throw new Error(`File not found: ${filePath}`);
     }
+    assertPathWithinRepo(resolved, 'upload path');
     const httpMethod = method || 'POST';
     this.ensureAllowed(httpMethod, endpoint);
 

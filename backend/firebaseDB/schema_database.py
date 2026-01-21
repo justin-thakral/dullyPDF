@@ -1,20 +1,25 @@
-"""Firestore-backed schema + mapping metadata operations.
+"""Firestore-backed schema metadata operations.
 """
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+import os
 from typing import Any, Dict, List, Optional
 
 from ..fieldDetecting.rename_pipeline.combinedSrc.config import get_logger
 from .firebase_service import get_firestore_client
+from .log_utils import log_expires_at, now_iso
 
 
 logger = get_logger(__name__)
 
 SCHEMAS_COLLECTION = "schema_metadata"
-MAPPINGS_COLLECTION = "template_mappings"
 OPENAI_REQUESTS_COLLECTION = "openai_requests"
 OPENAI_RENAME_REQUESTS_COLLECTION = "openai_rename_requests"
+try:
+    _SCHEMA_TTL_SECONDS = int(os.getenv("SANDBOX_SCHEMA_TTL_SECONDS", "3600"))
+except ValueError:
+    _SCHEMA_TTL_SECONDS = 3600
 
 
 @dataclass(frozen=True)
@@ -29,21 +34,25 @@ class SchemaRecord:
     sample_count: Optional[int]
 
 
-@dataclass(frozen=True)
-class MappingRecord:
-    id: str
-    schema_id: str
-    template_id: Optional[str]
-    user_id: str
-    created_at: Optional[str]
-    updated_at: Optional[str]
-    payload: Dict[str, Any]
+def _schema_expires_at() -> Optional[datetime]:
+    """Return expiration timestamp for schema metadata."""
+    if _SCHEMA_TTL_SECONDS <= 0:
+        return None
+    return datetime.now(timezone.utc) + timedelta(seconds=_SCHEMA_TTL_SECONDS)
 
 
-def _now_iso() -> str:
-    """Return an ISO-8601 timestamp in UTC.
-    """
-    return datetime.now(timezone.utc).isoformat()
+def _is_expired(data: Dict[str, Any]) -> bool:
+    expires_at = data.get("expires_at")
+    if not expires_at:
+        return False
+    if isinstance(expires_at, datetime):
+        return expires_at <= datetime.now(timezone.utc)
+    if isinstance(expires_at, str):
+        try:
+            return datetime.fromisoformat(expires_at) <= datetime.now(timezone.utc)
+        except ValueError:
+            return False
+    return False
 
 
 def _serialize_schema(doc) -> SchemaRecord:
@@ -76,7 +85,7 @@ def create_schema(
         raise ValueError("Schema fields are required")
     client = get_firestore_client()
     doc_ref = client.collection(SCHEMAS_COLLECTION).document()
-    timestamp = _now_iso()
+    timestamp = now_iso()
     payload = {
         "owner_user_id": user_id,
         "name": name or None,
@@ -86,6 +95,9 @@ def create_schema(
         "created_at": timestamp,
         "updated_at": timestamp,
     }
+    expires_at = _schema_expires_at()
+    if expires_at:
+        payload["expires_at"] = expires_at
     doc_ref.set(payload)
     logger.debug("Stored schema metadata: %s", doc_ref.id)
     return _serialize_schema(doc_ref.get())
@@ -98,7 +110,12 @@ def list_schemas(user_id: str) -> List[SchemaRecord]:
         return []
     client = get_firestore_client()
     snapshot = client.collection(SCHEMAS_COLLECTION).where("owner_user_id", "==", user_id).get()
-    records = [_serialize_schema(doc) for doc in snapshot]
+    records = []
+    for doc in snapshot:
+        data = doc.to_dict() or {}
+        if _is_expired(data):
+            continue
+        records.append(_serialize_schema(doc))
     records.sort(key=lambda rec: rec.created_at or "", reverse=True)
     return records
 
@@ -117,48 +134,10 @@ def get_schema(schema_id: str, user_id: str) -> Optional[SchemaRecord]:
     if data.get("owner_user_id") != user_id:
         logger.debug("Schema ownership mismatch blocked: %s", schema_id)
         return None
+    if _is_expired(data):
+        logger.debug("Schema expired: %s", schema_id)
+        return None
     return _serialize_schema(snapshot)
-
-
-def _serialize_mapping(doc) -> MappingRecord:
-    data = doc.to_dict() or {}
-    return MappingRecord(
-        id=doc.id,
-        schema_id=data.get("schema_id") or "",
-        template_id=data.get("template_id"),
-        user_id=data.get("user_id") or "",
-        created_at=data.get("created_at"),
-        updated_at=data.get("updated_at"),
-        payload=data.get("payload") or {},
-    )
-
-
-def create_mapping(
-    *,
-    user_id: str,
-    schema_id: str,
-    template_id: Optional[str],
-    payload: Dict[str, Any],
-) -> MappingRecord:
-    """Persist a schema-to-template mapping payload.
-    """
-    if not user_id or not schema_id:
-        raise ValueError("user_id and schema_id are required")
-    client = get_firestore_client()
-    doc_ref = client.collection(MAPPINGS_COLLECTION).document()
-    timestamp = _now_iso()
-    doc_ref.set(
-        {
-            "schema_id": schema_id,
-            "template_id": template_id or None,
-            "user_id": user_id,
-            "payload": payload,
-            "created_at": timestamp,
-            "updated_at": timestamp,
-        }
-    )
-    logger.debug("Stored template mapping: %s", doc_ref.id)
-    return _serialize_mapping(doc_ref.get())
 
 
 def record_openai_request(
@@ -174,15 +153,17 @@ def record_openai_request(
         raise ValueError("Missing required OpenAI request metadata")
     client = get_firestore_client()
     doc_ref = client.collection(OPENAI_REQUESTS_COLLECTION).document(request_id)
-    doc_ref.set(
-        {
-            "request_id": request_id,
-            "user_id": user_id,
-            "schema_id": schema_id,
-            "template_id": template_id or None,
-            "created_at": _now_iso(),
-        }
-    )
+    payload = {
+        "request_id": request_id,
+        "user_id": user_id,
+        "schema_id": schema_id,
+        "template_id": template_id or None,
+        "created_at": now_iso(),
+    }
+    expires_at = log_expires_at()
+    if expires_at:
+        payload["expires_at"] = expires_at
+    doc_ref.set(payload)
 
 
 def record_openai_rename_request(
@@ -198,12 +179,14 @@ def record_openai_rename_request(
         raise ValueError("Missing required OpenAI rename metadata")
     client = get_firestore_client()
     doc_ref = client.collection(OPENAI_RENAME_REQUESTS_COLLECTION).document(request_id)
-    doc_ref.set(
-        {
-            "request_id": request_id,
-            "user_id": user_id,
-            "schema_id": schema_id or None,
-            "session_id": session_id,
-            "created_at": _now_iso(),
-        }
-    )
+    payload = {
+        "request_id": request_id,
+        "user_id": user_id,
+        "schema_id": schema_id or None,
+        "session_id": session_id,
+        "created_at": now_iso(),
+    }
+    expires_at = log_expires_at()
+    if expires_at:
+        payload["expires_at"] = expires_at
+    doc_ref.set(payload)

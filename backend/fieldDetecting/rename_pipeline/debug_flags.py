@@ -61,6 +61,8 @@ def debug_enabled() -> bool:
     """
     Return True only when the debug flag is present and a password is configured.
     """
+    if (os.getenv("ENV") or "").strip().lower() in {"prod", "production"}:
+        return False
     if os.getenv("SANDBOX_DEBUG_FORCE", "").strip().lower() in {"1", "true", "yes"}:
         return debug_password_valid()
     return debug_flag_present() and debug_password_valid()

@@ -1,7 +1,8 @@
-"""Google Cloud Storage helpers for PDFs and templates.
+"""Google Cloud Storage helpers for PDFs, templates, and sessions.
 """
 
 import io
+import json
 import os
 import re
 from typing import Tuple
@@ -14,7 +15,8 @@ logger = get_logger(__name__)
 
 FORMS_BUCKET = (os.getenv("FORMS_BUCKET") or "").strip()
 TEMPLATES_BUCKET = (os.getenv("TEMPLATES_BUCKET") or "").strip()
-ALLOWED_BUCKETS = {name for name in (FORMS_BUCKET, TEMPLATES_BUCKET) if name}
+SESSION_BUCKET = (os.getenv("SANDBOX_SESSION_BUCKET") or os.getenv("SESSION_BUCKET") or "").strip()
+ALLOWED_BUCKETS = {name for name in (FORMS_BUCKET, TEMPLATES_BUCKET, SESSION_BUCKET) if name}
 
 
 def _require_bucket_config() -> None:
@@ -23,6 +25,16 @@ def _require_bucket_config() -> None:
     """
     if not FORMS_BUCKET or not TEMPLATES_BUCKET:
         raise RuntimeError("FORMS_BUCKET and TEMPLATES_BUCKET must be set")
+
+
+def _require_session_bucket_config() -> str:
+    """
+    Return the bucket name used for session artifacts.
+    """
+    bucket_name = SESSION_BUCKET or FORMS_BUCKET
+    if not bucket_name:
+        raise RuntimeError("SANDBOX_SESSION_BUCKET or FORMS_BUCKET must be set for sessions")
+    return bucket_name
 
 
 def _assert_safe_object_path(destination_path: str) -> str:
@@ -86,6 +98,33 @@ def upload_template_pdf(local_file_path: str, destination_path: str) -> str:
     return f"gs://{TEMPLATES_BUCKET}/{safe_destination}"
 
 
+def upload_session_pdf_bytes(pdf_bytes: bytes, destination_path: str) -> str:
+    """Upload session PDF bytes to the session bucket.
+    """
+    bucket_name = _require_session_bucket_config()
+    safe_destination = _assert_safe_object_path(destination_path)
+    bucket = get_storage_bucket(bucket_name)
+    blob = bucket.blob(safe_destination)
+    blob.cache_control = "private, no-store"
+    blob.upload_from_string(pdf_bytes, content_type="application/pdf")
+    logger.debug("Uploaded session PDF bytes: %s", safe_destination)
+    return f"gs://{bucket_name}/{safe_destination}"
+
+
+def upload_session_json(payload, destination_path: str) -> str:
+    """Upload session JSON payload to the session bucket.
+    """
+    bucket_name = _require_session_bucket_config()
+    safe_destination = _assert_safe_object_path(destination_path)
+    bucket = get_storage_bucket(bucket_name)
+    blob = bucket.blob(safe_destination)
+    blob.cache_control = "private, no-store"
+    body = json.dumps(payload if payload is not None else {}, ensure_ascii=True).encode("utf-8")
+    blob.upload_from_string(body, content_type="application/json")
+    logger.debug("Uploaded session JSON: %s", safe_destination)
+    return f"gs://{bucket_name}/{safe_destination}"
+
+
 def delete_pdf(bucket_path: str) -> None:
     """Delete a PDF object from an allowlisted bucket.
     """
@@ -109,3 +148,22 @@ def stream_pdf(bucket_path: str):
         logger.debug("Streaming fallback to in-memory download: %s", exc)
         data = blob.download_as_bytes()
         return io.BytesIO(data)
+
+
+def download_pdf_bytes(bucket_path: str) -> bytes:
+    """Download PDF bytes from an allowlisted bucket.
+    """
+    _require_session_bucket_config()
+    bucket_name, file_path = _parse_gs_uri(bucket_path)
+    bucket = get_storage_bucket(bucket_name)
+    return bucket.blob(file_path).download_as_bytes()
+
+
+def download_session_json(bucket_path: str):
+    """Download a session JSON payload from storage.
+    """
+    _require_session_bucket_config()
+    bucket_name, file_path = _parse_gs_uri(bucket_path)
+    bucket = get_storage_bucket(bucket_name)
+    data = bucket.blob(file_path).download_as_bytes()
+    return json.loads(data.decode("utf-8"))

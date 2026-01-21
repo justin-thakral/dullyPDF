@@ -4,12 +4,31 @@
 import { apiFetch, apiJsonFetch } from './apiConfig';
 
 const DEFAULT_DETECTION_API = 'http://localhost:8000';
+const DETECTION_POLL_INTERVAL_MS = 1500;
+const DEFAULT_DETECTION_POLL_TIMEOUT_MS = 120000;
+
+function resolveDetectionPollTimeoutMs(): number {
+  const env = import.meta.env;
+  const raw = env?.VITE_DETECTION_POLL_TIMEOUT_MS;
+  const parsed = Number(raw);
+  if (Number.isFinite(parsed) && parsed >= 0) {
+    return parsed;
+  }
+  return DEFAULT_DETECTION_POLL_TIMEOUT_MS;
+}
+
+const DETECTION_POLL_TIMEOUT_MS = resolveDetectionPollTimeoutMs();
+
+type PollOptions = {
+  timeoutMs?: number;
+  onStatus?: (payload: any) => void;
+};
 
 /**
  * Resolve the detection API base URL from env with fallback.
  */
 export function getDetectionApiBase(): string {
-  const env = (import.meta as any)?.env;
+  const env = import.meta.env;
   const raw = env?.VITE_DETECTION_API_URL || env?.VITE_SANDBOX_API_URL;
   const trimmed = typeof raw === 'string' ? raw.trim() : '';
   const normalised = trimmed ? trimmed.replace(/\/+$/, '') : DEFAULT_DETECTION_API;
@@ -18,6 +37,7 @@ export function getDetectionApiBase(): string {
 
 type DetectOptions = {
   pipeline?: 'commonforms';
+  onStatus?: (payload: any) => void;
 };
 
 /**
@@ -36,6 +56,71 @@ export async function detectFields(
   const response = await apiFetch('POST', `${getDetectionApiBase()}/detect-fields`, {
     body: formData,
   });
+  const startPayload = await apiJsonFetch(response);
+  const sessionId = startPayload?.sessionId;
+  const status = String(startPayload?.status || '').toLowerCase();
+  if (!sessionId) {
+    return startPayload;
+  }
+  if (status === 'complete' && Array.isArray(startPayload?.fields)) {
+    return startPayload;
+  }
 
+  return pollDetection(sessionId, startPayload, { onStatus: options.onStatus });
+}
+
+export async function pollDetectionStatus(
+  sessionId: string,
+  options: PollOptions = {},
+): Promise<any> {
+  return pollDetection(sessionId, { sessionId, status: 'running' }, options);
+}
+
+export async function fetchDetectionStatus(sessionId: string): Promise<any> {
+  const response = await apiFetch('GET', `${getDetectionApiBase()}/detect-fields/${sessionId}`);
   return apiJsonFetch(response);
+}
+
+async function pollDetection(
+  sessionId: string,
+  fallbackPayload: any,
+  options: PollOptions = {},
+): Promise<any> {
+  const timeoutMs = options.timeoutMs ?? DETECTION_POLL_TIMEOUT_MS;
+  const deadline = Date.now() + timeoutMs;
+  let attempt = 0;
+  let lastPayload: any = fallbackPayload;
+  if (options.onStatus && fallbackPayload) {
+    options.onStatus(fallbackPayload);
+  }
+  while (Date.now() < deadline) {
+    const response = await apiFetch('GET', `${getDetectionApiBase()}/detect-fields/${sessionId}`);
+    const payload = await apiJsonFetch(response);
+    lastPayload = payload;
+    if (options.onStatus) {
+      options.onStatus(payload);
+    }
+    const status = String(payload?.status || '').toLowerCase();
+    if (status === 'complete') {
+      return payload;
+    }
+    if (status === 'failed') {
+      const message = payload?.error || 'Detection failed';
+      throw new Error(String(message));
+    }
+    attempt += 1;
+    await sleep(Math.min(DETECTION_POLL_INTERVAL_MS * attempt, 6000));
+  }
+  const status = String(lastPayload?.status || '').toLowerCase();
+  const basePayload =
+    lastPayload && typeof lastPayload === 'object' ? lastPayload : { sessionId, status };
+  return {
+    ...basePayload,
+    status: status || 'running',
+    timedOut: true,
+  };
+}
+
+function sleep(durationMs: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, durationMs));
 }

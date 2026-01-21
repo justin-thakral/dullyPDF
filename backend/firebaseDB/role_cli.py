@@ -2,7 +2,6 @@
 """
 
 import argparse
-from datetime import datetime, timezone
 
 from firebase_admin import auth as firebase_auth
 
@@ -14,13 +13,8 @@ from .app_database import (
     USERS_COLLECTION,
     normalize_role,
 )
+from ..time_utils import now_iso
 from .firebase_service import get_firestore_client, init_firebase
-
-
-def _now_iso() -> str:
-    """Return an ISO-8601 timestamp in UTC.
-    """
-    return datetime.now(timezone.utc).isoformat()
 
 
 def main() -> None:
@@ -55,7 +49,7 @@ def main() -> None:
     client = get_firestore_client()
     updates = {
         ROLE_FIELD: role,
-        "updated_at": _now_iso(),
+        "updated_at": now_iso(),
         "firebase_uid": user.uid,
         "email": user.email,
     }

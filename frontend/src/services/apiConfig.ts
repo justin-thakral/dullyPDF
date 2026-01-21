@@ -73,9 +73,15 @@ function normalizeErrorMessage(status: number, payload: ApiErrorPayload | null, 
  * Resolve an admin token from env or localStorage in dev.
  */
 function resolveAdminToken(): string | null {
-  const env = (import.meta as any)?.env;
+  const env = import.meta.env;
   const isDev = Boolean(env?.DEV);
   if (!isDev) return null;
+  const disableRaw = typeof env?.VITE_DISABLE_ADMIN_OVERRIDE === 'string'
+    ? env.VITE_DISABLE_ADMIN_OVERRIDE.trim().toLowerCase()
+    : '';
+  if (disableRaw && ['1', 'true', 'yes'].includes(disableRaw)) {
+    return null;
+  }
   const raw = typeof env?.VITE_ADMIN_TOKEN === 'string' ? env.VITE_ADMIN_TOKEN.trim() : '';
   if (raw) return raw;
   if (typeof window === 'undefined') return null;
@@ -92,7 +98,7 @@ function resolveAdminToken(): string | null {
  */
 export function getApiBaseUrl(): string {
   if (cachedBase) return cachedBase;
-  const env = (import.meta as any)?.env;
+  const env = import.meta.env;
   const raw = env?.VITE_API_URL || env?.VITE_SANDBOX_API_URL || env?.VITE_DETECTION_API_URL;
   const trimmed = typeof raw === 'string' ? raw.trim() : '';
   const normalised = trimmed ? trimmed.replace(/\/$/, '') : DEFAULT_API_BASE;
@@ -141,11 +147,13 @@ export async function apiFetch(
   const { allowStatuses, headers, ...requestInit } = options;
   const requestHeaders = new Headers(headers || {});
   const managedAuth = !requestHeaders.has('Authorization');
-  const adminToken = resolveAdminToken();
-  if (adminToken && !requestHeaders.has('x-admin-token')) {
-    requestHeaders.set('x-admin-token', adminToken);
-  }
   const initialToken = await attachAuthHeader(requestHeaders, false);
+  if (!requestHeaders.has('Authorization')) {
+    const adminToken = resolveAdminToken();
+    if (adminToken && !requestHeaders.has('x-admin-token')) {
+      requestHeaders.set('x-admin-token', adminToken);
+    }
+  }
   let response = await fetch(url, { method, headers: requestHeaders, ...requestInit });
 
   if (response.status === 401 && managedAuth) {

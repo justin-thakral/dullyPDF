@@ -10,6 +10,7 @@ type HeaderBarProps = {
   currentPage: number;
   scale: number;
   userEmail?: string;
+  onOpenProfile?: () => void;
   onSignIn?: () => void;
   onSignOut?: () => void;
   onScaleChange: (next: number) => void;
@@ -47,6 +48,7 @@ export function HeaderBar({
   currentPage,
   scale,
   userEmail,
+  onOpenProfile,
   onSignIn,
   onSignOut,
   onScaleChange,
@@ -156,14 +158,34 @@ export function HeaderBar({
         <div className="ui-header__actions-top">
           {userEmail ? (
             <div className="header-account">
-              <div className="user-avatar" aria-hidden="true">
-                {userInitial}
-              </div>
-              <div className="user-detail">
-                <span className="user-email" title={userEmail}>
-                  {userEmail}
-                </span>
-              </div>
+              {onOpenProfile ? (
+                <button
+                  type="button"
+                  className="header-account__button header-account__button--interactive"
+                  onClick={onOpenProfile}
+                  title="Open profile"
+                >
+                  <div className="user-avatar" aria-hidden="true">
+                    {userInitial}
+                  </div>
+                  <div className="user-detail">
+                    <span className="user-email" title={userEmail}>
+                      {userEmail}
+                    </span>
+                  </div>
+                </button>
+              ) : (
+                <div className="header-account__button">
+                  <div className="user-avatar" aria-hidden="true">
+                    {userInitial}
+                  </div>
+                  <div className="user-detail">
+                    <span className="user-email" title={userEmail}>
+                      {userEmail}
+                    </span>
+                  </div>
+                </div>
+              )}
               {onSignOut ? (
                 <button type="button" className="signout-button" onClick={onSignOut}>
                   Sign out

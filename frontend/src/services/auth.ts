@@ -5,6 +5,7 @@ import {
   createUserWithEmailAndPassword,
   onAuthStateChanged,
   onIdTokenChanged,
+  sendEmailVerification,
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signOut as firebaseSignOut,
@@ -91,6 +92,9 @@ export const Auth = {
     if (displayName && displayName.trim().length) {
       await updateProfile(credential.user, { displayName: displayName.trim() });
     }
+    if (!credential.user.emailVerified) {
+      await sendEmailVerification(credential.user);
+    }
     const token = await credential.user.getIdToken();
     setAuthToken(token);
     return credential.user;
@@ -109,6 +113,32 @@ export const Auth = {
   async signOut(): Promise<void> {
     await firebaseSignOut(firebaseAuth);
     setAuthToken(null);
+  },
+
+  /**
+   * Send a verification email to the current user.
+   */
+  async sendVerificationEmail(): Promise<void> {
+    const user = firebaseAuth.currentUser;
+    if (!user) {
+      throw new Error('No authenticated user found.');
+    }
+    await sendEmailVerification(user);
+  },
+
+  /**
+   * Reload the current user and refresh the ID token.
+   */
+  async refreshCurrentUser(): Promise<User | null> {
+    const user = firebaseAuth.currentUser;
+    if (!user) {
+      setAuthToken(null);
+      return null;
+    }
+    await user.reload();
+    const token = await user.getIdToken(true);
+    setAuthToken(token);
+    return user;
   },
 
   /**

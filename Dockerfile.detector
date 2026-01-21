@@ -1,0 +1,39 @@
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PYTHONPATH=/app \
+    PORT=8000
+
+ARG TORCH_VERSION=2.9.1
+ARG TORCHVISION_VERSION=0.24.1
+ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends \
+    libglib2.0-0 \
+    libgomp1 \
+  && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY backend/requirements.txt /app/backend/requirements.txt
+COPY backend/requirements-detector.txt /app/backend/requirements-detector.txt
+RUN pip install --upgrade pip \
+  && pip install --index-url ${TORCH_INDEX_URL} \
+    torch==${TORCH_VERSION}+cpu \
+    torchvision==${TORCHVISION_VERSION}+cpu \
+  && pip install --extra-index-url ${TORCH_INDEX_URL} -r /app/backend/requirements-detector.txt \
+  && pip uninstall -y opencv-python || true \
+  && pip install --no-deps --force-reinstall opencv-python-headless==4.10.0.84
+
+COPY backend /app/backend
+
+RUN adduser --disabled-password --gecos "" appuser \
+  && chown -R appuser:appuser /app
+
+USER appuser
+ENV HOME=/home/appuser
+
+CMD ["sh", "-c", "uvicorn backend.detector_main:app --host 0.0.0.0 --port ${PORT}"]

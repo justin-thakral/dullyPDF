@@ -10,7 +10,9 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
+import time
 import types
 from dataclasses import dataclass
 from pathlib import Path
@@ -110,6 +112,97 @@ def _import_commonforms():
         BoundingBox,
         EncryptedPdfError,
     )
+
+
+def _parse_int_env(name: str, default: int) -> int:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        return default
+
+
+def _parse_gcs_uri(uri: str) -> tuple[str, str]:
+    if not uri.startswith("gs://"):
+        raise ValueError(f"Invalid GCS URI: {uri}")
+    parts = uri[5:].split("/", 1)
+    bucket = parts[0]
+    object_name = parts[1] if len(parts) > 1 else ""
+    if not bucket or not object_name:
+        raise ValueError(f"Invalid GCS URI: {uri}")
+    return bucket, object_name
+
+
+def _safe_cache_key(value: str) -> str:
+    cleaned = re.sub(r"[^a-zA-Z0-9_.-]", "_", value.strip())
+    return cleaned or "model"
+
+
+def _acquire_download_lock(lock_path: Path, timeout_seconds: int) -> None:
+    start = time.monotonic()
+    while True:
+        try:
+            fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.close(fd)
+            return
+        except FileExistsError:
+            try:
+                lock_age = time.time() - lock_path.stat().st_mtime
+            except FileNotFoundError:
+                lock_age = 0.0
+            if lock_age > timeout_seconds:
+                lock_path.unlink(missing_ok=True)
+                continue
+            if time.monotonic() - start >= timeout_seconds:
+                raise TimeoutError("Timed out waiting for CommonForms weights download lock")
+            time.sleep(1)
+
+
+def _download_gcs_blob(bucket_name: str, object_name: str, dest: Path) -> None:
+    from google.cloud import storage
+
+    client = storage.Client()
+    bucket = client.bucket(bucket_name)
+    blob = bucket.blob(object_name)
+    if not blob.exists():
+        raise FileNotFoundError(f"GCS object not found: gs://{bucket_name}/{object_name}")
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    # Streaming download is linear in the size of the weight file.
+    blob.download_to_filename(str(dest))
+
+
+def _ensure_gcs_model(gcs_uri: str, model_hint: str) -> Path:
+    bucket, object_name = _parse_gcs_uri(gcs_uri)
+    cache_root = os.getenv("COMMONFORMS_WEIGHTS_CACHE_DIR", "/tmp/commonforms-models").strip()
+    cache_dir = Path(cache_root) / _safe_cache_key(model_hint or object_name)
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    local_path = cache_dir / Path(object_name).name
+    if local_path.exists() and local_path.stat().st_size > 0:
+        return local_path
+
+    lock_timeout = _parse_int_env("COMMONFORMS_WEIGHTS_LOCK_TIMEOUT_SECONDS", 600)
+    lock_path = cache_dir / ".download.lock"
+    _acquire_download_lock(lock_path, lock_timeout)
+    try:
+        if local_path.exists() and local_path.stat().st_size > 0:
+            return local_path
+        logger.info("Downloading CommonForms weights from %s", gcs_uri)
+        _download_gcs_blob(bucket, object_name, local_path)
+    finally:
+        lock_path.unlink(missing_ok=True)
+    return local_path
+
+
+def _resolve_commonforms_model(model: str) -> tuple[str, str]:
+    gcs_uri = os.getenv("COMMONFORMS_MODEL_GCS_URI", "").strip()
+    if not gcs_uri and model.startswith("gs://"):
+        gcs_uri = model
+    if not gcs_uri:
+        return model, model
+    local_path = _ensure_gcs_model(gcs_uri, model)
+    return model, str(local_path)
 
 
 def _category_for_confidence(confidence: float) -> str:
@@ -395,6 +488,9 @@ def detect_commonforms_fields(
         EncryptedPdfError,
     ) = _import_commonforms()
 
+    model_label, resolved_model = _resolve_commonforms_model(model)
+    model_upper = model_label.upper()
+
     try:
         pages = render_pdf(str(pdf_path))
     except EncryptedPdfError as exc:
@@ -402,8 +498,8 @@ def detect_commonforms_fields(
     except Exception as exc:  # pragma: no cover - defensive
         raise RuntimeError("CommonForms failed to render the PDF.") from exc
 
-    if "FFDNET" in model.upper():
-        detector = FFDNetDetector(model, device=device, fast=fast)
+    if "FFDNET" in model_upper:
+        detector = FFDNetDetector(resolved_model, device=device, fast=fast)
         widgets_by_page = _detect_ffdnet(
             detector,
             pages,
@@ -411,8 +507,8 @@ def detect_commonforms_fields(
             image_size=image_size,
             bounding_box_cls=BoundingBox,
         )
-    else:
-        detector = FFDetrDetector(model, device=device)
+    elif "FFDETR" in model_upper:
+        detector = FFDetrDetector(resolved_model, device=device)
         widgets_by_page = _detect_ffdetr(
             detector,
             pages,
@@ -420,12 +516,17 @@ def detect_commonforms_fields(
             batch_size=DEFAULT_BATCH_SIZE,
             bounding_box_cls=BoundingBox,
         )
+    else:
+        raise ValueError(
+            "Unsupported CommonForms model. Set COMMONFORMS_MODEL to FFDNet-L/FFDNet-S/FFDetr "
+            f"(current: {model_label}) and point COMMONFORMS_MODEL_GCS_URI at matching weights if needed."
+        )
 
     page_sizes = _page_sizes(pdf_path)
     fields = _build_fields(
         widgets_by_page,
         page_sizes=page_sizes,
-        model=model,
+        model=model_label,
         use_signature_fields=use_signature_fields,
     )
     if output_pdf is not None:
@@ -441,7 +542,7 @@ def detect_commonforms_fields(
         "coordinateSystem": "originTop",
         "meta": {
             "pipeline": "commonforms",
-            "model": model,
+            "model": model_label,
             "confidence": confidence,
             "imageSize": image_size,
             "device": device,

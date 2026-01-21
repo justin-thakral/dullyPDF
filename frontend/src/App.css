@@ -638,7 +638,32 @@
 }
 
 .ui-header .header-account {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
   line-height: 1;
+}
+
+.ui-header .header-account__button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.ui-header .header-account__button:focus-visible {
+  outline: 2px solid rgba(59, 130, 246, 0.7);
+  outline-offset: 4px;
+  border-radius: 999px;
+}
+
+.ui-header .header-account__button:hover .user-email {
+  color: rgba(248, 250, 252, 0.95);
 }
 
 .ui-header .user-email {

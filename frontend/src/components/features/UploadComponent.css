@@ -157,16 +157,16 @@
 
 .saved-forms-list {
   display: grid;
-  grid-auto-flow: column;
-  grid-template-rows: repeat(3, auto);
-  grid-auto-columns: minmax(220px, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 0.75rem 1.5rem;
-  max-height: 480px;
+  max-height: 360px;
   overflow-y: auto;
   padding-right: 0.5rem;
   justify-content: flex-start;
   justify-items: stretch;
   align-content: flex-start;
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
 }
 
 .saved-form-row {

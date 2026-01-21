@@ -9,6 +9,7 @@ interface LegacyHeaderProps {
   onNavigateHome: () => void;
   showBackButton?: boolean;
   userEmail?: string | null;
+  onOpenProfile?: () => void;
   onSignOut?: () => void;
   onSignIn?: () => void;
 }
@@ -21,6 +22,7 @@ const LegacyHeader: React.FC<LegacyHeaderProps> = ({
   onNavigateHome,
   showBackButton = false,
   userEmail,
+  onOpenProfile,
   onSignOut,
   onSignIn,
 }) => {
@@ -85,14 +87,34 @@ const LegacyHeader: React.FC<LegacyHeaderProps> = ({
         <div className="header-right">
           {userEmail ? (
             <div className="header-account">
-              <div className="user-avatar" aria-hidden="true">
-                {userInitial}
-              </div>
-              <div className="user-detail">
-                <span className="user-email" title={userEmail}>
-                  {userEmail}
-                </span>
-              </div>
+              {onOpenProfile ? (
+                <button
+                  type="button"
+                  className="header-account__button header-account__button--interactive"
+                  onClick={onOpenProfile}
+                  title="Open profile"
+                >
+                  <div className="user-avatar" aria-hidden="true">
+                    {userInitial}
+                  </div>
+                  <div className="user-detail">
+                    <span className="user-email" title={userEmail}>
+                      {userEmail}
+                    </span>
+                  </div>
+                </button>
+              ) : (
+                <div className="header-account__button">
+                  <div className="user-avatar" aria-hidden="true">
+                    {userInitial}
+                  </div>
+                  <div className="user-detail">
+                    <span className="user-email" title={userEmail}>
+                      {userEmail}
+                    </span>
+                  </div>
+                </div>
+              )}
               {onSignOut && (
                 <button type="button" className="signout-button" onClick={onSignOut}>
                   Sign out

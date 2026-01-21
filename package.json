@@ -6,6 +6,8 @@
     "start": "npm run dev",
     "start:fast": "npm run kill-old && node scripts/wsl_warn.js && npm run dev",
     "dev": "concurrently \"npm run backend:dev\" \"npm run frontend:dev\"",
+    "dev:stack": "bash scripts/run-dev-stack.sh",
+    "dev:stack:stop": "bash scripts/stop-dev-stack.sh",
     "build:dev": "npm run frontend:build:dev",
     "build:prod": "npm run frontend:build:prod",
     "kill-old": "bash scripts/kill_old_processes.sh",

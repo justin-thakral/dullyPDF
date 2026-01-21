@@ -2,9 +2,7 @@
   "entries": [
     { "method": "GET", "path": "/health" },
     { "method": "GET", "path": "/api/health" },
-    { "method": "POST", "path": "/api/process-pdf" },
     { "method": "POST", "path": "/detect-fields" },
-    { "method": "GET", "path": "/api/detected-fields" },
-    { "method": "GET", "path": "/download/{session_id}" }
+    { "method": "GET", "path": "/detect-fields/{session_id}" }
   ]
 }

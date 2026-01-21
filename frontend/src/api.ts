@@ -10,7 +10,34 @@ export type SavedFormSummary = {
   createdAt: string;
 };
 
+export type ProfileLimits = {
+  detectMaxPages: number;
+  fillableMaxPages: number;
+  savedFormsMax: number;
+};
+
+export type UserProfile = {
+  email?: string | null;
+  displayName?: string | null;
+  role?: string | null;
+  creditsRemaining?: number | null;
+  limits: ProfileLimits;
+};
+
 export class ApiService {
+  /**
+   * Fetch profile details and tier limits for the current user.
+   */
+  static async getProfile(): Promise<UserProfile | null> {
+    const response = await apiFetch('GET', buildApiUrl('api', 'profile'), {
+      allowStatuses: [401, 403],
+    });
+    if (response.status === 401 || response.status === 403) {
+      return null;
+    }
+    return apiJsonFetch(response);
+  }
+
   /**
    * Store schema metadata (headers/types) for mapping.
    */
@@ -81,24 +108,6 @@ export class ApiService {
     }>;
   }): Promise<any> {
     const response = await apiFetch('POST', buildApiUrl('api', 'renames', 'ai'), {
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-    });
-
-    return apiJsonFetch(response);
-  }
-
-  /**
-   * Store an approved schema mapping payload.
-   */
-  static async createSchemaMapping(payload: {
-    schemaId: string;
-    templateId?: string;
-    mappingResults: Record<string, unknown>;
-  }): Promise<{ mappingId: string }> {
-    const response = await apiFetch('POST', buildApiUrl('api', 'schema-mappings'), {
       headers: {
         'Content-Type': 'application/json',
       },

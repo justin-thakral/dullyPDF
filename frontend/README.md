@@ -20,12 +20,38 @@ npm run dev
 
 Vite will pick the next available port (typically `http://localhost:5173`).
 
+To run the full local stack (frontend + backend) from the repo root:
+
+```bash
+npm run dev
+```
+
+To run the prod-like dev stack (backend container + Cloud Tasks + Cloud Run detector):
+
+```bash
+npm run dev:stack
+```
+
+Stop the dev stack cleanly:
+
+```bash
+npm run dev:stack:stop
+```
+
 ## Environment
 
 The dev scripts source env vars via `scripts/use-frontend-env.sh`. Common entries:
 - `VITE_API_URL` / `VITE_DETECTION_API_URL` for backend base URLs.
+- `VITE_DETECTION_POLL_TIMEOUT_MS` to cap how long detection polling waits before returning.
 - Firebase Identity Platform keys (`VITE_FIREBASE_*`).
 - `VITE_ADMIN_TOKEN` (dev-only; never use in production builds).
+- `VITE_DISABLE_ADMIN_OVERRIDE=1` to force-disable admin overrides in dev (prod-like runs).
+
+The dev stack runs the backend in prod mode (revocation checks on, legacy
+endpoints disabled) while targeting dev resources. It reads
+`env/frontend.stack.env` (from `config/frontend.stack.env.example`) so admin
+override headers stay disabled for
+prod-like testing.
 
 ## Docs
 

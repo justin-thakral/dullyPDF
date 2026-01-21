@@ -3,12 +3,12 @@
 
 import os
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from firebase_admin import firestore as firebase_firestore
 
 from ..fieldDetecting.rename_pipeline.combinedSrc.config import get_logger
+from ..time_utils import now_iso
 from .firebase_service import RequestUser, get_firestore_client
 
 
@@ -36,10 +36,13 @@ class TemplateRecord:
     name: Optional[str]
 
 
-def _now_iso() -> str:
-    """Return an ISO-8601 timestamp in UTC.
-    """
-    return datetime.now(timezone.utc).isoformat()
+@dataclass(frozen=True)
+class UserProfileRecord:
+    uid: str
+    email: Optional[str]
+    display_name: Optional[str]
+    role: str
+    openai_credits_remaining: Optional[int]
 
 
 def normalize_role(value: Optional[str]) -> str:
@@ -64,7 +67,7 @@ def ensure_user(decoded: Dict[str, Any]) -> RequestUser:
     client = get_firestore_client()
     doc_ref = client.collection(USERS_COLLECTION).document(uid)
     snapshot = doc_ref.get()
-    timestamp = _now_iso()
+    timestamp = now_iso()
 
     if snapshot.exists:
         data = snapshot.to_dict() or {}
@@ -145,7 +148,7 @@ def consume_openai_credits(uid: str, *, pages: int, role: Optional[str] = None) 
         new_remaining = remaining - pages_required
         updates = {
             OPENAI_CREDITS_FIELD: new_remaining,
-            "updated_at": _now_iso(),
+            "updated_at": now_iso(),
         }
         txn.set(doc_ref, updates, merge=True)
         return new_remaining, True
@@ -164,7 +167,7 @@ def set_user_role(uid: str, role: str) -> None:
     doc_ref.set(
         {
             ROLE_FIELD: normalized,
-            "updated_at": _now_iso(),
+            "updated_at": now_iso(),
         },
         merge=True,
     )
@@ -193,15 +196,45 @@ def consume_rename_quota(uid: str, *, limit: Optional[int] = None) -> tuple[int,
         new_count = count + 1
         updates = {
             RENAME_COUNT_FIELD: new_count,
-            "updated_at": _now_iso(),
+            "updated_at": now_iso(),
         }
         if not snapshot.exists:
             updates.setdefault("firebase_uid", uid)
-            updates.setdefault("created_at", _now_iso())
+            updates.setdefault("created_at", now_iso())
         txn.set(doc_ref, updates, merge=True)
         return new_count, True
 
     return _update(transaction)
+
+
+def get_user_profile(uid: str) -> Optional[UserProfileRecord]:
+    """Fetch user metadata for profile display.
+    """
+    if not uid:
+        return None
+    client = get_firestore_client()
+    snapshot = client.collection(USERS_COLLECTION).document(uid).get()
+    if not snapshot.exists:
+        return None
+    data = snapshot.to_dict() or {}
+    role = normalize_role(data.get(ROLE_FIELD))
+    email = data.get("email")
+    display_name = data.get("displayName")
+    credits: Optional[int]
+    if role == ROLE_GOD:
+        credits = None
+    else:
+        try:
+            credits = int(data.get(OPENAI_CREDITS_FIELD) or BASE_OPENAI_CREDITS)
+        except (TypeError, ValueError):
+            credits = BASE_OPENAI_CREDITS
+    return UserProfileRecord(
+        uid=uid,
+        email=email,
+        display_name=display_name,
+        role=role,
+        openai_credits_remaining=credits,
+    )
 
 
 def _serialize_template(doc) -> TemplateRecord:
@@ -268,7 +301,7 @@ def create_template(
         raise ValueError("pdf_path and template_path are required")
     client = get_firestore_client()
     doc_ref = client.collection(TEMPLATES_COLLECTION).document()
-    timestamp = _now_iso()
+    timestamp = now_iso()
     payload = {
         "user_id": user_id,
         "pdf_bucket_path": pdf_path,

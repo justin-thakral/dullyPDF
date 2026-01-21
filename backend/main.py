@@ -10,19 +10,17 @@ Legacy note:
 - The OpenCV sandbox pipeline is archived in `legacy/fieldDetecting/` and is not used here.
 
 Data structures:
-- _API_SESSION_CACHE: in-memory LRU cache keyed by session_id storing PDF bytes + fields.
+- Session entries cached in L1 with Firestore/GCS fallback for multi-instance access.
 """
 
 import hashlib
+import importlib.util
 import io
 import json
 import os
 import re
 import tempfile
-import threading
-import time
 import uuid
-from collections import OrderedDict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -31,10 +29,15 @@ from fastapi import BackgroundTasks, FastAPI, File, Form, Header, HTTPException,
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from firebase_admin import auth as firebase_auth
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 import fitz
 
-from .fieldDetecting.commonforms.commonForm import detect_commonforms_fields
+from .detection_status import (
+    DETECTION_STATUS_COMPLETE,
+    DETECTION_STATUS_FAILED,
+    DETECTION_STATUS_QUEUED,
+)
+from .detection_tasks import enqueue_detection_task, resolve_detector_profile, resolve_task_config
 from .fieldDetecting.rename_pipeline.combinedSrc.config import get_logger
 from .fieldDetecting.rename_pipeline.combinedSrc.form_filler import inject_fields
 from .fieldDetecting.rename_pipeline.debug_flags import debug_enabled, get_debug_password
@@ -44,16 +47,20 @@ from .ai.schema_mapping import (
     call_openai_schema_mapping_chunked,
     validate_payload_size,
 )
+from .env_utils import env_truthy as _env_truthy, env_value as _env_value, int_env as _int_env
 from .firebaseDB.app_database import (
     consume_openai_credits,
     create_template,
     delete_template,
     ensure_user,
+    get_user_profile,
     get_template,
     list_templates,
+    normalize_role,
+    ROLE_GOD,
 )
+from .firebaseDB.detection_database import record_detection_request, update_detection_request
 from .firebaseDB.schema_database import (
-    create_mapping,
     create_schema,
     get_schema,
     list_schemas,
@@ -61,43 +68,26 @@ from .firebaseDB.schema_database import (
     record_openai_rename_request,
 )
 from .firebaseDB.firebase_service import RequestUser, verify_id_token
+from .firebaseDB.session_database import get_session_metadata
 from .firebaseDB.storage_service import (
     delete_pdf,
+    download_session_json,
     is_gcs_path,
     stream_pdf,
     upload_form_pdf,
     upload_template_pdf,
 )
+from .pdf_validation import PdfValidationError, PdfValidationResult, preflight_pdf_bytes
 from .security.rate_limit import check_rate_limit
+from .sessions.session_store import (
+    get_session_entry as _get_session_entry,
+    get_session_entry_if_present as _get_session_entry_if_present,
+    store_session_entry as _store_session_entry,
+    update_session_entry as _update_session_entry,
+)
+from .time_utils import now_iso
 
 logger = get_logger(__name__)
-# OrderedDict preserves LRU order for O(1) eviction; TTL sweeps are O(n) in cache size.
-_API_SESSION_CACHE: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
-_SESSION_CACHE_LOCK = threading.Lock()
-
-
-def _env_value(name: str) -> str:
-    return (os.getenv(name) or "").strip()
-
-
-def _env_truthy(name: str) -> bool:
-    return _env_value(name).lower() in {"1", "true", "yes"}
-
-
-def _int_env(name: str, default: int) -> int:
-    raw = _env_value(name)
-    if not raw:
-        return default
-    try:
-        return int(raw)
-    except ValueError:
-        return default
-
-
-_SESSION_TTL_SECONDS = _int_env("SANDBOX_SESSION_TTL_SECONDS", 3600)
-_SESSION_SWEEP_INTERVAL_SECONDS = _int_env("SANDBOX_SESSION_SWEEP_INTERVAL_SECONDS", 300)
-_SESSION_MAX_ENTRIES = max(0, _int_env("SANDBOX_SESSION_MAX_ENTRIES", 200))
-_LAST_SESSION_SWEEP = 0.0
 
 
 def _is_prod() -> bool:
@@ -117,63 +107,36 @@ def _require_prod_env() -> None:
         missing.append("SANDBOX_CORS_ORIGINS (cannot be '*')")
     if not _env_value("FIREBASE_PROJECT_ID"):
         missing.append("FIREBASE_PROJECT_ID")
-    if not (_env_value("FIREBASE_CREDENTIALS") or _env_value("GOOGLE_APPLICATION_CREDENTIALS")):
-        missing.append("FIREBASE_CREDENTIALS or GOOGLE_APPLICATION_CREDENTIALS")
+    if not (
+        _env_value("FIREBASE_CREDENTIALS")
+        or _env_value("GOOGLE_APPLICATION_CREDENTIALS")
+        or _env_truthy("FIREBASE_USE_ADC")
+    ):
+        missing.append("FIREBASE_CREDENTIALS, GOOGLE_APPLICATION_CREDENTIALS, or FIREBASE_USE_ADC=true")
     if not _env_value("FORMS_BUCKET"):
         missing.append("FORMS_BUCKET")
     if not _env_value("TEMPLATES_BUCKET"):
         missing.append("TEMPLATES_BUCKET")
+    detector_mode = _resolve_detection_mode()
+    if detector_mode != "tasks":
+        missing.append("DETECTOR_MODE=tasks")
+    if detector_mode == "tasks":
+        if not (_env_value("DETECTOR_TASKS_PROJECT") or _env_value("GCP_PROJECT_ID")):
+            missing.append("DETECTOR_TASKS_PROJECT (or GCP_PROJECT_ID)")
+        if not _env_value("DETECTOR_TASKS_LOCATION"):
+            missing.append("DETECTOR_TASKS_LOCATION")
+        if not (_env_value("DETECTOR_TASKS_QUEUE") or _env_value("DETECTOR_TASKS_QUEUE_LIGHT")):
+            missing.append("DETECTOR_TASKS_QUEUE (or DETECTOR_TASKS_QUEUE_LIGHT)")
+        if not (_env_value("DETECTOR_SERVICE_URL") or _env_value("DETECTOR_SERVICE_URL_LIGHT")):
+            missing.append("DETECTOR_SERVICE_URL (or DETECTOR_SERVICE_URL_LIGHT)")
+        if _env_value("DETECTOR_TASKS_QUEUE_HEAVY") and not _env_value("DETECTOR_SERVICE_URL_HEAVY"):
+            missing.append("DETECTOR_SERVICE_URL_HEAVY (required with DETECTOR_TASKS_QUEUE_HEAVY)")
+        if _env_value("DETECTOR_SERVICE_URL_HEAVY") and not _env_value("DETECTOR_TASKS_QUEUE_HEAVY"):
+            missing.append("DETECTOR_TASKS_QUEUE_HEAVY (required with DETECTOR_SERVICE_URL_HEAVY)")
+        if not _env_value("DETECTOR_TASKS_SERVICE_ACCOUNT"):
+            missing.append("DETECTOR_TASKS_SERVICE_ACCOUNT")
     if missing:
         raise RuntimeError("Missing required prod env vars: " + ", ".join(missing))
-
-
-def _session_now() -> float:
-    return time.monotonic()
-
-
-def _session_last_access(entry: Dict[str, Any]) -> float:
-    raw = entry.get("last_access") or entry.get("created_at") or 0.0
-    try:
-        return float(raw)
-    except (TypeError, ValueError):
-        return 0.0
-
-
-def _prune_session_cache(now: float) -> None:
-    """Expire cached sessions after a TTL. Complexity: O(n) over session count."""
-    global _LAST_SESSION_SWEEP
-    if _SESSION_TTL_SECONDS <= 0:
-        return
-    if _SESSION_SWEEP_INTERVAL_SECONDS > 0 and (now - _LAST_SESSION_SWEEP) < _SESSION_SWEEP_INTERVAL_SECONDS:
-        return
-    cutoff = now - _SESSION_TTL_SECONDS
-    expired_ids = [
-        session_id
-        for session_id, entry in _API_SESSION_CACHE.items()
-        if _session_last_access(entry) < cutoff
-    ]
-    for session_id in expired_ids:
-        _API_SESSION_CACHE.pop(session_id, None)
-    _LAST_SESSION_SWEEP = now
-
-
-def _trim_session_cache_size() -> None:
-    """Evict least-recently-used sessions to enforce size caps. Complexity: O(k) evictions."""
-    if _SESSION_MAX_ENTRIES <= 0:
-        return
-    while len(_API_SESSION_CACHE) > _SESSION_MAX_ENTRIES:
-        _API_SESSION_CACHE.popitem(last=False)
-
-
-def _store_session_entry(session_id: str, entry: Dict[str, Any]) -> None:
-    now = _session_now()
-    entry["created_at"] = now
-    entry["last_access"] = now
-    with _SESSION_CACHE_LOCK:
-        _prune_session_cache(now)
-        _API_SESSION_CACHE[session_id] = entry
-        _API_SESSION_CACHE.move_to_end(session_id)
-        _trim_session_cache_size()
 
 
 def _legacy_endpoints_enabled() -> bool:
@@ -188,6 +151,111 @@ def _legacy_endpoints_enabled() -> bool:
 def _require_legacy_enabled() -> None:
     if not _legacy_endpoints_enabled():
         raise HTTPException(status_code=404, detail="Not found")
+
+
+def _commonforms_available() -> bool:
+    try:
+        return importlib.util.find_spec("commonforms") is not None
+    except Exception:
+        return False
+
+
+def _resolve_detection_mode() -> str:
+    raw = _env_value("DETECTOR_MODE").lower()
+    if raw:
+        if raw == "local" and not _commonforms_available() and _env_value("DETECTOR_TASKS_QUEUE"):
+            logger.warning("DETECTOR_MODE=local but CommonForms is missing; falling back to tasks.")
+            return "tasks"
+        return raw
+    if _env_value("DETECTOR_TASKS_QUEUE"):
+        return "tasks"
+    return "local"
+
+
+def _run_local_detection(pdf_bytes: bytes) -> Dict[str, Any]:
+    fd, temp_name = tempfile.mkstemp(suffix=".pdf")
+    os.close(fd)
+    temp_path = Path(temp_name)
+    try:
+        temp_path.write_bytes(pdf_bytes)
+        try:
+            from .fieldDetecting.commonforms.commonForm import detect_commonforms_fields
+        except Exception as exc:
+            raise HTTPException(
+                status_code=500,
+                detail="CommonForms dependencies are missing; set DETECTOR_MODE=tasks or install detector deps.",
+            ) from exc
+        resolved = detect_commonforms_fields(Path(temp_path))
+    finally:
+        temp_path.unlink(missing_ok=True)
+    resolved["pipeline"] = "commonforms"
+    return resolved
+
+
+def _enqueue_detection_job(
+    pdf_bytes: bytes,
+    source_pdf: str,
+    user: Optional[RequestUser],
+    *,
+    page_count: Optional[int] = None,
+) -> Dict[str, Any]:
+    session_id = str(uuid.uuid4())
+    resolved_page_count = page_count if page_count is not None else _get_pdf_page_count(pdf_bytes)
+    detector_profile = resolve_detector_profile(resolved_page_count)
+    task_config = resolve_task_config(detector_profile)
+    entry: Dict[str, Any] = {
+        "pdf_bytes": pdf_bytes,
+        "fields": [],
+        "source_pdf": source_pdf,
+        "result": {},
+        "page_count": resolved_page_count,
+        "user_id": user.app_user_id if user else None,
+        "detection_status": DETECTION_STATUS_QUEUED,
+        "detection_queued_at": now_iso(),
+        "detection_error": "",
+        "detection_profile": task_config["profile"],
+        "detection_queue": task_config["queue"],
+        "detection_service_url": task_config["service_url"],
+    }
+    _store_session_entry(session_id, entry, persist_l1=False)
+    pdf_path = entry.get("pdf_path")
+    if not pdf_path:
+        raise HTTPException(status_code=500, detail="Session PDF storage failed")
+
+    payload = {
+        "sessionId": session_id,
+        "pdfPath": pdf_path,
+        "pipeline": "commonforms",
+    }
+    record_detection_request(
+        request_id=session_id,
+        session_id=session_id,
+        user_id=user.app_user_id if user else None,
+        status=DETECTION_STATUS_QUEUED,
+        page_count=resolved_page_count,
+    )
+    try:
+        task_name = enqueue_detection_task(payload, profile=task_config["profile"])
+    except Exception as exc:
+        entry["detection_status"] = DETECTION_STATUS_FAILED
+        entry["detection_completed_at"] = now_iso()
+        entry["detection_error"] = str(exc)
+        _update_session_entry(session_id, entry)
+        update_detection_request(
+            request_id=session_id,
+            status=DETECTION_STATUS_FAILED,
+            error=str(exc),
+        )
+        raise HTTPException(status_code=500, detail="Failed to enqueue detection job") from exc
+
+    entry["detection_task_name"] = task_name
+    _update_session_entry(session_id, entry)
+    return {
+        "sessionId": session_id,
+        "status": DETECTION_STATUS_QUEUED,
+        "pipeline": "commonforms",
+    }
+
 
 class SchemaField(BaseModel):
     """Schema field metadata (name + type) for AI mapping.
@@ -207,6 +275,35 @@ class SchemaCreateRequest(BaseModel):
     sampleCount: Optional[int] = None
 
 
+def _coerce_rect_float(value: Any, label: str) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"rect {label} must be a number") from exc
+
+
+def _rect_from_xywh(x: Any, y: Any, width: Any, height: Any) -> Dict[str, float]:
+    x_val = _coerce_rect_float(x, "x")
+    y_val = _coerce_rect_float(y, "y")
+    width_val = _coerce_rect_float(width, "width")
+    height_val = _coerce_rect_float(height, "height")
+    if width_val <= 0 or height_val <= 0:
+        raise ValueError("rect width/height must be positive")
+    return {"x": x_val, "y": y_val, "width": width_val, "height": height_val}
+
+
+def _rect_from_corners(x1: Any, y1: Any, x2: Any, y2: Any) -> Dict[str, float]:
+    x1_val = _coerce_rect_float(x1, "x1")
+    y1_val = _coerce_rect_float(y1, "y1")
+    x2_val = _coerce_rect_float(x2, "x2")
+    y2_val = _coerce_rect_float(y2, "y2")
+    width_val = x2_val - x1_val
+    height_val = y2_val - y1_val
+    if width_val <= 0 or height_val <= 0:
+        raise ValueError("rect corner coordinates must produce positive width/height")
+    return {"x": x1_val, "y": y1_val, "width": width_val, "height": height_val}
+
+
 class TemplateOverlayField(BaseModel):
     """Template overlay field payload with no row data or values.
     """
@@ -222,6 +319,25 @@ class TemplateOverlayField(BaseModel):
 
     model_config = {"extra": "ignore"}
 
+    @field_validator("rect", mode="before")
+    @classmethod
+    def _normalize_rect(cls, value: Any) -> Optional[Dict[str, float]]:
+        if value is None:
+            return None
+        if isinstance(value, dict):
+            if not value:
+                return None
+            if {"x", "y", "width", "height"}.issubset(value):
+                return _rect_from_xywh(value.get("x"), value.get("y"), value.get("width"), value.get("height"))
+            if {"x1", "y1", "x2", "y2"}.issubset(value):
+                return _rect_from_corners(value.get("x1"), value.get("y1"), value.get("x2"), value.get("y2"))
+            raise ValueError("rect dict must include x/y/width/height or x1/y1/x2/y2")
+        if isinstance(value, (list, tuple)):
+            if len(value) != 4:
+                raise ValueError("rect list must have 4 numbers")
+            return _rect_from_corners(value[0], value[1], value[2], value[3])
+        raise ValueError("rect must be a dict or 4-item list")
+
 
 class SchemaMappingRequest(BaseModel):
     """OpenAI mapping request using schema metadata + template overlay tags.
@@ -231,15 +347,6 @@ class SchemaMappingRequest(BaseModel):
     templateId: Optional[str] = None
     templateFields: List[TemplateOverlayField]
     sessionId: Optional[str] = None
-
-
-class MappingCreateRequest(BaseModel):
-    """Persist a schema mapping payload after approval.
-    """
-
-    schemaId: str = Field(..., min_length=1)
-    templateId: Optional[str] = None
-    mappingResults: Dict[str, Any]
 
 
 class RenameFieldsRequest(BaseModel):
@@ -295,12 +402,36 @@ def _resolve_stream_cors_headers(origin: Optional[str]) -> Dict[str, str]:
     return {}
 
 
+def _is_password_sign_in(decoded: Dict[str, Any]) -> bool:
+    """
+    Return True when the token originated from email/password sign-in.
+    """
+    firebase_claims = decoded.get("firebase") if isinstance(decoded, dict) else {}
+    if not isinstance(firebase_claims, dict):
+        return False
+    provider = str(firebase_claims.get("sign_in_provider") or "").strip().lower()
+    return provider in {"password", "emaillink", "email_link"}
+
+
+def _enforce_email_verification(decoded: Dict[str, Any]) -> None:
+    """
+    Reject password users until their email is verified.
+    """
+    if not _is_password_sign_in(decoded):
+        return
+    if decoded.get("email_verified") is True:
+        return
+    raise HTTPException(status_code=403, detail="Email verification required")
+
+
 def _verify_token(authorization: Optional[str]) -> Dict[str, Any]:
     """
     Validate Firebase auth headers and return the decoded token.
     """
     try:
-        return verify_id_token(authorization)
+        decoded = verify_id_token(authorization)
+        _enforce_email_verification(decoded)
+        return decoded
     except ValueError as exc:
         raise HTTPException(status_code=401, detail="Missing Authorization token") from exc
     except RuntimeError as exc:
@@ -326,48 +457,15 @@ def _require_user(authorization: Optional[str]) -> RequestUser:
         raise HTTPException(status_code=500, detail="Failed to synchronize user profile") from exc
 
 
-def _get_session_entry(session_id: str, user: RequestUser) -> Dict[str, Any]:
-    """
-    Fetch a cached session entry and enforce ownership.
-    """
-    now = _session_now()
-    with _SESSION_CACHE_LOCK:
-        _prune_session_cache(now)
-        entry = _API_SESSION_CACHE.get(session_id)
-        if not entry:
-            raise HTTPException(status_code=404, detail="Session not found")
-        owner_id = entry.get("user_id")
-        if owner_id and owner_id != user.app_user_id:
-            raise HTTPException(status_code=403, detail="Session access denied")
-        entry["last_access"] = now
-        _API_SESSION_CACHE.move_to_end(session_id)
-        return entry
-
-
-def _get_session_entry_if_present(session_id: Optional[str], user: RequestUser) -> Optional[Dict[str, Any]]:
-    """
-    Return a cached session entry when available and owned by the user.
-    """
-    if not session_id:
-        return None
-    now = _session_now()
-    with _SESSION_CACHE_LOCK:
-        _prune_session_cache(now)
-        entry = _API_SESSION_CACHE.get(session_id)
-        if not entry:
-            return None
-        owner_id = entry.get("user_id")
-        if owner_id and owner_id != user.app_user_id:
-            raise HTTPException(status_code=403, detail="Session access denied")
-        entry["last_access"] = now
-        _API_SESSION_CACHE.move_to_end(session_id)
-        return entry
-
-
 def _has_admin_override(authorization: Optional[str], x_admin_token: Optional[str]) -> bool:
     """
     Return True when the request includes a valid admin override token.
     """
+    if _is_prod():
+        return False
+    allow_override = os.getenv("SANDBOX_ALLOW_ADMIN_OVERRIDE", "").strip().lower()
+    if allow_override and allow_override not in {"1", "true", "yes"}:
+        return False
     token = os.getenv("ADMIN_TOKEN")
     if not token and debug_enabled():
         token = get_debug_password()
@@ -455,6 +553,54 @@ def _get_pdf_page_count(pdf_bytes: bytes) -> int:
         return 0
     with fitz.open(stream=io.BytesIO(pdf_bytes), filetype="pdf") as doc:
         return max(1, int(doc.page_count))
+
+
+def _resolve_detect_max_pages(role: Optional[str]) -> int:
+    """
+    Resolve detection page limits for the caller role.
+    """
+    normalized = normalize_role(role)
+    if normalized == ROLE_GOD:
+        return max(1, _int_env("SANDBOX_DETECT_MAX_PAGES_GOD", 100))
+    return max(1, _int_env("SANDBOX_DETECT_MAX_PAGES_BASE", 5))
+
+
+def _resolve_fillable_max_pages(role: Optional[str]) -> int:
+    """
+    Resolve fillable PDF page limits for the caller role.
+    """
+    normalized = normalize_role(role)
+    if normalized == ROLE_GOD:
+        return max(1, _int_env("SANDBOX_FILLABLE_MAX_PAGES_GOD", 1000))
+    return max(1, _int_env("SANDBOX_FILLABLE_MAX_PAGES_BASE", 50))
+
+
+def _resolve_saved_forms_limit(role: Optional[str]) -> int:
+    """
+    Resolve saved form limits for the caller role.
+    """
+    normalized = normalize_role(role)
+    if normalized == ROLE_GOD:
+        return max(1, _int_env("SANDBOX_SAVED_FORMS_MAX_GOD", 20))
+    return max(1, _int_env("SANDBOX_SAVED_FORMS_MAX_BASE", 3))
+
+
+def _resolve_role_limits(role: Optional[str]) -> Dict[str, int]:
+    """
+    Build a limit summary for profile responses.
+    """
+    return {
+        "detectMaxPages": _resolve_detect_max_pages(role),
+        "fillableMaxPages": _resolve_fillable_max_pages(role),
+        "savedFormsMax": _resolve_saved_forms_limit(role),
+    }
+
+
+def _validate_pdf_for_detection(pdf_bytes: bytes) -> PdfValidationResult:
+    try:
+        return preflight_pdf_bytes(pdf_bytes)
+    except PdfValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 def _estimate_template_page_count(template_fields: List[Dict[str, Any]]) -> int:
@@ -780,6 +926,28 @@ async def api_health() -> Dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/api/profile")
+async def get_profile(authorization: Optional[str] = Header(default=None)) -> Dict[str, Any]:
+    """
+    Return the current user's profile details and limits.
+    """
+    user = _require_user(authorization)
+    profile = get_user_profile(user.app_user_id)
+    role = normalize_role(user.role)
+    credits_remaining: Optional[int] = None
+    if profile:
+        credits_remaining = profile.openai_credits_remaining
+    if role == ROLE_GOD:
+        credits_remaining = None
+    return {
+        "email": user.email,
+        "displayName": user.display_name,
+        "role": role,
+        "creditsRemaining": credits_remaining,
+        "limits": _resolve_role_limits(role),
+    }
+
+
 @app.post("/api/process-pdf")
 async def process_pdf(
     pdf: UploadFile = File(...),
@@ -800,7 +968,6 @@ async def process_pdf(
     if not source_pdf.lower().endswith(".pdf") and content_type not in {"application/pdf", "application/octet-stream"}:
         raise HTTPException(status_code=400, detail="Only PDF uploads are supported")
 
-    session_id = str(uuid.uuid4())
     max_mb, max_bytes = _resolve_upload_limit()
     pdf_bytes = await _read_upload_bytes(
         pdf,
@@ -809,38 +976,78 @@ async def process_pdf(
     )
     if not pdf_bytes:
         raise HTTPException(status_code=400, detail="Uploaded file is empty")
+    validation = _validate_pdf_for_detection(pdf_bytes)
+    pdf_bytes = validation.pdf_bytes
+    page_count = validation.page_count
+    if validation.was_decrypted:
+        logger.info("Detection PDF decrypted with empty password.")
+    max_pages = _resolve_detect_max_pages(user.role)
+    if page_count > max_pages:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Detection limited to {max_pages} pages for your tier (got {page_count}).",
+        )
 
-    pipeline_choice = "commonforms"
-    fd, temp_name = tempfile.mkstemp(suffix=".pdf")
-    os.close(fd)
-    temp_path = Path(temp_name)
-    try:
-        temp_path.write_bytes(pdf_bytes)
-        resolved = detect_commonforms_fields(Path(temp_path))
-    finally:
-        temp_path.unlink(missing_ok=True)
-    resolved["pipeline"] = "commonforms"
-
-    fields = resolved.get("fields", [])
-    _store_session_entry(
-        session_id,
-        {
-            "pdf_bytes": pdf_bytes,
-            "fields": fields,
-            "source_pdf": source_pdf,
-            "result": resolved,
-            "user_id": user.app_user_id,
-        },
-    )
-    return {
-        "success": True,
-        "sessionId": session_id,
-        "originalFilename": source_pdf,
-        "pipeline": resolved.get("pipeline", pipeline_choice),
-        "fieldCount": len(fields),
-        "fields": fields,
-        "result": resolved,
-    }
+    pipeline_choice = (pipeline or pipeline_form or "commonforms").strip().lower()
+    if pipeline_choice != "commonforms":
+        raise HTTPException(status_code=400, detail="Unsupported pipeline selection")
+    detection_mode = _resolve_detection_mode()
+    if detection_mode == "local":
+        session_id = str(uuid.uuid4())
+        record_detection_request(
+            request_id=session_id,
+            session_id=session_id,
+            user_id=user.app_user_id,
+            status=DETECTION_STATUS_RUNNING,
+            page_count=page_count,
+        )
+        try:
+            resolved = _run_local_detection(pdf_bytes)
+            fields = resolved.get("fields", [])
+            _store_session_entry(
+                session_id,
+                {
+                    "pdf_bytes": pdf_bytes,
+                    "fields": fields,
+                    "source_pdf": source_pdf,
+                    "result": resolved,
+                    "page_count": page_count,
+                    "user_id": user.app_user_id,
+                    "detection_status": DETECTION_STATUS_COMPLETE,
+                    "detection_completed_at": now_iso(),
+                },
+            )
+            update_detection_request(
+                request_id=session_id,
+                status=DETECTION_STATUS_COMPLETE,
+                page_count=page_count,
+            )
+            return {
+                "success": True,
+                "sessionId": session_id,
+                "originalFilename": source_pdf,
+                "pipeline": resolved.get("pipeline", pipeline_choice),
+                "fieldCount": len(fields),
+                "fields": fields,
+                "result": resolved,
+                "status": DETECTION_STATUS_COMPLETE,
+            }
+        except Exception as exc:
+            update_detection_request(
+                request_id=session_id,
+                status=DETECTION_STATUS_FAILED,
+                error=str(exc),
+                page_count=page_count,
+            )
+            raise
+    if detection_mode == "tasks":
+        response = _enqueue_detection_job(pdf_bytes, source_pdf, user, page_count=page_count)
+        return {
+            "success": True,
+            "originalFilename": source_pdf,
+            **response,
+        }
+    raise HTTPException(status_code=500, detail=f"Unsupported detection mode: {detection_mode}")
 
 
 @app.post("/api/register-fillable")
@@ -871,6 +1078,13 @@ async def register_fillable_pdf(
     if not pdf_bytes:
         raise HTTPException(status_code=400, detail="Uploaded file is empty")
 
+    page_count = _get_pdf_page_count(pdf_bytes)
+    max_pages = _resolve_fillable_max_pages(user.role)
+    if page_count > max_pages:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Fillable upload limited to {max_pages} pages for your tier (got {page_count}).",
+        )
     _store_session_entry(
         session_id,
         {
@@ -878,6 +1092,7 @@ async def register_fillable_pdf(
             "fields": [],
             "source_pdf": source_pdf,
             "result": {},
+            "page_count": page_count,
             "user_id": user.app_user_id,
         },
     )
@@ -898,13 +1113,22 @@ async def get_detected_fields(
     """
     _require_legacy_enabled()
     user = _require_user(authorization)
-    entry = _get_session_entry(sessionId, user)
+    entry = _get_session_entry(
+        sessionId,
+        user,
+        include_pdf_bytes=False,
+        include_result=False,
+        include_renames=False,
+        include_checkbox_rules=False,
+        force_l2=True,
+    )
     fields = entry.get("fields", [])
     return {
         "success": True,
         "sessionId": sessionId,
         "items": fields,
         "total": len(fields),
+        "status": entry.get("detection_status") or DETECTION_STATUS_COMPLETE,
     }
 
 
@@ -918,10 +1142,26 @@ async def download_session_pdf(
     """
     _require_legacy_enabled()
     user = _require_user(authorization)
-    entry = _get_session_entry(session_id, user)
+    entry = _get_session_entry(
+        session_id,
+        user,
+        include_pdf_bytes=False,
+        include_fields=False,
+        include_result=False,
+        include_renames=False,
+        include_checkbox_rules=False,
+    )
     filename = _safe_pdf_download_filename(entry.get("source_pdf") or "document")
     headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
-    return StreamingResponse(io.BytesIO(entry["pdf_bytes"]), media_type="application/pdf", headers=headers)
+    pdf_bytes = entry.get("pdf_bytes")
+    if pdf_bytes:
+        stream = io.BytesIO(pdf_bytes)
+    else:
+        pdf_path = entry.get("pdf_path")
+        if not pdf_path:
+            raise HTTPException(status_code=404, detail="Session PDF not found")
+        stream = stream_pdf(pdf_path)
+    return StreamingResponse(stream, media_type="application/pdf", headers=headers)
 
 
 @app.post("/detect-fields")
@@ -969,7 +1209,6 @@ async def detect_fields(
     if not source_pdf.lower().endswith(".pdf") and content_type not in {"application/pdf", "application/octet-stream"}:
         raise HTTPException(status_code=400, detail="Only PDF uploads are supported")
 
-    session_id = str(uuid.uuid4())
     max_mb, max_bytes = _resolve_upload_limit()
     pdf_bytes = await _read_upload_bytes(
         file,
@@ -978,45 +1217,148 @@ async def detect_fields(
     )
     if not pdf_bytes:
         raise HTTPException(status_code=400, detail="Uploaded file is empty")
+    validation = _validate_pdf_for_detection(pdf_bytes)
+    pdf_bytes = validation.pdf_bytes
+    page_count = validation.page_count
+    if validation.was_decrypted:
+        logger.info("Detection PDF decrypted with empty password.")
+    if not admin_override and user:
+        max_pages = _resolve_detect_max_pages(user.role)
+        if page_count > max_pages:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Detection limited to {max_pages} pages for your tier (got {page_count}).",
+            )
     if auth_payload.get("uid"):
-        logger.info("Session %s -> request by %s", session_id, auth_payload["uid"])
+        logger.info("Detection request by %s", auth_payload["uid"])
     elif admin_override:
-        logger.info("Session %s -> request by admin override", session_id)
-    logger.info("Session %s -> starting detection for %s", session_id, _log_pdf_label(source_pdf))
+        logger.info("Detection request by admin override")
+    logger.info("Starting detection for %s", _log_pdf_label(source_pdf))
 
-    pipeline_choice = "commonforms"
-    if pipeline_choice == "commonforms":
-        fd, temp_name = tempfile.mkstemp(suffix=".pdf")
-        os.close(fd)
-        temp_path = Path(temp_name)
+    pipeline_choice = (pipeline or pipeline_form or "commonforms").strip().lower()
+    if pipeline_choice != "commonforms":
+        raise HTTPException(status_code=400, detail="Unsupported pipeline selection")
+
+    detection_mode = _resolve_detection_mode()
+    if detection_mode == "local":
+        session_id = str(uuid.uuid4())
+        record_detection_request(
+            request_id=session_id,
+            session_id=session_id,
+            user_id=user.app_user_id if user else None,
+            status=DETECTION_STATUS_RUNNING,
+            page_count=page_count,
+        )
         try:
-            temp_path.write_bytes(pdf_bytes)
-            resolved = detect_commonforms_fields(Path(temp_path))
-        finally:
-            temp_path.unlink(missing_ok=True)
-        resolved["pipeline"] = "commonforms"
-        logger.info(
-            "Session %s -> %s final fields produced (commonforms pipeline)",
-            session_id,
-            len(resolved.get("fields", [])),
-        )
-        fields = resolved.get("fields", [])
-        _store_session_entry(
-            session_id,
-            {
-                "pdf_bytes": pdf_bytes,
-                "fields": fields,
-                "source_pdf": source_pdf,
-                "result": resolved,
-                "user_id": user.app_user_id if user else None,
-            },
-        )
-        return {
-            **resolved,
-            "sessionId": session_id,
-        }
+            resolved = _run_local_detection(pdf_bytes)
+            fields = resolved.get("fields", [])
+            _store_session_entry(
+                session_id,
+                {
+                    "pdf_bytes": pdf_bytes,
+                    "fields": fields,
+                    "source_pdf": source_pdf,
+                    "result": resolved,
+                    "page_count": page_count,
+                    "user_id": user.app_user_id if user else None,
+                    "detection_status": DETECTION_STATUS_COMPLETE,
+                    "detection_completed_at": now_iso(),
+                },
+            )
+            update_detection_request(
+                request_id=session_id,
+                status=DETECTION_STATUS_COMPLETE,
+                page_count=page_count,
+            )
+            logger.info(
+                "Session %s -> %s final fields produced (commonforms pipeline)",
+                session_id,
+                len(fields),
+            )
+            return {
+                **resolved,
+                "sessionId": session_id,
+                "status": DETECTION_STATUS_COMPLETE,
+            }
+        except Exception as exc:
+            update_detection_request(
+                request_id=session_id,
+                status=DETECTION_STATUS_FAILED,
+                error=str(exc),
+                page_count=page_count,
+            )
+            raise
 
-    raise HTTPException(status_code=400, detail="Unsupported pipeline selection")
+    if detection_mode == "tasks":
+        response = _enqueue_detection_job(pdf_bytes, source_pdf, user, page_count=page_count)
+        logger.info("Session %s -> queued detection job", response.get("sessionId"))
+        return response
+
+    raise HTTPException(status_code=500, detail=f"Unsupported detection mode: {detection_mode}")
+
+
+@app.get("/detect-fields/{session_id}")
+async def get_detection_status(
+    session_id: str,
+    authorization: Optional[str] = Header(default=None),
+    x_admin_token: Optional[str] = Header(default=None),
+) -> Dict[str, Any]:
+    """
+    Return detector job status and results when available.
+    """
+    user: Optional[RequestUser] = None
+    admin_override = _has_admin_override(authorization, x_admin_token)
+    if not admin_override:
+        auth_payload = _verify_token(authorization)
+        try:
+            user = ensure_user(auth_payload)
+        except Exception as exc:
+            logger.error("Failed to sync Firebase user profile: %s", exc)
+            raise HTTPException(status_code=500, detail="Failed to synchronize user profile") from exc
+
+    metadata = get_session_metadata(session_id)
+    if not metadata:
+        raise HTTPException(status_code=404, detail="Session not found")
+    owner_id = metadata.get("user_id")
+    if not admin_override:
+        if not owner_id:
+            raise HTTPException(status_code=403, detail="Session access denied")
+        if owner_id != user.app_user_id:
+            raise HTTPException(status_code=403, detail="Session access denied")
+
+    status = metadata.get("detection_status")
+    if not status:
+        status = DETECTION_STATUS_COMPLETE if metadata.get("fields_path") else DETECTION_STATUS_FAILED
+
+    response: Dict[str, Any] = {
+        "sessionId": session_id,
+        "status": status,
+        "pipeline": "commonforms",
+        "sourcePdf": metadata.get("source_pdf"),
+        "pageCount": metadata.get("page_count"),
+        "detectionQueuedAt": metadata.get("detection_queued_at"),
+        "detectionStartedAt": metadata.get("detection_started_at"),
+        "detectionDurationSeconds": metadata.get("detection_duration_seconds"),
+        "detectionProfile": metadata.get("detection_profile"),
+        "detectionQueue": metadata.get("detection_queue"),
+        "detectionServiceUrl": metadata.get("detection_service_url"),
+    }
+
+    if status == DETECTION_STATUS_FAILED:
+        response["error"] = metadata.get("detection_error") or "Detection failed"
+        return response
+
+    if status != DETECTION_STATUS_COMPLETE:
+        return response
+
+    fields_path = metadata.get("fields_path")
+    result_path = metadata.get("result_path")
+    fields = download_session_json(fields_path) if fields_path else []
+    response["fields"] = fields
+    response["fieldCount"] = len(fields)
+    if result_path:
+        response["result"] = download_session_json(result_path) or {}
+    return response
 
 
 @app.post("/api/schemas")
@@ -1089,7 +1431,14 @@ async def rename_fields_ai(
     """
     user = _require_user(authorization)
 
-    entry = _get_session_entry(payload.sessionId, user)
+    entry = _get_session_entry(
+        payload.sessionId,
+        user,
+        include_result=False,
+        include_renames=False,
+        include_checkbox_rules=False,
+        force_l2=True,
+    )
     pdf_bytes = entry.get("pdf_bytes")
     if not pdf_bytes:
         raise HTTPException(status_code=404, detail="Session PDF not found")
@@ -1131,7 +1480,7 @@ async def rename_fields_ai(
     if not check_rate_limit(f"rename:user:{user.app_user_id}", limit=user_rate, window_seconds=window_seconds):
         raise HTTPException(status_code=429, detail="Rate limit exceeded for user")
 
-    page_count = _get_pdf_page_count(pdf_bytes)
+    page_count = entry.get("page_count") or _get_pdf_page_count(pdf_bytes)
     remaining, allowed = consume_openai_credits(
         user.app_user_id,
         pages=page_count,
@@ -1175,6 +1524,14 @@ async def rename_fields_ai(
     entry["openai_credit_consumed"] = True
     entry["openai_credit_pages"] = page_count
     entry["openai_credit_mapping_used"] = False
+    entry["page_count"] = page_count
+    _update_session_entry(
+        payload.sessionId,
+        entry,
+        persist_fields=True,
+        persist_renames=True,
+        persist_checkbox_rules=True,
+    )
 
     return {
         "success": True,
@@ -1227,17 +1584,29 @@ async def map_schema_ai(
     if not check_rate_limit(f"user:{user.app_user_id}", limit=user_rate, window_seconds=window_seconds):
         raise HTTPException(status_code=429, detail="Rate limit exceeded for user")
 
-    session_entry = _get_session_entry_if_present(payload.sessionId, user)
+    session_entry = _get_session_entry_if_present(
+        payload.sessionId,
+        user,
+        include_pdf_bytes=False,
+        include_fields=False,
+        include_result=False,
+        include_renames=False,
+        include_checkbox_rules=False,
+    )
     skip_credit = False
     if session_entry and session_entry.get("openai_credit_consumed"):
         if not session_entry.get("openai_credit_mapping_used"):
             session_entry["openai_credit_mapping_used"] = True
+            _update_session_entry(payload.sessionId, session_entry)
             skip_credit = True
 
     if not skip_credit:
-        if session_entry and session_entry.get("pdf_bytes"):
-            page_count = _get_pdf_page_count(session_entry["pdf_bytes"])
-        else:
+        page_count = None
+        if session_entry:
+            page_count = session_entry.get("openai_credit_pages") or session_entry.get("page_count")
+            if not page_count and session_entry.get("pdf_bytes"):
+                page_count = _get_pdf_page_count(session_entry["pdf_bytes"])
+        if not page_count:
             page_count = _estimate_template_page_count(template_fields)
         remaining, allowed = consume_openai_credits(
             user.app_user_id,
@@ -1277,54 +1646,11 @@ async def map_schema_ai(
         allowlist_payload.get("templateTags") or [],
         ai_response,
     )
-    mapping_record = create_mapping(
-        user_id=user.app_user_id,
-        schema_id=schema.id,
-        template_id=payload.templateId,
-        payload=mapping_results,
-    )
-
     return {
         "success": True,
         "requestId": request_id,
-        "mappingId": mapping_record.id,
         "schemaId": schema.id,
         "mappingResults": mapping_results,
-        "timestamp": datetime.now(tz=timezone.utc).isoformat(),
-    }
-
-
-@app.post("/api/schema-mappings")
-async def create_schema_mapping(
-    payload: MappingCreateRequest,
-    authorization: Optional[str] = Header(default=None),
-) -> Dict[str, Any]:
-    """
-    Persist a schema mapping payload after client approval.
-    """
-    user = _require_user(authorization)
-    schema = get_schema(payload.schemaId, user.app_user_id)
-    if not schema:
-        raise HTTPException(status_code=404, detail="Schema not found")
-    if payload.templateId:
-        template = get_template(payload.templateId, user.app_user_id)
-        if not template:
-            raise HTTPException(status_code=403, detail="Template access denied")
-
-    mapping_payload = payload.mappingResults or {}
-    if not isinstance(mapping_payload, dict):
-        raise HTTPException(status_code=400, detail="mappingResults must be an object")
-
-    record = create_mapping(
-        user_id=user.app_user_id,
-        schema_id=schema.id,
-        template_id=payload.templateId,
-        payload=mapping_payload,
-    )
-    return {
-        "success": True,
-        "mappingId": record.id,
-        "schemaId": schema.id,
         "timestamp": datetime.now(tz=timezone.utc).isoformat(),
     }
 
@@ -1492,6 +1818,14 @@ async def save_form(
     content_type = (pdf.content_type or "").lower()
     if not filename.lower().endswith(".pdf") and content_type not in {"application/pdf", "application/octet-stream"}:
         raise HTTPException(status_code=400, detail="Only PDF uploads are supported")
+
+    max_saved_forms = _resolve_saved_forms_limit(user.role)
+    existing_templates = list_templates(user.app_user_id)
+    if len(existing_templates) >= max_saved_forms:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Saved form limit reached ({max_saved_forms} max).",
+        )
 
     temp_path = None
     uploaded_paths: List[str] = []

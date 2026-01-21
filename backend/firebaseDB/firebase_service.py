@@ -94,7 +94,7 @@ def init_firebase() -> None:
         if cred:
             _firebase_app = initialize_app(cred, options or None)
         else:
-            _firebase_app = initialize_app(options or None)
+            _firebase_app = initialize_app(options=options or None)
         _firebase_project_id = project_id
         logger.info("Firebase Admin initialized (project=%s)", project_id or "default")
     except Exception as exc:

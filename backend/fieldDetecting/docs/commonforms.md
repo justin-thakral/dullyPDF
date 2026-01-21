@@ -1,7 +1,8 @@
 # CommonForms Pipeline (Main)
 
-This is the **primary** field-detection pipeline used by `backend/main.py`. It runs the
-CommonForms ML detector and returns field geometry plus confidence metadata.
+This is the **primary** field-detection pipeline used by the detector service
+(`backend/detector_main.py`). The main API queues detection jobs and the detector
+executes CommonForms ML inference to return field geometry plus confidence metadata.
 
 Legacy note:
 - The old OpenCV-based sandbox pipeline (native/scanned routing) now lives in
@@ -17,7 +18,8 @@ Legacy note:
 
 ## Input expectations
 
-- PDFs must be readable by CommonForms (encrypted PDFs raise a hard error).
+- PDFs must be readable by CommonForms. Password-protected PDFs are rejected;
+  PDFs encrypted with an empty password are decrypted during preflight.
 - Geometry is derived from rendered page images; scan quality and DPI affect results.
 - Existing AcroForm fields are not required; CommonForms detects new widgets from pixels.
 
@@ -35,8 +37,10 @@ If CommonForms detects a `Signature` widget:
 
 ## Entry points
 
-- API: `backend/main.py` -> `detect_commonforms_fields` in
+- Detector service: `backend/detector_main.py` -> `detect_commonforms_fields` in
   `backend/fieldDetecting/commonforms/commonForm.py`.
+- Main API: `POST /detect-fields` queues a job, `GET /detect-fields/{sessionId}` returns results.
+- Container build: `Dockerfile.detector` (CPU-only PyTorch + CommonForms).
 - CLI:
 ```bash
 python -m backend.fieldDetecting.commonforms.commonForm path/to/sample.pdf
@@ -58,6 +62,7 @@ Optional artifacts when `output_pdf` is provided:
 
 CommonForms detection:
 - `COMMONFORMS_MODEL` (default `FFDNet-L`)
+- `COMMONFORMS_MODEL_GCS_URI` (optional; GCS URI to a model weight file)
 - `COMMONFORMS_CONFIDENCE` (default `0.3`)
 - `COMMONFORMS_IMAGE_SIZE` (default `1600`)
 - `COMMONFORMS_DEVICE` (default `cpu`)
@@ -65,9 +70,41 @@ CommonForms detection:
 - `COMMONFORMS_MULTILINE` (default `false`)
 - `COMMONFORMS_BATCH_SIZE` (default `4`)
 - `COMMONFORMS_CONFIDENCE_GREEN` / `COMMONFORMS_CONFIDENCE_YELLOW`
+- `COMMONFORMS_WEIGHTS_CACHE_DIR` (default `/tmp/commonforms-models`)
+- `COMMONFORMS_WEIGHTS_LOCK_TIMEOUT_SECONDS` (default `600`)
 
 Runtime guards:
 - `SANDBOX_DISABLE_TENSORBOARD` (default `true`) disables TensorBoard hooks when importing torch.
+
+## Runtime requirements
+
+- If `COMMONFORMS_MODEL_GCS_URI` is set, the detector downloads weights from GCS
+  into `COMMONFORMS_WEIGHTS_CACHE_DIR` and reuses the cached file across requests.
+- If no GCS URI is provided, CommonForms downloads weights from HuggingFace on
+  first run. Provide `HF_TOKEN` (or `HUGGINGFACE_HUB_TOKEN`) to avoid rate limits.
+- Download locks older than `COMMONFORMS_WEIGHTS_LOCK_TIMEOUT_SECONDS` are treated
+  as stale and removed before retrying.
+- Cloud Run detector instances require more than 512Mi memory. Use 2Gi+ to
+  avoid OOM restarts during model load/inference.
+
+## Model weights in GCS (recommended for prod)
+
+The detector uses the `COMMONFORMS_MODEL` label to pick FFDNet vs FFDetr, but it
+loads weights from `COMMONFORMS_MODEL_GCS_URI` when provided. Ensure the weights
+match `COMMONFORMS_MODEL` and `COMMONFORMS_FAST`.
+
+Known weight filenames from HuggingFace:
+- `FFDNet-L.pt` (repo `jbarrow/FFDNet-L`)
+- `FFDNet-L.onnx` (repo `jbarrow/FFDNet-L-cpu`, used when `COMMONFORMS_FAST=true`)
+- `FFDNet-S.pt` (repo `jbarrow/FFDNet-S`)
+- `FFDNet-S.onnx` (repo `jbarrow/FFDNet-S-cpu`)
+- `FFDetr.pth` (repo `jbarrow/FFDetr`)
+
+Example flow:
+```bash
+huggingface-cli download jbarrow/FFDNet-L FFDNet-L.pt --local-dir /tmp/commonforms
+gcloud storage cp /tmp/commonforms/FFDNet-L.pt gs://<models-bucket>/commonforms/FFDNet-L.pt
+```
 
 ## Debug output
 

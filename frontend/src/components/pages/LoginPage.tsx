@@ -1,9 +1,13 @@
 /**
- * Auth page for sign-in/sign-up flows.
+ * Auth page for email/password sign-in with FirebaseUI for OAuth providers.
  */
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import type { FirebaseError } from 'firebase/app';
+import { GithubAuthProvider, GoogleAuthProvider } from 'firebase/auth';
+import * as firebaseui from 'firebaseui';
+import 'firebaseui/dist/firebaseui.css';
 import './LoginPage.css';
+import { firebaseAuth } from '../../services/firebaseClient';
 import { Auth } from '../../services/auth';
 import { Alert } from '../ui/Alert';
 
@@ -17,8 +21,6 @@ type AuthMode = 'signin' | 'signup';
 const INITIAL_STATE = {
   email: '',
   password: '',
-  confirmPassword: '',
-  displayName: '',
 };
 
 /**
@@ -38,6 +40,8 @@ function getFriendlyError(error: unknown, mode: AuthMode): string {
       return 'Password must be at least 6 characters long.';
     case 'auth/too-many-requests':
       return 'Too many attempts. Please wait a moment and try again.';
+    case 'auth/account-exists-with-different-credential':
+      return 'An account already exists with a different sign-in method. Try that provider.';
     default:
       return fbError.message || (mode === 'signup'
         ? 'Unable to create your account right now. Please try again later.'
@@ -46,66 +50,78 @@ function getFriendlyError(error: unknown, mode: AuthMode): string {
 }
 
 /**
- * Render the authentication form with sign-in and sign-up modes.
+ * Render the authentication UI with a custom email/password form and provider buttons.
  */
 const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated, onCancel }) => {
+  const uiRef = useRef<firebaseui.auth.AuthUI | null>(null);
   const [mode, setMode] = useState<AuthMode>('signin');
   const [form, setForm] = useState(INITIAL_STATE);
-  const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
 
-  const title = useMemo(() => (mode === 'signin' ? 'Welcome back' : 'Create your account'), [mode]);
-  const subtitle = useMemo(
-    () => (mode === 'signin'
-      ? 'Use your credentials to access the PDF template workspace.'
-      : 'Start building precise PDF templates with AI-assisted tooling.'),
-    [mode],
-  );
+  useEffect(() => {
+    const ui = firebaseui.auth.AuthUI.getInstance() || new firebaseui.auth.AuthUI(firebaseAuth);
+    uiRef.current = ui;
+    ui.reset();
 
-  /**
-   * Update form state for a single field.
-   */
+    const uiConfig: firebaseui.auth.Config = {
+      signInFlow: 'popup',
+      credentialHelper: firebaseui.auth.CredentialHelper.NONE,
+      signInOptions: [
+        GoogleAuthProvider.PROVIDER_ID,
+        {
+          provider: GithubAuthProvider.PROVIDER_ID,
+          scopes: ['user:email'],
+        },
+      ],
+      callbacks: {
+        signInSuccessWithAuthResult: () => {
+          setError(null);
+          setInfo(null);
+          onAuthenticated?.();
+          return false;
+        },
+        signInFailure: (authError) => {
+          setError(getFriendlyError(authError, mode));
+          return Promise.resolve();
+        },
+      },
+    };
+
+    ui.start('#firebaseui-auth-container', uiConfig);
+
+    return () => {
+      ui.reset();
+    };
+  }, [mode, onAuthenticated]);
+
   const handleChange = (field: keyof typeof form) => (event: React.ChangeEvent<HTMLInputElement>) => {
     setForm((prev) => ({ ...prev, [field]: event.target.value }));
-  };
-
-  /**
-   * Clear any inline error/info messages.
-   */
-  const resetMessages = () => {
     setError(null);
     setInfo(null);
   };
 
-  /**
-   * Switch between sign-in and sign-up mode.
-   */
-  const handleModeChange = (nextMode: AuthMode) => {
-    if (nextMode === mode) return;
-    setMode(nextMode);
-    resetMessages();
+  const handleToggleMode = () => {
+    setMode((prev) => (prev === 'signin' ? 'signup' : 'signin'));
+    setError(null);
+    setInfo(null);
   };
 
-  /**
-   * Submit the auth form and handle sign-in/sign-up requests.
-   */
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
-    resetMessages();
-
-    if (mode === 'signup' && form.password !== form.confirmPassword) {
-      setError('Passwords do not match. Please confirm and try again.');
-      return;
-    }
+    setError(null);
+    setInfo(null);
 
     setIsSubmitting(true);
     try {
+      const email = form.email.trim();
+      const password = form.password.trim();
       if (mode === 'signin') {
-        await Auth.signIn(form.email.trim(), form.password);
+        await Auth.signIn(email, password);
       } else {
-        await Auth.signUp(form.email.trim(), form.password, form.displayName.trim());
+        await Auth.signUp(email, password);
+        setInfo('Verification email sent. Check your inbox before continuing.');
       }
       onAuthenticated?.();
     } catch (err) {
@@ -115,18 +131,17 @@ const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated, onCancel }) => {
     }
   };
 
-  /**
-   * Trigger a password reset email flow.
-   */
   const handleForgotPassword = async () => {
-    resetMessages();
-    if (!form.email.trim()) {
-      setError('Enter your email address first so we can send the reset link.');
+    setError(null);
+    setInfo(null);
+    const email = form.email.trim();
+    if (!email) {
+      setError('Enter your email so we can send the reset link.');
       return;
     }
     try {
-      await Auth.sendPasswordReset(form.email.trim());
-      setInfo('Password reset link sent. Check your inbox for further instructions.');
+      await Auth.sendPasswordReset(email);
+      setInfo('Password reset link sent. Check your inbox for instructions.');
     } catch (err) {
       setError(getFriendlyError(err, mode));
     }
@@ -134,53 +149,30 @@ const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated, onCancel }) => {
 
   return (
     <div className="auth-page">
-        <div className="auth-wrapper">
+      <div className="auth-card">
         <div className="auth-brand">
           <img className="auth-logo-image" src="/DullyPDF.png" alt="DullyPDF" />
-          <h1>DullyPDF</h1>
-          <p>AI-aligned PDF templates with trusted data mapping.</p>
+          <div className="auth-brand-text">
+            <h1>DullyPDF</h1>
+            <p>AI-aligned PDF templates with trusted data mapping.</p>
+          </div>
         </div>
 
-        <div className="auth-card">
+        <div className="auth-panel">
           <div className="auth-header">
-            <div className="auth-tabs">
-              <button
-                type="button"
-                className={mode === 'signin' ? 'tab active' : 'tab'}
-                onClick={() => handleModeChange('signin')}
-              >
-                Sign in
-              </button>
-              <button
-                type="button"
-                className={mode === 'signup' ? 'tab active' : 'tab'}
-                onClick={() => handleModeChange('signup')}
-              >
-                Create account
-              </button>
-            </div>
-            <h2>{title}</h2>
-            <p>{subtitle}</p>
+            <span className="auth-pill">Secure access</span>
+            <h2>{mode === 'signin' ? 'Sign in to DullyPDF' : 'Create account for DullyPDF'}</h2>
+            <p>
+              Use email/password or continue with Google or GitHub. Email verification is required
+              for password accounts.
+            </p>
           </div>
 
           <form className="auth-form" onSubmit={handleSubmit}>
-            {mode === 'signup' && (
-              <div className="form-field">
-                <label htmlFor="displayName">Name</label>
-                <input
-                  id="displayName"
-                  type="text"
-                  placeholder="How should we address you?"
-                  value={form.displayName}
-                  onChange={handleChange('displayName')}
-                />
-              </div>
-            )}
-
-            <div className="form-field">
-              <label htmlFor="email">Email</label>
+            <div className="auth-field">
+              <label htmlFor="auth-email">Email</label>
               <input
-                id="email"
+                id="auth-email"
                 type="email"
                 autoComplete="email"
                 placeholder="you@example.com"
@@ -189,55 +181,47 @@ const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated, onCancel }) => {
                 required
               />
             </div>
-
-            <div className="form-field">
-              <label htmlFor="password">Password</label>
-              <div className="password-field">
-                <input
-                  id="password"
-                  type={showPassword ? 'text' : 'password'}
-                  autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
-                  placeholder={mode === 'signin' ? 'Enter your password' : 'Create a secure password'}
-                  value={form.password}
-                  onChange={handleChange('password')}
-                  required
-                />
-                <button
-                  type="button"
-                  className="toggle-password"
-                  onClick={() => setShowPassword((value) => !value)}
-                >
-                  {showPassword ? 'Hide' : 'Show'}
-                </button>
-              </div>
+            <div className="auth-field">
+              <label htmlFor="auth-password">Password</label>
+              <input
+                id="auth-password"
+                type="password"
+                autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
+                placeholder={mode === 'signin' ? 'Enter your password' : 'Create a password'}
+                value={form.password}
+                onChange={handleChange('password')}
+                required
+              />
             </div>
-
-            {mode === 'signup' && (
-              <div className="form-field">
-                <label htmlFor="confirmPassword">Confirm password</label>
-                <input
-                  id="confirmPassword"
-                  type="password"
-                  autoComplete="new-password"
-                  placeholder="Re-enter your password"
-                  value={form.confirmPassword}
-                  onChange={handleChange('confirmPassword')}
-                  required
-                />
-              </div>
-            )}
-
-            {error || info ? (
-              <div className="auth-alerts">
-                {error ? <Alert tone="error" variant="inline" message={error} /> : null}
-                {info ? <Alert tone="info" variant="inline" message={info} /> : null}
-              </div>
-            ) : null}
 
             <button type="submit" className="primary-action" disabled={isSubmitting}>
               {isSubmitting ? 'Just a moment…' : mode === 'signin' ? 'Sign in' : 'Create account'}
             </button>
           </form>
+
+          <div className="auth-links">
+            {mode === 'signin' ? (
+              <button type="button" className="text-link" onClick={handleForgotPassword}>
+                Forgot password?
+              </button>
+            ) : null}
+            <button type="button" className="text-link" onClick={handleToggleMode}>
+              {mode === 'signin' ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
+            </button>
+          </div>
+
+          {error || info ? (
+            <div className="auth-alerts">
+              {error ? <Alert tone="error" variant="inline" message={error} /> : null}
+              {info ? <Alert tone="info" variant="inline" message={info} /> : null}
+            </div>
+          ) : null}
+
+          <div className="auth-divider">
+            <span>Or continue with</span>
+          </div>
+
+          <div id="firebaseui-auth-container" className="firebaseui-shell" />
 
           <div className="auth-footer">
             {onCancel && (
@@ -245,9 +229,6 @@ const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated, onCancel }) => {
                 Back to homepage
               </button>
             )}
-            <button type="button" className="text-link" onClick={handleForgotPassword}>
-              Forgot password?
-            </button>
           </div>
         </div>
       </div>

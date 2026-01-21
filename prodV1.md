@@ -17,6 +17,8 @@ The legacy OpenCV pipeline is archived under `legacy/` and not used.
 Components:
 - Frontend (React + Vite): `frontend/` -> Firebase Hosting.
 - Backend (FastAPI): `backend/main.py` -> Cloud Run.
+- Detector (FastAPI): `backend/detector_main.py` -> Cloud Run.
+- Cloud Tasks: dispatches detection jobs to the detector service.
 - Firebase Auth: client sign-in, ID tokens used by the backend.
 - Firestore: user roles, OpenAI credits, schema + template metadata.
 - Cloud Storage: stored PDFs and templates.
@@ -53,6 +55,23 @@ Files that implement auth and credentials:
 
 ---
 
+## Plan (Secure coordinated rollout)
+
+1) Build and tag backend + detector images from the same git SHA, then run the
+   local smoke test (backend + detector + frontend) to validate auth + detection.
+2) Create the Cloud Tasks queue and grant the Cloud Tasks service agent
+   `roles/iam.serviceAccountTokenCreator` on `DETECTOR_TASKS_SERVICE_ACCOUNT`.
+3) Deploy the detector service from `Dockerfile.detector` with
+   `--no-allow-unauthenticated` and `--ingress all`, set the detector env vars,
+   and record the Cloud Run URL for `DETECTOR_TASKS_AUDIENCE`.
+4) Deploy the main backend from `Dockerfile` with `DETECTOR_MODE=tasks`, the
+   Cloud Tasks env vars (`DETECTOR_TASKS_*`, `DETECTOR_SERVICE_URL`), and
+   `roles/run.invoker` on the detector service.
+5) Deploy the frontend with the Cloud Run URL and verify detection/rename flows.
+6) Run the smoke test in section 14 and monitor logs for task failures.
+
+---
+
 ## 2) Projects and environments
 
 Recommended layout:
@@ -69,6 +88,7 @@ Enable these APIs on `dullypdf`:
 - `run.googleapis.com`
 - `artifactregistry.googleapis.com` (if building containers)
 - `cloudbuild.googleapis.com` (if using `gcloud run deploy --source`)
+- `cloudtasks.googleapis.com`
 - `secretmanager.googleapis.com`
 - `identitytoolkit.googleapis.com` (Firebase Auth Admin)
 - `firestore.googleapis.com`
@@ -80,10 +100,18 @@ gcloud services enable \
   run.googleapis.com \
   artifactregistry.googleapis.com \
   cloudbuild.googleapis.com \
+  cloudtasks.googleapis.com \
   secretmanager.googleapis.com \
   identitytoolkit.googleapis.com \
   firestore.googleapis.com \
   storage.googleapis.com \
+  --project dullypdf
+```
+
+Create the detection queue:
+```
+gcloud tasks queues create commonforms-detect \
+  --location us-central1 \
   --project dullypdf
 ```
 
@@ -117,6 +145,7 @@ Grant minimal roles:
 - Firestore: `roles/datastore.user` or `roles/firestore.user`
 - Storage: `roles/storage.objectAdmin` (uploads + deletes)
 - Secret Manager: `roles/secretmanager.secretAccessor` (if secrets are pulled at runtime)
+- Cloud Tasks enqueue: `roles/cloudtasks.enqueuer` (create detection tasks)
 
 Example:
 ```
@@ -131,7 +160,15 @@ gcloud projects add-iam-policy-binding dullypdf \
 gcloud projects add-iam-policy-binding dullypdf \
   --member="serviceAccount:dullypdf-backend-runtime@dullypdf.iam.gserviceaccount.com" \
   --role="roles/secretmanager.secretAccessor"
+
+gcloud projects add-iam-policy-binding dullypdf \
+  --member="serviceAccount:dullypdf-backend-runtime@dullypdf.iam.gserviceaccount.com" \
+  --role="roles/cloudtasks.enqueuer"
 ```
+
+Detector service invoker:
+- Grant `roles/run.invoker` on the detector service to the same backend runtime SA.
+- If the detector service uses a dedicated runtime SA, grant it Firestore + Storage roles as well.
 
 ### B) Admin role management (custom claims)
 The backend runtime does not need Firebase Auth admin permissions.
@@ -147,7 +184,8 @@ Assign this only to an admin user or a dedicated admin SA.
 Store secrets in Secret Manager:
 - `dullypdf-prod-openai-key`
 - `dullypdf-prod-admin-token`
-- (Optional) `dullypdf-prod-firebase-admin` if you are not using ADC
+- (Optional) `dullypdf-prod-hf-token` (HuggingFace token for seeding CommonForms weights)
+- (Optional) `dullypdf-prod-firebase-admin` for local prod testing or non-GCP runs
 
 Commands:
 ```
@@ -158,11 +196,44 @@ echo -n "<OPENAI_KEY>" | gcloud secrets create dullypdf-prod-openai-key \
 # Admin token
 echo -n "<ADMIN_TOKEN>" | gcloud secrets create dullypdf-prod-admin-token \
   --data-file=- --project dullypdf
+
+# HuggingFace token (optional; only needed to download weights for GCS seeding)
+echo -n "<HF_TOKEN>" | gcloud secrets create dullypdf-prod-hf-token \
+  --data-file=- --project dullypdf
 ```
 
 Security note:
 - Prefer ADC on Cloud Run (no JSON keys at rest).
 - Only use `dullypdf-prod-firebase-admin` if you must run outside GCP.
+- When using GCS-hosted CommonForms weights, the detector runtime does not need
+  HuggingFace tokens.
+
+---
+
+## 6b) CommonForms weights in GCS (recommended)
+
+1) Create a private models bucket:
+```
+gcloud storage buckets create gs://dullypdf-models \
+  --location=us-central1 \
+  --project dullypdf
+```
+
+2) Download weights locally (one-time), then upload to GCS:
+```
+huggingface-cli download jbarrow/FFDNet-L FFDNet-L.pt --local-dir /tmp/commonforms
+gcloud storage cp /tmp/commonforms/FFDNet-L.pt gs://dullypdf-models/commonforms/FFDNet-L.pt
+```
+
+3) Allow the detector runtime SA to read the weights:
+```
+gcloud storage buckets add-iam-policy-binding gs://dullypdf-models \
+  --member=serviceAccount:dullypdf-backend-runtime@dullypdf.iam.gserviceaccount.com \
+  --role=roles/storage.objectViewer
+```
+
+If you use a different model or `COMMONFORMS_FAST=true`, upload the matching
+weight filename (see `backend/fieldDetecting/docs/commonforms.md`).
 
 ---
 
@@ -171,12 +242,19 @@ Security note:
 These must be set on Cloud Run:
 - `ENV=prod`
 - `FIREBASE_PROJECT_ID=dullypdf`
+- `FIREBASE_USE_ADC=true`
 - `FORMS_BUCKET=dullypdf-forms`
 - `TEMPLATES_BUCKET=dullypdf-templates`
 - `SANDBOX_CORS_ORIGINS=https://your-domain.com`
 - `FIREBASE_CHECK_REVOKED=true`
 - `SANDBOX_LOG_OPENAI_RESPONSE=false`
 - `BASE_OPENAI_CREDITS=10`
+- `DETECTOR_MODE=tasks`
+- `DETECTOR_TASKS_PROJECT=dullypdf`
+- `DETECTOR_TASKS_LOCATION=us-central1`
+- `DETECTOR_TASKS_QUEUE=commonforms-detect`
+- `DETECTOR_SERVICE_URL=https://dullypdf-detector-xxxxx-uc.a.run.app`
+- `DETECTOR_TASKS_SERVICE_ACCOUNT=dullypdf-backend-runtime@dullypdf.iam.gserviceaccount.com`
 
 If you use Secret Manager for keys:
 - `OPENAI_API_KEY` via Secret Manager
@@ -187,31 +265,86 @@ If you use ADC:
 
 ---
 
-## 8) Deploy backend to Cloud Run
+## 8) Detector env vars (prod)
+
+These must be set on the detector Cloud Run service:
+- `ENV=prod`
+- `FIREBASE_PROJECT_ID=dullypdf`
+- `FIREBASE_USE_ADC=true`
+- `FORMS_BUCKET=dullypdf-forms`
+- `TEMPLATES_BUCKET=dullypdf-templates`
+- `DETECTOR_TASKS_AUDIENCE=https://dullypdf-detector-xxxxx-uc.a.run.app`
+- `DETECTOR_CALLER_SERVICE_ACCOUNT=dullypdf-backend-runtime@dullypdf.iam.gserviceaccount.com`
+- `DETECTOR_ALLOW_UNAUTHENTICATED=false`
+- `COMMONFORMS_MODEL=FFDNet-L`
+- `COMMONFORMS_MODEL_GCS_URI=gs://dullypdf-models/commonforms/FFDNet-L.pt`
+- `COMMONFORMS_WEIGHTS_CACHE_DIR=/tmp/commonforms-models`
+- `COMMONFORMS_WEIGHTS_LOCK_TIMEOUT_SECONDS=600`
+
+CommonForms tuning is optional; see `config/detector.prod.env.example`.
+
+---
+
+## 9) Deploy detector to Cloud Run
+
+1) Build and push a container image (Dockerfile at repo root):
+```
+gcloud builds submit \
+  --tag us-central1-docker.pkg.dev/dullypdf/dullypdf-detector/dullypdf-detector:latest \
+  --project dullypdf \
+  -f Dockerfile.detector \
+  .
+```
+
+2) Deploy:
+```
+gcloud run deploy dullypdf-detector \
+  --image us-central1-docker.pkg.dev/dullypdf/dullypdf-detector/dullypdf-detector:latest \
+  --region us-central1 \
+  --project dullypdf \
+  --service-account dullypdf-backend-runtime@dullypdf.iam.gserviceaccount.com \
+  --ingress all \
+  --no-allow-unauthenticated \
+  --memory 2Gi \
+  --set-env-vars ENV=prod,FIREBASE_PROJECT_ID=dullypdf,FIREBASE_USE_ADC=true,FORMS_BUCKET=dullypdf-forms,TEMPLATES_BUCKET=dullypdf-templates,DETECTOR_TASKS_AUDIENCE=https://dullypdf-detector-xxxxx-uc.a.run.app,DETECTOR_CALLER_SERVICE_ACCOUNT=dullypdf-backend-runtime@dullypdf.iam.gserviceaccount.com,DETECTOR_ALLOW_UNAUTHENTICATED=false,COMMONFORMS_MODEL=FFDNet-L,COMMONFORMS_MODEL_GCS_URI=gs://dullypdf-models/commonforms/FFDNet-L.pt,COMMONFORMS_WEIGHTS_CACHE_DIR=/tmp/commonforms-models,COMMONFORMS_WEIGHTS_LOCK_TIMEOUT_SECONDS=600
+```
+
+Security notes:
+- Require auth (`--no-allow-unauthenticated`) and grant `roles/run.invoker` to the backend runtime SA.
+- Keep ingress `all` so Cloud Tasks can reach the service URL.
+
+---
+
+## 10) Deploy backend to Cloud Run
 
 Option A: deploy from source (Cloud Build)
 ```
 gcloud run deploy dullypdf-backend \
-  --source . \
+  --source backend \
   --region us-central1 \
   --project dullypdf \
   --service-account dullypdf-backend-runtime@dullypdf.iam.gserviceaccount.com \
   --allow-unauthenticated \
-  --set-env-vars ENV=prod,FIREBASE_PROJECT_ID=dullypdf,FORMS_BUCKET=dullypdf-forms,TEMPLATES_BUCKET=dullypdf-templates,SANDBOX_CORS_ORIGINS=https://your-domain.com,SANDBOX_LOG_OPENAI_RESPONSE=false,BASE_OPENAI_CREDITS=10 \
+  --set-env-vars ENV=prod,FIREBASE_PROJECT_ID=dullypdf,FIREBASE_USE_ADC=true,FORMS_BUCKET=dullypdf-forms,TEMPLATES_BUCKET=dullypdf-templates,SANDBOX_CORS_ORIGINS=https://your-domain.com,SANDBOX_LOG_OPENAI_RESPONSE=false,BASE_OPENAI_CREDITS=10 \
   --set-secrets OPENAI_API_KEY=dullypdf-prod-openai-key:latest,ADMIN_TOKEN=dullypdf-prod-admin-token:latest
 ```
 
 Option B: container build and deploy
-1) Build and push a container to Artifact Registry.
+1) Build and push a container to Artifact Registry (Dockerfile at repo root):
+```
+gcloud builds submit \
+  --tag us-central1-docker.pkg.dev/dullypdf/dullypdf-backend/dullypdf-backend:latest \
+  --project dullypdf \
+  .
+```
 2) Deploy with `gcloud run deploy --image ...`.
 
 Security notes:
 - `--allow-unauthenticated` is acceptable because the app enforces Firebase auth on protected routes.
-- If you want additional protection, use Cloud Armor + rate limiting or place Cloud Run behind a load balancer.
 
 ---
 
-## 9) Frontend deploy to Firebase Hosting
+## 11) Frontend deploy to Firebase Hosting
 
 1) Build the frontend with prod env values:
 ```
@@ -234,11 +367,10 @@ firebase deploy --only hosting --project dullypdf
 Security notes:
 - Do not set `VITE_ADMIN_TOKEN` in prod.
 - Restrict Firebase Auth authorized domains to your Hosting domain.
-- Optionally add a Hosting rewrite to Cloud Run if you want same-domain APIs.
 
 ---
 
-## 10) Role management
+## 12) Role management
 
 Roles are stored in Firebase custom claims and Firestore:
 - `base`: max 10 OpenAI renames lifetime.
@@ -252,7 +384,7 @@ python -m backend.firebaseDB.role_cli --email justin@ttcommercial.com --role god
 
 ---
 
-## 11) Production security checklist
+## 13) Production security checklist
 
 - Admin override token (`ADMIN_TOKEN`) is server-only and stored in Secret Manager.
 - `VITE_ADMIN_TOKEN` is empty in prod builds.
@@ -266,17 +398,7 @@ python -m backend.firebaseDB.role_cli --email justin@ttcommercial.com --role god
 
 ---
 
-## 12) Recommended hardening (post-v1)
-
-- Add rate limiting (Cloud Armor or API Gateway).
-- Enable Firestore TTL on `rate_limits.expires_at` to auto-expire distributed rate-limit counters.
-- Add audit logs for admin actions (role changes, DB connections).
-- Add Sentry/Cloud Logging alerts for failed auth spikes.
-- Move DB connection config to a secure store if you add persistent connectors.
-
----
-
-## 13) Quick local prod smoke test
+## 14) Quick local prod smoke test
 
 1) Run local backend with prod env:
 ```
@@ -290,16 +412,13 @@ python -m backend.firebaseDB.role_cli --email justin@ttcommercial.com --role god
 
 ---
 
-## 14) Pre-prod gap to close: multi-instance session consistency
+## 15) Multi-instance session consistency (resolved)
 
-Resolved since last review:
-- Legacy session endpoints now require Firebase auth and enforce session ownership.
-- Legacy endpoints are disabled in production (dev-only `SANDBOX_ENABLE_LEGACY_ENDPOINTS`).
-- `_API_SESSION_CACHE` entries expire after `SANDBOX_SESSION_TTL_SECONDS` and are capped by `SANDBOX_SESSION_MAX_ENTRIES` (LRU).
+Current behavior:
+- L1 session cache uses TTL/LRU (`SANDBOX_SESSION_TTL_SECONDS`, `SANDBOX_SESSION_SWEEP_INTERVAL_SECONDS`, `SANDBOX_SESSION_MAX_ENTRIES`).
+- L2 session metadata lives in Firestore (`session_cache`) with session artifacts in GCS (`sessions/<session_id>/`).
+- L2 access updates are throttled by `SANDBOX_SESSION_L2_TOUCH_SECONDS`.
 
-Issue found in the current codebase:
-- `_API_SESSION_CACHE` is in-process, so multi-instance deployments can lose sessions between requests unless traffic is sticky.
-
-Next steps to move forward:
-1) Decide whether to enforce sticky sessions or move sessions to Redis/Firestore with TTL.
-2) Document the chosen strategy and expected session lifetime in `backend/README.md`.
+Operational follow-through:
+1) Enable Firestore TTL on `session_cache.expires_at`.
+2) Add a GCS lifecycle rule for `sessions/` objects aligned to `SANDBOX_SESSION_TTL_SECONDS`.

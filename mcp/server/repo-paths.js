@@ -23,4 +23,20 @@ export function asAbsolutePath(inputPath) {
   return path.isAbsolute(inputPath) ? inputPath : path.resolve(REPO_ROOT, inputPath);
 }
 
+export function isPathWithinRepo(candidatePath) {
+  if (typeof candidatePath !== 'string' || !candidatePath.trim()) return false;
+  try {
+    const realPath = fs.realpathSync(candidatePath);
+    const relative = path.relative(REPO_ROOT_REAL, realPath);
+    return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+  } catch {
+    return false;
+  }
+}
+
+export function assertPathWithinRepo(candidatePath, label = 'path') {
+  if (isPathWithinRepo(candidatePath)) return;
+  throw new Error(`Refusing to access ${label} outside the repo: ${candidatePath}`);
+}
+
 export { REPO_ROOT };

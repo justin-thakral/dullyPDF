@@ -3,7 +3,7 @@
  * Required in all modes to avoid implicit fallback config in production.
  */
 
-const env = (import.meta as any).env ?? {};
+const env = import.meta.env;
 
 /**
  * Read a required Vite env value or throw.

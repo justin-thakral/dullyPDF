@@ -38,9 +38,11 @@ Outputs:
 - Optional checkbox rules for Search & Fill when schema headers are provided (`checkboxRules`).
 
 API response note:
-- `detect-fields` returns the baseline `fields` array and a `sessionId`.
+- `POST /detect-fields` queues detection and returns a `sessionId`.
+- `GET /detect-fields/{sessionId}` returns the baseline `fields` array once ready.
 - `POST /api/renames/ai` returns renamed `fields`, the rename report, optional `checkboxRules`, and the same `sessionId`.
 - The original name is preserved in `originalName` so the UI can reconcile edits.
+- Template overlay `rect` values may be sent as `{x,y,width,height}` or `[x1,y1,x2,y2]` (originTop points). The backend normalizes to `{x,y,width,height}` before OpenAI calls.
 
 The OpenAI response is line-based to avoid JSON parsing failures:
 `|| originalFieldName | suggestedRename | renameConfidence | isItAfieldConfidence`
@@ -142,11 +144,17 @@ Per-field metadata (label distance + size ratios) is included to reinforce these
 
 Via API (two-step):
 
+Tip: avoid pasting real tokens into shell history. Export a token in your environment
+and reference it in the header (for example, `-H "Authorization: Bearer ${FIREBASE_ID_TOKEN}"`).
+
 ```bash
 curl -X POST http://localhost:8000/detect-fields \\
   -H "Authorization: Bearer <firebase-id-token>" \\
   -F "file=@sample.pdf" \\
   -F "pipeline=commonforms"
+
+curl -X GET http://localhost:8000/detect-fields/<sessionId> \\
+  -H "Authorization: Bearer <firebase-id-token>"
 
 curl -X POST http://localhost:8000/api/renames/ai \\
   -H "Authorization: Bearer <firebase-id-token>" \\

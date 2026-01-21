@@ -15,12 +15,14 @@ import { inferSchemaFromRows, parseSchemaText } from './utils/schema';
 import { parseExcel } from './utils/excel';
 import { extractFieldsFromPdf, loadPageSizes, loadPdfFromFile } from './utils/pdf';
 import { ALERT_MESSAGES, buildImportFileBeforeMapping } from './utils/alertMessages';
-import { detectFields } from './services/detectionApi';
+import { detectFields, fetchDetectionStatus, pollDetectionStatus } from './services/detectionApi';
 import { Auth } from './services/auth';
 import { setAuthToken } from './services/authTokenStore';
-import { ApiService } from './api';
+import { ApiService, type ProfileLimits, type UserProfile } from './api';
 import Homepage from './components/pages/Homepage';
 import LoginPage from './components/pages/LoginPage';
+import ProfilePage from './components/pages/ProfilePage';
+import VerifyEmailPage from './components/pages/VerifyEmailPage';
 import { HeaderBar, type DataSourceKind } from './components/layout/HeaderBar';
 import LegacyHeader from './components/layout/LegacyHeader';
 import SearchFillModal from './components/features/SearchFillModal';
@@ -36,11 +38,26 @@ const MAX_FIELD_HISTORY = 10;
 const SAVED_FORMS_RETRY_LIMIT = 3;
 const SAVED_FORMS_RETRY_BASE_MS = 500;
 const SAVED_FORMS_RETRY_MAX_MS = 4000;
-const env = (import.meta as any)?.env ?? {};
+const env = import.meta.env;
 const PROCESSING_AD_VIDEO_URL =
   typeof env.VITE_PROCESSING_AD_VIDEO_URL === 'string' ? env.VITE_PROCESSING_AD_VIDEO_URL.trim() : '';
 const PROCESSING_AD_POSTER_URL =
   typeof env.VITE_PROCESSING_AD_POSTER_URL === 'string' ? env.VITE_PROCESSING_AD_POSTER_URL.trim() : '';
+const DEFAULT_PROCESSING_MESSAGE = 'Detecting fields and building the editor.';
+const QUEUE_WAIT_THRESHOLD_MS = 15000;
+const DETECTION_BACKGROUND_POLL_TIMEOUT_MS = (() => {
+  const raw = env.VITE_DETECTION_BACKGROUND_TIMEOUT_MS;
+  const parsed = Number(raw);
+  if (Number.isFinite(parsed) && parsed >= 0) {
+    return parsed;
+  }
+  return 10 * 60 * 1000;
+})();
+const DEFAULT_PROFILE_LIMITS: ProfileLimits = {
+  detectMaxPages: 5,
+  fillableMaxPages: 50,
+  savedFormsMax: 3,
+};
 
 type ProcessingMode = 'detect' | 'fillable' | 'saved' | null;
 type SchemaPayload = {
@@ -48,6 +65,13 @@ type SchemaPayload = {
   fields: Array<{ name: string; type?: string }>;
   source?: string;
   sampleCount?: number;
+};
+type PendingAutoActions = {
+  loadToken: number;
+  sessionId: string;
+  schemaId: string | null;
+  autoRename: boolean;
+  autoMap: boolean;
 };
 
 /**
@@ -247,13 +271,45 @@ function mapDetectionFields(payload: any): PdfField[] {
     .filter(Boolean) as PdfField[];
 }
 
+function parseIsoTimestamp(value: unknown): number | null {
+  if (typeof value !== 'string' || !value) return null;
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+function resolveDetectionStatusMessage(payload: any): string | null {
+  const status = String(payload?.status || '').toLowerCase();
+  if (!status) return null;
+  const profile = String(payload?.detectionProfile || '').toLowerCase();
+  const profileLabel =
+    profile === 'heavy' ? 'high-capacity CPU' : profile === 'light' ? 'standard CPU' : 'CPU';
+  if (status === 'queued') {
+    const startedAt = parseIsoTimestamp(payload?.detectionStartedAt);
+    if (!startedAt) {
+      const queuedAt = parseIsoTimestamp(payload?.detectionQueuedAt);
+      if (queuedAt && Date.now() - queuedAt > QUEUE_WAIT_THRESHOLD_MS) {
+        return `Waiting for an available ${profileLabel}...`;
+      }
+      return `Waiting for ${profileLabel} to start...`;
+    }
+  }
+  if (status === 'running') {
+    return `Detecting fields on the ${profileLabel}...`;
+  }
+  return null;
+}
+
 /**
  * Main application component that coordinates auth, detection, and editing.
  */
 function App() {
   const [authReady, setAuthReady] = useState(false);
   const [authUser, setAuthUser] = useState<User | null>(null);
+  const [authSignInProvider, setAuthSignInProvider] = useState<string | null>(null);
   const [showLogin, setShowLogin] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [profileLoading, setProfileLoading] = useState(false);
   const [showHomepage, setShowHomepage] = useState(true);
   const detectionPipeline: 'commonforms' = 'commonforms';
   const [pendingDetectFile, setPendingDetectFile] = useState<File | null>(null);
@@ -281,6 +337,7 @@ function App() {
   const [selectedFieldId, setSelectedFieldId] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingMode, setProcessingMode] = useState<ProcessingMode>(null);
+  const [processingDetail, setProcessingDetail] = useState(DEFAULT_PROCESSING_MESSAGE);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [savedForms, setSavedForms] = useState<Array<{ id: string; name: string; createdAt: string }>>([]);
   const [activeSavedFormId, setActiveSavedFormId] = useState<string | null>(null);
@@ -322,15 +379,34 @@ function App() {
   const fieldsRef = useRef<PdfField[]>([]);
   const historyRef = useRef<{ undo: PdfField[][]; redo: PdfField[][] }>({ undo: [], redo: [] });
   const pendingHistoryRef = useRef<PdfField[] | null>(null);
+  const pendingAutoActionsRef = useRef<PendingAutoActions | null>(null);
   const [historyTick, setHistoryTick] = useState(0);
+  const lastFieldVisibilityRef = useRef({ showFieldInfo, showFieldNames });
+  const requiresEmailVerification = useMemo(
+    () => Boolean(authUser && authSignInProvider === 'password' && !authUser.emailVerified),
+    [authSignInProvider, authUser],
+  );
+  const verifiedUser = useMemo(
+    () => (requiresEmailVerification ? null : authUser),
+    [authUser, requiresEmailVerification],
+  );
+  const profileLimits = useMemo(
+    () => userProfile?.limits ?? DEFAULT_PROFILE_LIMITS,
+    [userProfile],
+  );
 
   useEffect(() => {
     fieldsRef.current = fields;
   }, [fields]);
 
   useEffect(() => {
-    authUserRef.current = authUser;
-  }, [authUser]);
+    if (!showFields) return;
+    lastFieldVisibilityRef.current = { showFieldInfo, showFieldNames };
+  }, [showFields, showFieldInfo, showFieldNames]);
+
+  useEffect(() => {
+    authUserRef.current = verifiedUser;
+  }, [verifiedUser]);
 
   const clearSavedFormsRetry = useCallback(() => {
     if (savedFormsRetryTimerRef.current) {
@@ -374,31 +450,71 @@ function App() {
     [clearSavedFormsRetry],
   );
 
-  useEffect(() => {
-    const unsubscribe = Auth.onAuthStateChanged(async (user) => {
-      authUserRef.current = user;
+  const loadUserProfile = useCallback(async () => {
+    if (!authUserRef.current) return null;
+    setProfileLoading(true);
+    try {
+      const profile = await ApiService.getProfile();
+      setUserProfile(profile);
+      return profile;
+    } catch (error) {
+      debugLog('Failed to load profile', error);
+      setUserProfile(null);
+      return null;
+    } finally {
+      setProfileLoading(false);
+    }
+  }, []);
+
+  const syncAuthSession = useCallback(
+    async (user: User | null, options?: { forceTokenRefresh?: boolean }) => {
+      authUserRef.current = null;
       setAuthUser(user);
-      setAuthReady(true);
+      setAuthSignInProvider(null);
 
       if (!user) {
         clearSavedFormsRetry();
         setSavedForms([]);
+        setUserProfile(null);
+        setShowProfile(false);
         return;
       }
 
       try {
-        const tokenResult = await user.getIdTokenResult(true);
+        const tokenResult = await user.getIdTokenResult(options?.forceTokenRefresh ?? true);
         setAuthToken(tokenResult.token);
+        const provider =
+          tokenResult.signInProvider ??
+          (user.providerData.length === 1 ? user.providerData[0]?.providerId ?? null : null);
+        setAuthSignInProvider(provider);
+        const needsVerification = provider === 'password' && !user.emailVerified;
+        if (needsVerification) {
+          clearSavedFormsRetry();
+          setSavedForms([]);
+          setUserProfile(null);
+          setShowProfile(false);
+          return;
+        }
+        authUserRef.current = user;
         await refreshSavedForms({ allowRetry: true });
+        await loadUserProfile();
       } catch (error) {
-        console.error('Failed to load saved forms', error);
+        console.error('Failed to initialize session', error);
       }
+    },
+    [clearSavedFormsRetry, loadUserProfile, refreshSavedForms],
+  );
+
+  useEffect(() => {
+    const unsubscribe = Auth.onAuthStateChanged(async (user) => {
+      await syncAuthSession(user, { forceTokenRefresh: true });
+      setAuthReady(true);
     });
     return () => {
       clearSavedFormsRetry();
       unsubscribe();
     };
-  }, [clearSavedFormsRetry, refreshSavedForms]);
+  }, [clearSavedFormsRetry, syncAuthSession]);
 
   useEffect(() => {
     if (openAiError || schemaError) {
@@ -411,6 +527,11 @@ function App() {
     const timer = setTimeout(() => setBannerNotice(null), bannerNotice.autoDismissMs);
     return () => clearTimeout(timer);
   }, [bannerNotice]);
+
+  useEffect(() => {
+    if (!showProfile || !verifiedUser) return;
+    void loadUserProfile();
+  }, [loadUserProfile, showProfile, verifiedUser]);
 
   const pushFieldHistory = useCallback((snapshot: PdfField[]) => {
     const history = historyRef.current;
@@ -426,6 +547,10 @@ function App() {
     fieldsRef.current = nextFields;
     setFields(nextFields);
     setHistoryTick((prev) => prev + 1);
+  }, []);
+
+  const clearPendingAutoActions = useCallback(() => {
+    pendingAutoActionsRef.current = null;
   }, []);
 
   const updateFields = useCallback(
@@ -579,6 +704,7 @@ function App() {
     clearWorkspace();
     setSavedForms([]);
     setShowHomepage(true);
+    setShowProfile(false);
   }, [clearWorkspace]);
 
   const handleNavigateHome = useCallback(() => {
@@ -586,6 +712,20 @@ function App() {
     setLoadError(null);
     setShowHomepage(true);
   }, [clearWorkspace]);
+
+  const handleOpenProfile = useCallback(() => {
+    if (!verifiedUser) return;
+    setShowProfile(true);
+  }, [verifiedUser]);
+
+  const handleCloseProfile = useCallback(() => {
+    setShowProfile(false);
+  }, []);
+
+  const handleRefreshVerification = useCallback(async () => {
+    const user = await Auth.refreshCurrentUser();
+    await syncAuthSession(user, { forceTokenRefresh: true });
+  }, [syncAuthSession]);
 
   const handleFillableUpload = useCallback(
     async (file: File) => {
@@ -610,6 +750,16 @@ function App() {
       setActiveSavedFormName(null);
       try {
         const doc = await loadPdfFromFile(file);
+        if (doc.numPages > profileLimits.fillableMaxPages) {
+          if (loadTokenRef.current !== loadToken) return;
+          clearWorkspace();
+          setIsProcessing(false);
+          setProcessingMode(null);
+          setLoadError(
+            `Fillable uploads are limited to ${profileLimits.fillableMaxPages} pages on your plan.`,
+          );
+          return;
+        }
         const sizes = await loadPageSizes(doc);
         if (loadTokenRef.current !== loadToken) return;
         setPdfDoc(doc);
@@ -648,7 +798,7 @@ function App() {
         debugLog('Failed to load PDF', message);
       }
     },
-    [clearWorkspace, resetFieldHistory],
+    [clearWorkspace, profileLimits.fillableMaxPages, resetFieldHistory],
   );
 
   const handleSelectSavedForm = useCallback(
@@ -719,6 +869,14 @@ function App() {
     [clearWorkspace, resetFieldHistory],
   );
 
+  const handleSelectSavedFormFromProfile = useCallback(
+    (formId: string) => {
+      setShowProfile(false);
+      void handleSelectSavedForm(formId);
+    },
+    [handleSelectSavedForm],
+  );
+
   const handleDeleteSavedForm = useCallback(
     async (formId: string) => {
       const target = savedForms.find((form) => form.id === formId);
@@ -756,8 +914,14 @@ function App() {
       setLoadError('No PDF is loaded to save.');
       return;
     }
-    if (!authUser) {
+    if (!verifiedUser) {
       setLoadError('Sign in to save this form to your profile.');
+      return;
+    }
+    const maxSavedForms = profileLimits.savedFormsMax;
+    const savedFormsLimitReached = savedForms.length >= maxSavedForms;
+    if (!activeSavedFormId && savedFormsLimitReached) {
+      setLoadError(`You have reached the saved forms limit (${maxSavedForms}). Delete a form to save another.`);
       return;
     }
     setLoadError(null);
@@ -794,6 +958,10 @@ function App() {
       if (overwrite) {
         shouldOverwrite = true;
       } else {
+        if (savedFormsLimitReached) {
+          setLoadError(`You have reached the saved forms limit (${maxSavedForms}). Delete a form to save another.`);
+          return;
+        }
         const nextName = await promptForName();
         if (!nextName) return;
         saveName = nextName;
@@ -833,7 +1001,6 @@ function App() {
   }, [
     activeSavedFormId,
     activeSavedFormName,
-    authUser,
     fields,
     mappingSessionId,
     pdfDoc,
@@ -842,6 +1009,9 @@ function App() {
     requestPrompt,
     sourceFile,
     sourceFileName,
+    profileLimits.savedFormsMax,
+    savedForms.length,
+    verifiedUser,
   ]);
 
   const handleDownload = useCallback(async () => {
@@ -849,7 +1019,7 @@ function App() {
       setLoadError('No PDF is loaded to download.');
       return;
     }
-    if (!authUser) {
+    if (!verifiedUser) {
       setLoadError('Sign in to download this form.');
       return;
     }
@@ -881,7 +1051,7 @@ function App() {
     } finally {
       setDownloadInProgress(false);
     }
-  }, [activeSavedFormName, authUser, fields, pdfDoc, sourceFile, sourceFileName]);
+  }, [activeSavedFormName, fields, pdfDoc, sourceFile, sourceFileName, verifiedUser]);
 
   const applyFieldNameUpdates = useCallback((updatesByCurrentName: Map<string, FieldNameUpdate>) => {
     if (!updatesByCurrentName.size) return;
@@ -983,10 +1153,11 @@ function App() {
       fieldsOverride,
       schemaIdOverride,
     }: { fieldsOverride?: PdfField[]; schemaIdOverride?: string | null } = {}): Promise<boolean> => {
-      if (!authUser) {
+      if (!verifiedUser) {
         setSchemaError(ALERT_MESSAGES.signInToRunSchemaMapping);
         return false;
       }
+      clearPendingAutoActions();
       const activeSchemaId = schemaIdOverride ?? schemaId;
       if (!activeSchemaId) {
         setSchemaError(ALERT_MESSAGES.schemaRequiredForMapping);
@@ -1023,7 +1194,15 @@ function App() {
       return false;
     }
     },
-    [activeSavedFormId, applyMappingResults, authUser, buildTemplateFields, detectSessionId, schemaId],
+    [
+      activeSavedFormId,
+      applyMappingResults,
+      verifiedUser,
+      buildTemplateFields,
+      clearPendingAutoActions,
+      detectSessionId,
+      schemaId,
+    ],
   );
 
   const handleMappingSuccess = useCallback(() => {
@@ -1038,23 +1217,49 @@ function App() {
   const runOpenAiRename = useCallback(
     async ({
       confirm = true,
+      allowDefer = false,
       sessionId,
       schemaId: renameSchemaId,
     }: {
       confirm?: boolean;
+      allowDefer?: boolean;
       sessionId?: string | null;
       schemaId?: string | null;
     } = {}): Promise<PdfField[] | null> => {
-      if (!authUser) {
+      if (!verifiedUser) {
         setOpenAiError(ALERT_MESSAGES.signInToRunOpenAiRename);
         return null;
       }
+      clearPendingAutoActions();
       const activeSessionId = sessionId || detectSessionId;
       if (!activeSessionId) {
         setOpenAiError(ALERT_MESSAGES.uploadPdfForRename);
         return null;
       }
       if (!fieldsRef.current.length) {
+        if (allowDefer) {
+          try {
+            const statusPayload = await fetchDetectionStatus(activeSessionId);
+            const status = String(statusPayload?.status || '').toLowerCase();
+            if (status === 'queued' || status === 'running') {
+              pendingAutoActionsRef.current = {
+                loadToken: loadTokenRef.current,
+                sessionId: activeSessionId,
+                schemaId: renameSchemaId,
+                autoRename: true,
+                autoMap: Boolean(renameSchemaId),
+              };
+              setBannerNotice({
+                tone: 'info',
+                message: 'Detection is still running. Rename will start once fields are ready.',
+                autoDismissMs: 8000,
+              });
+              return null;
+            }
+          } catch (error) {
+            debugLog('Failed to fetch detection status for rename', error);
+          }
+        }
         setOpenAiError(ALERT_MESSAGES.noPdfFieldsToRename);
         return null;
       }
@@ -1112,8 +1317,9 @@ function App() {
     },
     [
       applyRenameResults,
-      authUser,
+      verifiedUser,
       buildTemplateFields,
+      clearPendingAutoActions,
       detectSessionId,
       requestConfirm,
     ],
@@ -1121,7 +1327,7 @@ function App() {
 
   const persistSchemaPayload = useCallback(
     async (payload: SchemaPayload): Promise<string | null> => {
-      if (!authUser) return null;
+      if (!verifiedUser) return null;
       try {
         const created = await ApiService.createSchema(payload);
         const nextSchemaId = created.schemaId || null;
@@ -1137,12 +1343,12 @@ function App() {
         return null;
       }
     },
-    [authUser],
+    [verifiedUser],
   );
 
   const resolveSchemaForMapping = useCallback(
     async (mode: 'map' | 'renameAndMap'): Promise<string | null> => {
-      if (!authUser) {
+      if (!verifiedUser) {
         if (mode === 'renameAndMap') {
           setOpenAiError(ALERT_MESSAGES.signInToRunOpenAiRenameAndMap);
         } else {
@@ -1184,12 +1390,12 @@ function App() {
       }
     },
     [
-      authUser,
       dataColumns.length,
       dataSourceKind,
       pendingSchemaPayload,
       persistSchemaPayload,
       schemaId,
+      verifiedUser,
     ],
   );
 
@@ -1274,6 +1480,123 @@ function App() {
     runOpenAiRename,
   ]);
 
+  const resumeDetectionPolling = useCallback(
+    async (sessionId: string, loadToken: number) => {
+      try {
+        const payload = await pollDetectionStatus(sessionId, {
+          timeoutMs: DETECTION_BACKGROUND_POLL_TIMEOUT_MS,
+        });
+        if (loadTokenRef.current !== loadToken) return;
+        const status = String(payload?.status || '').toLowerCase();
+        if (status === 'complete') {
+          const nextFields = mapDetectionFields(payload);
+          if (!nextFields.length) {
+            setBannerNotice({
+              tone: 'info',
+              message: 'Detection finished but no fields were found.',
+              autoDismissMs: 8000,
+            });
+            return;
+          }
+          const hasEdits = historyRef.current.undo.length > 0;
+          if (hasEdits) {
+            updateFields(nextFields);
+          } else {
+            resetFieldHistory(nextFields);
+          }
+          setSelectedFieldId(null);
+          setHasRenamedFields(false);
+          setHasMappedSchema(false);
+          setCheckboxRules([]);
+          setDetectSessionId(sessionId);
+          setMappingSessionId(sessionId);
+          const pendingAutoActions = pendingAutoActionsRef.current;
+          if (
+            pendingAutoActions &&
+            pendingAutoActions.loadToken === loadToken &&
+            pendingAutoActions.sessionId === sessionId
+          ) {
+            pendingAutoActionsRef.current = null;
+            if (pendingAutoActions.autoRename && pendingAutoActions.autoMap) {
+              const renamed = await runOpenAiRename({
+                confirm: false,
+                allowDefer: true,
+                sessionId,
+                schemaId: pendingAutoActions.schemaId,
+              });
+              if (renamed) {
+                handleMappingSuccess();
+              }
+            } else if (pendingAutoActions.autoRename) {
+              await runOpenAiRename({
+                confirm: false,
+                allowDefer: true,
+                sessionId,
+              });
+            } else if (pendingAutoActions.autoMap) {
+              if (!pendingAutoActions.schemaId) {
+                setSchemaError('Upload a schema file before running mapping.');
+              } else {
+                const mapped = await applySchemaMappings({
+                  schemaIdOverride: pendingAutoActions.schemaId,
+                });
+                if (mapped) {
+                  handleMappingSuccess();
+                }
+              }
+            }
+          }
+          setBannerNotice({
+            tone: 'success',
+            message: `Detection finished in the background (${nextFields.length} fields).`,
+            autoDismissMs: 7000,
+          });
+          return;
+        }
+        if (status === 'failed') {
+          const message = payload?.error || 'Detection failed on the backend.';
+          setBannerNotice({
+            tone: 'error',
+            message: String(message),
+            autoDismissMs: 8000,
+          });
+          return;
+        }
+        if (payload?.timedOut) {
+          setBannerNotice({
+            tone: 'info',
+            message: 'Detection is still running on the backend. It may take a few more minutes.',
+            autoDismissMs: 8000,
+          });
+        }
+      } catch (error) {
+        if (loadTokenRef.current !== loadToken) return;
+        const message =
+          error instanceof Error ? error.message : 'Detection failed on the backend.';
+        setBannerNotice({
+          tone: 'error',
+          message,
+          autoDismissMs: 8000,
+        });
+      }
+    },
+    [
+      applySchemaMappings,
+      handleMappingSuccess,
+      resetFieldHistory,
+      runOpenAiRename,
+      setBannerNotice,
+      setCheckboxRules,
+      setDetectSessionId,
+      setHasMappedSchema,
+      setHasRenamedFields,
+      setMappingSessionId,
+      setSelectedFieldId,
+      setSchemaError,
+      updateFields,
+    ],
+  );
+
   const runDetectUpload = useCallback(
     async (
       file: File,
@@ -1281,14 +1604,16 @@ function App() {
     ) => {
       const loadToken = loadTokenRef.current + 1;
       loadTokenRef.current = loadToken;
+      pendingAutoActionsRef.current = null;
       setShowSearchFill(false);
       setSearchFillSessionId((prev) => prev + 1);
 
       setProcessingMode('detect');
       setIsProcessing(true);
+      setProcessingDetail(DEFAULT_PROCESSING_MESSAGE);
       setLoadError(null);
       setShowHomepage(false);
-      setMappingSessionId(crypto.randomUUID());
+      setMappingSessionId(null);
       setDetectSessionId(null);
       setHasRenamedFields(false);
       setHasMappedSchema(false);
@@ -1301,18 +1626,35 @@ function App() {
       setActiveSavedFormName(null);
       try {
         const doc = await loadPdfFromFile(file);
+        if (doc.numPages > profileLimits.detectMaxPages) {
+          if (loadTokenRef.current !== loadToken) return;
+          clearWorkspace();
+          setIsProcessing(false);
+          setProcessingMode(null);
+          setLoadError(`Detection uploads are limited to ${profileLimits.detectMaxPages} pages on your plan.`);
+          return;
+        }
         const sizes = await loadPageSizes(doc);
         if (loadTokenRef.current !== loadToken) return;
         const activeSchemaId = options.schemaIdOverride ?? schemaId;
 
         let detectedFields: PdfField[] = [];
         let detectedSessionId: string | null = null;
+        let detectionTimedOut = false;
 
         try {
           const detection = await detectFields(file, {
             pipeline: detectionPipeline,
+            onStatus: (payload) => {
+              if (loadTokenRef.current !== loadToken) return;
+              const message = resolveDetectionStatusMessage(payload);
+              if (message) {
+                setProcessingDetail(message);
+              }
+            },
           });
           detectedSessionId = detection?.sessionId || null;
+          detectionTimedOut = Boolean(detection?.timedOut);
           detectedFields = mapDetectionFields(detection);
           debugLog('Field detection returned', { total: detectedFields.length });
         } catch (error) {
@@ -1325,6 +1667,16 @@ function App() {
             debugLog('Fallback PDF field extraction returned', { total: detectedFields.length });
           } catch (error) {
             debugLog('Failed to extract existing fields', error);
+          }
+        }
+        if (detectionTimedOut) {
+          setBannerNotice({
+            tone: 'info',
+            message: 'Detection is still running on the backend. Using embedded form fields for now.',
+            autoDismissMs: 8000,
+          });
+          if (detectedSessionId) {
+            void resumeDetectionPolling(detectedSessionId, loadToken);
           }
         }
 
@@ -1348,9 +1700,34 @@ function App() {
         if (loadTokenRef.current !== loadToken) return;
         if (!options.autoRename && !options.autoMap) return;
 
+        if (detectionTimedOut && detectedSessionId) {
+          pendingAutoActionsRef.current = {
+            loadToken,
+            sessionId: detectedSessionId,
+            schemaId: activeSchemaId,
+            autoRename: Boolean(options.autoRename),
+            autoMap: Boolean(options.autoMap),
+          };
+          setBannerNotice({
+            tone: 'info',
+            message: 'Detection is still running. OpenAI actions will start once fields are ready.',
+            autoDismissMs: 8000,
+          });
+          return;
+        }
+        if (!detectedFields.length) {
+          setBannerNotice({
+            tone: 'info',
+            message: 'No fields detected. OpenAI actions were skipped.',
+            autoDismissMs: 8000,
+          });
+          return;
+        }
+
         if (options.autoRename && options.autoMap) {
           const renamed = await runOpenAiRename({
             confirm: false,
+            allowDefer: true,
             sessionId: detectedSessionId,
             schemaId: activeSchemaId,
           });
@@ -1362,6 +1739,7 @@ function App() {
         if (options.autoRename) {
           await runOpenAiRename({
             confirm: false,
+            allowDefer: true,
             sessionId: detectedSessionId,
           });
         }
@@ -1385,7 +1763,9 @@ function App() {
       applySchemaMappings,
       clearWorkspace,
       handleMappingSuccess,
+      profileLimits.detectMaxPages,
       resetFieldHistory,
+      resumeDetectionPolling,
       runOpenAiRename,
       schemaId,
     ],
@@ -1420,7 +1800,7 @@ function App() {
           setPipelineError('Upload a schema file before running mapping.');
           return;
         }
-        if (!authUser) {
+        if (!verifiedUser) {
           setPipelineError('Sign in to upload a schema file before running mapping.');
           return;
         }
@@ -1448,7 +1828,6 @@ function App() {
       schemaIdOverride: wantsMap ? resolvedSchemaId : null,
     });
   }, [
-    authUser,
     pendingDetectFile,
     pendingSchemaPayload,
     persistSchemaPayload,
@@ -1457,6 +1836,7 @@ function App() {
     schemaUploadInProgress,
     uploadWantsMap,
     uploadWantsRename,
+    verifiedUser,
   ]);
 
   const handleClearDataSource = useCallback(() => {
@@ -1521,12 +1901,12 @@ function App() {
         sampleCount: schema.sampleCount,
       };
       setPendingSchemaPayload(payload);
-      if (!authUser) {
+      if (!verifiedUser) {
         return;
       }
       await persistSchemaPayload(payload);
     },
-    [authUser, persistSchemaPayload],
+    [persistSchemaPayload, verifiedUser],
   );
 
   const applyParsedDataSource = useCallback(
@@ -1792,9 +2172,19 @@ function App() {
   }, []);
 
   const handleShowFieldsChange = useCallback((enabled: boolean) => {
-    setShowFields(enabled);
     if (!enabled) {
+      setShowFields(false);
       setShowFieldInfo(false);
+      return;
+    }
+    setShowFields(true);
+    const lastVisibility = lastFieldVisibilityRef.current;
+    if (lastVisibility.showFieldInfo) {
+      setShowFieldInfo(true);
+      setShowFieldNames(false);
+    } else {
+      setShowFieldInfo(false);
+      setShowFieldNames(lastVisibility.showFieldNames);
     }
   }, []);
 
@@ -1851,32 +2241,34 @@ function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleDeleteField, handleRedo, handleUndo, pdfDoc, selectedFieldId]);
 
-  const userEmail = useMemo(() => authUser?.email ?? undefined, [authUser]);
+  const userEmail = useMemo(() => verifiedUser?.email ?? undefined, [verifiedUser]);
   const hasDocument = !!pdfDoc;
-  const canSaveToProfile = Boolean(pdfDoc && authUser);
-  const canDownload = Boolean(pdfDoc && authUser);
+  const savedFormsLimitReached = savedForms.length >= profileLimits.savedFormsMax;
+  const canSaveToProfile =
+    Boolean(pdfDoc && verifiedUser) && (!savedFormsLimitReached || Boolean(activeSavedFormId));
+  const canDownload = Boolean(pdfDoc && verifiedUser);
   const canMapSchema = useMemo(() => {
-    if (!authUser) return false;
+    if (!verifiedUser) return false;
     if (!hasDocument || fields.length === 0) return false;
     if (dataSourceKind === 'csv' || dataSourceKind === 'excel' || dataSourceKind === 'txt') {
       return dataColumns.length > 0 && Boolean(schemaId || pendingSchemaPayload);
     }
     return false;
   }, [
-    authUser,
     dataColumns.length,
     dataSourceKind,
     fields.length,
     hasDocument,
     pendingSchemaPayload,
     schemaId,
+    verifiedUser,
   ]);
   const canRename = useMemo(() => {
-    if (!authUser) return false;
+    if (!verifiedUser) return false;
     if (!hasDocument || fields.length === 0) return false;
     if (!detectSessionId) return false;
     return true;
-  }, [authUser, detectSessionId, fields.length, hasDocument]);
+  }, [detectSessionId, fields.length, hasDocument, verifiedUser]);
   const canRenameAndMap = useMemo(() => {
     if (!canRename) return false;
     return canMapSchema;
@@ -1972,11 +2364,39 @@ function App() {
     );
   }
 
+  if (requiresEmailVerification) {
+    return (
+      <VerifyEmailPage
+        email={authUser?.email ?? null}
+        onRefresh={handleRefreshVerification}
+        onSignOut={handleSignOut}
+      />
+    );
+  }
+
   if (showLogin) {
     return (
       <LoginPage
         onAuthenticated={() => setShowLogin(false)}
         onCancel={() => setShowLogin(false)}
+      />
+    );
+  }
+
+  if (showProfile && verifiedUser) {
+    return (
+      <ProfilePage
+        email={userProfile?.email ?? verifiedUser.email}
+        role={userProfile?.role ?? 'basic'}
+        creditsRemaining={userProfile?.creditsRemaining ?? 0}
+        isLoading={profileLoading}
+        limits={profileLimits}
+        savedForms={savedForms}
+        onSelectSavedForm={handleSelectSavedFormFromProfile}
+        onDeleteSavedForm={handleDeleteSavedForm}
+        deletingFormId={deletingFormId}
+        onClose={handleCloseProfile}
+        onSignOut={handleSignOut}
       />
     );
   }
@@ -1997,9 +2417,10 @@ function App() {
           currentView={currentView}
           onNavigateHome={handleNavigateHome}
           showBackButton={!showHomepage}
-          userEmail={authUser?.email ?? null}
-          onSignOut={authUser ? handleSignOut : undefined}
-          onSignIn={!authUser ? () => setShowLogin(true) : undefined}
+          userEmail={verifiedUser?.email ?? null}
+          onOpenProfile={verifiedUser ? handleOpenProfile : undefined}
+          onSignOut={verifiedUser ? handleSignOut : undefined}
+          onSignIn={!verifiedUser ? () => setShowLogin(true) : undefined}
         />
         <main className="landing-main">
           {currentView === 'homepage' && (
@@ -2141,7 +2562,7 @@ function App() {
                   onValidationError={(message) => setLoadError(message)}
                 />
               </div>
-              {authUser && (
+              {verifiedUser && (
                 <section className="saved-forms-section" aria-label="Open saved form">
                   <h2 className="saved-forms-title">Open Saved Form:</h2>
                   <UploadComponent
@@ -2166,7 +2587,7 @@ function App() {
             <div className="processing-indicator">
               <div className="spinner"></div>
               <h3>Preparing your form…</h3>
-              <p>Detecting fields and building the editor.</p>
+              <p>{processingDetail}</p>
               {shouldShowProcessingAd ? (
                 <div className="processing-ad" aria-live="polite">
                   <video
@@ -2234,8 +2655,9 @@ function App() {
         canDownload={canDownload}
         canSave={canSaveToProfile}
         userEmail={userEmail}
-        onSignIn={!authUser ? () => setShowLogin(true) : undefined}
-        onSignOut={authUser ? handleSignOut : undefined}
+        onOpenProfile={verifiedUser ? handleOpenProfile : undefined}
+        onSignIn={!verifiedUser ? () => setShowLogin(true) : undefined}
+        onSignOut={verifiedUser ? handleSignOut : undefined}
       />
       <div className="app-shell">
         <FieldListPanel
