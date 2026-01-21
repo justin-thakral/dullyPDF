@@ -44,6 +44,8 @@ const PROCESSING_AD_VIDEO_URL =
 const PROCESSING_AD_POSTER_URL =
   typeof env.VITE_PROCESSING_AD_POSTER_URL === 'string' ? env.VITE_PROCESSING_AD_POSTER_URL.trim() : '';
 const DEFAULT_PROCESSING_MESSAGE = 'Detecting fields and building the editor.';
+const SAVED_FORM_PROCESSING_MESSAGE = 'Grabbing your template from the cloud.';
+const FILLABLE_TEMPLATE_PROCESSING_MESSAGE = 'Opening template in editor.';
 const QUEUE_WAIT_THRESHOLD_MS = 15000;
 const DETECTION_BACKGROUND_POLL_TIMEOUT_MS = (() => {
   const raw = env.VITE_DETECTION_BACKGROUND_TIMEOUT_MS;
@@ -735,6 +737,7 @@ function App() {
       setSearchFillSessionId((prev) => prev + 1);
       setProcessingMode('fillable');
       setIsProcessing(true);
+      setProcessingDetail(FILLABLE_TEMPLATE_PROCESSING_MESSAGE);
       setLoadError(null);
       setShowHomepage(false);
       setMappingSessionId(crypto.randomUUID());
@@ -760,7 +763,16 @@ function App() {
           );
           return;
         }
-        const sizes = await loadPageSizes(doc);
+        const sizesPromise = loadPageSizes(doc);
+        const existingFieldsPromise = (async () => {
+          try {
+            return await extractFieldsFromPdf(doc);
+          } catch (error) {
+            debugLog('Failed to extract existing fields', error);
+            return [];
+          }
+        })();
+        const sizes = await sizesPromise;
         if (loadTokenRef.current !== loadToken) return;
         setPdfDoc(doc);
         setPageSizes(sizes);
@@ -774,18 +786,11 @@ function App() {
         setProcessingMode(null);
 
         void (async () => {
-          let existingFields: PdfField[] = [];
-
-          try {
-            existingFields = await extractFieldsFromPdf(doc);
-            debugLog('Extracted existing PDF fields', { total: existingFields.length });
-          } catch (error) {
-            debugLog('Failed to extract existing fields', error);
-          }
-
+          const existingFields = await existingFieldsPromise;
           if (loadTokenRef.current !== loadToken) return;
           resetFieldHistory(existingFields);
           setSelectedFieldId(null);
+          debugLog('Extracted existing PDF fields', { total: existingFields.length });
           debugLog('Loaded fillable PDF', { name: file.name, pages: doc.numPages, fields: existingFields.length });
         })();
       } catch (error) {
@@ -809,6 +814,7 @@ function App() {
       setSearchFillSessionId((prev) => prev + 1);
       setProcessingMode('saved');
       setIsProcessing(true);
+      setProcessingDetail(SAVED_FORM_PROCESSING_MESSAGE);
       setLoadError(null);
       setShowHomepage(false);
       setMappingSessionId(crypto.randomUUID());
@@ -819,14 +825,25 @@ function App() {
       setOpenAiError(null);
 
       try {
-        const savedMeta = await ApiService.loadSavedForm(formId);
-        const blob = await ApiService.downloadSavedForm(formId);
+        const [savedMeta, blob] = await Promise.all([
+          ApiService.loadSavedForm(formId),
+          ApiService.downloadSavedForm(formId),
+        ]);
         const name = savedMeta?.name || 'saved-form.pdf';
         const file = new File([blob], name, { type: 'application/pdf' });
         setSourceFile(file);
         setSourceFileName(name);
         const doc = await loadPdfFromFile(file);
-        const sizes = await loadPageSizes(doc);
+        const sizesPromise = loadPageSizes(doc);
+        const existingFieldsPromise = (async () => {
+          try {
+            return await extractFieldsFromPdf(doc);
+          } catch (error) {
+            debugLog('Failed to extract saved form fields', error);
+            return [];
+          }
+        })();
+        const sizes = await sizesPromise;
         if (loadTokenRef.current !== loadToken) return;
         setPdfDoc(doc);
         setPageSizes(sizes);
@@ -842,18 +859,11 @@ function App() {
         setActiveSavedFormName(savedMeta?.name || null);
 
         void (async () => {
-          let existingFields: PdfField[] = [];
-
-          try {
-            existingFields = await extractFieldsFromPdf(doc);
-            debugLog('Extracted saved form fields', { total: existingFields.length });
-          } catch (error) {
-            debugLog('Failed to extract saved form fields', error);
-          }
-
+          const existingFields = await existingFieldsPromise;
           if (loadTokenRef.current !== loadToken) return;
           resetFieldHistory(existingFields);
           setSelectedFieldId(null);
+          debugLog('Extracted saved form fields', { total: existingFields.length });
           debugLog('Loaded saved form', { name, pages: doc.numPages, fields: existingFields.length });
         })();
       } catch (error) {
