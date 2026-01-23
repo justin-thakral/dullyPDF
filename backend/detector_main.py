@@ -130,6 +130,11 @@ def _require_internal_auth(authorization: Optional[str]) -> Dict[str, Any]:
     except Exception as exc:
         raise HTTPException(status_code=401, detail="Invalid detector auth token") from exc
     allowed_email = env_value("DETECTOR_CALLER_SERVICE_ACCOUNT")
+    if _is_prod() and not allowed_email:
+        raise HTTPException(
+            status_code=500,
+            detail="Detector caller service account is not configured",
+        )
     if allowed_email and payload.get("email") != allowed_email:
         raise HTTPException(status_code=403, detail="Detector caller not allowed")
     return payload

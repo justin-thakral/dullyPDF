@@ -147,6 +147,16 @@
   margin-top: 0.35rem;
 }
 
+.searchfill-alert--empty {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.searchfill-actions--empty {
+  justify-content: flex-start;
+}
+
 .searchfill-results {
   display: flex;
   flex-direction: column;

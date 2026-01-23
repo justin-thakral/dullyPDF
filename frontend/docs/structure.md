@@ -38,6 +38,7 @@ frontend/
       csv.ts
       dataSource.ts
       excel.ts
+      json.ts
       schema.ts
       fieldUi.ts
       fields.ts
@@ -63,5 +64,6 @@ frontend/
 - `frontend/src/services/apiConfig.ts`: API base URL + auth headers.
 - `frontend/src/utils/alertMessages.ts`: Shared alert copy for UI flows.
 - `frontend/src/utils/schema.ts`: Schema inference + TXT parsing.
+- `frontend/src/utils/json.ts`: JSON schema + row parsing for Search & Fill.
 - `frontend/src/App.css`: UI shell styles.
 - `frontend/src/index.css`: Global tokens and base styles.

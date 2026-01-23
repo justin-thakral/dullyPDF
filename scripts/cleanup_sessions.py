@@ -119,7 +119,7 @@ def main() -> int:
 
     init_firebase()
     now = _now_utc()
-    ttl_seconds = _int_env("SANDBOX_SESSION_TTL_SECONDS", 3600)
+    ttl_seconds = _int_env("SANDBOX_SESSION_TTL_SECONDS", 7200)
     if ttl_seconds <= 0:
         print("SANDBOX_SESSION_TTL_SECONDS is <= 0; session cleanup disabled.")
         return 0

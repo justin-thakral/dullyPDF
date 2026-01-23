@@ -37,6 +37,10 @@ Use two layers:
 The backend continues to accept only a `sessionId` from the client. The client does not
 send session contents back to the server.
 
+Long-lived editor sessions should call `POST /api/sessions/{sessionId}/touch` roughly
+once per minute to refresh `last_access_at` and `expires_at`, so scheduled cleanup does
+not delete active sessions.
+
 ## What Lives in L1 (In-Process Cache)
 
 L1 is optimized for speed and should contain everything needed to satisfy a request

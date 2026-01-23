@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" role="img" aria-label="DullyPDF">
+  <rect x="4" y="4" width="56" height="56" rx="12" fill="#0b0b0b" />
+  <rect x="12" y="12" width="40" height="40" rx="6" fill="none" stroke="#ffffff" stroke-width="2" />
+  <ellipse cx="32" cy="22" rx="10" ry="4" fill="none" stroke="#ffffff" stroke-width="2" />
+  <rect x="22" y="22" width="20" height="16" fill="none" stroke="#ffffff" stroke-width="2" />
+  <ellipse cx="32" cy="30" rx="10" ry="4" fill="none" stroke="#ffffff" stroke-width="2" />
+  <ellipse cx="32" cy="38" rx="10" ry="4" fill="none" stroke="#ffffff" stroke-width="2" />
+</svg>

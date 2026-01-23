@@ -11,7 +11,8 @@ FastAPI service for PDF field detection, schema-only OpenAI mapping, and saved-f
 - OpenAI rename (overlay tags + PDF pages; schema headers included for combined rename+map): `POST /api/renames/ai`.
 - Schema metadata: `POST /api/schemas`, `GET /api/schemas`.
 - Schema mapping (OpenAI): `POST /api/schema-mappings/ai` (results returned only; not persisted).
-- Saved forms: `GET /api/saved-forms`, `POST /api/saved-forms`, `GET /api/saved-forms/{id}`, `GET /api/saved-forms/{id}/download`, `DELETE /api/saved-forms/{id}`.
+- Saved forms: `GET /api/saved-forms`, `POST /api/saved-forms`, `GET /api/saved-forms/{id}`, `GET /api/saved-forms/{id}/download`, `POST /api/saved-forms/{id}/session`, `DELETE /api/saved-forms/{id}`.
+- Template session (fillable upload): `POST /api/templates/session` (stores PDF bytes + fields so rename/mapping can run).
 - Profile summary: `GET /api/profile` (tier info, credits, and limits).
 
 ### Runtime requirements
@@ -39,6 +40,7 @@ FastAPI service for PDF field detection, schema-only OpenAI mapping, and saved-f
 - `SANDBOX_SAVED_FORMS_MAX_BASE`, `SANDBOX_SAVED_FORMS_MAX_GOD`
 - `SANDBOX_SCHEMA_TTL_SECONDS`
 - `SANDBOX_OPENAI_LOG_TTL_SECONDS`
+- `SANDBOX_ENABLE_DOCS` (optional; allow OpenAPI/docs in dev only; ignored in prod)
 - `DETECTOR_MODE` (`tasks` for production)
 - `DETECTOR_TASKS_PROJECT`, `DETECTOR_TASKS_LOCATION`
 - `DETECTOR_TASKS_QUEUE` or `DETECTOR_TASKS_QUEUE_LIGHT`
@@ -60,15 +62,17 @@ Detector env examples:
 - L1 uses TTL/LRU via `SANDBOX_SESSION_TTL_SECONDS`, `SANDBOX_SESSION_SWEEP_INTERVAL_SECONDS`, and `SANDBOX_SESSION_MAX_ENTRIES`.
 - L2 expiry should be aligned to `SANDBOX_SESSION_TTL_SECONDS` with Firestore TTL plus a scheduled cleanup job for GCS session artifacts (`scripts/cleanup_sessions.py`).
 - L2 touch throttling uses `SANDBOX_SESSION_L2_TOUCH_SECONDS` (default 300 seconds).
+- Editor clients should call `/api/sessions/{sessionId}/touch` about once per minute to keep active sessions from expiring.
 - `SANDBOX_SESSION_BUCKET` can override the default session bucket (falls back to `FORMS_BUCKET`).
 - Schema metadata TTL uses `SANDBOX_SCHEMA_TTL_SECONDS` (default 3600) with Firestore TTL on `schema_metadata.expires_at`.
 - Detector jobs are queued via Cloud Tasks; the detector service writes fields/results to GCS + Firestore.
 - Detector routing picks the heavy queue when `page_count >= DETECTOR_TASKS_HEAVY_PAGE_THRESHOLD` and the heavy service URLs are configured.
 - Encrypted PDFs are rejected before detection to avoid repeated task retries.
 - `DETECTOR_TASKS_MAX_ATTEMPTS` on the detector service should match the Cloud Tasks queue max attempts to finalize failures on the last retry.
+- Session ownership guards can be sanity-checked with `python -m backend.scripts.verify_session_owner`.
 - Base users start with 10 lifetime OpenAI credits; each page consumed per rename/mapping run (combined counts once per page). God role bypasses credits.
 - Email/password logins must be email-verified; OAuth providers are treated as verified.
-- Schema metadata (headers/types) is stored in Firestore; CSV/Excel rows and field values never reach the server.
+- Schema metadata (headers/types) is stored in Firestore; CSV/Excel/JSON rows and field values never reach the server.
 - Postgres/SQL integrations are not part of the runtime path (moved to `legacy/`).
 - OpenAI rate limiting uses Firestore (`SANDBOX_RATE_LIMIT_BACKEND=firestore`) with the `rate_limits` collection by default.
 - Detection rate limiting uses `SANDBOX_DETECT_RATE_LIMIT_WINDOW_SECONDS` and `SANDBOX_DETECT_RATE_LIMIT_PER_USER`.
@@ -76,6 +80,7 @@ Detector env examples:
 - OpenAI and detection request logs use `SANDBOX_OPENAI_LOG_TTL_SECONDS` with Firestore TTL on `openai_requests.expires_at`,
   `openai_rename_requests.expires_at`, and `detection_requests.expires_at`.
 - One-time cleanup tasks (schema TTL backfill, template mapping purge) live in `scripts/cleanup_firestore_artifacts.py`.
+- OpenAPI/Docs routes are disabled in prod unless `SANDBOX_ENABLE_DOCS=true`.
 
 ### Local test files
 

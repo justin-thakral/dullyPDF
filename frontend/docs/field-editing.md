@@ -46,7 +46,7 @@ Detection and renaming confidence are shown in the list:
 
 OpenAI rename and mapping require explicit confirmation before sending data to OpenAI.
 Rename sends PDF pages + overlay tags; mapping sends schema headers + field tags. When
-rename+map is selected, both are sent in one request. No CSV row data or field values
+rename+map is selected, both are sent in one request. No row data or field values
 are sent. The UI warns users before sending PDF pages or schema headers.
 
 ## Input mode

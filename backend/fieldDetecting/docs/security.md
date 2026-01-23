@@ -39,10 +39,10 @@ admin tokens, or auth headers (search terms: `FIREBASE_`, `GOOGLE_APPLICATION_CR
    - Verified on backend in `backend/firebaseDB/firebase_service.py` via `verify_id_token`.
 
 5) **Schema metadata (server stored, TTL)**
-   - Derived from client-side CSV parsing (headers/types only).
+   - Derived from client-side CSV/Excel/JSON parsing (headers/types only).
    - Stored in Firestore via `backend/firebaseDB/schema_database.py` with TTL expiry
      (`SANDBOX_SCHEMA_TTL_SECONDS`, `schema_metadata.expires_at`).
-   - CSV rows and field values are never uploaded to the server.
+   - CSV/Excel/JSON rows and field values are never uploaded to the server.
 
 ### Dev flow (local)
 
@@ -72,7 +72,7 @@ admin tokens, or auth headers (search terms: `FIREBASE_`, `GOOGLE_APPLICATION_CR
 1) Main API enqueues detection jobs via Cloud Tasks with an OIDC token.
 2) Cloud Tasks uses `DETECTOR_TASKS_SERVICE_ACCOUNT` to mint the token.
 3) Detector service validates the token audience (`DETECTOR_TASKS_AUDIENCE` or detector URL).
-4) Optionally restrict callers with `DETECTOR_CALLER_SERVICE_ACCOUNT`.
+4) Restrict callers with `DETECTOR_CALLER_SERVICE_ACCOUNT` (required in prod).
 5) Run the detector service with private ingress and allow only the main API
    service account to invoke it (no public access).
 
@@ -116,7 +116,7 @@ Repo hygiene:
 - Admin override tokens are only injected in dev (`env.DEV` gates admin headers) and ignored when `ENV=prod`.
 - Revocation checks are enabled in prod by default (`FIREBASE_CHECK_REVOKED` or `ENV=prod`).
 - Password-based logins are blocked until the email is verified; OAuth providers are treated as verified.
-- Schema metadata is stored without CSV rows or field values.
+- Schema metadata is stored without CSV/Excel/JSON rows or field values.
 - Storage paths are allowlisted and validated in `backend/firebaseDB/storage_service.py`.
 
 ### Things to review or tighten further
@@ -165,6 +165,7 @@ Checklist:
 - Keep `SANDBOX_CORS_ORIGINS=*` disabled in production.
 - Keep `SANDBOX_LOG_OPENAI_RESPONSE` disabled in production.
 - `SANDBOX_ENABLE_LEGACY_ENDPOINTS` controls legacy `/api/process-pdf` and `/api/register-fillable` in dev; it is ignored in prod (always disabled).
+- `SANDBOX_ENABLE_DOCS` is ignored in prod (OpenAPI/Docs remain disabled).
 
 ## 4) Upload limits + storage paths
 
@@ -183,7 +184,7 @@ Production hardening:
 Current behavior:
 - Detection sessions are cached in memory (L1) with PDF bytes for follow-on rename/mapping.
 - Session metadata and artifacts are persisted in Firestore + GCS (L2) for multi-instance access.
-- L1 entries expire after `SANDBOX_SESSION_TTL_SECONDS` (default 3600) with sweeps every
+- L1 entries expire after `SANDBOX_SESSION_TTL_SECONDS` (default 7200) with sweeps every
   `SANDBOX_SESSION_SWEEP_INTERVAL_SECONDS`, and LRU eviction at `SANDBOX_SESSION_MAX_ENTRIES`.
 - L2 entries should expire via Firestore TTL and a scheduled cleanup job that deletes
   session artifacts in GCS aligned to the same TTL.
@@ -229,7 +230,7 @@ No row data or field values are sent. The UI warns users before sending PDF page
 to OpenAI.
 
 Enforced safeguards:
-1) Client CSV parsing happens locally; only headers/types are sent to the server.
+1) Client CSV/Excel/JSON parsing happens locally; only headers/types are sent to the server.
 2) Server-side allowlist builders strip any non-schema/template data before OpenAI calls.
 3) The UI warns users about PDF pages, field tags, and schema headers before OpenAI calls.
 

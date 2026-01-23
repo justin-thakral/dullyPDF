@@ -55,6 +55,8 @@ When you are told to test changes (via an MCP) assume that there is an existing 
 
 You have full access to use gcloud commands with service accounts too. dev is dullypdf-dev and prod is dullypdf.
 
+Mobile version disables the dullyPDF ui and main pipeline. The layout activates at 900px and it meant as a landing page to describe concepts behind dullyPDF only.
+
 ## Commenting Structure
 
 Never use emojis. Write descriptive comments that explain approaches or non-obvious logic in English, helping someone quickly analyze the strategy. Call out key data structures and algorithms when they are important to understanding the flow. Anyone with strong programming fundamentals should be able to understand what is going on from these comments even if they are not too familiar with the specific language. Make sure you mention time complexity too, don't mention it if it's obvious and explicit, just for a complex workflow or algorithm where it be helpful to know. 

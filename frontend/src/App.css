@@ -5,6 +5,11 @@
   overflow: hidden;
 }
 
+.app--demo-locked .viewer,
+.app--demo-locked .field-list {
+  overflow: hidden;
+}
+
 .auth-loading-screen {
   min-height: 100vh;
   display: flex;
@@ -26,15 +31,10 @@
 
 .homepage-shell {
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
   background: #ffffff;
-}
-
-.homepage-actions {
-  display: flex;
-  justify-content: flex-end;
-  padding: 1.2rem 1.6rem 0;
 }
 
 .landing-main {

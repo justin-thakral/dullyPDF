@@ -360,19 +360,42 @@
 
 @media (max-width: 640px) {
   .auth-page {
-    padding: 2rem 1rem;
+    padding: 1.5rem 1rem 2rem;
+    align-items: flex-start;
   }
 
   .auth-card {
-    padding: 2rem 1.5rem;
+    padding: 1.75rem 1.25rem;
+    border-radius: 16px;
+  }
+
+  .auth-brand {
+    gap: 0.75rem;
+  }
+
+  .auth-brand-text h1 {
+    font-size: 2rem;
+  }
+
+  .auth-logo-image {
+    width: 60px;
+    height: 60px;
   }
 
   .auth-header h2 {
-    font-size: 1.6rem;
+    font-size: 1.5rem;
+  }
+
+  .auth-header p {
+    font-size: 0.9rem;
   }
 
   .auth-links {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .primary-action {
+    font-size: 0.95rem;
   }
 }

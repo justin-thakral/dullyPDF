@@ -16,7 +16,11 @@ Defined in `frontend/src/index.css`:
 - Body: IBM Plex Sans.
 - Headings: Space Grotesk.
 
-Both fonts are loaded from Google Fonts in `frontend/src/index.css`.
+Fonts are loaded from Google Fonts in `frontend/index.html` to avoid render-blocking
+CSS imports. Keep `display=swap` so text paints immediately.
+
+For new landing/marketing content, prefer fluid sizing with `clamp()` to keep
+typography and spacing consistent across breakpoints.
 
 ## Alerts and dialogs
 

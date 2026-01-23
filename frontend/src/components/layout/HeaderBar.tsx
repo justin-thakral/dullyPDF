@@ -3,7 +3,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 
-export type DataSourceKind = 'csv' | 'excel' | 'txt' | 'none';
+export type DataSourceKind = 'csv' | 'excel' | 'json' | 'txt' | 'none';
 
 type HeaderBarProps = {
   pageCount: number;
@@ -38,6 +38,8 @@ type HeaderBarProps = {
   saveInProgress?: boolean;
   canDownload?: boolean;
   canSave?: boolean;
+  demoLocked?: boolean;
+  onDemoLockedAction?: () => void;
 };
 
 /**
@@ -76,6 +78,8 @@ export function HeaderBar({
   saveInProgress = false,
   canDownload = false,
   canSave = false,
+  demoLocked = false,
+  onDemoLockedAction,
 }: HeaderBarProps) {
   const hasMappingControls = Boolean(
     onChooseDataSource || onMapSchema || onRename || onRenameAndMap || onOpenSearchFill,
@@ -84,11 +88,15 @@ export function HeaderBar({
   const mapSchemaLabel = mapSchemaInProgress ? 'Mapping' : hasMappedSchema ? 'Mapped' : 'Map Schema';
   const renameLabel = renameInProgress ? 'Renaming' : hasRenamedFields ? 'Renamed' : 'Rename';
   const renameAndMapLabel = mapSchemaInProgress ? 'Mapping' : 'Rename + Map';
-  const disableMapSchema = !canMapSchema || mappingInProgress || mapSchemaInProgress;
-  const disableRename = !canRename || mappingInProgress || renameInProgress || mapSchemaInProgress;
+  const demoOverride = demoLocked && Boolean(onDemoLockedAction);
+  const disableMapSchema = demoOverride ? false : !canMapSchema || mappingInProgress || mapSchemaInProgress;
+  const disableRename =
+    demoOverride ? false : !canRename || mappingInProgress || renameInProgress || mapSchemaInProgress;
   const disableRenameAndMap =
-    !canRenameAndMap || mappingInProgress || renameInProgress || mapSchemaInProgress;
+    demoOverride ? false : !canRenameAndMap || mappingInProgress || renameInProgress || mapSchemaInProgress;
   const disableSearch = !canSearchFill || mappingInProgress;
+  const disableDownload = demoOverride ? false : !canDownload || downloadInProgress;
+  const disableSave = demoOverride ? false : !canSave || saveInProgress;
 
   const [showDataMenu, setShowDataMenu] = useState(false);
   const isConnected = dataSourceKind !== 'none';
@@ -99,7 +107,7 @@ export function HeaderBar({
         ? 'TXT'
         : dataSourceKind.toUpperCase();
   const dataSourceTitle = isConnected ? `Connected ${connectedKind}` : 'Schema';
-  const dataSourceSubtitle = isConnected ? null : 'CSV/XLS/TXT';
+  const dataSourceSubtitle = isConnected ? null : 'CSV/XLS/JSON/TXT';
   const menuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -198,7 +206,7 @@ export function HeaderBar({
             </button>
           ) : null}
           <div className="header-logo">
-            <img className="logo-image" src="/DullyPDF.png" alt="DullyPDF" />
+            <img className="logo-image" src="/DullyPDFLogoImproved.png" alt="DullyPDF" />
             <span className="logo-text">DullyPDF</span>
           </div>
         </div>
@@ -211,7 +219,14 @@ export function HeaderBar({
                 <button
                   className="ui-button ui-button--ghost ui-button--compact data-source__button"
                   type="button"
-                  onClick={() => setShowDataMenu((prev) => !prev)}
+                  data-demo-target="data-source"
+                  onClick={() => {
+                    if (demoOverride) {
+                      onDemoLockedAction?.();
+                      return;
+                    }
+                    setShowDataMenu((prev) => !prev);
+                  }}
                   disabled={mappingInProgress}
                   aria-haspopup="menu"
                   aria-expanded={showDataMenu}
@@ -237,6 +252,10 @@ export function HeaderBar({
                       className="data-source__item"
                       role="menuitem"
                       onClick={() => {
+                        if (demoOverride) {
+                          onDemoLockedAction?.();
+                          return;
+                        }
                         setShowDataMenu(false);
                         onChooseDataSource?.('csv');
                       }}
@@ -249,6 +268,10 @@ export function HeaderBar({
                       className="data-source__item"
                       role="menuitem"
                       onClick={() => {
+                        if (demoOverride) {
+                          onDemoLockedAction?.();
+                          return;
+                        }
                         setShowDataMenu(false);
                         onChooseDataSource?.('excel');
                       }}
@@ -261,6 +284,26 @@ export function HeaderBar({
                       className="data-source__item"
                       role="menuitem"
                       onClick={() => {
+                        if (demoOverride) {
+                          onDemoLockedAction?.();
+                          return;
+                        }
+                        setShowDataMenu(false);
+                        onChooseDataSource?.('json');
+                      }}
+                    >
+                      <span className="data-source__badge">JSON</span>
+                      <span>JSON file…</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="data-source__item"
+                      role="menuitem"
+                      onClick={() => {
+                        if (demoOverride) {
+                          onDemoLockedAction?.();
+                          return;
+                        }
                         setShowDataMenu(false);
                         onChooseDataSource?.('txt');
                       }}
@@ -274,6 +317,10 @@ export function HeaderBar({
                         className="data-source__item data-source__item--danger"
                         role="menuitem"
                         onClick={() => {
+                          if (demoOverride) {
+                            onDemoLockedAction?.();
+                            return;
+                          }
                           setShowDataMenu(false);
                           onClearDataSource?.();
                         }}
@@ -288,7 +335,14 @@ export function HeaderBar({
                 <button
                   className="ui-button ui-button--ghost ui-button--compact"
                   type="button"
-                  onClick={onRename}
+                  data-demo-target="openai-rename"
+                  onClick={() => {
+                    if (demoOverride) {
+                      onDemoLockedAction?.();
+                      return;
+                    }
+                    onRename?.();
+                  }}
                   disabled={disableRename}
                 >
                   {renameLabel}
@@ -297,7 +351,14 @@ export function HeaderBar({
               <button
                 className="ui-button ui-button--ghost ui-button--compact"
                 type="button"
-                onClick={onMapSchema}
+                data-demo-target="openai-remap"
+                onClick={() => {
+                  if (demoOverride) {
+                    onDemoLockedAction?.();
+                    return;
+                  }
+                  onMapSchema?.();
+                }}
                 disabled={disableMapSchema}
               >
                 {mapSchemaLabel}
@@ -306,7 +367,13 @@ export function HeaderBar({
                 <button
                   className="ui-button ui-button--ghost ui-button--compact"
                   type="button"
-                  onClick={onRenameAndMap}
+                  onClick={() => {
+                    if (demoOverride) {
+                      onDemoLockedAction?.();
+                      return;
+                    }
+                    onRenameAndMap?.();
+                  }}
                   disabled={disableRenameAndMap}
                 >
                   {renameAndMapLabel}
@@ -316,6 +383,7 @@ export function HeaderBar({
                 <button
                   className="ui-button ui-button--ghost ui-button--compact"
                   type="button"
+                  data-demo-target="search-fill"
                   onClick={onOpenSearchFill}
                   disabled={disableSearch}
                 >
@@ -330,8 +398,14 @@ export function HeaderBar({
                 <button
                   className="ui-button ui-button--primary ui-button--compact ui-header__save"
                   type="button"
-                  onClick={onDownload}
-                  disabled={!canDownload || downloadInProgress}
+                  onClick={() => {
+                    if (demoOverride) {
+                      onDemoLockedAction?.();
+                      return;
+                    }
+                    onDownload?.();
+                  }}
+                  disabled={disableDownload}
                 >
                   {downloadInProgress ? 'Downloading...' : 'Download'}
                 </button>
@@ -339,8 +413,14 @@ export function HeaderBar({
               <button
                 className="ui-button ui-button--primary ui-button--compact ui-header__save"
                 type="button"
-                onClick={onSaveToProfile}
-                disabled={!canSave || saveInProgress}
+                onClick={() => {
+                  if (demoOverride) {
+                    onDemoLockedAction?.();
+                    return;
+                  }
+                  onSaveToProfile?.();
+                }}
+                disabled={disableSave}
               >
                 {saveInProgress ? 'Saving...' : 'Save'}
               </button>

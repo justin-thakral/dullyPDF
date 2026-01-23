@@ -27,7 +27,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import BackgroundTasks, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from firebase_admin import auth as firebase_auth
 from pydantic import BaseModel, Field, field_validator
 import fitz
@@ -36,6 +36,7 @@ from .detection_status import (
     DETECTION_STATUS_COMPLETE,
     DETECTION_STATUS_FAILED,
     DETECTION_STATUS_QUEUED,
+    DETECTION_STATUS_RUNNING,
 )
 from .detection_tasks import enqueue_detection_task, resolve_detector_profile, resolve_task_config
 from .fieldDetecting.rename_pipeline.combinedSrc.config import get_logger
@@ -71,6 +72,7 @@ from .firebaseDB.firebase_service import RequestUser, verify_id_token
 from .firebaseDB.session_database import get_session_metadata
 from .firebaseDB.storage_service import (
     delete_pdf,
+    download_pdf_bytes,
     download_session_json,
     is_gcs_path,
     stream_pdf,
@@ -83,6 +85,7 @@ from .sessions.session_store import (
     get_session_entry as _get_session_entry,
     get_session_entry_if_present as _get_session_entry_if_present,
     store_session_entry as _store_session_entry,
+    touch_session_entry as _touch_session_entry,
     update_session_entry as _update_session_entry,
 )
 from .time_utils import now_iso
@@ -137,6 +140,15 @@ def _require_prod_env() -> None:
             missing.append("DETECTOR_TASKS_SERVICE_ACCOUNT")
     if missing:
         raise RuntimeError("Missing required prod env vars: " + ", ".join(missing))
+
+
+def _docs_enabled() -> bool:
+    """
+    Decide whether OpenAPI/Docs routes should be exposed.
+    """
+    if _is_prod():
+        return False
+    return True
 
 
 def _legacy_endpoints_enabled() -> bool:
@@ -356,6 +368,13 @@ class RenameFieldsRequest(BaseModel):
     sessionId: str = Field(..., min_length=1)
     schemaId: Optional[str] = None
     templateFields: Optional[List[TemplateOverlayField]] = None
+
+
+class SavedFormSessionRequest(BaseModel):
+    """Create a detection session from a saved form + extracted fields."""
+
+    fields: List[Dict[str, Any]] = Field(default_factory=list)
+    pageCount: Optional[int] = None
 
 
 _DEFAULT_CORS_ORIGINS = [
@@ -900,7 +919,13 @@ def _write_upload_to_temp(upload: UploadFile, *, max_bytes: int, limit_message: 
 
 _require_prod_env()
 
-app = FastAPI(title="Sandbox PDF Field Detector")
+_DOCS_ENABLED = _docs_enabled()
+app = FastAPI(
+    title="Sandbox PDF Field Detector",
+    docs_url="/docs" if _DOCS_ENABLED else None,
+    redoc_url="/redoc" if _DOCS_ENABLED else None,
+    openapi_url="/openapi.json" if _DOCS_ENABLED else None,
+)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_resolve_cors_origins(),
@@ -908,6 +933,66 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def enforce_security_guards(request: Request, call_next):
+    """
+    Enforce auth before body parsing and hide legacy endpoints when disabled.
+    """
+    origin = request.headers.get("origin")
+    cors_headers = _resolve_stream_cors_headers(origin)
+    if request.method == "OPTIONS":
+        return await call_next(request)
+
+    path = request.url.path
+    if not _legacy_endpoints_enabled() and (
+        path in {"/api/process-pdf", "/api/register-fillable", "/api/detected-fields"}
+        or path.startswith("/download/")
+    ):
+        return JSONResponse(status_code=404, content={"detail": "Not found"}, headers=cors_headers)
+
+    if path == "/detect-fields" or path.startswith("/detect-fields/"):
+        authorization = request.headers.get("authorization")
+        x_admin_token = request.headers.get("x-admin-token")
+        if _has_admin_override(authorization, x_admin_token):
+            request.state.detect_admin_override = True
+            return await call_next(request)
+        try:
+            request.state.detect_auth_payload = _verify_token(authorization)
+        except HTTPException as exc:
+            return JSONResponse(
+                status_code=exc.status_code,
+                content={"detail": exc.detail},
+                headers=cors_headers,
+            )
+        return await call_next(request)
+
+    if path.startswith("/api/") and path != "/api/health":
+        authorization = request.headers.get("authorization")
+        try:
+            request.state.preverified_auth_payload = _verify_token(authorization)
+        except HTTPException as exc:
+            return JSONResponse(
+                status_code=exc.status_code,
+                content={"detail": exc.detail},
+                headers=cors_headers,
+            )
+        return await call_next(request)
+
+    if path.startswith("/download/"):
+        authorization = request.headers.get("authorization")
+        try:
+            request.state.preverified_auth_payload = _verify_token(authorization)
+        except HTTPException as exc:
+            return JSONResponse(
+                status_code=exc.status_code,
+                content={"detail": exc.detail},
+                headers=cors_headers,
+            )
+        return await call_next(request)
+
+    return await call_next(request)
 
 
 @app.get("/health")
@@ -1132,6 +1217,19 @@ async def get_detected_fields(
     }
 
 
+@app.post("/api/sessions/{session_id}/touch")
+async def touch_session(
+    session_id: str,
+    authorization: Optional[str] = Header(default=None),
+) -> Dict[str, Any]:
+    """
+    Refresh the session TTL so long-lived editor sessions are not cleaned up.
+    """
+    user = _require_user(authorization)
+    _touch_session_entry(session_id, user)
+    return {"success": True, "sessionId": session_id}
+
+
 @app.get("/download/{session_id}")
 async def download_session_pdf(
     session_id: str,
@@ -1166,6 +1264,7 @@ async def download_session_pdf(
 
 @app.post("/detect-fields")
 async def detect_fields(
+    request: Request,
     file: UploadFile = File(...),
     pipeline: Optional[str] = None,
     pipeline_form: Optional[str] = Form(None, alias="pipeline"),
@@ -1175,13 +1274,16 @@ async def detect_fields(
     """
     Main detection endpoint: CommonForms field detection only.
     """
-    auth_payload: Dict[str, Any] = {}
+    auth_payload: Optional[Dict[str, Any]] = getattr(request.state, "detect_auth_payload", None)
     user: Optional[RequestUser] = None
-    admin_override = _has_admin_override(authorization, x_admin_token)
+    admin_override = getattr(request.state, "detect_admin_override", False)
     if not admin_override:
-        auth_payload = _verify_token(authorization)
+        admin_override = _has_admin_override(authorization, x_admin_token)
+    if not admin_override:
+        if auth_payload is None:
+            auth_payload = _verify_token(authorization)
         try:
-            user = ensure_user(auth_payload)
+            user = ensure_user(auth_payload or {})
         except Exception as exc:
             logger.error("Failed to sync Firebase user profile: %s", exc)
             raise HTTPException(status_code=500, detail="Failed to synchronize user profile") from exc
@@ -1229,7 +1331,7 @@ async def detect_fields(
                 status_code=403,
                 detail=f"Detection limited to {max_pages} pages for your tier (got {page_count}).",
             )
-    if auth_payload.get("uid"):
+    if auth_payload and auth_payload.get("uid"):
         logger.info("Detection request by %s", auth_payload["uid"])
     elif admin_override:
         logger.info("Detection request by admin override")
@@ -1299,6 +1401,7 @@ async def detect_fields(
 
 @app.get("/detect-fields/{session_id}")
 async def get_detection_status(
+    request: Request,
     session_id: str,
     authorization: Optional[str] = Header(default=None),
     x_admin_token: Optional[str] = Header(default=None),
@@ -1307,9 +1410,13 @@ async def get_detection_status(
     Return detector job status and results when available.
     """
     user: Optional[RequestUser] = None
-    admin_override = _has_admin_override(authorization, x_admin_token)
+    admin_override = getattr(request.state, "detect_admin_override", False)
     if not admin_override:
-        auth_payload = _verify_token(authorization)
+        admin_override = _has_admin_override(authorization, x_admin_token)
+    if not admin_override:
+        auth_payload = getattr(request.state, "detect_auth_payload", None)
+        if auth_payload is None:
+            auth_payload = _verify_token(authorization)
         try:
             user = ensure_user(auth_payload)
         except Exception as exc:
@@ -1421,6 +1528,7 @@ async def list_schemas_endpoint(authorization: Optional[str] = Header(default=No
 
 @app.post("/api/renames/ai")
 async def rename_fields_ai(
+    request: Request,
     payload: RenameFieldsRequest,
     authorization: Optional[str] = Header(default=None),
 ) -> Dict[str, Any]:
@@ -1429,7 +1537,15 @@ async def rename_fields_ai(
 
     parsing R response lines (excluding OpenAI latency).
     """
-    user = _require_user(authorization)
+    auth_payload = getattr(request.state, "preverified_auth_payload", None)
+    if auth_payload is None:
+        user = _require_user(authorization)
+    else:
+        try:
+            user = ensure_user(auth_payload)
+        except Exception as exc:
+            logger.error("Failed to sync Firebase user profile: %s", exc)
+            raise HTTPException(status_code=500, detail="Failed to synchronize user profile") from exc
 
     entry = _get_session_entry(
         payload.sessionId,
@@ -1547,21 +1663,33 @@ async def rename_fields_ai(
 
 @app.post("/api/schema-mappings/ai")
 async def map_schema_ai(
+    request: Request,
     payload: SchemaMappingRequest,
     authorization: Optional[str] = Header(default=None),
 ) -> Dict[str, Any]:
     """
     Run OpenAI mapping using schema metadata + template overlay tags.
     """
-    user = _require_user(authorization)
+    auth_payload = getattr(request.state, "preverified_auth_payload", None)
+    if auth_payload is None:
+        user = _require_user(authorization)
+    else:
+        try:
+            user = ensure_user(auth_payload)
+        except Exception as exc:
+            logger.error("Failed to sync Firebase user profile: %s", exc)
+            raise HTTPException(status_code=500, detail="Failed to synchronize user profile") from exc
     schema = get_schema(payload.schemaId, user.app_user_id)
     if not schema:
         raise HTTPException(status_code=404, detail="Schema not found")
 
+    template = None
     if payload.templateId:
         template = get_template(payload.templateId, user.app_user_id)
         if not template:
             raise HTTPException(status_code=403, detail="Template access denied")
+    if not payload.sessionId and not template:
+        raise HTTPException(status_code=400, detail="sessionId or templateId is required")
 
     template_fields = [field.model_dump() for field in payload.templateFields]
     if not template_fields:
@@ -1584,15 +1712,17 @@ async def map_schema_ai(
     if not check_rate_limit(f"user:{user.app_user_id}", limit=user_rate, window_seconds=window_seconds):
         raise HTTPException(status_code=429, detail="Rate limit exceeded for user")
 
-    session_entry = _get_session_entry_if_present(
-        payload.sessionId,
-        user,
-        include_pdf_bytes=False,
-        include_fields=False,
-        include_result=False,
-        include_renames=False,
-        include_checkbox_rules=False,
-    )
+    session_entry = None
+    if payload.sessionId:
+        session_entry = _get_session_entry(
+            payload.sessionId,
+            user,
+            include_pdf_bytes=False,
+            include_fields=False,
+            include_result=False,
+            include_renames=False,
+            include_checkbox_rules=False,
+        )
     skip_credit = False
     if session_entry and session_entry.get("openai_credit_consumed"):
         if not session_entry.get("openai_credit_mapping_used"):
@@ -1606,6 +1736,13 @@ async def map_schema_ai(
             page_count = session_entry.get("openai_credit_pages") or session_entry.get("page_count")
             if not page_count and session_entry.get("pdf_bytes"):
                 page_count = _get_pdf_page_count(session_entry["pdf_bytes"])
+        elif template and template.pdf_bucket_path and is_gcs_path(template.pdf_bucket_path):
+            try:
+                pdf_bytes = download_pdf_bytes(template.pdf_bucket_path)
+            except Exception as exc:
+                logger.exception("Failed to load template PDF for mapping credits")
+                raise HTTPException(status_code=500, detail="Failed to load template PDF") from exc
+            page_count = _get_pdf_page_count(pdf_bytes)
         if not page_count:
             page_count = _estimate_template_page_count(template_fields)
         remaining, allowed = consume_openai_credits(
@@ -1800,6 +1937,130 @@ async def download_saved_form(
     return StreamingResponse(stream, media_type="application/pdf", headers=headers)
 
 
+@app.post("/api/saved-forms/{form_id}/session")
+async def create_saved_form_session(
+    form_id: str,
+    payload: SavedFormSessionRequest,
+    authorization: Optional[str] = Header(default=None),
+) -> Dict[str, Any]:
+    """
+    Create a detection session for a saved form using extracted fields.
+    """
+    user = _require_user(authorization)
+    if not form_id:
+        raise HTTPException(status_code=400, detail="Missing form id")
+    template = get_template(form_id, user.app_user_id)
+    if not template:
+        raise HTTPException(status_code=404, detail="Form not found")
+    if not template.pdf_bucket_path or not is_gcs_path(template.pdf_bucket_path):
+        raise HTTPException(status_code=404, detail="Form PDF not found in storage")
+
+    fields = _coerce_field_payloads(payload.fields)
+    if not fields:
+        raise HTTPException(status_code=400, detail="No fields provided for saved form session")
+
+    try:
+        pdf_bytes = download_pdf_bytes(template.pdf_bucket_path)
+    except Exception as exc:
+        logger.exception("Failed to load saved form PDF for session %s", form_id)
+        raise HTTPException(status_code=500, detail="Failed to load saved form PDF") from exc
+    page_count = _get_pdf_page_count(pdf_bytes)
+
+    session_id = str(uuid.uuid4())
+    entry: Dict[str, Any] = {
+        "user_id": user.app_user_id,
+        "source_pdf": template.name or template.pdf_bucket_path or "saved-form.pdf",
+        "pdf_path": template.pdf_bucket_path,
+        "fields": fields,
+        "page_count": page_count,
+        "detection_status": DETECTION_STATUS_COMPLETE,
+        "detection_completed_at": now_iso(),
+    }
+    _store_session_entry(
+        session_id,
+        entry,
+        persist_pdf=False,
+        persist_fields=True,
+        persist_result=False,
+    )
+    return {"success": True, "sessionId": session_id, "fieldCount": len(fields)}
+
+
+@app.post("/api/templates/session")
+async def create_template_session(
+    pdf: UploadFile = File(...),
+    fields: str = Form(...),
+    authorization: Optional[str] = Header(default=None),
+) -> Dict[str, Any]:
+    """
+    Create a session for a fillable template upload so OpenAI rename/mapping can run.
+    """
+    user = _require_user(authorization)
+    if not pdf:
+        raise HTTPException(status_code=400, detail="Missing PDF upload")
+
+    source_pdf = pdf.filename or "upload.pdf"
+    content_type = (pdf.content_type or "").lower()
+    if not source_pdf.lower().endswith(".pdf") and content_type not in {"application/pdf", "application/octet-stream"}:
+        raise HTTPException(status_code=400, detail="Only PDF uploads are supported")
+
+    try:
+        raw_payload = json.loads(fields)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail="Invalid fields payload") from exc
+
+    if isinstance(raw_payload, dict):
+        raw_fields = list(raw_payload.get("fields") or [])
+    elif isinstance(raw_payload, list):
+        raw_fields = list(raw_payload)
+    else:
+        raise HTTPException(status_code=400, detail="Invalid fields payload")
+
+    template_fields = _coerce_field_payloads(raw_fields)
+    if not template_fields:
+        raise HTTPException(status_code=400, detail="No fields provided for template session")
+
+    max_mb, max_bytes = _resolve_upload_limit()
+    pdf_bytes = await _read_upload_bytes(
+        pdf,
+        max_bytes=max_bytes,
+        limit_message=f"PDF exceeds {max_mb}MB upload limit",
+    )
+    if not pdf_bytes:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty")
+
+    validation = _validate_pdf_for_detection(pdf_bytes)
+    max_pages = _resolve_fillable_max_pages(user.role)
+    if validation.page_count > max_pages:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Fillable upload limited to {max_pages} pages for your tier (got {validation.page_count}).",
+        )
+    session_id = str(uuid.uuid4())
+    entry: Dict[str, Any] = {
+        "user_id": user.app_user_id,
+        "source_pdf": source_pdf,
+        "pdf_bytes": validation.pdf_bytes,
+        "fields": template_fields,
+        "page_count": validation.page_count,
+        "detection_status": DETECTION_STATUS_COMPLETE,
+        "detection_completed_at": now_iso(),
+    }
+    _store_session_entry(
+        session_id,
+        entry,
+        persist_pdf=True,
+        persist_fields=True,
+        persist_result=False,
+    )
+    return {
+        "success": True,
+        "sessionId": session_id,
+        "fieldCount": len(template_fields),
+        "pageCount": validation.page_count,
+    }
+
+
 @app.post("/api/saved-forms")
 async def save_form(
     pdf: UploadFile = File(...),
@@ -1836,6 +2097,18 @@ async def save_form(
             max_bytes=max_bytes,
             limit_message=f"PDF exceeds {max_mb}MB upload limit",
         )
+        try:
+            pdf_bytes = temp_path.read_bytes()
+        except Exception as exc:
+            logger.exception("Failed to read uploaded PDF for validation")
+            raise HTTPException(status_code=400, detail="Invalid PDF upload") from exc
+        validation = _validate_pdf_for_detection(pdf_bytes)
+        max_pages = _resolve_fillable_max_pages(user.role)
+        if validation.page_count > max_pages:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Fillable upload limited to {max_pages} pages for your tier (got {validation.page_count}).",
+            )
 
         form_id = uuid.uuid4().hex
         timestamp = int(datetime.now(tz=timezone.utc).timestamp() * 1000)

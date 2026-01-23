@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-label="DullyPDF">
+  <rect x="4" y="4" width="120" height="120" rx="20" fill="#2563EB" />
+  <rect x="22" y="16" width="58" height="80" rx="8" fill="#FFFFFF" />
+  <path d="M80 16 L106 42 H88 a8 8 0 0 1 -8 -8 Z" fill="#E5E7EB" />
+  <rect x="26" y="52" width="50" height="20" rx="4" fill="#1D4ED8" />
+  <text x="51" y="67" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="700" fill="#FFFFFF">PDF</text>
+  <g transform="translate(64 72)">
+    <ellipse cx="18" cy="6" rx="18" ry="6" fill="#0B0B0B" />
+    <rect x="0" y="6" width="36" height="20" fill="#0B0B0B" />
+    <ellipse cx="18" cy="26" rx="18" ry="6" fill="#0B0B0B" />
+    <ellipse cx="18" cy="6" rx="18" ry="6" fill="none" stroke="#000000" stroke-width="1.5" />
+    <ellipse cx="18" cy="16" rx="18" ry="6" fill="none" stroke="#000000" stroke-width="1.5" opacity="0.5" />
+    <ellipse cx="18" cy="26" rx="18" ry="6" fill="none" stroke="#000000" stroke-width="1.5" />
+  </g>
+</svg>

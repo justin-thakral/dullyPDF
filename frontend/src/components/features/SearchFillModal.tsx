@@ -25,6 +25,16 @@ type SearchFillModalProps = {
   onClearFields: () => void;
   onAfterFill: () => void;
   onError: (message: string) => void;
+  onRequestDataSource?: (kind: 'csv' | 'excel' | 'json') => void;
+  demoSearch?: {
+    query: string;
+    searchKey?: string;
+    searchMode?: SearchMode;
+    autoRun?: boolean;
+    autoFillOnSearch?: boolean;
+    highlightResult?: boolean;
+    token?: number;
+  } | null;
 };
 
 // Known alias sets help map checkbox fields to multiple schema variants.
@@ -208,6 +218,8 @@ export default function SearchFillModal({
   onClearFields,
   onAfterFill,
   onError,
+  onRequestDataSource,
+  demoSearch,
 }: SearchFillModalProps) {
   const [searchKey, setSearchKey] = useState<string>('');
   const [searchMode, setSearchMode] = useState<SearchMode>('contains');
@@ -218,87 +230,14 @@ export default function SearchFillModal({
   const [hasSearched, setHasSearched] = useState(false);
 
   const canSearchAnyColumn = true;
-  const hasData = rows.length > 0;
+  const hasRows = rows.length > 0;
+  const hasSource = dataSourceKind !== 'none';
+  const canRequestSource = Boolean(onRequestDataSource);
 
   const availableKeys = useMemo(() => {
     const unique = new Set(columns.filter(Boolean));
     return Array.from(unique);
   }, [columns]);
-
-  useEffect(() => {
-    if (!open) return;
-    const defaultKey = identifierKey || availableKeys[0] || '';
-    setSearchKey(defaultKey);
-    setQuery('');
-    setResults([]);
-    setSearching(false);
-    setLocalError(null);
-    setSearchMode('contains');
-    setHasSearched(false);
-  }, [availableKeys, identifierKey, open, sessionId]);
-
-  /**
-   * Execute a search against local rows.
-   */
-  const runSearch = useCallback(async () => {
-    if (!hasData) {
-      setLocalError('Choose a CSV or Excel source first.');
-      return;
-    }
-    if (!query.trim()) {
-      setLocalError('Enter a search value.');
-      return;
-    }
-    if (!searchKey || (!canSearchAnyColumn && searchKey === '__any__')) {
-      setLocalError('Choose a column to search.');
-      return;
-    }
-
-    setLocalError(null);
-    setHasSearched(true);
-    setSearching(true);
-    setResults([]);
-    try {
-      const q = query.trim().toLowerCase();
-      const matches = (value: string) => (searchMode === 'equals' ? value === q : value.includes(q));
-      const matched: Array<Record<string, unknown>> = [];
-      for (const row of rows) {
-        if (searchKey === '__any__') {
-          const keys = availableKeys.length ? availableKeys : Object.keys(row);
-          const ok = keys.some((key) => matches(String(row[key] ?? '').toLowerCase()));
-          if (!ok) continue;
-        } else {
-          const value = String(row[searchKey] ?? '').toLowerCase();
-          if (!matches(value)) continue;
-        }
-        matched.push(row);
-        if (matched.length >= 25) break;
-      }
-      setResults(matched);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Search failed.';
-      setLocalError(message);
-    } finally {
-      setSearching(false);
-    }
-  }, [availableKeys, canSearchAnyColumn, hasData, query, rows, searchKey, searchMode]);
-
-  const canClearFields = useMemo(
-    () =>
-      fields.some((field) => {
-        const value = field.value;
-        if (value === null || value === undefined) return false;
-        if (typeof value === 'string') return value.trim().length > 0;
-        if (typeof value === 'boolean') return value;
-        return true;
-      }),
-    [fields],
-  );
-
-  const handleClear = useCallback(() => {
-    onClearFields();
-    setLocalError(null);
-  }, [onClearFields]);
 
   /**
    * Apply a selected row to all fields, including checkbox rules.
@@ -314,15 +253,76 @@ export default function SearchFillModal({
       const normalizedRowKeys = Array.from(normalizedRow.keys());
       const checkboxGroups = buildCheckboxGroups(fields);
       const checkboxOverrides = new Map<string, boolean>();
+      const checkboxMetaById = new Map<string, { groupKey: string; optionKey: string }>();
+      const checkboxNameIndex = new Map<string, PdfField[]>();
+      const checkboxOptionIndex = new Map<string, { groupKey: string; optionKey: string }>();
+      const checkboxOptionConflicts = new Set<string>();
+      const explicitGroupKeys = new Set<string>();
+      const groupValueApplied = new Set<string>();
       const presenceFalseTokens = new Set(['', 'n/a', 'na', 'none', 'unknown', 'unsure']);
 
-      const setCheckboxOverride = (groupKey: string, optionKey: string, value: boolean) => {
-        const group = checkboxGroups.get(normaliseDataKey(groupKey));
+      for (const field of fields) {
+        if (field.type !== 'checkbox') continue;
+        const meta = resolveCheckboxMeta(field);
+        if (meta) {
+          checkboxMetaById.set(field.id, { groupKey: meta.groupKey, optionKey: meta.optionKey });
+        }
+        const normalizedName = normaliseDataKey(field.name || '');
+        if (!normalizedName) continue;
+        const existing = checkboxNameIndex.get(normalizedName);
+        if (existing) {
+          existing.push(field);
+        } else {
+          checkboxNameIndex.set(normalizedName, [field]);
+        }
+      }
+
+      for (const [groupKey, group] of checkboxGroups.entries()) {
+        for (const [optionKey, aliases] of group.optionAliases.entries()) {
+          for (const alias of aliases) {
+            const combined = normaliseDataKey(`${groupKey}_${alias}`);
+            if (!combined) continue;
+            const existing = checkboxOptionIndex.get(combined);
+            if (existing && existing.optionKey !== optionKey) {
+              checkboxOptionConflicts.add(combined);
+              checkboxOptionIndex.delete(combined);
+              continue;
+            }
+            checkboxOptionIndex.set(combined, { groupKey, optionKey });
+          }
+        }
+      }
+
+      const markExplicitGroup = (groupKey: string) => {
+        const normalizedGroup = normaliseDataKey(groupKey);
+        if (normalizedGroup) explicitGroupKeys.add(normalizedGroup);
+      };
+
+      const markExplicitField = (fieldId: string) => {
+        const meta = checkboxMetaById.get(fieldId);
+        if (meta) markExplicitGroup(meta.groupKey);
+      };
+
+      const setCheckboxOverride = (
+        groupKey: string,
+        optionKey: string,
+        value: boolean,
+        markExplicit = false,
+      ) => {
+        const normalizedGroup = normaliseDataKey(groupKey);
+        if (!normalizedGroup) return false;
+        const group = checkboxGroups.get(normalizedGroup);
         if (!group) return false;
         const option = group.options.get(normaliseDataKey(optionKey));
         if (!option) return false;
         checkboxOverrides.set(option.id, value);
+        if (markExplicit) markExplicitGroup(normalizedGroup);
         return true;
+      };
+
+      const setCheckboxOverrideByField = (field: PdfField, value: boolean, markExplicit = false) => {
+        checkboxOverrides.set(field.id, value);
+        if (markExplicit) markExplicitField(field.id);
       };
 
       const coerceBooleanWithPresence = (value: unknown): boolean | null => {
@@ -355,335 +355,313 @@ export default function SearchFillModal({
           if (mapped) return normaliseDataKey(mapped);
         }
         if (group.options.has(normalized)) return normalized;
-        for (const [optionKey, aliases] of group.optionAliases) {
+        for (const [optionKey, aliases] of group.optionAliases.entries()) {
           if (aliases.has(normalized)) return optionKey;
         }
-        const optionKeys = Array.from(group.options.keys());
-        const prefixMatches = optionKeys.filter(
-          (optionKey) => normalized.startsWith(optionKey) || optionKey.startsWith(normalized),
-        );
-        if (prefixMatches.length === 1) return prefixMatches[0];
-        if (normalized.length > 0) {
-          const initial = normalized[0];
-          const initialMatches = optionKeys.filter((optionKey) => optionKey.length === 1 && optionKey === initial);
-          if (initialMatches.length === 1) return initialMatches[0];
-        }
         return null;
       };
 
-      const resolveCheckboxValue = (
-        baseName: string,
-        groupKey?: string,
-        options?: { allowPresence?: boolean },
-      ): boolean | null => {
-        const allowPresence = options?.allowPresence ?? false;
-        const resolveValue = allowPresence ? coerceBooleanWithPresence : coerceBoolean;
-        const bases = new Set<string>();
-        const addBase = (value: string) => {
-          const normalized = normaliseDataKey(value);
-          if (normalized) bases.add(normalized);
-        };
-        addBase(baseName);
-        if (groupKey) {
-          addBase(`${groupKey}_${baseName}`);
-        }
-        if (baseName.endsWith('ies')) addBase(`${baseName.slice(0, -3)}y`);
-        if (baseName.endsWith('s')) addBase(baseName.slice(0, -1));
-        else addBase(`${baseName}s`);
-
-        if (groupKey) {
-          for (const base of Array.from(bases)) {
-            if (!base.startsWith(`${groupKey}_`)) {
-              bases.add(`${groupKey}_${base}`);
-            }
-          }
-        }
-
-        const aliases = CHECKBOX_ALIASES[baseName] || [];
-        for (const alias of aliases) addBase(alias);
-
-        const candidates = new Set<string>();
-        for (const base of bases) {
-          candidates.add(base);
-          candidates.add(`has_${base}`);
-          candidates.add(`is_${base}`);
-          candidates.add(`takes_${base}`);
-          candidates.add(`${base}_flag`);
-          candidates.add(`${base}_status`);
-          candidates.add(`${base}_use`);
-          candidates.add(`${base}_text`);
-          candidates.add(`${base}_description`);
-        }
-
-        for (const key of candidates) {
-          const value = normalizedRow.get(key);
-          if (value === undefined) continue;
-          const boolValue = resolveValue(value);
-          if (boolValue !== null) return boolValue;
-        }
-
-        for (const base of bases) {
-          const pattern = new RegExp(`(^|_)${base}(_|$)`);
-          const allowBroadMatch = allowPresence && base.length >= 4;
-          for (const key of normalizedRowKeys) {
-            if (!pattern.test(key)) continue;
-            if (
-              !allowBroadMatch &&
-              key !== base &&
-              !key.startsWith('has_') &&
-              !key.startsWith('is_') &&
-              !key.startsWith('takes_') &&
-              !key.endsWith('_flag') &&
-              !key.endsWith('_status')
-            ) {
-              continue;
-            }
-            const value = normalizedRow.get(key);
-            if (value === undefined) continue;
-            const boolValue = resolveValue(value);
-            if (boolValue !== null) return boolValue;
-          }
-        }
-
-        return null;
+      const pickCheckboxValue = (
+        groupKey: string,
+        value: unknown,
+        valueMap?: Record<string, string>,
+      ): boolean => {
+        const normalizedGroup = normaliseDataKey(groupKey);
+        if (!normalizedGroup) return false;
+        const group = checkboxGroups.get(normalizedGroup);
+        if (!group) return false;
+        const resolvedKey = resolveOptionKey(group, value, valueMap);
+        if (!resolvedKey) return false;
+        return setCheckboxOverride(normalizedGroup, resolvedKey, true);
       };
 
-      // Apply explicit checkbox rules before any heuristic defaults.
-      const applyCheckboxRules = () => {
-        const rules = checkboxRules || [];
-        for (const rule of rules) {
-          if (!rule?.groupKey || !rule?.databaseField || !rule?.operation) continue;
-          const group = checkboxGroups.get(normaliseDataKey(rule.groupKey));
-          if (!group) continue;
-          const rowValue = normalizedRow.get(normaliseDataKey(rule.databaseField));
-          if (rowValue === undefined) continue;
-
-          if (rule.operation === 'yes_no') {
-            const boolValue = coerceBooleanWithPresence(rowValue);
-            if (boolValue === null) continue;
-            const trueOption =
-              (rule.trueOption && normaliseDataKey(rule.trueOption)) ||
-              (group.options.has('yes') ? 'yes' : group.options.has('true') ? 'true' : null) ||
-              (group.options.size === 1 ? Array.from(group.options.keys())[0] : null);
-            const falseOption =
-              (rule.falseOption && normaliseDataKey(rule.falseOption)) ||
-              (group.options.has('no') ? 'no' : group.options.has('false') ? 'false' : null);
-            if (boolValue && trueOption) {
-              setCheckboxOverride(rule.groupKey, trueOption, true);
-              if (falseOption) setCheckboxOverride(rule.groupKey, falseOption, false);
-            }
-            if (!boolValue && falseOption) {
-              setCheckboxOverride(rule.groupKey, falseOption, true);
-              if (trueOption) setCheckboxOverride(rule.groupKey, trueOption, false);
-            }
-            continue;
-          }
-
-          if (rule.operation === 'presence') {
-            const hasValue = (() => {
-              if (rowValue === null || rowValue === undefined) return false;
-              if (typeof rowValue === 'string') return rowValue.trim().length > 0;
-              if (typeof rowValue === 'number') return rowValue !== 0;
-              if (typeof rowValue === 'boolean') return rowValue;
-              return true;
-            })();
-            if (!hasValue) continue;
-            const trueOption =
-              (rule.trueOption && normaliseDataKey(rule.trueOption)) ||
-              (group.options.has('yes') ? 'yes' : null) ||
-              (group.options.size === 1 ? Array.from(group.options.keys())[0] : null);
-            if (trueOption) setCheckboxOverride(rule.groupKey, trueOption, true);
-            continue;
-          }
-
-          if (rule.operation === 'list') {
-            const parts = splitListValue(rowValue);
-            for (const part of parts) {
-              const optionKey = resolveOptionKey(group, part, rule.valueMap);
-              if (optionKey) setCheckboxOverride(rule.groupKey, optionKey, true);
-            }
-            continue;
-          }
-
-          if (rule.operation === 'enum') {
-            const optionKey = resolveOptionKey(group, rowValue, rule.valueMap);
-            if (optionKey) setCheckboxOverride(rule.groupKey, optionKey, true);
-          }
+      const resolveCheckboxGroupValue = (
+        groupKey: string,
+        value: unknown,
+        valueMap?: Record<string, string>,
+      ): boolean => {
+        const normalizedGroup = normaliseDataKey(groupKey);
+        if (!normalizedGroup) return false;
+        const group = checkboxGroups.get(normalizedGroup);
+        if (!group) return false;
+        const normalizedValue = coerceBooleanWithPresence(value);
+        if (normalizedValue === null) return false;
+        const yesKey = group.options.has('yes')
+          ? 'yes'
+          : group.options.has('true')
+            ? 'true'
+            : group.options.has('y')
+              ? 'y'
+              : null;
+        const noKey = group.options.has('no')
+          ? 'no'
+          : group.options.has('false')
+            ? 'false'
+            : group.options.has('n')
+              ? 'n'
+              : null;
+        if (yesKey && noKey) {
+          setCheckboxOverride(normalizedGroup, yesKey, normalizedValue);
+          setCheckboxOverride(normalizedGroup, noKey, !normalizedValue);
+          return true;
         }
+        if (yesKey) {
+          return setCheckboxOverride(normalizedGroup, yesKey, normalizedValue);
+        }
+        if (noKey) {
+          return setCheckboxOverride(normalizedGroup, noKey, !normalizedValue);
+        }
+        const optionKey = normalizedValue ? 'yes' : 'no';
+        if (group.options.has(optionKey)) {
+          return setCheckboxOverride(normalizedGroup, optionKey, true);
+        }
+        if (!normalizedValue) return false;
+        const fallbackOption = Array.from(group.options.keys())[0];
+        if (fallbackOption) {
+          return setCheckboxOverride(normalizedGroup, fallbackOption, true);
+        }
+        return false;
       };
 
-      // Backfill yes/no checkbox groups when rules did not set overrides.
-      const applyYesNoDefaults = () => {
-        for (const [groupKey, group] of checkboxGroups) {
-          const optionKeys = Array.from(group.options.keys());
-          const yesOption =
-            optionKeys.find((option) => option === 'yes') ||
-            optionKeys.find((option) => option === 'true') ||
-            optionKeys.find((option) => option === 'y');
-          const noOption =
-            optionKeys.find((option) => option === 'no') ||
-            optionKeys.find((option) => option === 'false') ||
-            optionKeys.find((option) => option === 'n');
-          if (!yesOption || !noOption) continue;
-          const hasOverride = optionKeys.some((optionKey) => {
-            const field = group.options.get(optionKey);
-            return field ? checkboxOverrides.has(field.id) : false;
-          });
-          if (hasOverride) continue;
-          const resolved = resolveCheckboxValue(groupKey, undefined, { allowPresence: true });
-          const boolValue = resolved === null ? false : resolved;
-          setCheckboxOverride(groupKey, boolValue ? yesOption : noOption, true);
-          setCheckboxOverride(groupKey, boolValue ? noOption : yesOption, false);
+      const applyDirectCheckboxMatch = (key: string, value: unknown): boolean => {
+        const matches = checkboxNameIndex.get(key);
+        if (!matches?.length) return false;
+        const normalizedValue = coerceBooleanWithPresence(value);
+        if (normalizedValue === null) return false;
+        for (const field of matches) {
+          setCheckboxOverrideByField(field, normalizedValue, true);
         }
+        return true;
       };
 
-      applyCheckboxRules();
-      applyYesNoDefaults();
+      const applyOptionKey = (key: string, value: unknown): boolean => {
+        if (!key || checkboxOptionConflicts.has(key)) return false;
+        const match = checkboxOptionIndex.get(key);
+        if (!match) return false;
+        const normalizedValue = coerceBooleanWithPresence(value);
+        if (normalizedValue === null) return false;
+        return setCheckboxOverride(match.groupKey, match.optionKey, normalizedValue, true);
+      };
 
-      // Resolve a best-effort field value from the normalized row values.
-      const resolveValueForField = (field: PdfField): unknown | undefined => {
-        if (field.type === 'checkbox' && checkboxOverrides.has(field.id)) {
-          return checkboxOverrides.get(field.id);
+      const applyGroupValue = (
+        groupKey: string,
+        value: unknown,
+        valueMap?: Record<string, string>,
+        allowBoolean = true,
+      ) => {
+        const normalizedGroup = normaliseDataKey(groupKey);
+        if (!normalizedGroup) return;
+        if (explicitGroupKeys.has(normalizedGroup) || groupValueApplied.has(normalizedGroup)) return;
+        if (!checkboxGroups.has(normalizedGroup)) return;
+        if (allowBoolean) {
+          const directBoolean = coerceBoolean(value);
+          if (directBoolean !== null) {
+            if (resolveCheckboxGroupValue(normalizedGroup, directBoolean, valueMap)) {
+              groupValueApplied.add(normalizedGroup);
+            }
+            return;
+          }
         }
-        const normalizedName = normaliseDataKey(field.name);
-        const getRowValue = (...keys: string[]): unknown | undefined => {
-          for (const key of keys) {
-            const value = normalizedRow.get(normaliseDataKey(key));
-            if (value !== undefined) return value;
+        const entries = splitListValue(value);
+        if (!entries.length) return;
+        let applied = false;
+        for (const entry of entries) {
+          if (pickCheckboxValue(normalizedGroup, entry, valueMap)) {
+            applied = true;
+          }
+        }
+        if (applied) groupValueApplied.add(normalizedGroup);
+      };
+
+      for (const [key, value] of normalizedRow) {
+        applyDirectCheckboxMatch(key, value);
+      }
+
+      for (const [key, value] of normalizedRow) {
+        const strippedKey = key.startsWith('i_')
+          ? key.slice(2)
+          : key.startsWith('checkbox_')
+            ? key.replace(/^checkbox_/, '')
+            : key;
+        if (!strippedKey) continue;
+        applyOptionKey(strippedKey, value);
+      }
+
+      for (const [key, value] of normalizedRow) {
+        if (key.startsWith('i_')) {
+          const stripped = key.slice(2);
+          if (!stripped) continue;
+          applyGroupValue(stripped, value);
+          continue;
+        }
+        if (key.startsWith('checkbox_')) {
+          const stripped = key.replace(/^checkbox_/, '');
+          if (!stripped) continue;
+          applyGroupValue(stripped, value);
+        }
+      }
+
+      for (const [key, value] of normalizedRow) {
+        if (key.startsWith('i_') || key.startsWith('checkbox_')) continue;
+        if (!checkboxGroups.has(key)) continue;
+        applyGroupValue(key, value);
+      }
+
+      for (const checkboxRule of checkboxRules ?? []) {
+        const ruleKeyRaw =
+          (checkboxRule as { databaseField?: string }).databaseField ??
+          (checkboxRule as { key?: string }).key ??
+          '';
+        const ruleKey = normaliseDataKey(ruleKeyRaw);
+        if (!ruleKey) continue;
+        if (!normalizedRow.has(ruleKey)) continue;
+        const groupKey = normaliseDataKey(checkboxRule.groupKey);
+        if (!groupKey) continue;
+        if (explicitGroupKeys.has(groupKey) || groupValueApplied.has(groupKey)) continue;
+        const rawValue = normalizedRow.get(ruleKey);
+        const operation = checkboxRule.operation || 'yes_no';
+        const legacyTruthy = (checkboxRule as { truthyValue?: string }).truthyValue;
+        const legacyFalsey = (checkboxRule as { falseyValue?: string }).falseyValue;
+        if (operation === 'yes_no' || operation === 'presence') {
+          const normalized = coerceBooleanWithPresence(rawValue);
+          if (normalized === null) continue;
+          const trueOption = checkboxRule.trueOption ?? legacyTruthy;
+          const falseOption = checkboxRule.falseOption ?? legacyFalsey;
+          let applied = false;
+          if (normalized) {
+            if (trueOption) {
+              applied = setCheckboxOverride(groupKey, trueOption, true);
+            }
+          } else if (falseOption) {
+            applied = setCheckboxOverride(groupKey, falseOption, true);
+          }
+          if (!applied && operation === 'yes_no') {
+            applied = resolveCheckboxGroupValue(groupKey, normalized, checkboxRule.valueMap);
+          } else if (!applied && operation === 'presence' && normalized) {
+            applied = resolveCheckboxGroupValue(groupKey, true, checkboxRule.valueMap);
+          }
+          if (applied) groupValueApplied.add(groupKey);
+          continue;
+        }
+        if (operation === 'list') {
+          applyGroupValue(groupKey, rawValue, checkboxRule.valueMap, false);
+          continue;
+        }
+        if (operation === 'enum') {
+          applyGroupValue(groupKey, rawValue, checkboxRule.valueMap, false);
+        }
+      }
+
+      for (const [groupKey, aliases] of Object.entries(CHECKBOX_ALIASES)) {
+        if (explicitGroupKeys.has(normaliseDataKey(groupKey)) || groupValueApplied.has(normaliseDataKey(groupKey))) {
+          continue;
+        }
+        if (!normalizedRow.has(groupKey)) {
+          for (const alias of aliases) {
+            if (normalizedRow.has(alias)) {
+              applyGroupValue(groupKey, normalizedRow.get(alias));
+              break;
+            }
+          }
+          continue;
+        }
+        applyGroupValue(groupKey, normalizedRow.get(groupKey));
+      }
+
+      const fillCheckboxValues = new Set(checkboxOverrides.keys());
+
+      const resolveValueForField = (field: PdfField): unknown => {
+        if (field.type === 'checkbox') {
+          if (checkboxOverrides.has(field.id)) {
+            return checkboxOverrides.get(field.id);
+          }
+          if (fillCheckboxValues.has(field.id)) {
+            return true;
           }
           return undefined;
-        };
-
-        const resolveCompositeCheckboxValue = (field: PdfField): boolean | null => {
-          const meta = resolveCheckboxMeta(field);
-          const groupKey = meta?.groupKey;
-          const rawLabel = String(field.optionLabel || field.optionKey || field.name || '').trim();
-          if (!rawLabel) return null;
-          const cleanedLabel = rawLabel.replace(/^i[_\\s]+/i, '');
-          const lower = cleanedLabel.toLowerCase().replace(/_/g, ' ');
-          const hasAndOr = lower.includes('and/or');
-          const hasOr = hasAndOr || lower.includes(' or ');
-          const hasAnd = lower.includes(' and ');
-          if (!hasOr && !hasAnd) return null;
-          const operator = hasOr ? 'or' : 'and';
-          const splitter = hasOr ? /\s+or\s+/ : /\s+and\s+/;
-          const parts = lower
-            .replace(/[()]/g, ' ')
-            .split(splitter)
-            .map((part) => part.trim())
-            .filter(Boolean);
-          if (parts.length < 2) return null;
-          const values = parts
-            .map((part) => resolveCheckboxValue(part, groupKey))
-            .filter((value): value is boolean => value !== null);
-          if (!values.length) return null;
-          if (operator === 'or') {
-            if (values.some(Boolean)) return true;
-            if (values.every((value) => value === false)) return false;
-            return null;
-          }
-          if (values.every(Boolean)) return true;
-          if (values.some((value) => value === false)) return false;
-          return null;
-        };
-
-        const direct = normalizedRow.get(normalizedName);
-        if (direct !== undefined) {
-          if (field.type === 'checkbox') {
-            const boolValue = coerceBoolean(direct);
-            if (boolValue !== null) return boolValue;
-          }
-          return direct;
         }
 
-        if (field.type === 'checkbox') {
-          const checkboxName = normalizedName.startsWith('i_')
-            ? normalizedName.slice(2)
-            : normalizedName;
-          const yesNoMatch = checkboxName.match(/^(.*)_(yes|no|true|false)$/);
-          if (yesNoMatch) {
-            const baseName = yesNoMatch[1];
-            const desired = yesNoMatch[2] === 'yes' || yesNoMatch[2] === 'true';
-            const boolValue = resolveCheckboxValue(baseName, resolveCheckboxMeta(field)?.groupKey, {
-              allowPresence: true,
-            });
-            if (boolValue !== null) return boolValue === desired;
-            if (!desired) return true;
-            return false;
-          }
-          const compositeValue = resolveCompositeCheckboxValue(field);
-          if (compositeValue !== null) return compositeValue;
-          const boolValue = resolveCheckboxValue(checkboxName, resolveCheckboxMeta(field)?.groupKey);
-          if (boolValue !== null) return boolValue;
+        const normalizedName = normaliseDataKey(field.name || '');
+        if (!normalizedName) return undefined;
+
+        if (normalizedRow.has(normalizedName)) {
+          return normalizedRow.get(normalizedName);
         }
 
-        const addressLine1 = getRowValue(
-          'address_line_1',
-          'address_line1',
-          'address1',
-          'street_address',
-          'street',
-          'mailing_address',
-          'home_address',
-          'address',
-        );
-        const addressLine2 = getRowValue(
-          'address_line_2',
-          'address_line2',
-          'address2',
-          'apt',
-          'apartment',
-          'suite',
-          'unit',
-        );
-        const city = getRowValue('city', 'town');
-        const state = getRowValue('state', 'province', 'region');
-        const zip = getRowValue('zip', 'zip_code', 'postal_code', 'postcode');
+        if (normalizedRow.has(`patient_${normalizedName}`)) {
+          return normalizedRow.get(`patient_${normalizedName}`);
+        }
 
-        if (
-          [
-            'address_line_1',
-            'address_line1',
-            'address1',
-            'street_address',
-            'street',
-            'mailing_address',
-            'home_address',
-          ].includes(
-            normalizedName,
-          )
-        ) {
-          if (addressLine1 !== undefined) return addressLine1;
+        if (normalizedRow.has(`responsible_party_${normalizedName}`)) {
+          return normalizedRow.get(`responsible_party_${normalizedName}`);
         }
-        if (
-          ['address_line_2', 'address_line2', 'address2', 'apt', 'apartment', 'suite', 'unit'].includes(
-            normalizedName,
-          )
-        ) {
-          if (addressLine2 !== undefined) return addressLine2;
+
+        if (normalizedName.endsWith('_date') || normalizedName.includes('date')) {
+          const value = normalizedRow.get(normalizedName);
+          if (value !== undefined) return value;
         }
-        if (normalizedName === 'address' || normalizedName === 'full_address') {
-          const parts = [addressLine1, addressLine2].filter(Boolean);
-          if (parts.length) return parts.join(' ');
-          const locality = [city, state, zip].filter(Boolean);
-          if (locality.length) return locality.join(', ');
+
+        if (normalizedName.endsWith('_phone')) {
+          const value = normalizedRow.get(normalizedName);
+          if (value !== undefined) return value;
         }
-        if (normalizedName === 'city' && city !== undefined) return city;
-        if (normalizedName === 'state' && state !== undefined) return state;
-        if (
-          ['zip', 'zip_code', 'postal_code', 'postcode'].includes(normalizedName) &&
-          zip !== undefined
-        ) {
-          return zip;
+
+        if (normalizedName.endsWith('_name')) {
+          const value = normalizedRow.get(normalizedName);
+          if (value !== undefined) return value;
         }
-        if (
-          ['city_state_zip', 'city_state_zipcode', 'city_state_zip_code'].includes(normalizedName)
-        ) {
+
+        if (normalizedRowKeys.includes(normalizedName)) {
+          return normalizedRow.get(normalizedName);
+        }
+
+        if (normalizedName.endsWith('_1')) {
+          const base = normalizedName.replace(/_1$/, '');
+          if (normalizedRow.has(base)) return normalizedRow.get(base);
+        }
+
+        const allergies = normalizedRow.get('allergies');
+        if (allergies !== undefined && normalizedName.startsWith('allergy_')) {
+          const entries = splitListValue(allergies);
+          const index = Number(normalizedName.replace('allergy_', '')) - 1;
+          if (!Number.isNaN(index) && entries[index]) return entries[index];
+        }
+
+        const medications = normalizedRow.get('medications');
+        if (medications !== undefined && normalizedName.startsWith('medication_')) {
+          const entries = splitListValue(medications);
+          const index = Number(normalizedName.replace('medication_', '')) - 1;
+          if (!Number.isNaN(index) && entries[index]) return entries[index];
+        }
+
+        const diagnoses = normalizedRow.get('diagnoses');
+        if (diagnoses !== undefined && normalizedName.startsWith('diagnosis_')) {
+          const entries = splitListValue(diagnoses);
+          const index = Number(normalizedName.replace('diagnosis_', '')) - 1;
+          if (!Number.isNaN(index) && entries[index]) return entries[index];
+        }
+
+        if (normalizedName.endsWith('_street_address')) {
+          const base = normalizedName.replace('_street_address', '');
+          const street = normalizedRow.get(`${base}_street`) ?? normalizedRow.get(`${base}_address`);
+          if (street !== undefined) return street;
+        }
+
+        if (normalizedName.endsWith('_address')) {
+          const base = normalizedName.replace('_address', '');
+          const address = normalizedRow.get(`${base}_street_address`) ?? normalizedRow.get(`${base}_street`);
+          if (address !== undefined) return address;
+        }
+
+        if (normalizedName === 'city_state_zip') {
+          const city = normalizedRow.get('city');
+          const state = normalizedRow.get('state');
+          const zip = normalizedRow.get('zip');
           const locality = [city, state, zip].filter(Boolean);
           if (locality.length) return locality.join(', ');
         }
 
-        const suffixMatch = normalizedName.match(/^(.*)_\d+$/);
+        const suffixMatch = normalizedName.match(/^(.*)_\\d+$/);
         if (suffixMatch) {
           const base = suffixMatch[1];
           const baseValue = normalizedRow.get(base);
@@ -743,6 +721,120 @@ export default function SearchFillModal({
     ],
   );
 
+  /**
+   * Execute a search against local rows.
+   */
+  const executeSearch = useCallback(
+    async ({
+      queryValue,
+      searchKeyValue,
+      searchModeValue,
+    }: {
+      queryValue: string;
+      searchKeyValue: string;
+      searchModeValue: SearchMode;
+    }) => {
+      if (!hasSource) {
+        setLocalError('Choose a CSV, Excel, or JSON source first.');
+        return;
+      }
+      if (!hasRows) {
+        setLocalError('No record rows are available to search.');
+        return;
+      }
+      if (!queryValue) {
+        setLocalError('Enter a search value.');
+        return;
+      }
+      if (!searchKeyValue || (!canSearchAnyColumn && searchKeyValue === '__any__')) {
+        setLocalError('Choose a column to search.');
+        return;
+      }
+
+      setLocalError(null);
+      setHasSearched(true);
+      setSearching(true);
+      setResults([]);
+      try {
+        const q = queryValue.toLowerCase();
+        const matches = (value: string) => (searchModeValue === 'equals' ? value === q : value.includes(q));
+        const matched: Array<Record<string, unknown>> = [];
+        for (const row of rows) {
+          if (searchKeyValue === '__any__') {
+            const keys = availableKeys.length ? availableKeys : Object.keys(row);
+            const ok = keys.some((key) => matches(String(row[key] ?? '').toLowerCase()));
+            if (!ok) continue;
+          } else {
+            const value = String(row[searchKeyValue] ?? '').toLowerCase();
+            if (!matches(value)) continue;
+          }
+          matched.push(row);
+          if (matched.length >= 25) break;
+        }
+        if (demoSearch?.autoFillOnSearch && matched.length > 0) {
+          await handleFill(matched[0]);
+          return;
+        }
+        setResults(matched);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Search failed.';
+        setLocalError(message);
+      } finally {
+        setSearching(false);
+      }
+    },
+    [availableKeys, canSearchAnyColumn, demoSearch?.autoFillOnSearch, handleFill, hasRows, hasSource, rows],
+  );
+
+  const runSearch = useCallback(
+    async (override?: { query?: string; searchKey?: string; searchMode?: SearchMode }) => {
+      const queryValue = (override?.query ?? query).trim();
+      const searchKeyValue = override?.searchKey ?? searchKey;
+      const searchModeValue = override?.searchMode ?? searchMode;
+      await executeSearch({ queryValue, searchKeyValue, searchModeValue });
+    },
+    [executeSearch, query, searchKey, searchMode],
+  );
+
+  useEffect(() => {
+    if (!open) return;
+    const defaultKey = identifierKey || availableKeys[0] || '';
+    const presetKey = demoSearch?.searchKey ?? defaultKey;
+    const presetMode = demoSearch?.searchMode ?? 'contains';
+    const presetQuery = demoSearch?.query ?? '';
+    setSearchKey(presetKey);
+    setQuery(presetQuery);
+    setResults([]);
+    setSearching(false);
+    setLocalError(null);
+    setSearchMode(presetMode);
+    setHasSearched(false);
+    if (demoSearch?.autoRun && presetQuery) {
+      void executeSearch({
+        queryValue: presetQuery.trim(),
+        searchKeyValue: presetKey,
+        searchModeValue: presetMode,
+      });
+    }
+  }, [availableKeys, demoSearch?.token, demoSearch?.autoRun, demoSearch?.query, demoSearch?.searchKey, demoSearch?.searchMode, executeSearch, identifierKey, open, sessionId]);
+
+  const canClearFields = useMemo(
+    () =>
+      fields.some((field) => {
+        const value = field.value;
+        if (value === null || value === undefined) return false;
+        if (typeof value === 'string') return value.trim().length > 0;
+        if (typeof value === 'boolean') return value;
+        return true;
+      }),
+    [fields],
+  );
+
+  const handleClear = useCallback(() => {
+    onClearFields();
+    setLocalError(null);
+  }, [onClearFields]);
+
   if (!open) return null;
 
   return (
@@ -778,6 +870,46 @@ export default function SearchFillModal({
             </div>
           </div>
 
+          {!hasRows ? (
+            <div className="searchfill-alert searchfill-alert--empty">
+              <Alert
+                tone="info"
+                variant="inline"
+                size="sm"
+                message={
+                  hasSource
+                    ? 'The connected source has no record rows to search.'
+                    : 'No record rows are loaded yet. Upload a CSV, Excel, or JSON file to search and fill.'
+                }
+              />
+              {canRequestSource ? (
+                <div className="searchfill-actions searchfill-actions--empty">
+                  <button
+                    type="button"
+                    className="ui-button ui-button--ghost ui-button--compact"
+                    onClick={() => onRequestDataSource?.('csv')}
+                  >
+                    Upload CSV
+                  </button>
+                  <button
+                    type="button"
+                    className="ui-button ui-button--ghost ui-button--compact"
+                    onClick={() => onRequestDataSource?.('excel')}
+                  >
+                    Upload Excel
+                  </button>
+                  <button
+                    type="button"
+                    className="ui-button ui-button--ghost ui-button--compact"
+                    onClick={() => onRequestDataSource?.('json')}
+                  >
+                    Upload JSON
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
           <div className="searchfill-controls">
             <div className="searchfill-field">
               <label className="searchfill-label" htmlFor="searchfill-key">
@@ -787,7 +919,7 @@ export default function SearchFillModal({
                 id="searchfill-key"
                 value={searchKey}
                 onChange={(event) => setSearchKey(event.target.value)}
-                disabled={!hasData || searching}
+                disabled={!hasRows || searching}
               >
                 {canSearchAnyColumn ? (
                   <option value="__any__">Any column</option>
@@ -808,7 +940,7 @@ export default function SearchFillModal({
                 id="searchfill-mode"
                 value={searchMode}
                 onChange={(event) => setSearchMode(event.target.value as SearchMode)}
-                disabled={!hasData || searching}
+                disabled={!hasRows || searching}
               >
                 <option value="contains">Contains</option>
                 <option value="equals">Equals</option>
@@ -824,7 +956,7 @@ export default function SearchFillModal({
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="MRN, name, etc."
-                disabled={!hasData || searching}
+                disabled={!hasRows || searching}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter') {
                     event.preventDefault();
@@ -838,8 +970,9 @@ export default function SearchFillModal({
               <button
                 type="button"
                 className="ui-button ui-button--primary ui-button--compact"
+                data-demo-target={demoSearch?.autoFillOnSearch ? 'search-fill-search' : undefined}
                 onClick={() => void runSearch()}
-                disabled={!hasData || searching}
+                disabled={!hasRows || searching}
               >
                 {searching ? 'Searching…' : 'Search'}
               </button>
@@ -875,6 +1008,10 @@ export default function SearchFillModal({
             ) : (
               results.map((row, index) => {
                 const preview = rowPreview(row, identifierKey);
+                const demoTargetProps =
+                  demoSearch?.highlightResult && index === 0
+                    ? { 'data-demo-target': 'search-fill-result' }
+                    : {};
                 return (
                   <div key={index} className="searchfill-result">
                     <div className="searchfill-result__text">
@@ -884,6 +1021,7 @@ export default function SearchFillModal({
                     <button
                       type="button"
                       className="ui-button ui-button--primary ui-button--compact"
+                      {...demoTargetProps}
                       onClick={() => void handleFill(row)}
                       disabled={searching}
                     >

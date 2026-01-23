@@ -19,7 +19,6 @@ RUN pip install --upgrade pip \
   && pip install -r /app/backend/requirements.txt
 
 COPY backend /app/backend
-COPY scripts /app/scripts
 
 RUN adduser --disabled-password --gecos "" appuser \
   && chown -R appuser:appuser /app

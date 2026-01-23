@@ -524,6 +524,7 @@ def _update_existing_widget(
     field_type: str,
     value: Any,
     export_value: str,
+    new_name: Optional[str] = None,
     confidence_tag: Optional[str] = None,
 ) -> bool:
     """
@@ -534,8 +535,6 @@ def _update_existing_widget(
         field_type_norm = "text"
     if field_type_norm in {"combo", "combobox"}:
         field_type_norm = "text"
-    if field_type_norm not in {"text", "checkbox"}:
-        return False
 
     annots = page.get("/Annots")
     if annots is None:
@@ -569,22 +568,31 @@ def _update_existing_widget(
             if isinstance(parent, DictionaryObject):
                 field = parent
 
-        if field_type_norm == "checkbox":
-            _apply_checkbox_value(annot, export_value=export_value, value=value)
-            if field is not annot:
-                # Keep parent and widget state aligned so viewers read consistent values.
-                field[NameObject("/V")] = annot.get("/V")
-        else:
-            _apply_text_value(field, value=value)
-            _apply_text_appearance(writer, annot, acroform, rect=rect, value=value)
-            if field is not annot:
-                # Copy down the value when the widget has a separate parent field.
-                annot[NameObject("/V")] = field.get("/V")
+        if new_name:
+            current_name = field.get("/T")
+            if not current_name or str(current_name) != new_name:
+                field[NameObject("/T")] = TextStringObject(new_name)
+                updated_any = True
+
+        if value is not None:
+            if field_type_norm == "checkbox":
+                _apply_checkbox_value(annot, export_value=export_value, value=value)
+                if field is not annot:
+                    # Keep parent and widget state aligned so viewers read consistent values.
+                    field[NameObject("/V")] = annot.get("/V")
+                updated_any = True
+            elif field_type_norm == "text":
+                _apply_text_value(field, value=value)
+                _apply_text_appearance(writer, annot, acroform, rect=rect, value=value)
+                if field is not annot:
+                    # Copy down the value when the widget has a separate parent field.
+                    annot[NameObject("/V")] = field.get("/V")
+                updated_any = True
         if confidence_tag:
             _apply_confidence_tag(annot, confidence_tag)
             if field is not annot:
                 _apply_confidence_tag(field, confidence_tag)
-        updated_any = True
+            updated_any = True
 
     return updated_any
 
@@ -952,20 +960,20 @@ def inject_fields_from_template(
         if _has_duplicate_widget(existing_widgets, page_idx, field_kind, pdf_rect):
             value = field.get("value")
             export_value = str(field.get("exportValue") or "Yes")
-            if value is not None:
-                updated = _update_existing_widget(
-                    writer,
-                    page,
-                    acroform,
-                    rect=pdf_rect,
-                    field_type=field_type,
-                    value=value,
-                    export_value=export_value,
-                    confidence_tag=confidence_tag,
-                )
-                if updated:
-                    logger.debug("Updated existing %s field %s on page %s", field_kind, name, page_idx)
-                    continue
+            updated = _update_existing_widget(
+                writer,
+                page,
+                acroform,
+                rect=pdf_rect,
+                field_type=field_type,
+                value=value,
+                export_value=export_value,
+                new_name=name,
+                confidence_tag=confidence_tag,
+            )
+            if updated:
+                logger.debug("Updated existing %s field %s on page %s", field_kind, name, page_idx)
+                continue
             logger.debug(
                 "Skipping duplicate %s field %s on page %s (rect=%s)",
                 field_kind,

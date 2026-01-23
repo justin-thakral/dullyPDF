@@ -1,11 +1,12 @@
 /**
  * Detection API helpers for field extraction.
  */
-import { apiFetch, apiJsonFetch } from './apiConfig';
+import { apiFetch, apiJsonFetch, buildApiUrl } from './apiConfig';
 
 const DEFAULT_DETECTION_API = 'http://localhost:8000';
 const DETECTION_POLL_INTERVAL_MS = 1500;
 const DEFAULT_DETECTION_POLL_TIMEOUT_MS = 120000;
+const DETECTION_TTL_TOUCH_INTERVAL_MS = 60000;
 
 function resolveDetectionPollTimeoutMs(): number {
   const env = import.meta.env;
@@ -90,10 +91,15 @@ async function pollDetection(
   const deadline = Date.now() + timeoutMs;
   let attempt = 0;
   let lastPayload: any = fallbackPayload;
+  let nextTouchAt = Date.now();
   if (options.onStatus && fallbackPayload) {
     options.onStatus(fallbackPayload);
   }
   while (Date.now() < deadline) {
+    if (Date.now() >= nextTouchAt) {
+      void touchDetectionSession(sessionId);
+      nextTouchAt = Date.now() + DETECTION_TTL_TOUCH_INTERVAL_MS;
+    }
     const response = await apiFetch('GET', `${getDetectionApiBase()}/detect-fields/${sessionId}`);
     const payload = await apiJsonFetch(response);
     lastPayload = payload;
@@ -123,4 +129,12 @@ async function pollDetection(
 
 function sleep(durationMs: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, durationMs));
+}
+
+async function touchDetectionSession(sessionId: string): Promise<void> {
+  try {
+    await apiFetch('POST', buildApiUrl('api', 'sessions', sessionId, 'touch'));
+  } catch {
+    // Best-effort; detection polling should continue even if touch fails.
+  }
 }

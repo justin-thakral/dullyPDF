@@ -52,7 +52,7 @@ Use the tracked fixtures in `quickTestFiles/`:
 - `quickTestFiles/healthdb_vw_form_fields.csv` (schema headers)
 
 Notes:
-- CSV/Excel rows stay in the browser; only headers/types are sent to the server.
+- CSV/Excel/JSON rows stay in the browser; only headers/types are sent to the server.
 - Do not add PHI/PII to tracked files.
 
 ## More docs

@@ -158,6 +158,51 @@ export class ApiService {
   }
 
   /**
+   * Create a backend session for a saved form so OpenAI rename/mapping can run.
+   */
+  static async createSavedFormSession(
+    formId: string,
+    payload: { fields: Array<Record<string, any>>; pageCount?: number },
+  ): Promise<{ success: boolean; sessionId: string; fieldCount: number }> {
+    const response = await apiFetch('POST', buildApiUrl('api', 'saved-forms', formId, 'session'), {
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    return apiJsonFetch(response);
+  }
+
+  /**
+   * Create a backend session for a fillable template upload so OpenAI rename/mapping can run.
+   */
+  static async createTemplateSession(
+    file: File,
+    payload: { fields: Array<Record<string, any>>; pageCount?: number },
+  ): Promise<{ success: boolean; sessionId: string; fieldCount: number; pageCount?: number }> {
+    const formData = new FormData();
+    formData.append('pdf', file, file.name);
+    formData.append('fields', JSON.stringify({ fields: payload.fields }));
+    if (payload.pageCount) {
+      formData.append('pageCount', String(payload.pageCount));
+    }
+    const response = await apiFetch('POST', buildApiUrl('api', 'templates', 'session'), {
+      body: formData,
+    });
+
+    return apiJsonFetch(response);
+  }
+
+  /**
+   * Refresh the backend session TTL for long-lived editor sessions.
+   */
+  static async touchSession(sessionId: string): Promise<{ success: boolean; sessionId: string }> {
+    const response = await apiFetch('POST', buildApiUrl('api', 'sessions', sessionId, 'touch'));
+    return apiJsonFetch(response);
+  }
+
+  /**
    * Delete a saved form by id.
    */
   static async deleteSavedForm(formId: string): Promise<{ success: boolean }> {

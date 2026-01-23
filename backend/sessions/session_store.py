@@ -30,7 +30,7 @@ _SESSION_VERSION = 1
 _API_SESSION_CACHE: "OrderedDict[str, SessionEntry]" = OrderedDict()
 _SESSION_CACHE_LOCK = threading.Lock()
 
-_SESSION_TTL_SECONDS = _int_env("SANDBOX_SESSION_TTL_SECONDS", 3600)
+_SESSION_TTL_SECONDS = _int_env("SANDBOX_SESSION_TTL_SECONDS", 7200)
 _SESSION_SWEEP_INTERVAL_SECONDS = _int_env("SANDBOX_SESSION_SWEEP_INTERVAL_SECONDS", 300)
 _SESSION_MAX_ENTRIES = max(0, _int_env("SANDBOX_SESSION_MAX_ENTRIES", 200))
 _SESSION_L2_TOUCH_SECONDS = max(0, _int_env("SANDBOX_SESSION_L2_TOUCH_SECONDS", 300))
@@ -528,3 +528,29 @@ def get_session_entry_if_present(
     _store_l1_entry(session_id, entry)
     _touch_l2_session(session_id, entry, _session_now())
     return entry
+
+
+def touch_session_entry(session_id: str, user: RequestUser) -> None:
+    metadata = get_session_metadata(session_id)
+    if not metadata:
+        raise HTTPException(status_code=404, detail="Session not found")
+    entry: SessionEntry = {
+        "user_id": metadata.get("user_id"),
+    }
+    _require_owner(entry, user)
+    payload: Dict[str, Any] = {"last_access_at": now_iso()}
+    expires_at = _expires_at()
+    if expires_at:
+        payload["expires_at"] = expires_at
+    try:
+        upsert_session_metadata(session_id, payload)
+    except Exception as exc:
+        logger.warning("Failed to refresh session %s: %s", session_id, exc)
+        raise HTTPException(status_code=503, detail="Failed to refresh session") from exc
+    now = _session_now()
+    with _SESSION_CACHE_LOCK:
+        cached = _API_SESSION_CACHE.get(session_id)
+        if cached:
+            cached["last_access"] = now
+            cached["_l2_touch_at"] = now
+            _API_SESSION_CACHE.move_to_end(session_id)

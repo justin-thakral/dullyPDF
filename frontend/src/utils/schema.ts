@@ -1,5 +1,5 @@
 /**
- * Schema inference utilities for CSV/Excel/TXT uploads.
+ * Schema inference utilities for CSV/Excel/JSON/TXT uploads.
  */
 
 export type SchemaFieldType = 'string' | 'int' | 'date' | 'bool';
@@ -94,7 +94,7 @@ export function parseSchemaText(text: string): SchemaMetadata {
   return { fields, sampleCount: 0 };
 }
 
-const ALLOWED_SCHEMA_TYPES: Set<SchemaFieldType> = new Set([
+export const ALLOWED_SCHEMA_TYPES: Set<SchemaFieldType> = new Set([
   'string',
   'int',
   'date',

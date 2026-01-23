@@ -297,11 +297,41 @@
 }
 
 @media (max-width: 640px) {
+  .profile-page {
+    padding: 2.5rem 1rem 3rem;
+  }
+
   .profile-shell {
-    padding: 2rem 1.5rem;
+    padding: 1.75rem 1.25rem;
+  }
+
+  .profile-header {
+    gap: 1rem;
+  }
+
+  .profile-avatar {
+    width: 48px;
+    height: 48px;
+    font-size: 1.05rem;
+  }
+
+  .profile-signout {
+    padding: 0.4rem 0.9rem;
+  }
+
+  .metric-card {
+    padding: 1.1rem 1.2rem;
+  }
+
+  .metric-value {
+    font-size: 1.6rem;
   }
 
   .profile-saved {
     padding: 1.4rem;
+  }
+
+  .profile-saved-list {
+    max-height: 240px;
   }
 }

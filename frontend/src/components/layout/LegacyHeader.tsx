@@ -129,7 +129,7 @@ const LegacyHeader: React.FC<LegacyHeaderProps> = ({
             )
           )}
           <div className="header-logo">
-            <img className="logo-image" src="/DullyPDF.png" alt="DullyPDF" />
+            <img className="logo-image" src="/DullyPDFLogoImproved.png" alt="DullyPDF" />
             <span className="logo-text">DullyPDF</span>
           </div>
         </div>

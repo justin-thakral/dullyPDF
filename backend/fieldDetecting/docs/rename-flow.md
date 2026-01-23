@@ -9,7 +9,7 @@ overlay with short field IDs, then ask the model to propose better names using t
 and the raw page image as context.
 
 Compliance note: OpenAI rename receives PDF page images plus overlay tags. When the combined
-rename+map flow is used, schema headers are sent in the same request. No CSV rows or field
+rename+map flow is used, schema headers are sent in the same request. No row data or field
 values are ever sent. The UI warns users before sending PDF pages or schema headers to OpenAI.
 
 ## When to use it
@@ -127,7 +127,7 @@ Schema alignment can happen in two ways:
 - `/api/schema-mappings/ai` for mapping-only runs (schema headers + template tags).
 - `/api/renames/ai` with schema headers for the combined rename+map run (PDF pages + overlay tags + schema headers).
 
-Both paths send only schema header names/types and template tags. No CSV rows or field values
+Both paths send only schema header names/types and template tags. No row data or field values
 are sent. The UI warns users before sending schema headers to OpenAI.
 
 ## Prompt behavior
