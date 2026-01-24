@@ -109,6 +109,8 @@ const ProfilePage: React.FC<ProfilePageProps> = ({
             <div className="profile-search">
               <input
                 type="search"
+                id="saved-form-search"
+                name="saved-form-search"
                 placeholder="Search saved forms"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}

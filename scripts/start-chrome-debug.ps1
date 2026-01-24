@@ -14,7 +14,7 @@ if (-not $port) {
 $profileDir = Join-Path $env:TEMP "chrome-codex-$port"
 New-Item -ItemType Directory -Force $profileDir | Out-Null
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '..')
-$sessionDir = Join-Path $repoRoot 'mcpDebugging'
+$sessionDir = Join-Path $repoRoot 'mcp\debugging'
 New-Item -ItemType Directory -Force $sessionDir | Out-Null
 $sessionFileLatest = Join-Path $sessionDir 'chrome-debug-session.env'
 $sessionFilePort = Join-Path $sessionDir "chrome-debug-session-$port.env"

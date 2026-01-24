@@ -7,11 +7,13 @@ import {
   type SchemaFieldType,
   type SchemaMetadata,
 } from './schema';
+import { dedupeColumnsByNormalizedKey, type HeaderRename } from './dataSource';
 
 export type ParsedJsonData = {
   columns: string[];
   rows: Array<Record<string, unknown>>;
   schema: SchemaMetadata;
+  headerRenames?: HeaderRename[];
 };
 
 type ParseJsonOptions = {
@@ -351,26 +353,31 @@ export function parseJsonDataSource(text: string, options: ParseJsonOptions = {}
       })
     : rows;
 
+  const normalized = dedupeColumnsByNormalizedKey(resolvedColumns, trimmedRows);
+
   const inferred =
-    trimmedRows.length > 0 ? inferSchemaFromRows(resolvedColumns, trimmedRows) : { fields: [], sampleCount: 0 };
+    normalized.rows.length > 0
+      ? inferSchemaFromRows(normalized.columns, normalized.rows)
+      : { fields: [], sampleCount: 0 };
 
   const schemaFields =
     explicitFields?.length
-      ? explicitFields.map((field) => {
-          const inferredField = inferred.fields.find((entry) => entry.name === field.name);
+      ? explicitFields.map((field, index) => {
+          const inferredField = inferred.fields[index];
           return {
-            name: field.name,
+            name: normalized.columns[index] ?? field.name,
             type: field.type ?? inferredField?.type ?? 'string',
           };
         })
       : inferred.fields;
 
   return {
-    columns: resolvedColumns,
-    rows: trimmedRows,
+    columns: normalized.columns,
+    rows: normalized.rows,
     schema: {
       fields: schemaFields,
       sampleCount: inferred.sampleCount,
     },
+    headerRenames: normalized.headerRenames,
   };
 }

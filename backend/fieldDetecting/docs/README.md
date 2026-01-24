@@ -1,6 +1,6 @@
 # Field detection docs
 
-Main pipeline (CommonForms):
+Main pipeline (CommonForms by [jbarrow](https://github.com/jbarrow/commonforms)):
 - `backend/fieldDetecting/docs/commonforms.md` - detector flow, outputs, and tuning.
 - `backend/fieldDetecting/docs/rename-flow.md` - overlay + OpenAI rename mechanics.
 - `backend/fieldDetecting/docs/security.md` - auth, admin tokens, and production hardening.

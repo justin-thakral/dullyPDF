@@ -1,7 +1,7 @@
 ## Project Overview
 
-DullyPDF is a FastAPI + React app for detecting PDF form fields, renaming candidates, and editing fields in a PDF viewer. The backend (`backend/main.py` + `backend/fieldDetecting/`) runs the **CommonForms** ML detector, optionally runs OpenAI rename, and supports AI schema mapping. The frontend renders PDFs with overlays and drives Search & Fill.
-Main pipeline: CommonForms detection -> OpenAI rename -> OpenAI schema mapping -> UI -> Search & Fill.
+DullyPDF is a FastAPI + React app for detecting PDF form fields, renaming candidates, and editing fields in a PDF viewer. The backend (`backend/main.py` + `backend/fieldDetecting/`) runs the **CommonForms** (by [jbarrow](https://github.com/jbarrow/commonforms)) ML detector, optionally runs OpenAI rename, and supports AI schema mapping. The frontend renders PDFs with overlays and drives Search & Fill.
+Main pipeline: CommonForms (by [jbarrow](https://github.com/jbarrow/commonforms)) detection -> OpenAI rename -> OpenAI schema mapping -> UI -> Search & Fill.
 
 ## Legacy Implementations
 
@@ -43,7 +43,7 @@ MCP docs:
 - `mcp/README.md`
 - `mcp/devtools.md`
 
-If a user wants UI-proof or screen-guided actions, follow `mcp/devtools.md` and capture evidence under `mcpDebugging/mcp-screenshots`.
+If a user wants UI-proof or screen-guided actions, follow `mcp/devtools.md` and capture evidence under `mcp/debugging/mcp-screenshots`.
 
 ## Important
 

@@ -142,6 +142,7 @@ export function FieldListPanel({
             <div className="page-bar__input-wrap">
               <input
                 id="page-input"
+                name="page-input"
                 className="page-bar__input"
                 type="number"
                 min={MIN_PAGE}
@@ -172,6 +173,8 @@ export function FieldListPanel({
               title="Show field overlays on the PDF"
             >
               <input
+                id="panel-toggle-fields"
+                name="panel-toggle-fields"
                 type="checkbox"
                 checked={showFields}
                 onChange={(event) => onShowFieldsChange(event.target.checked)}
@@ -183,6 +186,8 @@ export function FieldListPanel({
               title="Show field names on the PDF overlay"
             >
               <input
+                id="panel-toggle-names"
+                name="panel-toggle-names"
                 type="checkbox"
                 checked={showFieldNames}
                 onChange={(event) => onShowFieldNamesChange(event.target.checked)}
@@ -194,6 +199,8 @@ export function FieldListPanel({
               title="Show fields from every page in the list"
             >
               <input
+                id="panel-toggle-all"
+                name="panel-toggle-all"
                 type="checkbox"
                 checked={showAllPages}
                 onChange={(event) => setShowAllPages(event.target.checked)}
@@ -205,6 +212,8 @@ export function FieldListPanel({
               title="Fill values for fields (data entry mode)"
             >
               <input
+                id="panel-toggle-info"
+                name="panel-toggle-info"
                 type="checkbox"
                 checked={showFieldInfo}
                 onChange={(event) => onShowFieldInfoChange(event.target.checked)}
@@ -230,6 +239,8 @@ export function FieldListPanel({
                   className={`confidence-filter__option confidence-filter__option--${tier}`}
                 >
                   <input
+                    id={`confidence-filter-${tier}`}
+                    name={`confidence-filter-${tier}`}
                     type="checkbox"
                     checked={confidenceFilter[tier]}
                     onChange={(event) => onConfidenceFilterChange(tier, event.target.checked)}
@@ -246,6 +257,7 @@ export function FieldListPanel({
               </label>
               <input
                 id="field-search"
+                name="field-search"
                 className="panel__input"
                 placeholder="Search by name"
                 value={query}
@@ -258,6 +270,7 @@ export function FieldListPanel({
               </label>
               <select
                 id="field-filter"
+                name="field-filter"
                 className="panel__select"
                 value={filterType}
                 onChange={(event) => setFilterType(event.target.value as FieldType | 'all')}

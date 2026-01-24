@@ -1,10 +1,10 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import './DemoTour.css';
 
 export type DemoStep = {
   id: string;
-  title: string;
-  body: string;
+  title: ReactNode;
+  body: ReactNode;
   targetSelector?: string;
   placement?: 'top' | 'bottom' | 'left' | 'right';
   variant?: 'callout' | 'modal';

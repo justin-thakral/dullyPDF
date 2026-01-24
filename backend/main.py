@@ -58,6 +58,7 @@ from .firebaseDB.app_database import (
     get_template,
     list_templates,
     normalize_role,
+    refund_openai_credits,
     ROLE_GOD,
 )
 from .firebaseDB.detection_database import record_detection_request, update_detection_request
@@ -546,6 +547,30 @@ def _cleanup_paths(paths: List[Path]) -> None:
             logger.debug("Failed to delete temp file %s: %s", path, exc)
 
 
+def _rect_list_from_xywh(x: Any, y: Any, width: Any, height: Any) -> Optional[List[float]]:
+    """
+    Convert x/y/width/height into [x1, y1, x2, y2] or return None on invalid inputs.
+    """
+    try:
+        x1 = float(x)
+        y1 = float(y)
+        w = float(width)
+        h = float(height)
+    except (TypeError, ValueError):
+        return None
+    return [x1, y1, x1 + w, y1 + h]
+
+
+def _rect_list_from_corners(x1: Any, y1: Any, x2: Any, y2: Any) -> Optional[List[float]]:
+    """
+    Convert corner coordinates into [x1, y1, x2, y2] or return None on invalid inputs.
+    """
+    try:
+        return [float(x1), float(y1), float(x2), float(y2)]
+    except (TypeError, ValueError):
+        return None
+
+
 def _coerce_field_payloads(raw_fields: List[Any]) -> List[Dict[str, Any]]:
     """
     Normalize incoming field payloads to the expected dict shape.
@@ -555,11 +580,36 @@ def _coerce_field_payloads(raw_fields: List[Any]) -> List[Dict[str, Any]]:
         if not isinstance(entry, dict):
             continue
         payload = dict(entry)
+        rect_list: Optional[List[float]] = None
         rect = payload.get("rect")
         if isinstance(rect, dict):
-            for key in ("x", "y", "width", "height"):
-                if key not in payload and key in rect:
-                    payload[key] = rect[key]
+            if {"x", "y", "width", "height"}.issubset(rect):
+                rect_list = _rect_list_from_xywh(rect.get("x"), rect.get("y"), rect.get("width"), rect.get("height"))
+                for key in ("x", "y", "width", "height"):
+                    if key not in payload and key in rect:
+                        payload[key] = rect[key]
+            elif {"x1", "y1", "x2", "y2"}.issubset(rect):
+                rect_list = _rect_list_from_corners(rect.get("x1"), rect.get("y1"), rect.get("x2"), rect.get("y2"))
+        elif isinstance(rect, (list, tuple)) and len(rect) == 4:
+            rect_list = _rect_list_from_corners(rect[0], rect[1], rect[2], rect[3])
+
+        if rect_list is None:
+            rect_list = _rect_list_from_xywh(
+                payload.get("x"),
+                payload.get("y"),
+                payload.get("width"),
+                payload.get("height"),
+            )
+
+        if rect_list is not None:
+            payload["rect"] = rect_list
+            x1, y1, x2, y2 = rect_list
+            payload.setdefault("x", x1)
+            payload.setdefault("y", y1)
+            payload.setdefault("width", x2 - x1)
+            payload.setdefault("height", y2 - y1)
+        elif isinstance(rect, dict):
+            payload["rect"] = None
         cleaned.append(payload)
     return cleaned
 
@@ -679,6 +729,18 @@ def _sanitize_pdf_field_name_candidate(raw_name: str, fallback_base: str = "fiel
     return fallback or "field"
 
 
+def _normalize_data_key(value: str) -> str:
+    """
+    Normalize schema/template keys to a stable lowercase underscore form.
+    """
+    normalized = str(value or "").strip().lower()
+    if not normalized:
+        return ""
+    normalized = re.sub(r"[\s-]+", "_", normalized)
+    normalized = re.sub(r"[^a-z0-9_]", "", normalized)
+    return normalized
+
+
 def _template_fields_to_rename_fields(fields: List[TemplateOverlayField]) -> List[Dict[str, Any]]:
     """
     Convert template overlay fields into rename-friendly payloads.
@@ -727,12 +789,22 @@ def _build_schema_mapping_payload(
     allowed_template = [tag for tag in allowed_template if tag]
 
     allowed_schema_set = set(allowed_schema)
+    allowed_schema_map: Dict[str, str] = {}
+    for field in allowed_schema:
+        normalized = _normalize_data_key(field)
+        if normalized and normalized not in allowed_schema_map:
+            allowed_schema_map[normalized] = field
     allowed_template_set = set(allowed_template)
-    allowed_group_keys = {
-        str(tag.get("groupKey") or "").strip()
-        for tag in template_tags
-        if str(tag.get("groupKey") or "").strip()
-    }
+    allowed_group_key_map: Dict[str, str] = {}
+    for tag in template_tags:
+        raw_group_key = str(tag.get("groupKey") or "").strip()
+        if not raw_group_key:
+            continue
+        normalized_group_key = _normalize_data_key(raw_group_key)
+        if not normalized_group_key:
+            continue
+        if normalized_group_key not in allowed_group_key_map:
+            allowed_group_key_map[normalized_group_key] = raw_group_key
 
     sanitized_mappings = []
     mapped_schema = set()
@@ -815,13 +887,33 @@ def _build_schema_mapping_payload(
         for raw in raw_checkbox:
             if not isinstance(raw, dict):
                 continue
-            schema_field = str(raw.get("databaseField") or "").strip()
-            group_key = str(raw.get("groupKey") or "").strip()
-            if schema_field not in allowed_schema_set:
+            schema_field_raw = str(raw.get("databaseField") or "").strip()
+            if not schema_field_raw:
                 continue
-            if allowed_group_keys and group_key not in allowed_group_keys:
+            schema_field = (
+                schema_field_raw
+                if schema_field_raw in allowed_schema_set
+                else allowed_schema_map.get(_normalize_data_key(schema_field_raw))
+            )
+            if not schema_field:
                 continue
-            checkbox_rules.append(raw)
+            raw_group_key = str(raw.get("groupKey") or "").strip()
+            normalized_group_key = _normalize_data_key(raw_group_key)
+            normalized_schema_key = _normalize_data_key(schema_field)
+            resolved_group_key = None
+            if normalized_group_key:
+                resolved_group_key = allowed_group_key_map.get(normalized_group_key)
+            if not resolved_group_key and normalized_schema_key:
+                resolved_group_key = allowed_group_key_map.get(normalized_schema_key)
+            if allowed_group_key_map and not resolved_group_key:
+                continue
+            group_key = resolved_group_key or normalized_group_key or normalized_schema_key
+            if not group_key:
+                continue
+            normalized_rule = dict(raw)
+            normalized_rule["databaseField"] = schema_field
+            normalized_rule["groupKey"] = group_key
+            checkbox_rules.append(normalized_rule)
 
     identifier_key = str(
         ai_response.get("identifierKey")
@@ -1607,6 +1699,7 @@ async def rename_fields_ai(
             status_code=402,
             detail=f"OpenAI credits exhausted (remaining={remaining}, required={page_count})",
         )
+    credits_charged = normalize_role(user.role) != ROLE_GOD
 
     request_id = uuid.uuid4().hex
     record_openai_rename_request(
@@ -1630,6 +1723,15 @@ async def rename_fields_ai(
             database_fields=database_fields,
         )
     except Exception as exc:
+        if credits_charged:
+            try:
+                refund_openai_credits(
+                    user.app_user_id,
+                    pages=page_count,
+                    role=user.role,
+                )
+            except Exception as refund_exc:
+                logger.warning("Failed to refund OpenAI credits for rename: %s", refund_exc)
         status_code = getattr(exc, "status_code", None) or 500
         raise HTTPException(status_code=status_code, detail=str(exc)) from exc
 
@@ -1726,10 +1828,10 @@ async def map_schema_ai(
     skip_credit = False
     if session_entry and session_entry.get("openai_credit_consumed"):
         if not session_entry.get("openai_credit_mapping_used"):
-            session_entry["openai_credit_mapping_used"] = True
-            _update_session_entry(payload.sessionId, session_entry)
             skip_credit = True
 
+    credits_charged = False
+    charged_pages = 0
     if not skip_credit:
         page_count = None
         if session_entry:
@@ -1755,6 +1857,8 @@ async def map_schema_ai(
                 status_code=402,
                 detail=f"OpenAI credits exhausted (remaining={remaining}, required={page_count})",
             )
+        credits_charged = normalize_role(user.role) != ROLE_GOD
+        charged_pages = page_count
 
     request_id = uuid.uuid4().hex
     record_openai_request(
@@ -1773,8 +1877,26 @@ async def map_schema_ai(
     try:
         ai_response = call_openai_schema_mapping_chunked(allowlist_payload)
     except ValueError as exc:
+        if credits_charged:
+            try:
+                refund_openai_credits(
+                    user.app_user_id,
+                    pages=charged_pages,
+                    role=user.role,
+                )
+            except Exception as refund_exc:
+                logger.warning("Failed to refund OpenAI credits for mapping: %s", refund_exc)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
+        if credits_charged:
+            try:
+                refund_openai_credits(
+                    user.app_user_id,
+                    pages=charged_pages,
+                    role=user.role,
+                )
+            except Exception as refund_exc:
+                logger.warning("Failed to refund OpenAI credits for mapping: %s", refund_exc)
         status_code = getattr(exc, "status_code", None) or 500
         raise HTTPException(status_code=status_code, detail=str(exc)) from exc
 
@@ -1783,6 +1905,9 @@ async def map_schema_ai(
         allowlist_payload.get("templateTags") or [],
         ai_response,
     )
+    if skip_credit and session_entry and payload.sessionId:
+        session_entry["openai_credit_mapping_used"] = True
+        _update_session_entry(payload.sessionId, session_entry)
     return {
         "success": True,
         "requestId": request_id,

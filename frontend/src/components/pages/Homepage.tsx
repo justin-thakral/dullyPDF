@@ -5,8 +5,9 @@
  * Mobile shows a dedicated walkthrough-only experience.
  */
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import './Homepage.css';
+import { CommonFormsAttribution } from '../ui/CommonFormsAttribution';
 
 interface HomepageProps {
   onStartWorkflow: () => void;
@@ -16,7 +17,15 @@ interface HomepageProps {
   onOpenProfile?: () => void;
 }
 
-const DEMO_WALKTHROUGH = [
+type DemoWalkthroughStep = {
+  id: string;
+  title: ReactNode;
+  description: ReactNode;
+  image: string;
+  alt: string;
+};
+
+const DEMO_WALKTHROUGH: DemoWalkthroughStep[] = [
   {
     id: 'raw-pdf',
     title: 'Start with the raw intake PDF',
@@ -27,11 +36,15 @@ const DEMO_WALKTHROUGH = [
   },
   {
     id: 'commonforms',
-    title: 'CommonForms highlights candidate fields',
+    title: (
+      <>
+        Candidate fields highlighted with <CommonFormsAttribution />
+      </>
+    ),
     description:
       'The ML detector finds input regions and labels them with confidence-scored field tags for review.',
     image: '/demo/mobile-commonforms.png',
-    alt: 'Detected fields overlayed on the PDF with CommonForms tag labels.',
+    alt: 'Detected fields overlayed on the PDF with CommonForms by jbarrow tag labels.',
   },
   {
     id: 'inspector',
@@ -165,6 +178,9 @@ const Homepage: React.FC<HomepageProps> = ({
             TXT schema locally, standardize field names with OpenAI, and map them to your database columns for Search
             &amp; Fill.
           </p>
+          <p className="mobile-credit">
+            Shoutout to <CommonFormsAttribution /> for field detection.
+          </p>
         </div>
 
         <div className="mobile-steps">
@@ -180,7 +196,7 @@ const Homepage: React.FC<HomepageProps> = ({
             <div className="feature-item">
               <span className="feature-number">2</span>
               <div className="feature-content">
-                <h4>Detect fields with CommonForms</h4>
+                <h4>Detect fields with <CommonFormsAttribution /></h4>
                 <p>The detector finds input regions and matches them to nearby labels.</p>
               </div>
             </div>
@@ -256,6 +272,9 @@ const Homepage: React.FC<HomepageProps> = ({
                 This software converts raw PDFs into fillable forms with writable areas at all input fields.
                 Once you have your fillable form, you can upload a CSV, Excel, JSON, or TXT schema file locally and map
                 field names to the PDF. CSV/Excel/JSON rows stay in the browser for Search &amp; Fill.
+              </p>
+              <p className="homepage-credit">
+                Shoutout to <CommonFormsAttribution /> for field detection.
               </p>
 
               <div className="features-section">

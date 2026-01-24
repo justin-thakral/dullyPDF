@@ -2,7 +2,7 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-session_file="${repo_root}/mcpDebugging/chrome-debug-session.env"
+session_file="${repo_root}/mcp/debugging/chrome-debug-session.env"
 port="${1:-}"
 
 if [ -z "$port" ]; then

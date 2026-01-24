@@ -69,6 +69,7 @@ export function FieldInspectorPanel({
               </label>
               <input
                 id="field-name"
+                name="field-name"
                 className="panel__input"
                 value={selected.name}
                 onChange={(event) => onUpdateField(selected.id, { name: event.target.value })}
@@ -80,6 +81,7 @@ export function FieldInspectorPanel({
                 </label>
                 <select
                   id="field-type"
+                  name="field-type"
                   className="panel__select"
                   value={selected.type}
                   onChange={(event) => onUpdateField(selected.id, { type: event.target.value as FieldType })}
@@ -98,6 +100,7 @@ export function FieldInspectorPanel({
                 </label>
                 <input
                   id="field-page"
+                  name="field-page"
                   className="panel__input"
                   type="number"
                   min={1}
@@ -113,6 +116,7 @@ export function FieldInspectorPanel({
                   </label>
                   <input
                     id="field-x"
+                    name="field-x"
                     className="panel__input"
                     type="number"
                     value={Math.round(selected.rect.x)}
@@ -125,6 +129,7 @@ export function FieldInspectorPanel({
                   </label>
                   <input
                     id="field-y"
+                    name="field-y"
                     className="panel__input"
                     type="number"
                     value={Math.round(selected.rect.y)}
@@ -137,6 +142,7 @@ export function FieldInspectorPanel({
                   </label>
                   <input
                     id="field-width"
+                    name="field-width"
                     className="panel__input"
                     type="number"
                     value={Math.round(selected.rect.width)}
@@ -151,6 +157,7 @@ export function FieldInspectorPanel({
                   </label>
                   <input
                     id="field-height"
+                    name="field-height"
                     className="panel__input"
                     type="number"
                     value={Math.round(selected.rect.height)}

@@ -122,6 +122,7 @@ export function buildApiUrl(...segments: Array<string>): string {
 
 export interface ApiFetchOptions extends RequestInit {
   allowStatuses?: number[];
+  timeoutMs?: number;
 }
 
 /**
@@ -144,7 +145,7 @@ export async function apiFetch(
   url: string,
   options: ApiFetchOptions = {},
 ): Promise<Response> {
-  const { allowStatuses, headers, ...requestInit } = options;
+  const { allowStatuses, headers, timeoutMs, signal: inputSignal, ...requestInit } = options;
   const requestHeaders = new Headers(headers || {});
   const managedAuth = !requestHeaders.has('Authorization');
   const initialToken = await attachAuthHeader(requestHeaders, false);
@@ -154,14 +155,44 @@ export async function apiFetch(
       requestHeaders.set('x-admin-token', adminToken);
     }
   }
-  let response = await fetch(url, { method, headers: requestHeaders, ...requestInit });
+  const runFetch = async (headersToUse: Headers) => {
+    if (timeoutMs && timeoutMs > 0) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+      if (inputSignal) {
+        if (inputSignal.aborted) {
+          controller.abort();
+        } else {
+          inputSignal.addEventListener('abort', () => controller.abort(), { once: true });
+        }
+      }
+      try {
+        return await fetch(url, {
+          method,
+          headers: headersToUse,
+          signal: controller.signal,
+          ...requestInit,
+        });
+      } catch (error) {
+        if (error instanceof DOMException && error.name === 'AbortError') {
+          throw new TypeError('Request timed out.');
+        }
+        throw error;
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    }
+    return fetch(url, { method, headers: headersToUse, signal: inputSignal, ...requestInit });
+  };
+
+  let response = await runFetch(requestHeaders);
 
   if (response.status === 401 && managedAuth) {
     const refreshedToken = await getFreshIdToken(true);
     if (refreshedToken && refreshedToken !== initialToken) {
       const retryHeaders = new Headers(requestHeaders);
       retryHeaders.set('Authorization', `Bearer ${refreshedToken}`);
-      response = await fetch(url, { method, headers: retryHeaders, ...requestInit });
+      response = await runFetch(retryHeaders);
     }
   }
 

@@ -120,7 +120,7 @@ GCS retention:
 1) Main API writes PDF bytes to GCS and creates a Firestore session doc with
    `detection_status=queued`.
 2) Cloud Tasks dispatches the job to the detector service.
-3) Detector downloads the PDF, runs CommonForms, and writes fields/result JSON to GCS.
+3) Detector downloads the PDF, runs CommonForms (by [jbarrow](https://github.com/jbarrow/commonforms)), and writes fields/result JSON to GCS.
 4) Detector updates the Firestore session doc with `detection_status=complete`.
 5) L1 is populated lazily when clients request the session after completion.
 

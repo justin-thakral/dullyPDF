@@ -41,6 +41,13 @@ type DetectOptions = {
   onStatus?: (payload: any) => void;
 };
 
+class DetectionFailedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'DetectionFailedError';
+  }
+}
+
 /**
  * Upload a PDF and request field detection.
  */
@@ -67,7 +74,21 @@ export async function detectFields(
     return startPayload;
   }
 
-  return pollDetection(sessionId, startPayload, { onStatus: options.onStatus });
+  try {
+    return await pollDetection(sessionId, startPayload, { onStatus: options.onStatus });
+  } catch (error) {
+    if (error instanceof DetectionFailedError) {
+      throw error;
+    }
+    const message = error instanceof Error ? error.message : 'Detection polling failed.';
+    return {
+      sessionId,
+      status: 'running',
+      timedOut: true,
+      error: message,
+      pollError: true,
+    };
+  }
 }
 
 export async function pollDetectionStatus(
@@ -112,7 +133,7 @@ async function pollDetection(
     }
     if (status === 'failed') {
       const message = payload?.error || 'Detection failed';
-      throw new Error(String(message));
+      throw new DetectionFailedError(String(message));
     }
     attempt += 1;
     await sleep(Math.min(DETECTION_POLL_INTERVAL_MS * attempt, 6000));

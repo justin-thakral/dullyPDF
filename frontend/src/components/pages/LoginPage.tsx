@@ -173,6 +173,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated, onCancel }) => {
               <label htmlFor="auth-email">Email</label>
               <input
                 id="auth-email"
+                name="auth-email"
                 type="email"
                 autoComplete="email"
                 placeholder="you@example.com"
@@ -185,6 +186,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated, onCancel }) => {
               <label htmlFor="auth-password">Password</label>
               <input
                 id="auth-password"
+                name="auth-password"
                 type="password"
                 autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
                 placeholder={mode === 'signin' ? 'Enter your password' : 'Create a password'}

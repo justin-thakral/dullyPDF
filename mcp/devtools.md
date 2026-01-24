@@ -82,7 +82,7 @@ scripts/start-codex-debug.sh 9224
 scripts\start-codex-debug.ps1 -Port 9224
 ```
 
-Each run writes a port-specific session file (`mcpDebugging/chrome-debug-session-PORT.env`) and updates `mcpDebugging/chrome-debug-session.env` as the latest session.
+Each run writes a port-specific session file (`mcp/debugging/chrome-debug-session-PORT.env`) and updates `mcp/debugging/chrome-debug-session.env` as the latest session.
 
 ## Verify CDP is live
 
@@ -127,7 +127,7 @@ netsh advfirewall firewall delete rule name="Chrome Remote Debugging 9222"
 
 - Keep this Chrome window open while MCP is active.
 - Use a unique port and profile directory for each parallel MCP session.
-- Use `mcpDebugging/mcp-screenshots` for UI proof screenshots.
+- Use `mcp/debugging/mcp-screenshots` for UI proof screenshots.
 
 ## Codex MCP config reminder
 

@@ -96,7 +96,7 @@ Verify that logs and stored records contain only minimal metadata:
 
 Always capture proof when a security-relevant issue occurs.
 
-- Screenshots: `mcpDebugging/mcp-screenshots/`
+- Screenshots: `mcp/debugging/mcp-screenshots/`
 - Console errors: capture message text and time.
 - Network details: record endpoint, status, and response body when possible.
 

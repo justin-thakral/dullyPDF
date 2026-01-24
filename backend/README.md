@@ -1,12 +1,12 @@
 ## Backend
 
-FastAPI service for PDF field detection, schema-only OpenAI mapping, and saved-form storage. The entrypoint is `backend/main.py`, and detection is executed by the dedicated detector service (`backend/detector_main.py`) which runs CommonForms under `backend/fieldDetecting/commonforms/`. The legacy OpenCV pipeline lives in `legacy/fieldDetecting/` and is not part of the main pipeline.
+FastAPI service for PDF field detection, schema-only OpenAI mapping, and saved-form storage. The entrypoint is `backend/main.py`, and detection is executed by the dedicated detector service (`backend/detector_main.py`) which runs CommonForms (by [jbarrow](https://github.com/jbarrow/commonforms)) under `backend/fieldDetecting/commonforms/`. The legacy OpenCV pipeline lives in `legacy/fieldDetecting/` and is not part of the main pipeline.
 
 ### Core flows
 
-- Detection: `POST /detect-fields` queues CommonForms detection and returns a `sessionId`.
+- Detection: `POST /detect-fields` queues CommonForms (by [jbarrow](https://github.com/jbarrow/commonforms)) detection and returns a `sessionId`.
 - Detection status: `GET /detect-fields/{sessionId}` returns status + fields when ready.
-- CommonForms-only: `POST /api/process-pdf` (legacy upload helper; dev-only; auth required; no rename/mapping).
+- CommonForms-only (by [jbarrow](https://github.com/jbarrow/commonforms)): `POST /api/process-pdf` (legacy upload helper; dev-only; auth required; no rename/mapping).
 - Register fillable: `POST /api/register-fillable` (dev-only; auth required; store PDF bytes without running detection).
 - OpenAI rename (overlay tags + PDF pages; schema headers included for combined rename+map): `POST /api/renames/ai`.
 - Schema metadata: `POST /api/schemas`, `GET /api/schemas`.
@@ -18,7 +18,7 @@ FastAPI service for PDF field detection, schema-only OpenAI mapping, and saved-f
 ### Runtime requirements
 
 - Main API: Cloud Tasks client + Firebase Admin + OpenAI (optional).
-- Detector service: CommonForms + PyTorch for detection.
+- Detector service: CommonForms (by [jbarrow](https://github.com/jbarrow/commonforms)) + PyTorch for detection.
 - OpenAI API key for rename + schema mapping (schema metadata only).
 - Firebase Admin for auth and role claims.
 - GCS buckets for saved forms and templates.
@@ -97,7 +97,7 @@ Detector env examples:
 
 ### Running locally
 
-Prefer the repo scripts so the backend uses `backend/.venv` (CommonForms requires
+Prefer the repo scripts so the backend uses `backend/.venv` (CommonForms (by [jbarrow](https://github.com/jbarrow/commonforms)) requires
 NumPy 1.x and will fail under NumPy 2.x if you run with a system Python):
 
 ```
@@ -111,7 +111,7 @@ npm run dev
 ```
 
 If you keep `DETECTOR_MODE=local`, install `backend/requirements-detector.txt` so
-CommonForms is available. For the production-style flow, use the dev stack:
+CommonForms (by [jbarrow](https://github.com/jbarrow/commonforms)) is available. For the production-style flow, use the dev stack:
 
 ```
 npm run dev:stack
@@ -138,4 +138,4 @@ uvicorn backend.detector_main:app --host 0.0.0.0 --port 8000
 Docker images:
 - `Dockerfile` (main API)
 - `Dockerfile.detector` (detector service)
-- `backend/requirements.txt` is main API deps; `backend/requirements-detector.txt` adds CommonForms.
+- `backend/requirements.txt` is main API deps; `backend/requirements-detector.txt` adds CommonForms (by [jbarrow](https://github.com/jbarrow/commonforms)).

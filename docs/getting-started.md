@@ -41,7 +41,7 @@ for Vite.
 ## OpenAI (optional)
 
 Rename and schema mapping require `OPENAI_API_KEY`. If the key is missing, those
-actions will fail while CommonForms detection still works.
+actions will fail while CommonForms (by [jbarrow](https://github.com/jbarrow/commonforms)) detection still works.
 
 ## Quick test files
 

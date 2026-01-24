@@ -160,6 +160,8 @@ export function PromptDialog({
           type="text"
           value={value}
           placeholder={placeholder}
+          id="dialog-input"
+          name="dialog-input"
           onChange={(event) => setValue(event.target.value)}
           onKeyDown={handleKeyDown}
         />

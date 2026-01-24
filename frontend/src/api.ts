@@ -120,11 +120,12 @@ export class ApiService {
   /**
    * Fetch saved form summaries for the current user.
    */
-  static async getSavedForms(options?: { suppressErrors?: boolean }): Promise<SavedFormSummary[]> {
+  static async getSavedForms(options?: { suppressErrors?: boolean; timeoutMs?: number }): Promise<SavedFormSummary[]> {
     const suppressErrors = options?.suppressErrors ?? true;
     try {
       const response = await apiFetch('GET', buildApiUrl('api', 'saved-forms'), {
         allowStatuses: [401],
+        timeoutMs: options?.timeoutMs,
       });
       if (response.status === 401) return [];
       const payload = await apiJsonFetch<{ forms?: SavedFormSummary[] }>(response);

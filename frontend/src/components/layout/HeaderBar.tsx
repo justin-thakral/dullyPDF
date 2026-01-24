@@ -95,6 +95,7 @@ export function HeaderBar({
   const disableRenameAndMap =
     demoOverride ? false : !canRenameAndMap || mappingInProgress || renameInProgress || mapSchemaInProgress;
   const disableSearch = !canSearchFill || mappingInProgress;
+  const showSearchHint = !canSearchFill;
   const disableDownload = demoOverride ? false : !canDownload || downloadInProgress;
   const disableSave = demoOverride ? false : !canSave || saveInProgress;
 
@@ -157,6 +158,9 @@ export function HeaderBar({
             max={10}
             step={0.05}
             value={scale}
+            id="header-zoom"
+            name="header-zoom"
+            aria-label="Zoom"
             onChange={(event) => onScaleChange(Number(event.target.value))}
           />
           <span className="ui-chip__value">{Math.round(scale * 100)}%</span>
@@ -380,15 +384,20 @@ export function HeaderBar({
                 </button>
               ) : null}
               {onOpenSearchFill ? (
-                <button
-                  className="ui-button ui-button--ghost ui-button--compact"
-                  type="button"
-                  data-demo-target="search-fill"
-                  onClick={onOpenSearchFill}
-                  disabled={disableSearch}
-                >
-                  Search, Fill &amp; Clear
-                </button>
+                <div className="ui-header__search-fill">
+                  <button
+                    className="ui-button ui-button--ghost ui-button--compact"
+                    type="button"
+                    data-demo-target="search-fill"
+                    onClick={onOpenSearchFill}
+                    disabled={disableSearch}
+                  >
+                    Search, Fill &amp; Clear
+                  </button>
+                  {showSearchHint ? (
+                    <span className="ui-header__search-hint">Requires CSV/Excel/JSON rows</span>
+                  ) : null}
+                </div>
               ) : null}
             </div>
           ) : null}
