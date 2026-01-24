@@ -59,6 +59,14 @@
   max-width: 62ch;
 }
 
+.homepage-credit {
+  margin: 0 0 clamp(0.85rem, 1.2vw, 1.2rem);
+  font-size: clamp(0.95rem, 0.9rem + 0.3vw, 1.05rem);
+  color: #1e3a8a;
+  font-weight: 600;
+  max-width: 62ch;
+}
+
 .features-section {
   margin-bottom: 0;
 }
@@ -436,6 +444,14 @@
   color: var(--ink-700);
   font-size: 0.98rem;
   line-height: 1.6;
+}
+
+.mobile-credit {
+  margin: 0.65rem 0 0;
+  color: var(--blue-900);
+  font-size: 0.92rem;
+  font-weight: 600;
+  line-height: 1.5;
 }
 
 .mobile-steps h3 {

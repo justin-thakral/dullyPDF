@@ -4,7 +4,7 @@
 - Release a secure, hosted product with account-based limits.
 - Prevent commercial resale of the code via a restrictive license.
 - Keep schema mapping header-only (no database connections in runtime).
-- Add ad viewing while renaming/commonforms is running.
+- Add ad viewing while renaming/CommonForms (by [jbarrow](https://github.com/jbarrow/commonforms)) is running.
 
 ## Non-goals
 - Open-source (OSI) distribution. A non-commercial license is not open source.
@@ -51,7 +51,7 @@
 ## Phase 4 - Ads During Processing
 1) UI only: show an ad view/overlay while detection is running.
 2) Placement rules:
-   - Show only when `isProcessing` and (pipeline is "commonforms" or rename is enabled).
+   - Show only when `isProcessing` and (pipeline is "commonforms" (CommonForms by [jbarrow](https://github.com/jbarrow/commonforms)) or rename is enabled).
    - Hide immediately on completion or error.
 3) Ad integration:
    - Start with a simple banner slot (house ad) and swap for a network later.

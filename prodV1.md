@@ -7,7 +7,7 @@ This guide describes a secure, production-ready setup for:
 - Firestore + Storage for app data and PDFs.
 - Secret Manager for sensitive credentials.
 
-It assumes the main pipeline is CommonForms -> OpenAI rename -> OpenAI schema mapping.
+It assumes the main pipeline is CommonForms (by [jbarrow](https://github.com/jbarrow/commonforms)) -> OpenAI rename -> OpenAI schema mapping.
 The legacy OpenCV pipeline is archived under `legacy/` and not used.
 
 ---
@@ -212,12 +212,12 @@ echo -n "<HF_TOKEN>" | gcloud secrets create dullypdf-prod-hf-token \
 Security note:
 - Prefer ADC on Cloud Run (no JSON keys at rest).
 - Only use `dullypdf-prod-firebase-admin` if you must run outside GCP.
-- When using GCS-hosted CommonForms weights, the detector runtime does not need
+- When using GCS-hosted CommonForms (by [jbarrow](https://github.com/jbarrow/commonforms)) weights, the detector runtime does not need
   HuggingFace tokens.
 
 ---
 
-## 6b) CommonForms weights in GCS (recommended)
+## 6b) CommonForms (by [jbarrow](https://github.com/jbarrow/commonforms)) weights in GCS (recommended)
 
 1) Create a private models bucket:
 ```
@@ -299,7 +299,7 @@ These must be set on each detector Cloud Run service:
 - `COMMONFORMS_WEIGHTS_CACHE_DIR=/tmp/commonforms-models`
 - `COMMONFORMS_WEIGHTS_LOCK_TIMEOUT_SECONDS=600`
 
-CommonForms tuning is optional; see `config/detector.prod.env.example`.
+CommonForms (by [jbarrow](https://github.com/jbarrow/commonforms)) tuning is optional; see `config/detector.prod.env.example`.
 
 ---
 

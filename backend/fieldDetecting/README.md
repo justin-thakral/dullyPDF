@@ -1,6 +1,6 @@
-## CommonForms PDF Field Detection
+## CommonForms (by [jbarrow](https://github.com/jbarrow/commonforms)) PDF Field Detection
 
-This backend runs the CommonForms detector (via a dedicated detector service) and supports
+This backend runs the CommonForms (by [jbarrow](https://github.com/jbarrow/commonforms)) detector (via a dedicated detector service) and supports
 schema-only OpenAI mapping via separate endpoints. The legacy OpenCV sandbox pipeline has been moved into
 `legacy/fieldDetecting/` and is not part of the main pipeline.
 
@@ -12,7 +12,7 @@ Docs:
 
 ### Pipeline summary
 
-1) CommonForms renders PDF pages and detects widgets.
+1) CommonForms (by [jbarrow](https://github.com/jbarrow/commonforms)) renders PDF pages and detects widgets.
 2) Detected widgets are converted into field objects (originTop rectangles).
 3) Optional OpenAI rename uses overlay images to propose better names.
 4) Optional schema mapping (OpenAI) produces mapping rules and checkbox group rules.
@@ -62,7 +62,7 @@ Roles are reserved for admin workflows; schema/template access is enforced per u
 - OpenAI rename sends PDF pages + overlay tags; schema headers are included when a schema is selected for combined rename+map.
 - The UI warns users about which PDF pages, field tags, and schema headers are sent to OpenAI before each run.
 
-### CommonForms tuning
+### CommonForms (by [jbarrow](https://github.com/jbarrow/commonforms)) tuning
 
 - `COMMONFORMS_MODEL` (default `FFDNet-L`)
 - `COMMONFORMS_MODEL_GCS_URI` (optional; GCS URI to model weights)

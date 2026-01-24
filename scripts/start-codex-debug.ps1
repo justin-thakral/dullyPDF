@@ -3,7 +3,7 @@ param(
 )
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '..')
-$sessionFile = Join-Path $repoRoot 'mcpDebugging\chrome-debug-session.env'
+$sessionFile = Join-Path $repoRoot 'mcp\debugging\chrome-debug-session.env'
 
 if (-not $Port) {
   if (-not (Test-Path $sessionFile)) {

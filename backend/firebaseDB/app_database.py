@@ -156,6 +156,44 @@ def consume_openai_credits(uid: str, *, pages: int, role: Optional[str] = None) 
     return _update(transaction)
 
 
+def refund_openai_credits(uid: str, *, pages: int, role: Optional[str] = None) -> int:
+    """Atomically refund OpenAI credits after a failed request.
+    """
+    if not uid:
+        raise ValueError("Missing firebase uid")
+    normalized_role = normalize_role(role)
+    if normalized_role == ROLE_GOD:
+        return -1
+    try:
+        pages_refund = int(pages)
+    except (TypeError, ValueError):
+        pages_refund = 1
+    if pages_refund < 1:
+        pages_refund = 1
+
+    client = get_firestore_client()
+    doc_ref = client.collection(USERS_COLLECTION).document(uid)
+    transaction = client.transaction()
+
+    @firebase_firestore.transactional
+    def _update(txn: firebase_firestore.Transaction) -> int:
+        snapshot = doc_ref.get(transaction=txn)
+        data = snapshot.to_dict() or {}
+        try:
+            remaining = int(data.get(OPENAI_CREDITS_FIELD) or BASE_OPENAI_CREDITS)
+        except (TypeError, ValueError):
+            remaining = BASE_OPENAI_CREDITS
+        new_remaining = remaining + pages_refund
+        updates = {
+            OPENAI_CREDITS_FIELD: new_remaining,
+            "updated_at": now_iso(),
+        }
+        txn.set(doc_ref, updates, merge=True)
+        return new_remaining
+
+    return _update(transaction)
+
+
 def set_user_role(uid: str, role: str) -> None:
     """Update the role field on the Firestore user document.
     """

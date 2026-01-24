@@ -60,7 +60,7 @@ Keep calls read-only unless explicitly approved.
 
 Always capture proof when an issue occurs.
 
-- Screenshots: `mcpDebugging/mcp-screenshots/`
+- Screenshots: `mcp/debugging/mcp-screenshots/`
 - Console errors: capture message text and time.
 - Network details: record endpoint, status, and response body when possible.
 

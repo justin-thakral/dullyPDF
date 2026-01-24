@@ -50,7 +50,7 @@ backend/fieldDetecting/sandbox/ML/data/raw/
 samples/
 
 # Local generated assets
-mcpDebugging/
+mcp/debugging/
 mcp/.env.local
 mcp/.env.*.local
 legacy/
@@ -59,6 +59,7 @@ legacy/
 .DS_Store
 Thumbs.db
 *.log
+*~RF*.TMP
 
 # Service account credentials
 .gcloud/

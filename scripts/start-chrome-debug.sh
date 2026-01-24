@@ -5,7 +5,7 @@ ports=({9222..9235})
 profile_base="${TMPDIR:-/tmp}/chrome-codex"
 urls=("http://localhost:5173" "http://wsl.localhost:5173" "about:blank")
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-session_dir="${repo_root}/mcpDebugging"
+session_dir="${repo_root}/mcp/debugging"
 session_file_latest="${session_dir}/chrome-debug-session.env"
 
 is_port_in_use() {

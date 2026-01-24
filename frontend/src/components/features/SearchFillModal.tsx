@@ -1,11 +1,19 @@
 /**
  * Search & Fill modal for populating fields from data sources.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CheckboxRule, PdfField } from '../../types';
 import type { DataSourceKind } from '../layout/HeaderBar';
 import './SearchFillModal.css';
 import { normaliseDataKey } from '../../utils/dataSource';
+import { computeCheckboxMeta, type CheckboxMeta as CheckboxMetaType } from '../../utils/checkboxMeta';
+import {
+  coerceCheckboxBoolean,
+  coerceCheckboxPresence,
+  getNumericSuffixBase,
+  normalizeCheckboxValueMap,
+  splitCheckboxListValue,
+} from '../../utils/searchFill';
 import { Alert } from '../ui/Alert';
 
 type SearchMode = 'contains' | 'equals';
@@ -37,6 +45,13 @@ type SearchFillModalProps = {
   } | null;
 };
 
+const VALIDATION_ERRORS = new Set([
+  'Choose a CSV, Excel, or JSON source first.',
+  'No record rows are available to search.',
+  'Enter a search value.',
+  'Choose a column to search.',
+]);
+
 // Known alias sets help map checkbox fields to multiple schema variants.
 const CHECKBOX_ALIASES: Record<string, string[]> = {
   allergies: ['allergy', 'has_allergies'],
@@ -47,6 +62,9 @@ const CHECKBOX_ALIASES: Record<string, string[]> = {
   medications: ['current_medications', 'takes_medications'],
 };
 
+const CHECKBOX_TRUE_ALIASES = ['yes', 'true', 'y', 't', 'on', 'checked', '1'];
+const CHECKBOX_FALSE_ALIASES = ['no', 'false', 'n', 'f', 'off', 'unchecked', '0'];
+
 function coerceValue(value: unknown): string | number | boolean | null {
   if (value === null || value === undefined) return null;
   if (typeof value === 'string') return value;
@@ -55,17 +73,6 @@ function coerceValue(value: unknown): string | number | boolean | null {
   return String(value);
 }
 
-function coerceBoolean(value: unknown): boolean | null {
-  if (value === null || value === undefined) return null;
-  if (typeof value === 'boolean') return value;
-  if (typeof value === 'number') return value !== 0;
-  if (typeof value === 'string') {
-    const norm = value.trim().toLowerCase();
-    if (['true', '1', 'yes', 'y', 'on', 'checked', 't'].includes(norm)) return true;
-    if (['false', '0', 'no', 'n', 'off', 'unchecked', 'f'].includes(norm)) return false;
-  }
-  return null;
-}
 
 function parseDateFromUnknown(value: unknown): Date | null {
   if (value instanceof Date) {
@@ -96,60 +103,28 @@ function computeAgeYears(dob: Date, reference: Date): number {
 }
 
 type CheckboxGroup = {
-  options: Map<string, PdfField>;
+  options: Map<string, PdfField[]>;
   optionAliases: Map<string, Set<string>>;
 };
 
 /**
- * Resolve checkbox group/option keys from metadata or naming.
- */
-function resolveCheckboxMeta(field: PdfField): { groupKey: string; optionKey: string; optionLabel?: string } | null {
-  if (field.type !== 'checkbox') return null;
-  const optionLabel = typeof field.optionLabel === 'string' ? field.optionLabel : undefined;
-  const storedGroup = field.groupKey ? normaliseDataKey(field.groupKey) : '';
-  const storedOption = field.optionKey ? normaliseDataKey(field.optionKey) : '';
-  if (storedGroup && storedOption) {
-    return { groupKey: storedGroup, optionKey: storedOption, optionLabel };
-  }
-
-  const normalizedName = normaliseDataKey(field.name || '');
-  const base = normalizedName.startsWith('i_') ? normalizedName.slice(2) : normalizedName;
-  if (!base) return null;
-
-  const optionFromLabel = optionLabel ? normaliseDataKey(optionLabel) : '';
-  if (optionFromLabel && base.endsWith(`_${optionFromLabel}`)) {
-    return {
-      groupKey: base.slice(0, -(optionFromLabel.length + 1)),
-      optionKey: optionFromLabel,
-      optionLabel,
-    };
-  }
-
-  const lastUnderscore = base.lastIndexOf('_');
-  if (lastUnderscore > 0) {
-    return {
-      groupKey: base.slice(0, lastUnderscore),
-      optionKey: base.slice(lastUnderscore + 1),
-      optionLabel,
-    };
-  }
-
-  return { groupKey: base, optionKey: 'yes', optionLabel };
-}
-
-/**
  * Build checkbox groups keyed by groupKey for faster rule application.
  */
-function buildCheckboxGroups(fields: PdfField[]): Map<string, CheckboxGroup> {
+function buildCheckboxGroups(fields: PdfField[], metaById: Map<string, CheckboxMetaType>): Map<string, CheckboxGroup> {
   const groups = new Map<string, CheckboxGroup>();
   for (const field of fields) {
     if (field.type !== 'checkbox') continue;
-    const meta = resolveCheckboxMeta(field);
+    const meta = metaById.get(field.id);
     if (!meta) continue;
     const groupKey = meta.groupKey;
     const optionKey = meta.optionKey;
     const group = groups.get(groupKey) || { options: new Map(), optionAliases: new Map() };
-    group.options.set(optionKey, field);
+    const existing = group.options.get(optionKey);
+    if (existing) {
+      existing.push(field);
+    } else {
+      group.options.set(optionKey, [field]);
+    }
     const aliases = group.optionAliases.get(optionKey) || new Set<string>();
     aliases.add(optionKey);
     if (meta.optionLabel) {
@@ -161,17 +136,6 @@ function buildCheckboxGroups(fields: PdfField[]): Map<string, CheckboxGroup> {
   return groups;
 }
 
-function splitListValue(value: unknown): string[] {
-  if (value === null || value === undefined) return [];
-  if (Array.isArray(value)) {
-    return value.map((entry) => String(entry).trim()).filter(Boolean);
-  }
-  if (typeof value !== 'string') return [String(value)];
-  return value
-    .split(/[,;|/]+/)
-    .map((entry) => entry.trim())
-    .filter(Boolean);
-}
 
 /**
  * Build a concise preview label for search results.
@@ -234,6 +198,23 @@ export default function SearchFillModal({
   const hasSource = dataSourceKind !== 'none';
   const canRequestSource = Boolean(onRequestDataSource);
 
+  const clearValidationError = useCallback(() => {
+    if (!localError) return;
+    if (!VALIDATION_ERRORS.has(localError)) return;
+    setLocalError(null);
+  }, [localError]);
+
+  const sourceStateRef = useRef({ hasRows, hasSource });
+  useEffect(() => {
+    const prev = sourceStateRef.current;
+    sourceStateRef.current = { hasRows, hasSource };
+    if (!localError) return;
+    if (!VALIDATION_ERRORS.has(localError)) return;
+    if (prev.hasRows !== hasRows || prev.hasSource !== hasSource) {
+      setLocalError(null);
+    }
+  }, [hasRows, hasSource, localError]);
+
   const availableKeys = useMemo(() => {
     const unique = new Set(columns.filter(Boolean));
     return Array.from(unique);
@@ -251,22 +232,19 @@ export default function SearchFillModal({
         normalizedRow.set(normaliseDataKey(key), value);
       }
       const normalizedRowKeys = Array.from(normalizedRow.keys());
-      const checkboxGroups = buildCheckboxGroups(fields);
+      const checkboxMetaById = computeCheckboxMeta(fields, normalizedRowKeys);
+      const checkboxGroups = buildCheckboxGroups(fields, checkboxMetaById);
       const checkboxOverrides = new Map<string, boolean>();
-      const checkboxMetaById = new Map<string, { groupKey: string; optionKey: string }>();
       const checkboxNameIndex = new Map<string, PdfField[]>();
       const checkboxOptionIndex = new Map<string, { groupKey: string; optionKey: string }>();
       const checkboxOptionConflicts = new Set<string>();
       const explicitGroupKeys = new Set<string>();
       const groupValueApplied = new Set<string>();
-      const presenceFalseTokens = new Set(['', 'n/a', 'na', 'none', 'unknown', 'unsure']);
+      const clearedGroups = new Set<string>();
+      const valueMapCache = new Map<Record<string, string>, Record<string, string>>();
 
       for (const field of fields) {
         if (field.type !== 'checkbox') continue;
-        const meta = resolveCheckboxMeta(field);
-        if (meta) {
-          checkboxMetaById.set(field.id, { groupKey: meta.groupKey, optionKey: meta.optionKey });
-        }
         const normalizedName = normaliseDataKey(field.name || '');
         if (!normalizedName) continue;
         const existing = checkboxNameIndex.get(normalizedName);
@@ -313,11 +291,26 @@ export default function SearchFillModal({
         if (!normalizedGroup) return false;
         const group = checkboxGroups.get(normalizedGroup);
         if (!group) return false;
-        const option = group.options.get(normaliseDataKey(optionKey));
-        if (!option) return false;
-        checkboxOverrides.set(option.id, value);
+        const options = group.options.get(normaliseDataKey(optionKey));
+        if (!options?.length) return false;
+        for (const option of options) {
+          checkboxOverrides.set(option.id, value);
+        }
         if (markExplicit) markExplicitGroup(normalizedGroup);
         return true;
+      };
+
+      const clearCheckboxGroup = (groupKey: string) => {
+        const normalizedGroup = normaliseDataKey(groupKey);
+        if (!normalizedGroup || clearedGroups.has(normalizedGroup)) return;
+        const group = checkboxGroups.get(normalizedGroup);
+        if (!group) return;
+        for (const options of group.options.values()) {
+          for (const option of options) {
+            checkboxOverrides.set(option.id, false);
+          }
+        }
+        clearedGroups.add(normalizedGroup);
       };
 
       const setCheckboxOverrideByField = (field: PdfField, value: boolean, markExplicit = false) => {
@@ -325,19 +318,14 @@ export default function SearchFillModal({
         if (markExplicit) markExplicitField(field.id);
       };
 
-      const coerceBooleanWithPresence = (value: unknown): boolean | null => {
-        const direct = coerceBoolean(value);
-        if (direct !== null) return direct;
-        if (value === null || value === undefined) return null;
-        if (typeof value === 'string') {
-          const norm = value.trim().toLowerCase();
-          if (!norm) return null;
-          if (presenceFalseTokens.has(norm)) return false;
-          return true;
-        }
-        if (typeof value === 'number') return value !== 0;
-        if (Array.isArray(value)) return value.length > 0;
-        return true;
+
+      const normalizeValueMap = (valueMap?: Record<string, string>): Record<string, string> | undefined => {
+        if (!valueMap) return undefined;
+        const cached = valueMapCache.get(valueMap);
+        if (cached) return cached;
+        const normalized = normalizeCheckboxValueMap(valueMap);
+        if (normalized) valueMapCache.set(valueMap, normalized);
+        return normalized;
       };
 
       const resolveOptionKey = (
@@ -348,15 +336,29 @@ export default function SearchFillModal({
         const normalized = normaliseDataKey(String(rawValue ?? ''));
         if (!normalized) return null;
         if (valueMap) {
+          const normalizedMap = normalizeValueMap(valueMap);
+          const rawString = String(rawValue ?? '');
           const mapped =
-            valueMap[normalized] ??
-            valueMap[String(rawValue ?? '')] ??
-            valueMap[normaliseDataKey(String(rawValue ?? '').trim())];
-          if (mapped) return normaliseDataKey(mapped);
+            normalizedMap?.[normalized] ??
+            valueMap[rawString] ??
+            valueMap[rawString.trim()] ??
+            valueMap[normalized];
+          if (mapped !== undefined && mapped !== null && String(mapped).trim() !== '') {
+            return normaliseDataKey(String(mapped));
+          }
         }
         if (group.options.has(normalized)) return normalized;
         for (const [optionKey, aliases] of group.optionAliases.entries()) {
           if (aliases.has(normalized)) return optionKey;
+        }
+        return null;
+      };
+
+      const resolveBooleanOptionKey = (group: CheckboxGroup, aliases: string[]): string | null => {
+        for (const [optionKey, optionAliases] of group.optionAliases.entries()) {
+          for (const alias of aliases) {
+            if (optionAliases.has(alias)) return optionKey;
+          }
         }
         return null;
       };
@@ -384,40 +386,33 @@ export default function SearchFillModal({
         if (!normalizedGroup) return false;
         const group = checkboxGroups.get(normalizedGroup);
         if (!group) return false;
-        const normalizedValue = coerceBooleanWithPresence(value);
+        const mappedOption = resolveOptionKey(group, value, valueMap);
+        if (mappedOption) {
+          clearCheckboxGroup(normalizedGroup);
+          return setCheckboxOverride(normalizedGroup, mappedOption, true);
+        }
+        const normalizedValue = coerceCheckboxPresence(value);
         if (normalizedValue === null) return false;
-        const yesKey = group.options.has('yes')
-          ? 'yes'
-          : group.options.has('true')
-            ? 'true'
-            : group.options.has('y')
-              ? 'y'
-              : null;
-        const noKey = group.options.has('no')
-          ? 'no'
-          : group.options.has('false')
-            ? 'false'
-            : group.options.has('n')
-              ? 'n'
-              : null;
+        const yesKey = resolveBooleanOptionKey(group, CHECKBOX_TRUE_ALIASES);
+        const noKey = resolveBooleanOptionKey(group, CHECKBOX_FALSE_ALIASES);
         if (yesKey && noKey) {
+          clearCheckboxGroup(normalizedGroup);
           setCheckboxOverride(normalizedGroup, yesKey, normalizedValue);
           setCheckboxOverride(normalizedGroup, noKey, !normalizedValue);
           return true;
         }
         if (yesKey) {
+          clearCheckboxGroup(normalizedGroup);
           return setCheckboxOverride(normalizedGroup, yesKey, normalizedValue);
         }
         if (noKey) {
+          clearCheckboxGroup(normalizedGroup);
           return setCheckboxOverride(normalizedGroup, noKey, !normalizedValue);
-        }
-        const optionKey = normalizedValue ? 'yes' : 'no';
-        if (group.options.has(optionKey)) {
-          return setCheckboxOverride(normalizedGroup, optionKey, true);
         }
         if (!normalizedValue) return false;
         const fallbackOption = Array.from(group.options.keys())[0];
         if (fallbackOption) {
+          clearCheckboxGroup(normalizedGroup);
           return setCheckboxOverride(normalizedGroup, fallbackOption, true);
         }
         return false;
@@ -426,7 +421,7 @@ export default function SearchFillModal({
       const applyDirectCheckboxMatch = (key: string, value: unknown): boolean => {
         const matches = checkboxNameIndex.get(key);
         if (!matches?.length) return false;
-        const normalizedValue = coerceBooleanWithPresence(value);
+        const normalizedValue = coerceCheckboxPresence(value);
         if (normalizedValue === null) return false;
         for (const field of matches) {
           setCheckboxOverrideByField(field, normalizedValue, true);
@@ -438,7 +433,7 @@ export default function SearchFillModal({
         if (!key || checkboxOptionConflicts.has(key)) return false;
         const match = checkboxOptionIndex.get(key);
         if (!match) return false;
-        const normalizedValue = coerceBooleanWithPresence(value);
+        const normalizedValue = coerceCheckboxPresence(value);
         if (normalizedValue === null) return false;
         return setCheckboxOverride(match.groupKey, match.optionKey, normalizedValue, true);
       };
@@ -448,13 +443,14 @@ export default function SearchFillModal({
         value: unknown,
         valueMap?: Record<string, string>,
         allowBoolean = true,
+        mode: 'list' | 'enum' = 'list',
       ) => {
         const normalizedGroup = normaliseDataKey(groupKey);
         if (!normalizedGroup) return;
         if (explicitGroupKeys.has(normalizedGroup) || groupValueApplied.has(normalizedGroup)) return;
         if (!checkboxGroups.has(normalizedGroup)) return;
         if (allowBoolean) {
-          const directBoolean = coerceBoolean(value);
+          const directBoolean = coerceCheckboxBoolean(value);
           if (directBoolean !== null) {
             if (resolveCheckboxGroupValue(normalizedGroup, directBoolean, valueMap)) {
               groupValueApplied.add(normalizedGroup);
@@ -462,8 +458,18 @@ export default function SearchFillModal({
             return;
           }
         }
-        const entries = splitListValue(value);
+        const entries = splitCheckboxListValue(value);
         if (!entries.length) return;
+        clearCheckboxGroup(normalizedGroup);
+        if (mode === 'enum') {
+          for (const entry of entries) {
+            if (pickCheckboxValue(normalizedGroup, entry, valueMap)) {
+              groupValueApplied.add(normalizedGroup);
+              return;
+            }
+          }
+          return;
+        }
         let applied = false;
         for (const entry of entries) {
           if (pickCheckboxValue(normalizedGroup, entry, valueMap)) {
@@ -523,16 +529,18 @@ export default function SearchFillModal({
         const legacyTruthy = (checkboxRule as { truthyValue?: string }).truthyValue;
         const legacyFalsey = (checkboxRule as { falseyValue?: string }).falseyValue;
         if (operation === 'yes_no' || operation === 'presence') {
-          const normalized = coerceBooleanWithPresence(rawValue);
+          const normalized = coerceCheckboxPresence(rawValue);
           if (normalized === null) continue;
           const trueOption = checkboxRule.trueOption ?? legacyTruthy;
           const falseOption = checkboxRule.falseOption ?? legacyFalsey;
           let applied = false;
           if (normalized) {
             if (trueOption) {
+              clearCheckboxGroup(groupKey);
               applied = setCheckboxOverride(groupKey, trueOption, true);
             }
           } else if (falseOption) {
+            clearCheckboxGroup(groupKey);
             applied = setCheckboxOverride(groupKey, falseOption, true);
           }
           if (!applied && operation === 'yes_no') {
@@ -544,11 +552,11 @@ export default function SearchFillModal({
           continue;
         }
         if (operation === 'list') {
-          applyGroupValue(groupKey, rawValue, checkboxRule.valueMap, false);
+          applyGroupValue(groupKey, rawValue, checkboxRule.valueMap, false, 'list');
           continue;
         }
         if (operation === 'enum') {
-          applyGroupValue(groupKey, rawValue, checkboxRule.valueMap, false);
+          applyGroupValue(groupKey, rawValue, checkboxRule.valueMap, false, 'enum');
         }
       }
 
@@ -568,15 +576,10 @@ export default function SearchFillModal({
         applyGroupValue(groupKey, normalizedRow.get(groupKey));
       }
 
-      const fillCheckboxValues = new Set(checkboxOverrides.keys());
-
       const resolveValueForField = (field: PdfField): unknown => {
         if (field.type === 'checkbox') {
           if (checkboxOverrides.has(field.id)) {
             return checkboxOverrides.get(field.id);
-          }
-          if (fillCheckboxValues.has(field.id)) {
-            return true;
           }
           return undefined;
         }
@@ -622,21 +625,21 @@ export default function SearchFillModal({
 
         const allergies = normalizedRow.get('allergies');
         if (allergies !== undefined && normalizedName.startsWith('allergy_')) {
-          const entries = splitListValue(allergies);
+          const entries = splitCheckboxListValue(allergies);
           const index = Number(normalizedName.replace('allergy_', '')) - 1;
           if (!Number.isNaN(index) && entries[index]) return entries[index];
         }
 
         const medications = normalizedRow.get('medications');
         if (medications !== undefined && normalizedName.startsWith('medication_')) {
-          const entries = splitListValue(medications);
+          const entries = splitCheckboxListValue(medications);
           const index = Number(normalizedName.replace('medication_', '')) - 1;
           if (!Number.isNaN(index) && entries[index]) return entries[index];
         }
 
         const diagnoses = normalizedRow.get('diagnoses');
         if (diagnoses !== undefined && normalizedName.startsWith('diagnosis_')) {
-          const entries = splitListValue(diagnoses);
+          const entries = splitCheckboxListValue(diagnoses);
           const index = Number(normalizedName.replace('diagnosis_', '')) - 1;
           if (!Number.isNaN(index) && entries[index]) return entries[index];
         }
@@ -661,9 +664,9 @@ export default function SearchFillModal({
           if (locality.length) return locality.join(', ');
         }
 
-        const suffixMatch = normalizedName.match(/^(.*)_\\d+$/);
-        if (suffixMatch) {
-          const base = suffixMatch[1];
+        const suffixBase = getNumericSuffixBase(normalizedName);
+        if (suffixBase) {
+          const base = suffixBase;
           const baseValue = normalizedRow.get(base);
           if (baseValue !== undefined) return baseValue;
         }
@@ -734,20 +737,25 @@ export default function SearchFillModal({
       searchKeyValue: string;
       searchModeValue: SearchMode;
     }) => {
+      const failValidation = (message: string) => {
+        setLocalError(message);
+        setResults([]);
+        setHasSearched(false);
+      };
       if (!hasSource) {
-        setLocalError('Choose a CSV, Excel, or JSON source first.');
+        failValidation('Choose a CSV, Excel, or JSON source first.');
         return;
       }
       if (!hasRows) {
-        setLocalError('No record rows are available to search.');
+        failValidation('No record rows are available to search.');
         return;
       }
       if (!queryValue) {
-        setLocalError('Enter a search value.');
+        failValidation('Enter a search value.');
         return;
       }
       if (!searchKeyValue || (!canSearchAnyColumn && searchKeyValue === '__any__')) {
-        setLocalError('Choose a column to search.');
+        failValidation('Choose a column to search.');
         return;
       }
 
@@ -917,8 +925,12 @@ export default function SearchFillModal({
               </label>
               <select
                 id="searchfill-key"
+                name="searchfill-key"
                 value={searchKey}
-                onChange={(event) => setSearchKey(event.target.value)}
+                onChange={(event) => {
+                  setSearchKey(event.target.value);
+                  clearValidationError();
+                }}
                 disabled={!hasRows || searching}
               >
                 {canSearchAnyColumn ? (
@@ -938,8 +950,12 @@ export default function SearchFillModal({
               </label>
               <select
                 id="searchfill-mode"
+                name="searchfill-mode"
                 value={searchMode}
-                onChange={(event) => setSearchMode(event.target.value as SearchMode)}
+                onChange={(event) => {
+                  setSearchMode(event.target.value as SearchMode);
+                  clearValidationError();
+                }}
                 disabled={!hasRows || searching}
               >
                 <option value="contains">Contains</option>
@@ -953,8 +969,12 @@ export default function SearchFillModal({
               </label>
               <input
                 id="searchfill-query"
+                name="searchfill-query"
                 value={query}
-                onChange={(event) => setQuery(event.target.value)}
+                onChange={(event) => {
+                  setQuery(event.target.value);
+                  clearValidationError();
+                }}
                 placeholder="MRN, name, etc."
                 disabled={!hasRows || searching}
                 onKeyDown={(event) => {

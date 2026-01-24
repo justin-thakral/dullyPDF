@@ -1,9 +1,12 @@
 /**
  * CSV parsing helpers for local schema + Search & Fill data.
  */
+import { dedupeColumnsByNormalizedKey, type HeaderRename } from './dataSource';
+
 export type ParsedCsv = {
   columns: string[];
   rows: Array<Record<string, string>>;
+  headerRenames?: HeaderRename[];
 };
 
 type ParseCsvOptions = {
@@ -72,20 +75,49 @@ export function parseCsv(text: string, options: ParseCsvOptions = {}): ParsedCsv
   }
 
   const [rawHeader, ...dataRows] = rows;
-  const columns = (rawHeader || [])
-    .map((col) => String(col ?? '').trim())
-    .filter((col) => col.length > 0);
+  const seenHeaders = new Set<string>();
+  const headerRenames: HeaderRename[] = [];
+  const columnSpecs = (rawHeader || [])
+    .map((col, index) => {
+      const base = String(col ?? '').trim();
+      if (!base) return null;
+      let name = base;
+      if (seenHeaders.has(name)) {
+        let suffix = 2;
+        let candidate = `${name}_${suffix}`;
+        while (seenHeaders.has(candidate)) {
+          suffix += 1;
+          candidate = `${name}_${suffix}`;
+        }
+        name = candidate;
+        headerRenames.push({ original: base, renamed: name });
+      }
+      seenHeaders.add(name);
+      return { name, index };
+    })
+    .filter((spec): spec is { name: string; index: number } => Boolean(spec));
+  const columns = columnSpecs.map((spec) => spec.name);
 
   const outRows: Array<Record<string, string>> = [];
   for (const row of dataRows) {
     if (!row || row.every((val) => String(val ?? '').trim() === '')) continue;
     const record: Record<string, string> = {};
-    for (let idx = 0; idx < columns.length; idx += 1) {
-      record[columns[idx]] = String(row[idx] ?? '');
+    for (const spec of columnSpecs) {
+      record[spec.name] = String(row[spec.index] ?? '');
     }
     outRows.push(record);
     if (outRows.length >= maxRows) break;
   }
 
-  return { columns, rows: outRows };
+  const normalized = dedupeColumnsByNormalizedKey(columns, outRows);
+  const combinedRenames = [
+    ...headerRenames,
+    ...(normalized.headerRenames ?? []),
+  ];
+
+  return {
+    columns: normalized.columns,
+    rows: normalized.rows as Array<Record<string, string>>,
+    headerRenames: combinedRenames.length ? combinedRenames : undefined,
+  };
 }

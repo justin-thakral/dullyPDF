@@ -1,7 +1,7 @@
 # DullyPDF
 
 FastAPI + React app for detecting PDF form fields, renaming candidates with OpenAI,
-and editing fields in a PDF viewer. The main pipeline is CommonForms detection,
+and editing fields in a PDF viewer. The main pipeline is CommonForms (by [jbarrow](https://github.com/jbarrow/commonforms)) detection,
 optional OpenAI rename, and schema-only mapping.
 
 ## Quick start (dev)

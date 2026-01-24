@@ -10,7 +10,8 @@ import type { CheckboxRule, ConfidenceFilter, ConfidenceTier, FieldType, PageSiz
 import { createField, ensureUniqueFieldName, makeId } from './utils/fields';
 import { fieldConfidenceTierForField, parseConfidence } from './utils/confidence';
 import { parseCsv } from './utils/csv';
-import { pickIdentifierKey } from './utils/dataSource';
+import { normaliseDataKey, pickIdentifierKey, type HeaderRename } from './utils/dataSource';
+import { computeCheckboxMeta, type CheckboxMeta } from './utils/checkboxMeta';
 import { parseJsonDataSource } from './utils/json';
 import { inferSchemaFromRows, parseSchemaText } from './utils/schema';
 import { parseExcel } from './utils/excel';
@@ -35,12 +36,15 @@ import { PdfViewer } from './components/viewer/PdfViewer';
 import UploadComponent from './components/features/UploadComponent';
 import { Alert, type AlertTone } from './components/ui/Alert';
 import { ConfirmDialog, PromptDialog, type DialogTone } from './components/ui/Dialog';
+import { CommonFormsAttribution } from './components/ui/CommonFormsAttribution';
 
 const DEBUG_UI = false;
 const MAX_FIELD_HISTORY = 10;
 const SAVED_FORMS_RETRY_LIMIT = 3;
 const SAVED_FORMS_RETRY_BASE_MS = 500;
 const SAVED_FORMS_RETRY_MAX_MS = 4000;
+const SAVED_FORMS_TIMEOUT_MS = 6000;
+const AUTH_READY_FALLBACK_MS = 5000;
 const DEMO_ASSETS = {
   rawPdf: 'new_patient_forms_1915ccb015.pdf',
   baseDetectionsPdf: 'baseFieldDetections.pdf',
@@ -48,12 +52,16 @@ const DEMO_ASSETS = {
   openAiRemapPdf: 'openAiRemap.pdf',
   csv: 'new_patient_forms_1915ccb015_mock.csv',
 };
-const DEMO_DISABLED_MESSAGE = 'disabeled during demo';
+const DEMO_DISABLED_MESSAGE = 'Disabled during demo.';
 const DEMO_STEPS: DemoStep[] = [
   {
     id: 'commonforms',
-    title: 'CommonForms detection',
-    body: 'Using the CommonForms machine-learning model to detect fields.',
+    title: (
+      <>
+        Field detection with <CommonFormsAttribution />
+      </>
+    ),
+    body: 'The ML detector identifies candidate fields with confidence scores for review.',
     variant: 'modal',
   },
   {
@@ -103,6 +111,9 @@ const DETECTION_BACKGROUND_POLL_TIMEOUT_MS = (() => {
   }
   return 10 * 60 * 1000;
 })();
+const DETECTION_BACKGROUND_RETRY_BASE_MS = 5000;
+const DETECTION_BACKGROUND_RETRY_MAX_MS = 30000;
+const DETECTION_BACKGROUND_MAX_RETRIES = 5;
 const DEFAULT_PROFILE_LIMITS: ProfileLimits = {
   detectMaxPages: 5,
   fillableMaxPages: 50,
@@ -237,6 +248,11 @@ type FieldNameUpdate = {
   mappingConfidence?: unknown;
 };
 
+type NameQueue<T> = {
+  entries: T[];
+  index: number;
+};
+
 type BannerNotice = {
   tone: AlertTone;
   message: string;
@@ -266,23 +282,61 @@ type DialogRequest =
   | ({ kind: 'confirm' } & ConfirmDialogOptions)
   | ({ kind: 'prompt' } & PromptDialogOptions);
 
+function enqueueByName<T>(queue: Map<string, NameQueue<T>>, key: string, entry: T) {
+  const bucket = queue.get(key);
+  if (bucket) {
+    bucket.entries.push(entry);
+    return;
+  }
+  queue.set(key, { entries: [entry], index: 0 });
+}
+
+function takeNextByName<T>(queue: Map<string, NameQueue<T>>, key: string): T | null {
+  const bucket = queue.get(key);
+  if (!bucket || bucket.index >= bucket.entries.length) return null;
+  const entry = bucket.entries[bucket.index];
+  bucket.index += 1;
+  return entry ?? null;
+}
+
 /**
  * Apply rename updates while enforcing unique field names.
  */
 function applyFieldNameUpdatesToList(
   fields: PdfField[],
-  updatesByCurrentName: Map<string, FieldNameUpdate>,
+  updatesByCurrentName: Map<string, NameQueue<FieldNameUpdate>>,
+  checkboxMetaById?: Map<string, CheckboxMeta>,
 ): PdfField[] {
   if (!updatesByCurrentName.size) return fields;
   const existingNames = new Set(fields.map((field) => field.name));
   return fields.map((field) => {
-    const update = updatesByCurrentName.get(field.name);
+    const update = takeNextByName(updatesByCurrentName, field.name);
     if (!update) return field;
 
     let next = field;
     const nextMappingConfidence = parseConfidence(update.mappingConfidence);
     if (nextMappingConfidence !== undefined && nextMappingConfidence !== field.mappingConfidence) {
       next = { ...next, mappingConfidence: nextMappingConfidence };
+    }
+    const checkboxMeta = checkboxMetaById?.get(field.id);
+    if (
+      field.type === 'checkbox' &&
+      checkboxMeta &&
+      (!field.groupKey || !field.optionKey)
+    ) {
+      const nextOptionLabel = checkboxMeta.optionLabel ?? field.optionLabel;
+      if (
+        next.groupKey !== checkboxMeta.groupKey ||
+        next.optionKey !== checkboxMeta.optionKey ||
+        next.optionLabel !== nextOptionLabel
+      ) {
+        next = {
+          ...next,
+          groupKey: checkboxMeta.groupKey,
+          optionKey: checkboxMeta.optionKey,
+          optionLabel: nextOptionLabel,
+        };
+      }
     }
 
     const desiredName = update.newName;
@@ -300,6 +354,17 @@ function applyFieldNameUpdatesToList(
 
     return { ...next, name: uniqueName };
   });
+}
+
+function resolveIdentifierKey(candidate: unknown, columns: string[]): string | null {
+  if (!candidate || !columns.length) return null;
+  const raw = String(candidate || '').trim();
+  if (!raw) return null;
+  if (columns.includes(raw)) return raw;
+  const normalized = normaliseDataKey(raw);
+  if (!normalized) return null;
+  const match = columns.find((col) => normaliseDataKey(col) === normalized);
+  return match ?? null;
 }
 
 /**
@@ -430,6 +495,7 @@ function App() {
   const [searchFillSessionId, setSearchFillSessionId] = useState(0);
   const [sourceFile, setSourceFile] = useState<File | null>(null);
   const [sourceFileName, setSourceFileName] = useState<string | null>(null);
+  const [sourceFileIsDemo, setSourceFileIsDemo] = useState(false);
   const [saveInProgress, setSaveInProgress] = useState(false);
   const [downloadInProgress, setDownloadInProgress] = useState(false);
   const loadTokenRef = useRef(0);
@@ -449,6 +515,8 @@ function App() {
   const historyRef = useRef<{ undo: PdfField[][]; redo: PdfField[][] }>({ undo: [], redo: [] });
   const pendingHistoryRef = useRef<PdfField[] | null>(null);
   const pendingAutoActionsRef = useRef<PendingAutoActions | null>(null);
+  const detectionRetryRef = useRef<Map<string, number>>(new Map());
+  const resumeDetectionPollingRef = useRef<((sessionId: string, loadToken: number) => void) | null>(null);
   const [historyTick, setHistoryTick] = useState(0);
   const lastFieldVisibilityRef = useRef({ showFieldInfo, showFieldNames });
   const requiresEmailVerification = useMemo(
@@ -480,8 +548,19 @@ function App() {
   useEffect(() => {
     if (!isMobileView) return;
     if (showHomepage) return;
+    if (pdfDoc || isProcessing) {
+      if (!bannerNotice && !openAiError && !schemaError) {
+        setBannerNotice({
+          tone: 'info',
+          message:
+            'The editor works best on larger screens. If controls feel cramped, increase your window size.',
+          autoDismissMs: 8000,
+        });
+      }
+      return;
+    }
     setShowHomepage(true);
-  }, [isMobileView, showHomepage]);
+  }, [bannerNotice, isMobileView, isProcessing, openAiError, pdfDoc, schemaError, showHomepage]);
 
   useEffect(() => {
     fieldsRef.current = fields;
@@ -521,7 +600,10 @@ function App() {
       const currentUser = authUserRef.current;
       if (!currentUser) return;
       try {
-        const forms = await ApiService.getSavedForms({ suppressErrors: false });
+        const forms = await ApiService.getSavedForms({
+          suppressErrors: false,
+          timeoutMs: SAVED_FORMS_TIMEOUT_MS,
+        });
         setSavedForms(forms || []);
         clearSavedFormsRetry();
       } catch (error) {
@@ -567,7 +649,7 @@ function App() {
   }, []);
 
   const syncAuthSession = useCallback(
-    async (user: User | null, options?: { forceTokenRefresh?: boolean }) => {
+    async (user: User | null, options?: { forceTokenRefresh?: boolean; deferSavedForms?: boolean }) => {
       authUserRef.current = null;
       setAuthUser(user);
       setAuthSignInProvider(null);
@@ -596,8 +678,13 @@ function App() {
           return;
         }
         authUserRef.current = user;
-        await refreshSavedForms({ allowRetry: true });
-        await loadUserProfile();
+        if (options?.deferSavedForms) {
+          void refreshSavedForms({ allowRetry: true });
+          void loadUserProfile();
+        } else {
+          await refreshSavedForms({ allowRetry: true });
+          await loadUserProfile();
+        }
       } catch (error) {
         console.error('Failed to initialize session', error);
       }
@@ -606,11 +693,19 @@ function App() {
   );
 
   useEffect(() => {
-    const unsubscribe = Auth.onAuthStateChanged(async (user) => {
-      await syncAuthSession(user, { forceTokenRefresh: true });
+    let isActive = true;
+    const markReady = () => {
+      if (!isActive) return;
       setAuthReady(true);
+    };
+    const readyTimer = setTimeout(markReady, AUTH_READY_FALLBACK_MS);
+    const unsubscribe = Auth.onAuthStateChanged(async (user) => {
+      await syncAuthSession(user, { forceTokenRefresh: true, deferSavedForms: true });
+      markReady();
     });
     return () => {
+      isActive = false;
+      clearTimeout(readyTimer);
       clearSavedFormsRetry();
       unsubscribe();
     };
@@ -750,6 +845,7 @@ function App() {
     setSearchFillSessionId((prev) => prev + 1);
     setSourceFile(null);
     setSourceFileName(null);
+    setSourceFileIsDemo(false);
     setSaveInProgress(false);
     setActiveSavedFormId(null);
     setActiveSavedFormName(null);
@@ -763,6 +859,7 @@ function App() {
     setHasRenamedFields(false);
     setOpenAiError(null);
     setBannerNotice(null);
+    detectionRetryRef.current.clear();
     if (dialogResolverRef.current) {
       const fallback =
         dialogRequest?.kind === 'confirm'
@@ -850,8 +947,31 @@ function App() {
     [],
   );
 
+  const commitPdfLoad = useCallback(
+    (
+      doc: PDFDocumentProxy,
+      sizes: Record<number, PageSize>,
+      initialFields: PdfField[],
+      loadToken: number,
+    ) => {
+      if (loadTokenRef.current !== loadToken) return false;
+      setPdfDoc(doc);
+      setPageSizes(sizes);
+      setPageCount(doc.numPages);
+      setCurrentPage(1);
+      setScale(1);
+      setPendingPageJump(null);
+      resetFieldHistory(initialFields);
+      setSelectedFieldId(null);
+      setIsProcessing(false);
+      setProcessingMode(null);
+      return true;
+    },
+    [resetFieldHistory],
+  );
+
   const handleFillableUpload = useCallback(
-    async (file: File) => {
+    async (file: File, options: { isDemo?: boolean } = {}) => {
       const loadToken = loadTokenRef.current + 1;
       loadTokenRef.current = loadToken;
       setShowSearchFill(false);
@@ -870,6 +990,7 @@ function App() {
       setOpenAiError(null);
       setSourceFile(file);
       setSourceFileName(file.name);
+      setSourceFileIsDemo(Boolean(options.isDemo));
       setActiveSavedFormId(null);
       setActiveSavedFormName(null);
       try {
@@ -894,17 +1015,7 @@ function App() {
           }
         })();
         const sizes = await sizesPromise;
-        if (loadTokenRef.current !== loadToken) return;
-        setPdfDoc(doc);
-        setPageSizes(sizes);
-        setPageCount(doc.numPages);
-        setCurrentPage(1);
-        setScale(1);
-        setPendingPageJump(null);
-        resetFieldHistory([]);
-        setSelectedFieldId(null);
-        setIsProcessing(false);
-        setProcessingMode(null);
+        if (!commitPdfLoad(doc, sizes, [], loadToken)) return;
 
         void (async () => {
           const existingFields = await existingFieldsPromise;
@@ -947,7 +1058,14 @@ function App() {
         debugLog('Failed to load PDF', message);
       }
     },
-    [buildTemplateFields, clearWorkspace, profileLimits.fillableMaxPages, resetFieldHistory, verifiedUser],
+    [
+      buildTemplateFields,
+      clearWorkspace,
+      commitPdfLoad,
+      profileLimits.fillableMaxPages,
+      resetFieldHistory,
+      verifiedUser,
+    ],
   );
 
   const handleSelectSavedForm = useCallback(
@@ -977,6 +1095,7 @@ function App() {
         const file = new File([blob], name, { type: 'application/pdf' });
         setSourceFile(file);
         setSourceFileName(name);
+        setSourceFileIsDemo(false);
         const doc = await loadPdfFromFile(file);
         const sizesPromise = loadPageSizes(doc);
         const existingFieldsPromise = (async () => {
@@ -988,17 +1107,7 @@ function App() {
           }
         })();
         const sizes = await sizesPromise;
-        if (loadTokenRef.current !== loadToken) return;
-        setPdfDoc(doc);
-        setPageSizes(sizes);
-        setPageCount(doc.numPages);
-        setCurrentPage(1);
-        setScale(1);
-        setPendingPageJump(null);
-        resetFieldHistory([]);
-        setSelectedFieldId(null);
-        setIsProcessing(false);
-        setProcessingMode(null);
+        if (!commitPdfLoad(doc, sizes, [], loadToken)) return;
         setActiveSavedFormId(formId);
         setActiveSavedFormName(savedMeta?.name || null);
 
@@ -1045,7 +1154,7 @@ function App() {
         debugLog('Failed to load saved form', message);
       }
     },
-    [buildTemplateFields, clearWorkspace, resetFieldHistory, setBannerNotice],
+    [buildTemplateFields, clearWorkspace, commitPdfLoad, resetFieldHistory, setBannerNotice],
   );
 
   const handleSelectSavedFormFromProfile = useCallback(
@@ -1232,16 +1341,24 @@ function App() {
     }
   }, [activeSavedFormName, fields, pdfDoc, sourceFile, sourceFileName, verifiedUser]);
 
-  const applyFieldNameUpdates = useCallback((updatesByCurrentName: Map<string, FieldNameUpdate>) => {
-    if (!updatesByCurrentName.size) return;
-    updateFieldsWith((prev) => applyFieldNameUpdatesToList(prev, updatesByCurrentName));
-  }, [updateFieldsWith]);
+  const applyFieldNameUpdates = useCallback(
+    (
+      updatesByCurrentName: Map<string, NameQueue<FieldNameUpdate>>,
+      checkboxMetaById?: Map<string, CheckboxMeta>,
+    ) => {
+      if (!updatesByCurrentName.size) return;
+      updateFieldsWith((prev) => applyFieldNameUpdatesToList(prev, updatesByCurrentName, checkboxMetaById));
+    },
+    [updateFieldsWith],
+  );
 
   const applyMappingResults = useCallback(
     (mappingResults?: any) => {
       if (!mappingResults) return;
       const mappings = mappingResults.mappings || [];
-      const updates = new Map<string, FieldNameUpdate>();
+      const updates = new Map<string, NameQueue<FieldNameUpdate>>();
+      const normalizedColumns = dataColumns.map((column) => normaliseDataKey(column)).filter(Boolean);
+      const checkboxMetaById = computeCheckboxMeta(fieldsRef.current, normalizedColumns);
 
       for (const mapping of mappings) {
         if (!mapping || !mapping.pdfField) continue;
@@ -1250,29 +1367,36 @@ function App() {
         if (!currentName) continue;
         const mappingConfidence =
           parseConfidence(mapping.confidence) ?? deriveMappingConfidence(currentName, desiredName);
-        updates.set(currentName, { newName: desiredName, mappingConfidence });
+        enqueueByName(updates, currentName, { newName: desiredName, mappingConfidence });
       }
 
       if (updates.size) {
-        applyFieldNameUpdates(updates);
+        applyFieldNameUpdates(updates, checkboxMetaById);
         debugLog('Applied AI mappings', { total: updates.size });
       }
 
       const rules = Array.isArray(mappingResults.checkboxRules) ? mappingResults.checkboxRules : [];
       setCheckboxRules(rules);
+      const resolvedIdentifier = resolveIdentifierKey(
+        mappingResults.identifierKey || mappingResults.identifier_key,
+        dataColumns,
+      );
+      if (resolvedIdentifier) {
+        setIdentifierKey(resolvedIdentifier);
+      }
     },
-    [applyFieldNameUpdates],
+    [applyFieldNameUpdates, dataColumns],
   );
 
   const applyRenameResults = useCallback(
     (renamedFieldsPayload?: Array<Record<string, any>>): PdfField[] | null => {
       if (!Array.isArray(renamedFieldsPayload) || !renamedFieldsPayload.length) return null;
-      const renamesByOriginal = new Map<string, Record<string, any>>();
+      const renamesByOriginal = new Map<string, NameQueue<Record<string, any>>>();
       for (const entry of renamedFieldsPayload) {
         const original =
           entry.originalName || entry.original_name || entry.originalFieldName || entry.name;
         if (typeof original === 'string' && original.trim()) {
-          renamesByOriginal.set(original, entry);
+          enqueueByName(renamesByOriginal, original.trim(), entry);
         }
       }
 
@@ -1280,8 +1404,11 @@ function App() {
 
       const updated: PdfField[] = [];
       for (const field of fieldsRef.current) {
-        const rename = renamesByOriginal.get(field.name);
-        if (!rename) continue;
+        const rename = takeNextByName(renamesByOriginal, field.name);
+        if (!rename) {
+          updated.push(field);
+          continue;
+        }
         const renameConfidence = parseConfidence(rename.renameConfidence ?? rename.rename_confidence);
         const fieldConfidence = parseConfidence(
           rename.isItAfieldConfidence ?? rename.is_it_a_field_confidence,
@@ -1676,6 +1803,23 @@ function App() {
     runOpenAiRename,
   ]);
 
+  const scheduleDetectionRetry = useCallback((sessionId: string, loadToken: number) => {
+    const attempts = detectionRetryRef.current.get(sessionId) ?? 0;
+    const nextAttempt = attempts + 1;
+    if (nextAttempt > DETECTION_BACKGROUND_MAX_RETRIES) {
+      detectionRetryRef.current.delete(sessionId);
+      return;
+    }
+    detectionRetryRef.current.set(sessionId, nextAttempt);
+    const delay = Math.min(
+      DETECTION_BACKGROUND_RETRY_MAX_MS,
+      DETECTION_BACKGROUND_RETRY_BASE_MS * 2 ** (nextAttempt - 1),
+    );
+    window.setTimeout(() => {
+      resumeDetectionPollingRef.current?.(sessionId, loadToken);
+    }, delay);
+  }, []);
+
   const resumeDetectionPolling = useCallback(
     async (sessionId: string, loadToken: number) => {
       try {
@@ -1685,6 +1829,7 @@ function App() {
         if (loadTokenRef.current !== loadToken) return;
         const status = String(payload?.status || '').toLowerCase();
         if (status === 'complete') {
+          detectionRetryRef.current.delete(sessionId);
           const nextFields = mapDetectionFields(payload);
           if (!nextFields.length) {
             setBannerNotice({
@@ -1750,6 +1895,7 @@ function App() {
           return;
         }
         if (status === 'failed') {
+          detectionRetryRef.current.delete(sessionId);
           const message = payload?.error || 'Detection failed on the backend.';
           setBannerNotice({
             tone: 'error',
@@ -1764,9 +1910,22 @@ function App() {
             message: 'Detection is still running on the backend. It may take a few more minutes.',
             autoDismissMs: 8000,
           });
+          scheduleDetectionRetry(sessionId, loadToken);
         }
       } catch (error) {
         if (loadTokenRef.current !== loadToken) return;
+        if (error instanceof ApiError && (error.status === 401 || error.status === 403 || error.status === 404)) {
+          detectionRetryRef.current.delete(sessionId);
+          pendingAutoActionsRef.current = null;
+          setDetectSessionId(null);
+          setMappingSessionId(null);
+          setBannerNotice({
+            tone: 'error',
+            message: error.message,
+            autoDismissMs: 8000,
+          });
+          return;
+        }
         const message =
           error instanceof Error ? error.message : 'Detection failed on the backend.';
         setBannerNotice({
@@ -1774,9 +1933,11 @@ function App() {
           message,
           autoDismissMs: 8000,
         });
+        scheduleDetectionRetry(sessionId, loadToken);
       }
     },
     [
+      scheduleDetectionRetry,
       applySchemaMappings,
       handleMappingSuccess,
       resetFieldHistory,
@@ -1793,6 +1954,10 @@ function App() {
     ],
   );
 
+  useEffect(() => {
+    resumeDetectionPollingRef.current = resumeDetectionPolling;
+  }, [resumeDetectionPolling]);
+
   const runDetectUpload = useCallback(
     async (
       file: File,
@@ -1801,6 +1966,7 @@ function App() {
       const loadToken = loadTokenRef.current + 1;
       loadTokenRef.current = loadToken;
       pendingAutoActionsRef.current = null;
+      detectionRetryRef.current.clear();
       setShowSearchFill(false);
       setSearchFillSessionId((prev) => prev + 1);
 
@@ -1818,6 +1984,7 @@ function App() {
       setOpenAiError(null);
       setSourceFile(file);
       setSourceFileName(file.name);
+      setSourceFileIsDemo(false);
       setActiveSavedFormId(null);
       setActiveSavedFormName(null);
       try {
@@ -1838,6 +2005,7 @@ function App() {
         let detectedSessionId: string | null = null;
         let detectionTimedOut = false;
         let detectionError: string | null = null;
+        let authFailure: ApiError | null = null;
 
         try {
           const detection = await detectFields(file, {
@@ -1855,8 +2023,26 @@ function App() {
           detectedFields = mapDetectionFields(detection);
           debugLog('Field detection returned', { total: detectedFields.length });
         } catch (error) {
-          detectionError = error instanceof Error ? error.message : 'Field detection failed.';
+          if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
+            authFailure = error;
+          } else {
+            detectionError = error instanceof Error ? error.message : 'Field detection failed.';
+          }
           debugLog('Field detection failed', error);
+        }
+
+        if (authFailure) {
+          if (loadTokenRef.current !== loadToken) return;
+          clearWorkspace();
+          setIsProcessing(false);
+          setProcessingMode(null);
+          setLoadError(authFailure.message);
+          setBannerNotice({
+            tone: 'error',
+            message: authFailure.message,
+            autoDismissMs: 8000,
+          });
+          return;
         }
 
         if (!detectedFields.length) {
@@ -1885,17 +2071,7 @@ function App() {
           }
         }
 
-        if (loadTokenRef.current !== loadToken) return;
-        setPdfDoc(doc);
-        setPageSizes(sizes);
-        setPageCount(doc.numPages);
-        setCurrentPage(1);
-        setScale(1);
-        setPendingPageJump(null);
-        resetFieldHistory(detectedFields);
-        setSelectedFieldId(null);
-        setIsProcessing(false);
-        setProcessingMode(null);
+        if (!commitPdfLoad(doc, sizes, detectedFields, loadToken)) return;
         setDetectSessionId(detectedSessionId);
         if (detectedSessionId) {
           setMappingSessionId(detectedSessionId);
@@ -1967,9 +2143,9 @@ function App() {
     [
       applySchemaMappings,
       clearWorkspace,
+      commitPdfLoad,
       handleMappingSuccess,
       profileLimits.detectMaxPages,
-      resetFieldHistory,
       resumeDetectionPolling,
       runOpenAiRename,
       schemaId,
@@ -2172,9 +2348,24 @@ function App() {
   const loadDemoPdf = useCallback(
     async (filename: string) => {
       const file = await loadDemoAsset(filename, 'application/pdf');
-      await handleFillableUpload(file);
+      await handleFillableUpload(file, { isDemo: true });
     },
     [handleFillableUpload, loadDemoAsset],
+  );
+
+  const notifyHeaderRenames = useCallback(
+    (sourceLabel: string, fileName: string, headerRenames?: HeaderRename[]) => {
+      if (!headerRenames?.length) return;
+      const sample = headerRenames.slice(0, 3).map((entry) => `${entry.original} -> ${entry.renamed}`);
+      const extra = headerRenames.length - sample.length;
+      const suffix = extra > 0 ? ` (+${extra} more)` : '';
+      setBannerNotice({
+        tone: 'warning',
+        message: `Duplicate ${sourceLabel} headers (after normalization) were renamed for ${fileName}: ${sample.join(', ')}${suffix}.`,
+        autoDismissMs: 10000,
+      });
+    },
+    [setBannerNotice],
   );
 
   const loadDemoCsv = useCallback(
@@ -2185,6 +2376,7 @@ function App() {
       if (!parsed.columns.length) {
         throw new Error('Demo CSV file has no header row.');
       }
+      notifyHeaderRenames('CSV', file.name, parsed.headerRenames);
       await applyParsedDataSource({
         kind: 'csv',
         label: `CSV: ${file.name}`,
@@ -2195,7 +2387,7 @@ function App() {
         skipPersist: true,
       });
     },
-    [applyParsedDataSource, loadDemoAsset],
+    [applyParsedDataSource, loadDemoAsset, notifyHeaderRenames],
   );
 
   const startDemo = useCallback(() => {
@@ -2325,6 +2517,7 @@ function App() {
         if (!parsed.columns.length) {
           throw new Error('CSV file has no header row.');
         }
+        notifyHeaderRenames('CSV', file.name, parsed.headerRenames);
         await applyParsedDataSource({
           kind: 'csv',
           label: `CSV: ${file.name}`,
@@ -2336,7 +2529,7 @@ function App() {
       },
       'Failed to import CSV file.',
     );
-  }, [applyParsedDataSource, runSchemaUpload]);
+  }, [applyParsedDataSource, notifyHeaderRenames, runSchemaUpload]);
 
   const handleExcelFileSelected = useCallback(async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -2350,6 +2543,7 @@ function App() {
         if (!parsed.columns.length) {
           throw new Error('Excel sheet has no header row.');
         }
+        notifyHeaderRenames('Excel', file.name, parsed.headerRenames);
         await applyParsedDataSource({
           kind: 'excel',
           label: `Excel: ${file.name}${parsed.sheetName ? ` (${parsed.sheetName})` : ''}`,
@@ -2361,7 +2555,7 @@ function App() {
       },
       'Failed to import Excel file.',
     );
-  }, [applyParsedDataSource, runSchemaUpload]);
+  }, [applyParsedDataSource, notifyHeaderRenames, runSchemaUpload]);
 
   const handleJsonFileSelected = useCallback(async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -2375,6 +2569,7 @@ function App() {
         if (!parsed.schema.fields.length) {
           throw new Error('JSON schema has no field names.');
         }
+        notifyHeaderRenames('JSON', file.name, parsed.headerRenames);
         await applySchemaMetadata({
           kind: 'json',
           label: `JSON: ${file.name}`,
@@ -2625,8 +2820,8 @@ function App() {
 
   const demoAssetNames = useMemo(() => new Set(Object.values(DEMO_ASSETS)), []);
   const isDemoAsset = useMemo(
-    () => Boolean(sourceFileName && demoAssetNames.has(sourceFileName)),
-    [demoAssetNames, sourceFileName],
+    () => Boolean(sourceFileIsDemo && sourceFileName && demoAssetNames.has(sourceFileName)),
+    [demoAssetNames, sourceFileIsDemo, sourceFileName],
   );
   const demoSessionSuppressed = demoActive || demoCompletionOpen || isDemoAsset;
   const demoUiLocked = demoCompletionOpen || (!demoActive && isDemoAsset);
@@ -2754,8 +2949,9 @@ function App() {
   const canSearchFill = useMemo(() => {
     if (!hasDocument) return false;
     if (dataSourceKind === 'none') return false;
-    return dataColumns.length > 0;
-  }, [dataColumns.length, dataSourceKind, hasDocument]);
+    if (!['csv', 'excel', 'json'].includes(dataSourceKind)) return false;
+    return dataRows.length > 0;
+  }, [dataRows.length, dataSourceKind, hasDocument]);
   const activeErrorMessage = openAiError ?? schemaError;
   const bannerAlert: BannerNotice | null = activeErrorMessage
     ? { tone: 'error', message: activeErrorMessage }
@@ -2832,6 +3028,8 @@ function App() {
     <>
       <input
         ref={csvInputRef}
+        id="csv-file-input"
+        name="csv-file"
         type="file"
         accept=".csv,text/csv"
         style={{ display: 'none' }}
@@ -2839,6 +3037,8 @@ function App() {
       />
       <input
         ref={excelInputRef}
+        id="excel-file-input"
+        name="excel-file"
         type="file"
         accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
         style={{ display: 'none' }}
@@ -2846,6 +3046,8 @@ function App() {
       />
       <input
         ref={jsonInputRef}
+        id="json-file-input"
+        name="json-file"
         type="file"
         accept=".json,application/json"
         style={{ display: 'none' }}
@@ -2853,6 +3055,8 @@ function App() {
       />
       <input
         ref={txtInputRef}
+        id="txt-file-input"
+        name="txt-file"
         type="file"
         accept=".txt,text/plain"
         style={{ display: 'none' }}
@@ -2905,19 +3109,30 @@ function App() {
 
   if (showProfile && verifiedUser) {
     return (
-      <ProfilePage
-        email={userProfile?.email ?? verifiedUser.email}
-        role={userProfile?.role ?? 'basic'}
-        creditsRemaining={userProfile?.creditsRemaining ?? 0}
-        isLoading={profileLoading}
-        limits={profileLimits}
-        savedForms={savedForms}
-        onSelectSavedForm={handleSelectSavedFormFromProfile}
-        onDeleteSavedForm={handleDeleteSavedForm}
-        deletingFormId={deletingFormId}
-        onClose={handleCloseProfile}
-        onSignOut={handleSignOut}
-      />
+      <>
+        {bannerAlert ? (
+          <Alert
+            tone={bannerAlert.tone}
+            variant="banner"
+            message={bannerAlert.message}
+            onDismiss={handleDismissBanner}
+          />
+        ) : null}
+        {dialogContent}
+        <ProfilePage
+          email={userProfile?.email ?? verifiedUser.email}
+          role={userProfile?.role ?? 'basic'}
+          creditsRemaining={userProfile?.creditsRemaining ?? 0}
+          isLoading={profileLoading}
+          limits={profileLimits}
+          savedForms={savedForms}
+          onSelectSavedForm={handleSelectSavedFormFromProfile}
+          onDeleteSavedForm={handleDeleteSavedForm}
+          deletingFormId={deletingFormId}
+          onClose={handleCloseProfile}
+          onSignOut={handleSignOut}
+        />
+      </>
     );
   }
 
@@ -2981,7 +3196,7 @@ function App() {
                           checked
                           disabled
                         />
-                        CommonForms (FFDNet-L)
+                        <CommonFormsAttribution suffix="(FFDNet-L)" />
                       </label>
                     </div>
                     <div className="pipeline-modal__section">
@@ -2994,6 +3209,8 @@ function App() {
                       <label className="pipeline-modal__choice">
                         <input
                           type="checkbox"
+                          id="pipeline-rename"
+                          name="pipeline-rename"
                           checked={uploadWantsRename}
                           onChange={(event) => setUploadWantsRename(event.target.checked)}
                         />
@@ -3002,6 +3219,8 @@ function App() {
                       <label className="pipeline-modal__choice">
                         <input
                           type="checkbox"
+                          id="pipeline-map"
+                          name="pipeline-map"
                           checked={uploadWantsMap}
                           onChange={(event) => setUploadWantsMap(event.target.checked)}
                         />

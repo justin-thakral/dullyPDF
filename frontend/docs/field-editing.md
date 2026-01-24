@@ -39,7 +39,7 @@ Coordinates are in PDF points and measured from the top-left of the page.
 ## Confidence labels
 
 Detection and renaming confidence are shown in the list:
-- Field confidence comes from CommonForms detection.
+- Field confidence comes from CommonForms (by [jbarrow](https://github.com/jbarrow/commonforms)) detection.
 - Name confidence comes from OpenAI rename or schema mapping.
 
 ## OpenAI guardrails

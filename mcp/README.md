@@ -12,7 +12,7 @@ This folder documents the MCP setup for DullyPDF and hosts the custom MCP server
 - `scripts/start-chrome-debug.ps1`: Windows helper for starting a dedicated Chrome instance with a free debug port.
 - `scripts/start-codex-debug.sh`: Starts Codex attached to the latest Chrome debug session.
 - `scripts/start-codex-debug.ps1`: Windows helper to start Codex attached to the latest Chrome debug session.
-- `mcpDebugging/`: MCP artifacts (screenshots, logs, traces).
+- `mcp/debugging/`: MCP artifacts (screenshots, logs, traces).
 
 ## Quick start (dev)
 
@@ -65,4 +65,4 @@ Prod is disabled by default. Set `DULLY_MCP_ENV=prod` and keep `DULLY_MCP_ALLOW_
 
 ## Artifacts
 
-Write UI proof to `mcpDebugging/mcp-screenshots`. If you add request/response logging later, keep it under `mcpDebugging/` as well.
+Write UI proof to `mcp/debugging/mcp-screenshots`. If you add request/response logging later, keep it under `mcp/debugging/` as well.

@@ -1,8 +1,8 @@
-# CommonForms Pipeline (Main)
+# CommonForms (by [jbarrow](https://github.com/jbarrow/commonforms)) Pipeline (Main)
 
 This is the **primary** field-detection pipeline used by the detector service
 (`backend/detector_main.py`). The main API queues detection jobs and the detector
-executes CommonForms ML inference to return field geometry plus confidence metadata.
+executes CommonForms (by [jbarrow](https://github.com/jbarrow/commonforms)) ML inference to return field geometry plus confidence metadata.
 
 Legacy note:
 - The old OpenCV-based sandbox pipeline (native/scanned routing) now lives in
@@ -10,18 +10,18 @@ Legacy note:
 
 ## Flow overview
 
-1) Render PDF pages with CommonForms `render_pdf`.
+1) Render PDF pages with CommonForms (by [jbarrow](https://github.com/jbarrow/commonforms)) `render_pdf`.
 2) Run the chosen detector (FFDNet or FFDetr) to produce widget bounding boxes.
 3) Convert normalized boxes into PDF point-space rectangles (originTop).
-4) Emit fields with CommonForms metadata.
+4) Emit fields with CommonForms (by [jbarrow](https://github.com/jbarrow/commonforms)) metadata.
 5) Optional: run OpenAI rename (overlay images) and schema-only mapping via the API endpoints.
 
 ## Input expectations
 
-- PDFs must be readable by CommonForms. Password-protected PDFs are rejected;
+- PDFs must be readable by CommonForms (by [jbarrow](https://github.com/jbarrow/commonforms)). Password-protected PDFs are rejected;
   PDFs encrypted with an empty password are decrypted during preflight.
 - Geometry is derived from rendered page images; scan quality and DPI affect results.
-- Existing AcroForm fields are not required; CommonForms detects new widgets from pixels.
+- Existing AcroForm fields are not required; CommonForms (by [jbarrow](https://github.com/jbarrow/commonforms)) detects new widgets from pixels.
 
 ## Field naming + coordinate system
 
@@ -31,7 +31,7 @@ Legacy note:
 
 ## Signature handling
 
-If CommonForms detects a `Signature` widget:
+If CommonForms (by [jbarrow](https://github.com/jbarrow/commonforms)) detects a `Signature` widget:
 - default behavior emits it as a `text` field
 - set `use_signature_fields=True` in `detect_commonforms_fields` to emit `signature`
 
@@ -40,7 +40,7 @@ If CommonForms detects a `Signature` widget:
 - Detector service: `backend/detector_main.py` -> `detect_commonforms_fields` in
   `backend/fieldDetecting/commonforms/commonForm.py`.
 - Main API: `POST /detect-fields` queues a job, `GET /detect-fields/{sessionId}` returns results.
-- Container build: `Dockerfile.detector` (CPU-only PyTorch + CommonForms).
+- Container build: `Dockerfile.detector` (CPU-only PyTorch + CommonForms (by [jbarrow](https://github.com/jbarrow/commonforms))).
 - CLI:
 ```bash
 python -m backend.fieldDetecting.commonforms.commonForm path/to/sample.pdf
@@ -60,7 +60,7 @@ Optional artifacts when `output_pdf` is provided:
 
 ## Configuration (env)
 
-CommonForms detection:
+CommonForms (by [jbarrow](https://github.com/jbarrow/commonforms)) detection:
 - `COMMONFORMS_MODEL` (default `FFDNet-L`)
 - `COMMONFORMS_MODEL_GCS_URI` (optional; GCS URI to a model weight file)
 - `COMMONFORMS_CONFIDENCE` (default `0.3`)
@@ -80,7 +80,7 @@ Runtime guards:
 
 - If `COMMONFORMS_MODEL_GCS_URI` is set, the detector downloads weights from GCS
   into `COMMONFORMS_WEIGHTS_CACHE_DIR` and reuses the cached file across requests.
-- If no GCS URI is provided, CommonForms downloads weights from HuggingFace on
+- If no GCS URI is provided, CommonForms (by [jbarrow](https://github.com/jbarrow/commonforms)) downloads weights from HuggingFace on
   first run. Provide `HF_TOKEN` (or `HUGGINGFACE_HUB_TOKEN`) to avoid rate limits.
 - Download locks older than `COMMONFORMS_WEIGHTS_LOCK_TIMEOUT_SECONDS` are treated
   as stale and removed before retrying.

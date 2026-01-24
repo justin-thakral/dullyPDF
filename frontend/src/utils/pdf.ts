@@ -34,6 +34,18 @@ type PdfJsAnnotation = {
   pushButton?: boolean;
 };
 
+type PdfJsFieldObject = {
+  id?: string;
+  name?: string;
+  rect?: number[];
+  page?: number;
+  type?: string;
+  value?: unknown;
+  defaultValue?: unknown;
+  exportValues?: unknown;
+  hidden?: boolean;
+};
+
 const CONFIDENCE_TAG_PREFIX = 'dullypdf:confidence=';
 
 function parseConfidenceTag(raw?: string): number | undefined {
@@ -110,6 +122,20 @@ function mapAnnotationType(annotation: PdfJsAnnotation): FieldType {
   return 'text';
 }
 
+function mapFieldObjectType(fieldType?: string): FieldType {
+  const normalized = (fieldType || '').toLowerCase();
+  if (normalized === 'checkbox' || normalized === 'radio') {
+    return 'checkbox';
+  }
+  if (normalized === 'signature') {
+    return 'signature';
+  }
+  if (normalized === 'date') {
+    return 'date';
+  }
+  return 'text';
+}
+
 function buildRectFromAnnotation(
   annotationRect: number[],
   pageSize: PageSize,
@@ -124,6 +150,21 @@ function buildRectFromAnnotation(
   const height = Math.abs(y2 - y1);
   if (width < 1 || height < 1) return null;
   return clampRectToPage({ x, y, width, height }, pageSize, 2);
+}
+
+function coerceFieldValue(rawValue: unknown): PdfField['value'] | undefined {
+  if (rawValue === undefined || rawValue === null) return undefined;
+  if (Array.isArray(rawValue)) {
+    return rawValue.join(', ');
+  }
+  if (
+    typeof rawValue === 'string' ||
+    typeof rawValue === 'number' ||
+    typeof rawValue === 'boolean'
+  ) {
+    return rawValue;
+  }
+  return String(rawValue);
 }
 
 export async function extractFieldsFromPdf(doc: PDFDocumentProxy): Promise<PdfField[]> {
@@ -154,20 +195,7 @@ export async function extractFieldsFromPdf(doc: PDFDocumentProxy): Promise<PdfFi
       const type = mapAnnotationType(annotation);
       const fieldConfidence = extractFieldConfidence(annotation);
       const rawValue = annotation.fieldValue ?? annotation.defaultFieldValue;
-      let value: PdfField['value'] | undefined;
-      if (rawValue !== undefined && rawValue !== null) {
-        if (Array.isArray(rawValue)) {
-          value = rawValue.join(', ');
-        } else if (
-          typeof rawValue === 'string' ||
-          typeof rawValue === 'number' ||
-          typeof rawValue === 'boolean'
-        ) {
-          value = rawValue;
-        } else {
-          value = String(rawValue);
-        }
-      }
+      const value = coerceFieldValue(rawValue);
       const hasValue =
         value !== undefined && (typeof value !== 'string' || value.trim() !== '');
 
@@ -202,6 +230,74 @@ export async function extractFieldsFromPdf(doc: PDFDocumentProxy): Promise<PdfFi
     });
   }
 
-  debugLog('Extracted fields', { total: fields.length });
+  if (fields.length > 0) {
+    debugLog('Extracted fields', { total: fields.length });
+    return fields;
+  }
+
+  const fieldObjects = (await doc.getFieldObjects()) as Record<string, PdfJsFieldObject[]> | null;
+  if (!fieldObjects) {
+    debugLog('Extracted fields', { total: fields.length });
+    return fields;
+  }
+
+  const pageCache = new Map<
+    number,
+    {
+      viewport: {
+        width: number;
+        height: number;
+        convertToViewportRectangle: (rect: number[]) => number[];
+      };
+      pageSize: PageSize;
+    }
+  >();
+  const getPageContext = async (pageNum: number) => {
+    if (pageCache.has(pageNum)) {
+      return pageCache.get(pageNum)!;
+    }
+    if (pageNum < 1 || pageNum > doc.numPages) return null;
+    const page = await doc.getPage(pageNum);
+    const viewport = page.getViewport({ scale: 1 });
+    const pageSize = { width: viewport.width, height: viewport.height };
+    const context = { viewport, pageSize };
+    pageCache.set(pageNum, context);
+    return context;
+  };
+
+  let fallbackIndex = 1;
+  const fieldEntries = Object.values(fieldObjects).flat();
+  debugLog('Field objects available', { total: fieldEntries.length });
+
+  for (const fieldObject of fieldEntries) {
+    const pageIndex = typeof fieldObject.page === 'number' ? fieldObject.page : 0;
+    const pageNum = Math.min(Math.max(pageIndex + 1, 1), doc.numPages);
+    const pageContext = await getPageContext(pageNum);
+    if (!pageContext) continue;
+    const rect = buildRectFromAnnotation(fieldObject.rect || [], pageContext.pageSize, pageContext.viewport);
+    if (!rect) continue;
+
+    const rawName = (fieldObject.name || '').trim();
+    const baseName = rawName || `field_${pageNum}_${fallbackIndex}`;
+    const name = ensureUniqueFieldName(baseName, existingNames);
+    const type = mapFieldObjectType(fieldObject.type);
+    const rawValue = fieldObject.value ?? fieldObject.defaultValue;
+    const value = coerceFieldValue(rawValue);
+    const hasValue =
+      value !== undefined && (typeof value !== 'string' || value.trim() !== '');
+
+    fields.push({
+      id: makeId(),
+      name,
+      type,
+      page: pageNum,
+      rect,
+      ...(hasValue ? { value } : {}),
+    });
+
+    fallbackIndex += 1;
+  }
+
+  debugLog('Extracted fields from field objects', { total: fields.length });
   return fields;
 }

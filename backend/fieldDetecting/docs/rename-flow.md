@@ -1,6 +1,6 @@
 # Rename flow (overlay + OpenAI)
 
-This rename flow is part of the **main pipeline** (CommonForms detection + OpenAI rename).
+This rename flow is part of the **main pipeline** (CommonForms (by [jbarrow](https://github.com/jbarrow/commonforms)) detection + OpenAI rename).
 It is not tied to the legacy sandbox router.
 
 The rename flow exists to solve a common failure mode: geometry is detected correctly, but
@@ -21,8 +21,8 @@ values are ever sent. The UI warns users before sending PDF pages or schema head
 
 Inputs:
 - One page image per page (rendered at `SANDBOX_DPI`).
-- Per-page candidate list (CommonForms widgets + extracted labels).
-- Per-page field list (from the CommonForms detector).
+- Per-page candidate list (CommonForms (by [jbarrow](https://github.com/jbarrow/commonforms)) widgets + extracted labels).
+- Per-page field list (from the CommonForms (by [jbarrow](https://github.com/jbarrow/commonforms)) detector).
 
 Outputs:
 - A `renames` array keyed by the on-overlay field name:
@@ -42,7 +42,7 @@ API response note:
 - `GET /detect-fields/{sessionId}` returns the baseline `fields` array once ready.
 - `POST /api/renames/ai` returns renamed `fields`, the rename report, optional `checkboxRules`, and the same `sessionId`.
 - The original name is preserved in `originalName` so the UI can reconcile edits.
-- Template overlay `rect` values may be sent as `{x,y,width,height}` or `[x1,y1,x2,y2]` (originTop points). The backend normalizes to `{x,y,width,height}` before OpenAI calls.
+- Template overlay `rect` values may be sent as `{x,y,width,height}` or `[x1,y1,x2,y2]` (originTop points). The backend normalizes to a consistent numeric shape before use: schema mapping allowlists use `{x,y,width,height}`, while rename geometry uses `[x1,y1,x2,y2]`.
 
 The OpenAI response is line-based to avoid JSON parsing failures:
 `|| originalFieldName | suggestedRename | renameConfidence | isItAfieldConfidence`
@@ -186,6 +186,6 @@ Common rename settings (all optional):
 - `SANDBOX_RENAME_PREV_PAGE_FRACTION`: previous-page crop height fraction
 - `SANDBOX_RENAME_PREV_PAGE_TOP_FRACTION`: top-of-page trigger threshold
 
-CommonForms-specific:
+CommonForms (by [jbarrow](https://github.com/jbarrow/commonforms)) specific:
 
 - `COMMONFORMS_CONFIDENCE_GREEN` / `COMMONFORMS_CONFIDENCE_YELLOW`

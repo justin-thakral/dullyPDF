@@ -87,6 +87,19 @@ a:hover {
   color: var(--blue-700);
 }
 
+.commonforms-link {
+  color: var(--blue-700);
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: rgba(29, 78, 216, 0.55);
+  text-underline-offset: 2px;
+}
+
+.commonforms-link:hover {
+  color: var(--blue-900);
+  text-decoration-color: rgba(30, 58, 138, 0.8);
+}
+
 button,
 input,
 select,

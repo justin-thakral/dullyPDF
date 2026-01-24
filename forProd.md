@@ -40,7 +40,7 @@ Follow `mcp/debugger.md` but keep the flow as non-destructive:
 - Do not save templates or forms unless explicitly approved.
 
 Evidence capture:
-- Screenshots in `mcpDebugging/mcp-screenshots/`.
+- Screenshots in `mcp/debugging/mcp-screenshots/`.
 - Record network results for `/detect-fields`, `/api/renames/ai`, `/api/schema-mappings/ai`.
 
 ### 2) API Sanity Checks (Read-Only)
