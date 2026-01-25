@@ -70,8 +70,44 @@
   flex-wrap: wrap;
 }
 
+.saved-forms-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.saved-forms-dialog__list {
+  max-height: 300px;
+  overflow-y: auto;
+  padding-right: 0.5rem;
+}
+
+.saved-forms-dialog__empty {
+  margin: 0;
+  color: var(--ink-600);
+  font-size: 0.95rem;
+}
+
+.saved-form-item--static {
+  cursor: default;
+  box-shadow: none;
+}
+
+.saved-form-item--static:hover {
+  border-color: rgba(148, 163, 184, 0.35);
+  background: #ffffff;
+  transform: none;
+  box-shadow: none;
+}
+
 @media (max-width: 640px) {
   .ui-dialog {
     padding: 1.25rem;
+  }
+
+  .saved-forms-dialog__list {
+    max-height: none;
+    overflow: visible;
+    padding-right: 0;
   }
 }

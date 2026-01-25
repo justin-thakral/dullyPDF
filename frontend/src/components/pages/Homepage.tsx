@@ -8,6 +8,7 @@
 import React, { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import './Homepage.css';
 import { CommonFormsAttribution } from '../ui/CommonFormsAttribution';
+import { ContactDialog } from '../features/ContactDialog';
 
 interface HomepageProps {
   onStartWorkflow: () => void;
@@ -94,6 +95,7 @@ const Homepage: React.FC<HomepageProps> = ({
   const demoNavRef = useRef<HTMLDivElement | null>(null);
   const [activeDemoIndex, setActiveDemoIndex] = useState(0);
   const [demoFocusActive, setDemoFocusActive] = useState(false);
+  const [contactOpen, setContactOpen] = useState(false);
   const userInitial = useMemo(() => (userEmail ? userEmail.charAt(0).toUpperCase() : null), [userEmail]);
 
   const activeStep = DEMO_WALKTHROUGH[activeDemoIndex];
@@ -120,9 +122,17 @@ const Homepage: React.FC<HomepageProps> = ({
     setActiveDemoIndex((prev) => Math.min(DEMO_WALKTHROUGH.length - 1, prev + 1));
   };
 
+  const handleOpenContact = () => {
+    setContactOpen(true);
+  };
+
+  const handleCloseContact = () => {
+    setContactOpen(false);
+  };
+
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const mediaQuery = window.matchMedia('(max-width: 900px)');
+    const mediaQuery = window.matchMedia('(max-width: 1020px)');
     const heightQuery = window.matchMedia('(max-height: 749px)');
     const updateScrollLock = () => {
       const shouldLockScroll = !mediaQuery.matches && !heightQuery.matches;
@@ -155,7 +165,7 @@ const Homepage: React.FC<HomepageProps> = ({
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    if (!window.matchMedia('(max-width: 900px)').matches) return;
+    if (!window.matchMedia('(max-width: 1020px)').matches) return;
     if (!demoFocusActive) return;
     if (!demoNavRef.current) return;
     requestAnimationFrame(() => {
@@ -202,6 +212,9 @@ const Homepage: React.FC<HomepageProps> = ({
           </p>
           <button type="button" className="mobile-demo-button" onClick={handleScrollToDemo}>
             Demo
+          </button>
+          <button type="button" className="mobile-contact-button" onClick={handleOpenContact}>
+            Contact
           </button>
         </div>
 
@@ -370,8 +383,9 @@ const Homepage: React.FC<HomepageProps> = ({
             <div className="cta-section">
               <h3>Ready to Get Started?</h3>
               <p className="cta-description">
-                Upload your PDF document and experience the power of AI-driven
-                form field detection and generation.
+                Click <strong>Try Now</strong> to upload your PDF document and experience the power of AI-driven
+                form field detection and generation, <strong>Demo</strong> to see live DullyPDF capabilities,
+                and <strong>Contact</strong> with any questions or concerns. Bug reports get a free month of premium.
               </p>
 
               <div className="cta-buttons">
@@ -390,6 +404,9 @@ const Homepage: React.FC<HomepageProps> = ({
                     Demo
                   </button>
                 ) : null}
+                <button type="button" className="contact-button" onClick={handleOpenContact}>
+                  Contact
+                </button>
               </div>
 
               <div className="quick-info">
@@ -419,6 +436,7 @@ const Homepage: React.FC<HomepageProps> = ({
           </div>
         </div>
       </div>
+      <ContactDialog open={contactOpen} onClose={handleCloseContact} defaultEmail={userEmail} />
     </div>
   );
 };

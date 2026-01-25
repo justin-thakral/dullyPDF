@@ -9,6 +9,14 @@ import 'firebaseui/dist/firebaseui.css';
 import './LoginPage.css';
 import { firebaseAuth } from '../../services/firebaseClient';
 import { Auth } from '../../services/auth';
+import { ApiService } from '../../api';
+import { ApiError } from '../../services/apiConfig';
+import {
+  disableRecaptchaBadge,
+  enableRecaptchaBadge,
+  getRecaptchaToken,
+  loadRecaptcha,
+} from '../../utils/recaptcha';
 import { Alert } from '../ui/Alert';
 
 interface LoginPageProps {
@@ -59,6 +67,20 @@ const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated, onCancel }) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+  const recaptchaSiteKey =
+    typeof import.meta.env.VITE_RECAPTCHA_SITE_KEY === 'string'
+      ? import.meta.env.VITE_RECAPTCHA_SITE_KEY.trim()
+      : '';
+  const signupRecaptchaRequired = (() => {
+    const raw = typeof import.meta.env.VITE_SIGNUP_REQUIRE_RECAPTCHA === 'string'
+      ? import.meta.env.VITE_SIGNUP_REQUIRE_RECAPTCHA.trim().toLowerCase()
+      : '';
+    if (raw) {
+      return !['0', 'false', 'no'].includes(raw);
+    }
+    return true;
+  })();
+  const signupRecaptchaBlocked = mode === 'signup' && signupRecaptchaRequired && !recaptchaSiteKey;
 
   useEffect(() => {
     const ui = firebaseui.auth.AuthUI.getInstance() || new firebaseui.auth.AuthUI(firebaseAuth);
@@ -96,6 +118,24 @@ const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated, onCancel }) => {
     };
   }, [mode, onAuthenticated]);
 
+  useEffect(() => {
+    if (mode !== 'signup' || !signupRecaptchaRequired || !recaptchaSiteKey) return;
+    loadRecaptcha(recaptchaSiteKey).catch(() => {
+      setError('reCAPTCHA failed to load. Please refresh and try again.');
+    });
+  }, [mode, recaptchaSiteKey, signupRecaptchaRequired]);
+
+  useEffect(() => {
+    if (mode === 'signup' && signupRecaptchaRequired) {
+      enableRecaptchaBadge('signup');
+    } else {
+      disableRecaptchaBadge('signup');
+    }
+    return () => {
+      disableRecaptchaBadge('signup');
+    };
+  }, [mode, signupRecaptchaRequired]);
+
   const handleChange = (field: keyof typeof form) => (event: React.ChangeEvent<HTMLInputElement>) => {
     setForm((prev) => ({ ...prev, [field]: event.target.value }));
     setError(null);
@@ -117,6 +157,16 @@ const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated, onCancel }) => {
     try {
       const email = form.email.trim();
       const password = form.password.trim();
+      if (mode === 'signup' && signupRecaptchaRequired) {
+        if (!recaptchaSiteKey) {
+          setError('reCAPTCHA is required but not configured.');
+          return;
+        }
+        setInfo('Verifying reCAPTCHA...');
+        const token = await getRecaptchaToken(recaptchaSiteKey, 'signup');
+        await ApiService.verifyRecaptcha({ token, action: 'signup' });
+      }
+      setInfo(null);
       if (mode === 'signin') {
         await Auth.signIn(email, password);
       } else {
@@ -125,7 +175,11 @@ const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated, onCancel }) => {
       }
       onAuthenticated?.();
     } catch (err) {
-      setError(getFriendlyError(err, mode));
+      if (err instanceof ApiError) {
+        setError(err.message);
+      } else {
+        setError(getFriendlyError(err, mode));
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -196,9 +250,14 @@ const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated, onCancel }) => {
               />
             </div>
 
-            <button type="submit" className="primary-action" disabled={isSubmitting}>
+            <button type="submit" className="primary-action" disabled={isSubmitting || signupRecaptchaBlocked}>
               {isSubmitting ? 'Just a moment…' : mode === 'signin' ? 'Sign in' : 'Create account'}
             </button>
+            {mode === 'signup' && signupRecaptchaRequired ? (
+              <p className="auth-recaptcha-note">
+                {signupRecaptchaBlocked ? 'reCAPTCHA is required but not configured.' : 'Protected by reCAPTCHA Enterprise.'}
+              </p>
+            ) : null}
           </form>
 
           <div className="auth-links">

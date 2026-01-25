@@ -13,7 +13,8 @@ The frontend is a React + TypeScript workspace for visualizing PDFs, editing det
 - Consumes OpenAI credits per PDF page for rename or mapping (combined counts once per page).
 - Runs Search & Fill to populate values from a selected local record.
 - Search & Fill applies checkbox values from explicit checkbox columns (including `i_`/`checkbox_` prefixes), group enums/lists, and AI checkbox rules when available.
-- Saves filled forms to your profile via the backend.
+- Saves filled forms to your profile via the backend, including checkbox rules/hints for later Search & Fill.
+- When the saved forms limit is reached, surfaces a modal that lists saved forms and allows deletions to free space before saving again; overwriting a saved form replaces it in place.
 - Uses FirebaseUI for email/password + Google + GitHub login; password logins require email verification before access.
 - Shows a profile view with tier limits, credits, and saved forms.
 - Includes a homepage Demo flow that loads static demo PDFs/CSV and guides users through the pipeline steps.

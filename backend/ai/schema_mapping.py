@@ -69,6 +69,8 @@ def build_allowlist_payload(schema_fields: List[Dict[str, Any]], template_fields
                 value = rect.get(key)
                 if isinstance(value, (int, float)):
                     rect_payload[key] = float(value)
+        option_label = field.get("optionLabel") or field.get("option_label")
+        group_label = field.get("groupLabel") or field.get("group_label")
         cleaned_template.append({
             "tag": tag[:MAX_FIELD_NAME_LEN],
             "type": field_type,
@@ -76,6 +78,8 @@ def build_allowlist_payload(schema_fields: List[Dict[str, Any]], template_fields
             "rect": rect_payload or None,
             "groupKey": str(field.get("groupKey") or "").strip() or None,
             "optionKey": str(field.get("optionKey") or "").strip() or None,
+            "optionLabel": str(option_label).strip()[:MAX_FIELD_NAME_LEN] if option_label else None,
+            "groupLabel": str(group_label).strip()[:MAX_FIELD_NAME_LEN] if group_label else None,
         })
 
     payload = {
@@ -147,8 +151,11 @@ def call_openai_schema_mapping(payload: Dict[str, Any]) -> Dict[str, Any]:
     system_prompt = (
         "You map database schema fields to PDF template overlay tags. "
         "You only see schema field names/types and template tags. "
-        "Return JSON with keys: mappings, templateRules, checkboxRules, identifierKey, notes. "
-        "Each mapping must include schemaField, templateTag, confidence (0..1), reasoning."
+        "Return JSON with keys: mappings, templateRules, checkboxRules, checkboxHints, "
+        "identifierKey, notes. Each mapping must include schemaField, templateTag, "
+        "confidence (0..1), reasoning. "
+        "checkboxHints should identify when a database field can be used as a direct boolean "
+        "for a checkbox group."
     )
     user_prompt = (
         "Schema + template overlay payload (no row values):\n"
@@ -158,6 +165,8 @@ def call_openai_schema_mapping(payload: Dict[str, Any]) -> Dict[str, Any]:
         "- Only reference templateTag values that appear in templateTags.\n"
         "- Avoid inventing data; prefer leaving unmapped if unsure.\n"
         "- checkboxRules should map one schemaField to one template groupKey when possible.\n"
+        "- checkboxHints should be a list of objects with: databaseField, groupKey, "
+        "directBooleanPossible (true/false), and optional operation (yes_no|enum|list|presence).\n"
     )
 
     client = OpenAI(api_key=key)
@@ -204,6 +213,10 @@ def _merge_schema_mapping_response(
     if isinstance(checkbox_rules, list):
         aggregate.setdefault("checkboxRules", []).extend([entry for entry in checkbox_rules if isinstance(entry, dict)])
 
+    checkbox_hints = response.get("checkboxHints") or response.get("checkbox_hints")
+    if isinstance(checkbox_hints, list):
+        aggregate.setdefault("checkboxHints", []).extend([entry for entry in checkbox_hints if isinstance(entry, dict)])
+
     identifier_key = response.get("identifierKey") or response.get("patientIdentifierField")
     if identifier_key and not aggregate.get("identifierKey"):
         aggregate["identifierKey"] = str(identifier_key)
@@ -234,7 +247,13 @@ def call_openai_schema_mapping_chunked(payload: Dict[str, Any]) -> Dict[str, Any
         len(template_tags),
     )
 
-    aggregate: Dict[str, Any] = {"mappings": [], "templateRules": [], "checkboxRules": [], "notes": []}
+    aggregate: Dict[str, Any] = {
+        "mappings": [],
+        "templateRules": [],
+        "checkboxRules": [],
+        "checkboxHints": [],
+        "notes": [],
+    }
     for chunk in chunks:
         response = call_openai_schema_mapping(chunk)
         _merge_schema_mapping_response(aggregate, response)

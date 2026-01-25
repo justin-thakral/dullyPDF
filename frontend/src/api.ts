@@ -24,6 +24,26 @@ export type UserProfile = {
   limits: ProfileLimits;
 };
 
+export type ContactPayload = {
+  issueType: string;
+  summary: string;
+  message: string;
+  contactName?: string;
+  contactCompany?: string;
+  contactEmail?: string;
+  contactPhone?: string;
+  preferredContact?: string;
+  includeContactInSubject?: boolean;
+  recaptchaToken?: string;
+  recaptchaAction?: string;
+  pageUrl?: string;
+};
+
+export type RecaptchaAssessmentPayload = {
+  token: string;
+  action?: string;
+};
+
 export class ApiService {
   /**
    * Fetch profile details and tier limits for the current user.
@@ -35,6 +55,34 @@ export class ApiService {
     if (response.status === 401 || response.status === 403) {
       return null;
     }
+    return apiJsonFetch(response);
+  }
+
+  /**
+   * Submit the homepage contact form.
+   */
+  static async submitContact(payload: ContactPayload): Promise<{ success: boolean }> {
+    const response = await apiFetch('POST', buildApiUrl('api', 'contact'), {
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    return apiJsonFetch(response);
+  }
+
+  /**
+   * Verify a reCAPTCHA token for public actions (signup).
+   */
+  static async verifyRecaptcha(payload: RecaptchaAssessmentPayload): Promise<{ success: boolean }> {
+    const response = await apiFetch('POST', buildApiUrl('api', 'recaptcha', 'assess'), {
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
     return apiJsonFetch(response);
   }
 
@@ -142,7 +190,13 @@ export class ApiService {
   /**
    * Fetch metadata for a saved form and session reference.
    */
-  static async loadSavedForm(formId: string): Promise<{ url: string; name: string; sessionId?: string }> {
+  static async loadSavedForm(formId: string): Promise<{
+    url: string;
+    name: string;
+    sessionId?: string;
+    checkboxRules?: Array<Record<string, any>>;
+    checkboxHints?: Array<Record<string, any>>;
+  }> {
     const response = await apiFetch('GET', buildApiUrl('api', 'saved-forms', formId));
     return apiJsonFetch(response);
   }
@@ -218,12 +272,24 @@ export class ApiService {
     blob: Blob,
     name: string,
     sessionId?: string,
-  ): Promise<{ success: boolean; id: string }> {
+    overwriteFormId?: string,
+    checkboxRules?: Array<Record<string, any>>,
+    checkboxHints?: Array<Record<string, any>>,
+  ): Promise<{ success: boolean; id: string; name?: string }> {
     const formData = new FormData();
     formData.append('pdf', blob, `${name}.pdf`);
     formData.append('name', name);
     if (sessionId) {
       formData.append('sessionId', sessionId);
+    }
+    if (checkboxRules !== undefined) {
+      formData.append('checkboxRules', JSON.stringify(checkboxRules));
+    }
+    if (checkboxHints !== undefined) {
+      formData.append('checkboxHints', JSON.stringify(checkboxHints));
+    }
+    if (overwriteFormId) {
+      formData.append('overwriteFormId', overwriteFormId);
     }
 
     const response = await apiFetch('POST', buildApiUrl('api', 'saved-forms'), {

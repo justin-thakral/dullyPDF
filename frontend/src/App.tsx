@@ -6,7 +6,15 @@ import type { ChangeEvent, ReactNode } from 'react';
 import type { User } from 'firebase/auth';
 import type { PDFDocumentProxy } from 'pdfjs-dist/types/src/display/api';
 import './App.css';
-import type { CheckboxRule, ConfidenceFilter, ConfidenceTier, FieldType, PageSize, PdfField } from './types';
+import type {
+  CheckboxHint,
+  CheckboxRule,
+  ConfidenceFilter,
+  ConfidenceTier,
+  FieldType,
+  PageSize,
+  PdfField,
+} from './types';
 import { createField, ensureUniqueFieldName, makeId } from './utils/fields';
 import { fieldConfidenceTierForField, parseConfidence } from './utils/confidence';
 import { parseCsv } from './utils/csv';
@@ -35,7 +43,7 @@ import { FieldListPanel } from './components/panels/FieldListPanel';
 import { PdfViewer } from './components/viewer/PdfViewer';
 import UploadComponent from './components/features/UploadComponent';
 import { Alert, type AlertTone } from './components/ui/Alert';
-import { ConfirmDialog, PromptDialog, type DialogTone } from './components/ui/Dialog';
+import { ConfirmDialog, PromptDialog, SavedFormsLimitDialog, type DialogTone } from './components/ui/Dialog';
 import { CommonFormsAttribution } from './components/ui/CommonFormsAttribution';
 
 const DEBUG_UI = false;
@@ -468,6 +476,7 @@ function App() {
   const [processingMode, setProcessingMode] = useState<ProcessingMode>(null);
   const [processingDetail, setProcessingDetail] = useState(DEFAULT_PROCESSING_MESSAGE);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [showSavedFormsLimitDialog, setShowSavedFormsLimitDialog] = useState(false);
   const [savedForms, setSavedForms] = useState<Array<{ id: string; name: string; createdAt: string }>>([]);
   const [activeSavedFormId, setActiveSavedFormId] = useState<string | null>(null);
   const [activeSavedFormName, setActiveSavedFormName] = useState<string | null>(null);
@@ -479,6 +488,7 @@ function App() {
   const [renameInProgress, setRenameInProgress] = useState(false);
   const [hasRenamedFields, setHasRenamedFields] = useState(false);
   const [checkboxRules, setCheckboxRules] = useState<CheckboxRule[]>([]);
+  const [checkboxHints, setCheckboxHints] = useState<CheckboxHint[]>([]);
   const [schemaError, setSchemaError] = useState<string | null>(null);
   const [openAiError, setOpenAiError] = useState<string | null>(null);
   const [bannerNotice, setBannerNotice] = useState<BannerNotice | null>(null);
@@ -503,6 +513,7 @@ function App() {
   const authUserRef = useRef<User | null>(null);
   const savedFormsRetryRef = useRef(0);
   const savedFormsRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingSaveActionRef = useRef<(() => Promise<void>) | null>(null);
   const schemaPersistPromiseRef = useRef<Promise<string | null> | null>(null);
   const schemaPersistFingerprintRef = useRef<string | null>(null);
   const csvInputRef = useRef<HTMLInputElement>(null);
@@ -534,7 +545,7 @@ function App() {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const mediaQuery = window.matchMedia('(max-width: 900px)');
+    const mediaQuery = window.matchMedia('(max-width: 1020px)');
     const update = () => setIsMobileView(mediaQuery.matches);
     update();
     if ('addEventListener' in mediaQuery) {
@@ -586,6 +597,15 @@ function App() {
   useEffect(() => {
     authUserRef.current = verifiedUser;
   }, [verifiedUser]);
+
+  useEffect(() => {
+    return () => {
+      if (!pdfDoc) return;
+      void pdfDoc.destroy().catch((error) => {
+        debugLog('Failed to release PDF document resources', error);
+      });
+    };
+  }, [pdfDoc]);
 
   const clearSavedFormsRetry = useCallback(() => {
     if (savedFormsRetryTimerRef.current) {
@@ -785,6 +805,7 @@ function App() {
   }, [pushFieldHistory]);
 
   const handleUndo = useCallback(() => {
+    commitFieldHistory();
     const history = historyRef.current;
     if (!history.undo.length) return;
     const previous = history.undo[history.undo.length - 1];
@@ -797,9 +818,10 @@ function App() {
     setSelectedFieldId((currentId) =>
       currentId && previous.some((field) => field.id === currentId) ? currentId : null,
     );
-  }, []);
+  }, [commitFieldHistory]);
 
   const handleRedo = useCallback(() => {
+    commitFieldHistory();
     const history = historyRef.current;
     if (!history.redo.length) return;
     const next = history.redo[history.redo.length - 1];
@@ -812,7 +834,7 @@ function App() {
     setSelectedFieldId((currentId) =>
       currentId && next.some((field) => field.id === currentId) ? currentId : null,
     );
-  }, []);
+  }, [commitFieldHistory]);
 
   const clearWorkspace = useCallback(() => {
     setPdfDoc(null);
@@ -832,6 +854,7 @@ function App() {
     setMappingInProgress(false);
     setHasMappedSchema(false);
     setCheckboxRules([]);
+    setCheckboxHints([]);
     setSchemaError(null);
     setSchemaId(null);
     setPendingSchemaPayload(null);
@@ -851,6 +874,8 @@ function App() {
     setActiveSavedFormName(null);
     setPendingDetectFile(null);
     setShowPipelineModal(false);
+    pendingSaveActionRef.current = null;
+    setShowSavedFormsLimitDialog(false);
     setPipelineError(null);
     setUploadWantsRename(false);
     setUploadWantsMap(false);
@@ -894,6 +919,20 @@ function App() {
       dialogResolverRef.current = resolve;
       setDialogRequest({ kind: 'prompt', ...options });
     });
+  }, []);
+
+  const queueSaveAfterLimit = useCallback(
+    (action: () => Promise<void>) => {
+      pendingSaveActionRef.current = action;
+      setShowSavedFormsLimitDialog(true);
+      void refreshSavedForms({ allowRetry: true });
+    },
+    [refreshSavedForms],
+  );
+
+  const closeSavedFormsLimitDialog = useCallback(() => {
+    pendingSaveActionRef.current = null;
+    setShowSavedFormsLimitDialog(false);
   }, []);
 
   const handleSignOut = useCallback(async () => {
@@ -986,6 +1025,7 @@ function App() {
       setHasRenamedFields(false);
       setHasMappedSchema(false);
       setCheckboxRules([]);
+      setCheckboxHints([]);
       setSchemaError(null);
       setOpenAiError(null);
       setSourceFile(file);
@@ -1110,6 +1150,10 @@ function App() {
         if (!commitPdfLoad(doc, sizes, [], loadToken)) return;
         setActiveSavedFormId(formId);
         setActiveSavedFormName(savedMeta?.name || null);
+        const savedCheckboxRules = Array.isArray(savedMeta?.checkboxRules) ? savedMeta.checkboxRules : [];
+        const savedCheckboxHints = Array.isArray(savedMeta?.checkboxHints) ? savedMeta.checkboxHints : [];
+        setCheckboxRules(savedCheckboxRules);
+        setCheckboxHints(savedCheckboxHints);
 
         void (async () => {
           const existingFields = await existingFieldsPromise;
@@ -1165,6 +1209,29 @@ function App() {
     [handleSelectSavedForm],
   );
 
+  const deleteSavedFormById = useCallback(
+    async (formId: string): Promise<boolean> => {
+      setDeletingFormId(formId);
+      try {
+        await ApiService.deleteSavedForm(formId);
+        setSavedForms((prev) => prev.filter((form) => form.id !== formId));
+        if (formId === activeSavedFormId) {
+          setActiveSavedFormId(null);
+          setActiveSavedFormName(null);
+        }
+        return true;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to delete saved form.';
+        setBannerNotice({ tone: 'error', message });
+        debugLog('Failed to delete saved form', message);
+        return false;
+      } finally {
+        setDeletingFormId(null);
+      }
+    },
+    [activeSavedFormId, setBannerNotice],
+  );
+
   const handleDeleteSavedForm = useCallback(
     async (formId: string) => {
       const target = savedForms.find((form) => form.id === formId);
@@ -1178,43 +1245,91 @@ function App() {
       });
       if (!confirmDelete) return;
 
-      setDeletingFormId(formId);
+      await deleteSavedFormById(formId);
+    },
+    [deleteSavedFormById, requestConfirm, savedForms],
+  );
+
+  const handleSavedFormsLimitDelete = useCallback(
+    async (formId: string) => {
+      const removed = await deleteSavedFormById(formId);
+      if (!removed) return;
+      const pendingAction = pendingSaveActionRef.current;
+      if (!pendingAction) return;
+      pendingSaveActionRef.current = null;
+      setShowSavedFormsLimitDialog(false);
+      await pendingAction();
+    },
+    [deleteSavedFormById],
+  );
+
+  const saveFormToProfile = useCallback(
+    async ({
+      saveName,
+      overwriteFormId,
+    }: {
+      saveName: string;
+      overwriteFormId?: string | null;
+    }): Promise<{ success: boolean; limitReached: boolean }> => {
+      if (!pdfDoc) {
+        setBannerNotice({ tone: 'error', message: 'No PDF is loaded to save.' });
+        return { success: false, limitReached: false };
+      }
+      setSaveInProgress(true);
       try {
-        await ApiService.deleteSavedForm(formId);
-        setSavedForms((prev) => prev.filter((form) => form.id !== formId));
-        if (formId === activeSavedFormId) {
-          setActiveSavedFormId(null);
-          setActiveSavedFormName(null);
+        let blob: Blob;
+        if (sourceFile) {
+          blob = sourceFile;
+        } else {
+          const data = await pdfDoc.getData();
+          blob = new Blob([new Uint8Array(data)], { type: 'application/pdf' });
         }
+        const fieldsForSave = prepareFieldsForMaterialize(fields);
+        const generatedBlob = await ApiService.materializeFormPdf(blob, fieldsForSave);
+        const rulesForSave = checkboxRules.length ? checkboxRules : undefined;
+        const hintsForSave = checkboxHints.length ? checkboxHints : undefined;
+        const payload = await ApiService.saveFormToProfile(
+          generatedBlob,
+          saveName,
+          mappingSessionId || undefined,
+          overwriteFormId || undefined,
+          rulesForSave,
+          hintsForSave,
+        );
+        setActiveSavedFormId(payload?.id || null);
+        setActiveSavedFormName(payload?.name || saveName);
+        await refreshSavedForms();
+        return { success: true, limitReached: false };
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'Failed to delete saved form.';
-        setLoadError(message);
-        debugLog('Failed to delete saved form', message);
+        const message = error instanceof Error ? error.message : 'Failed to save form to profile.';
+        const limitReached =
+          error instanceof ApiError && error.status === 403 && message.toLowerCase().includes('saved form limit');
+        if (!limitReached) {
+          setBannerNotice({ tone: 'error', message });
+        }
+        debugLog('Failed to save form', message);
+        return { success: false, limitReached };
       } finally {
-        setDeletingFormId(null);
+        setSaveInProgress(false);
       }
     },
-    [activeSavedFormId, requestConfirm, savedForms],
+    [checkboxHints, checkboxRules, fields, mappingSessionId, pdfDoc, refreshSavedForms, setBannerNotice, sourceFile],
   );
 
   const handleSaveToProfile = useCallback(async () => {
     if (!pdfDoc) {
-      setLoadError('No PDF is loaded to save.');
+      setBannerNotice({ tone: 'error', message: 'No PDF is loaded to save.' });
       return;
     }
     if (!verifiedUser) {
-      setLoadError('Sign in to save this form to your profile.');
+      setBannerNotice({ tone: 'error', message: 'Sign in to save this form to your profile.' });
       return;
     }
     const maxSavedForms = profileLimits.savedFormsMax;
     const savedFormsLimitReached = savedForms.length >= maxSavedForms;
-    if (!activeSavedFormId && savedFormsLimitReached) {
-      setLoadError(`You have reached the saved forms limit (${maxSavedForms}). Delete a form to save another.`);
-      return;
-    }
     setLoadError(null);
     const defaultName = normaliseFormName(activeSavedFormName || sourceFileName || sourceFile?.name);
-    const promptForName = async () => {
+    const promptForName = async ({ forceSave = false }: { forceSave?: boolean } = {}) => {
       const raw = await requestPrompt({
         title: 'Name this saved form',
         message: 'Enter a name to store this PDF in your saved forms list.',
@@ -1224,16 +1339,29 @@ function App() {
         cancelLabel: 'Cancel',
         requireValue: true,
       });
-      if (raw === null) return null;
+      if (raw === null) {
+        return forceSave ? defaultName : null;
+      }
       const trimmed = raw.trim();
       if (!trimmed) {
-        setLoadError('A form name is required to save.');
+        if (forceSave) {
+          return defaultName;
+        }
+        setBannerNotice({ tone: 'error', message: 'A form name is required to save.' });
         return null;
       }
       return normaliseFormName(trimmed);
     };
 
-    let saveName = defaultName;
+    const attemptSaveNew = async ({ forceSave = false }: { forceSave?: boolean } = {}) => {
+      const nextName = await promptForName({ forceSave });
+      if (!nextName) return;
+      const result = await saveFormToProfile({ saveName: nextName });
+      if (!result.success && result.limitReached) {
+        queueSaveAfterLimit(() => attemptSaveNew({ forceSave: true }));
+      }
+    };
+
     let shouldOverwrite = false;
     if (activeSavedFormId) {
       const overwrite = await requestConfirm({
@@ -1247,59 +1375,40 @@ function App() {
         shouldOverwrite = true;
       } else {
         if (savedFormsLimitReached) {
-          setLoadError(`You have reached the saved forms limit (${maxSavedForms}). Delete a form to save another.`);
+          queueSaveAfterLimit(() => attemptSaveNew({ forceSave: true }));
           return;
         }
-        const nextName = await promptForName();
-        if (!nextName) return;
-        saveName = nextName;
+        await attemptSaveNew();
+        return;
       }
     } else {
-      const nextName = await promptForName();
-      if (!nextName) return;
-      saveName = nextName;
+      if (savedFormsLimitReached) {
+        queueSaveAfterLimit(() => attemptSaveNew({ forceSave: true }));
+        return;
+      }
+      await attemptSaveNew();
+      return;
     }
-
-    const deleteAfterSaveId = shouldOverwrite ? activeSavedFormId : null;
-    setSaveInProgress(true);
-    try {
-      let blob: Blob;
-      if (sourceFile) {
-        blob = sourceFile;
-      } else {
-        const data = await pdfDoc.getData();
-        blob = new Blob([new Uint8Array(data)], { type: 'application/pdf' });
+    if (shouldOverwrite) {
+      const result = await saveFormToProfile({ saveName: defaultName, overwriteFormId: activeSavedFormId });
+      if (!result.success && result.limitReached) {
+        setBannerNotice({ tone: 'error', message: 'Unable to overwrite saved form at the current limit.' });
       }
-      const fieldsForSave = prepareFieldsForMaterialize(fields);
-      const generatedBlob = await ApiService.materializeFormPdf(blob, fieldsForSave);
-      const payload = await ApiService.saveFormToProfile(generatedBlob, saveName, mappingSessionId || undefined);
-      if (deleteAfterSaveId && payload?.id && payload.id !== deleteAfterSaveId) {
-        await ApiService.deleteSavedForm(deleteAfterSaveId);
-      }
-      setActiveSavedFormId(payload?.id || null);
-      setActiveSavedFormName(saveName);
-      await refreshSavedForms();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to save form to profile.';
-      setLoadError(message);
-      debugLog('Failed to save form', message);
-    } finally {
-      setSaveInProgress(false);
     }
   }, [
     activeSavedFormId,
     activeSavedFormName,
-    fields,
-    mappingSessionId,
     pdfDoc,
-    refreshSavedForms,
-    requestConfirm,
-    requestPrompt,
     sourceFile,
     sourceFileName,
     profileLimits.savedFormsMax,
-    savedForms.length,
     verifiedUser,
+    requestConfirm,
+    requestPrompt,
+    savedForms.length,
+    setBannerNotice,
+    queueSaveAfterLimit,
+    saveFormToProfile,
   ]);
 
   const handleDownload = useCallback(async () => {
@@ -1321,7 +1430,8 @@ function App() {
         const data = await pdfDoc.getData();
         blob = new Blob([new Uint8Array(data)], { type: 'application/pdf' });
       }
-      const generatedBlob = await ApiService.materializeFormPdf(blob, fields);
+      const fieldsForDownload = prepareFieldsForMaterialize(fields);
+      const generatedBlob = await ApiService.materializeFormPdf(blob, fieldsForDownload);
       const baseName = normaliseFormName(activeSavedFormName || sourceFileName || sourceFile?.name);
       const filename = `${baseName}-fillable.pdf`;
       const url = URL.createObjectURL(generatedBlob);
@@ -1331,7 +1441,7 @@ function App() {
       document.body.appendChild(link);
       link.click();
       link.remove();
-      URL.revokeObjectURL(url);
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to download form.';
       setLoadError(message);
@@ -1377,6 +1487,8 @@ function App() {
 
       const rules = Array.isArray(mappingResults.checkboxRules) ? mappingResults.checkboxRules : [];
       setCheckboxRules(rules);
+      const hints = Array.isArray(mappingResults.checkboxHints) ? mappingResults.checkboxHints : [];
+      setCheckboxHints(hints);
       const resolvedIdentifier = resolveIdentifierKey(
         mappingResults.identifierKey || mappingResults.identifier_key,
         dataColumns,
@@ -1558,18 +1670,28 @@ function App() {
         setOpenAiError(ALERT_MESSAGES.noPdfFieldsToRename);
         return null;
       }
+      const hasSchemaForMap = Boolean(renameSchemaId);
       if (confirm) {
         const ok = await requestConfirm({
           title: 'Send to OpenAI?',
-          message:
-            'This PDF and its field tags will be sent to OpenAI. No row data or field values are sent.',
+          message: (
+            <>
+              This PDF and its field tags will be sent to OpenAI. No row data or field values are sent.
+              {!hasSchemaForMap ? (
+                <>
+                  <br />
+                  <br />
+                  A base rename without a Map schema in the same step does not align to database columns. Explicit
+                  yes/no checkbox columns will only fill if names already match, and complex checkbox groups will fail.
+                </>
+              ) : null}
+            </>
+          ),
           confirmLabel: 'Continue',
           cancelLabel: 'Cancel',
         });
         if (!ok) return null;
       }
-
-      const hasSchemaForMap = Boolean(renameSchemaId);
       setOpenAiError(null);
       setMappingInProgress(true);
       setRenameInProgress(true);
@@ -1595,6 +1717,17 @@ function App() {
           throw new Error('OpenAI rename returned no fields.');
         }
         setCheckboxRules(Array.isArray(result.checkboxRules) ? result.checkboxRules : []);
+        if (!hasSchemaForMap) {
+          setCheckboxHints([]);
+        }
+        if (!hasSchemaForMap) {
+          setBannerNotice({
+            tone: 'info',
+            message:
+              'Rename only standardizes field names. Complex checkbox groups and any checkbox columns that do not already match the field names may not fill.',
+            autoDismissMs: 9000,
+          });
+        }
         setHasRenamedFields(true);
         return updated;
       } catch (error) {
@@ -1849,6 +1982,7 @@ function App() {
           setHasRenamedFields(false);
           setHasMappedSchema(false);
           setCheckboxRules([]);
+          setCheckboxHints([]);
           setDetectSessionId(sessionId);
           setMappingSessionId(sessionId);
           const pendingAutoActions = pendingAutoActionsRef.current;
@@ -1980,6 +2114,7 @@ function App() {
       setHasRenamedFields(false);
       setHasMappedSchema(false);
       setCheckboxRules([]);
+      setCheckboxHints([]);
       setSchemaError(null);
       setOpenAiError(null);
       setSourceFile(file);
@@ -2633,6 +2768,12 @@ function App() {
 
   const handlePageScroll = useCallback((page: number) => {
     setCurrentPage(page);
+    setSelectedFieldId((prev) => {
+      if (!prev) return prev;
+      const field = fieldsRef.current.find((entry) => entry.id === prev);
+      if (!field) return prev;
+      return field.page === page ? prev : null;
+    });
   }, []);
 
   const handlePageJumpComplete = useCallback(() => {
@@ -2652,6 +2793,25 @@ function App() {
     );
     debugLog('Updated field', fieldId, updates);
   }, [updateFieldsWith]);
+
+  const handleUpdateFieldDraft = useCallback(
+    (fieldId: string, updates: Partial<PdfField>) => {
+      updateFieldsWith(
+        (prev) =>
+          prev.map((field) => {
+            if (field.id !== fieldId) return field;
+            return {
+              ...field,
+              ...updates,
+              rect: updates.rect ? { ...field.rect, ...updates.rect } : field.rect,
+            };
+          }),
+        { trackHistory: false },
+      );
+      debugLog('Updated field (draft)', fieldId, updates);
+    },
+    [updateFieldsWith],
+  );
 
   const handleUpdateFieldGeometry = useCallback(
     (fieldId: string, updates: Partial<PdfField>) => {
@@ -2910,9 +3070,7 @@ function App() {
 
   const userEmail = useMemo(() => verifiedUser?.email ?? undefined, [verifiedUser]);
   const hasDocument = !!pdfDoc;
-  const savedFormsLimitReached = savedForms.length >= profileLimits.savedFormsMax;
-  const canSaveToProfile =
-    Boolean(pdfDoc && verifiedUser) && (!savedFormsLimitReached || Boolean(activeSavedFormId));
+  const canSaveToProfile = Boolean(pdfDoc && verifiedUser);
   const canDownload = Boolean(pdfDoc && verifiedUser);
   const canMapSchema = useMemo(() => {
     if (!verifiedUser) return false;
@@ -3013,6 +3171,17 @@ function App() {
     }
     return null;
   })();
+
+  const savedFormsLimitDialog = (
+    <SavedFormsLimitDialog
+      open={showSavedFormsLimitDialog}
+      maxSavedForms={profileLimits.savedFormsMax}
+      savedForms={savedForms}
+      deletingFormId={deletingFormId}
+      onDelete={handleSavedFormsLimitDelete}
+      onClose={closeSavedFormsLimitDialog}
+    />
+  );
   const demoCompletionDialog = (
     <ConfirmDialog
       open={demoCompletionOpen}
@@ -3118,6 +3287,7 @@ function App() {
             onDismiss={handleDismissBanner}
           />
         ) : null}
+        {savedFormsLimitDialog}
         {dialogContent}
         <ProfilePage
           email={userProfile?.email ?? verifiedUser.email}
@@ -3147,8 +3317,9 @@ function App() {
             onDismiss={handleDismissBanner}
           />
         ) : null}
-        {dialogContent}
+        {savedFormsLimitDialog}
         {demoCompletionDialog}
+        {dialogContent}
         <LegacyHeader
           currentView={currentView}
           onNavigateHome={handleNavigateHome}
@@ -3379,8 +3550,9 @@ function App() {
           onDismiss={handleDismissBanner}
         />
       ) : null}
-      {dialogContent}
+      {savedFormsLimitDialog}
       {demoCompletionDialog}
+      {dialogContent}
       <HeaderBar
         pageCount={pageCount}
         currentPage={currentPage}
@@ -3471,8 +3643,11 @@ function App() {
           selectedFieldId={selectedFieldId}
           currentPage={currentPage}
           onUpdateField={handleUpdateField}
+          onUpdateFieldDraft={handleUpdateFieldDraft}
           onDeleteField={handleDeleteField}
           onCreateField={handleCreateField}
+          onBeginFieldChange={beginFieldHistory}
+          onCommitFieldChange={commitFieldHistory}
           canUndo={canUndo}
           canRedo={canRedo}
           onUndo={handleUndo}
@@ -3491,6 +3666,7 @@ function App() {
           rows={dataRows}
           fields={fields}
           checkboxRules={checkboxRules}
+          checkboxHints={checkboxHints}
           onFieldsChange={handleFieldsChange}
           onClearFields={handleClearFieldValues}
           onAfterFill={() => {

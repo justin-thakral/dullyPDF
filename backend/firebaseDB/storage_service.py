@@ -98,6 +98,19 @@ def upload_template_pdf(local_file_path: str, destination_path: str) -> str:
     return f"gs://{TEMPLATES_BUCKET}/{safe_destination}"
 
 
+def upload_pdf_to_bucket_path(local_file_path: str, bucket_path: str) -> str:
+    """Upload a PDF to an existing gs:// bucket path.
+    """
+    _require_bucket_config()
+    bucket_name, file_path = _parse_gs_uri(bucket_path)
+    bucket = get_storage_bucket(bucket_name)
+    blob = bucket.blob(file_path)
+    blob.cache_control = "private, no-store"
+    blob.upload_from_filename(local_file_path, content_type="application/pdf")
+    logger.debug("Uploaded PDF to existing path: %s", bucket_path)
+    return f"gs://{bucket_name}/{file_path}"
+
+
 def upload_session_pdf_bytes(pdf_bytes: bytes, destination_path: str) -> str:
     """Upload session PDF bytes to the session bucket.
     """

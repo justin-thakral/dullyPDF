@@ -57,11 +57,15 @@ export function computeCheckboxMeta(fields: PdfField[], rowKeys: string[]): Map<
     const optionLabel = typeof field.optionLabel === 'string' ? field.optionLabel : undefined;
     const storedGroup = field.groupKey ? normaliseDataKey(field.groupKey) : '';
     const storedOption = field.optionKey ? normaliseDataKey(field.optionKey) : '';
-    if (storedGroup && storedOption) {
-      metaById.set(field.id, { groupKey: storedGroup, optionKey: storedOption, optionLabel });
-    }
-
     const base = resolveCheckboxBaseName(field);
+    const baseMatchesRowKey = base ? rowKeySet.has(base) || rowKeySetStripped.has(base) : false;
+    if (storedGroup && storedOption) {
+      if (baseMatchesRowKey && storedGroup !== base) {
+        metaById.set(field.id, { groupKey: base, optionKey: 'yes', optionLabel });
+      } else {
+        metaById.set(field.id, { groupKey: storedGroup, optionKey: storedOption, optionLabel });
+      }
+    }
     if (!base) continue;
     const tokens = base.split('_').filter(Boolean);
     candidates.push({ field, base, tokens, optionLabel });
@@ -104,9 +108,10 @@ export function computeCheckboxMeta(fields: PdfField[], rowKeys: string[]): Map<
 
     const rowKeyPrefix = findRowKeyPrefix(tokens);
     if (rowKeyPrefix) {
+      const optionKey = tokens.slice(rowKeyPrefix.index).join('_') || 'yes';
       metaById.set(field.id, {
         groupKey: rowKeyPrefix.prefix,
-        optionKey: tokens.slice(rowKeyPrefix.index).join('_'),
+        optionKey,
         optionLabel,
       });
       continue;

@@ -10,9 +10,10 @@ type DialogShellProps = {
   onClose?: () => void;
   children?: React.ReactNode;
   footer?: React.ReactNode;
+  className?: string;
 };
 
-function DialogShell({ open, title, description, onClose, children, footer }: DialogShellProps) {
+function DialogShell({ open, title, description, onClose, children, footer, className }: DialogShellProps) {
   const titleId = useId();
   const descId = useId();
 
@@ -29,10 +30,12 @@ function DialogShell({ open, title, description, onClose, children, footer }: Di
 
   if (!open) return null;
 
+  const dialogClassName = ['ui-dialog', className].filter(Boolean).join(' ');
+
   return (
     <div className="ui-dialog-backdrop" role="presentation" onClick={onClose}>
       <div
-        className="ui-dialog"
+        className={dialogClassName}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
@@ -54,6 +57,10 @@ function DialogShell({ open, title, description, onClose, children, footer }: Di
       </div>
     </div>
   );
+}
+
+export function Dialog(props: DialogShellProps) {
+  return <DialogShell {...props} />;
 }
 
 export type ConfirmDialogProps = {
@@ -174,6 +181,71 @@ export function PromptDialog({
         ) : null}
         <button className={primaryClass} type="button" onClick={() => onSubmit(value)} disabled={!canSubmit}>
           {confirmLabel}
+        </button>
+      </div>
+    </DialogShell>
+  );
+}
+
+export type SavedFormsLimitDialogProps = {
+  open: boolean;
+  maxSavedForms: number;
+  savedForms: Array<{ id: string; name: string; createdAt: string }>;
+  deletingFormId?: string | null;
+  onDelete: (formId: string) => void;
+  onClose: () => void;
+};
+
+export function SavedFormsLimitDialog({
+  open,
+  maxSavedForms,
+  savedForms,
+  deletingFormId = null,
+  onDelete,
+  onClose,
+}: SavedFormsLimitDialogProps) {
+  const description = `Maxed saved forms (${maxSavedForms} max). Delete one of these or exit out without saving.`;
+
+  return (
+    <DialogShell open={open} title="Saved forms limit reached" description={description} onClose={onClose}>
+      <div className="saved-forms-dialog">
+        {savedForms.length === 0 ? (
+          <p className="saved-forms-dialog__empty">No saved forms are available.</p>
+        ) : (
+          <div className="saved-forms-dialog__list saved-forms-list">
+            {savedForms.map((form) => {
+              const isDeleting = deletingFormId === form.id;
+              const parsedDate = form.createdAt ? new Date(form.createdAt) : null;
+              const dateLabel =
+                parsedDate && !Number.isNaN(parsedDate.getTime())
+                  ? parsedDate.toLocaleDateString()
+                  : 'Unknown date';
+              return (
+                <div key={form.id} className="saved-form-row">
+                  <div className="saved-form-item saved-form-item--static">
+                    <div className="saved-form-name">{form.name}</div>
+                    <div className="saved-form-date">{dateLabel}</div>
+                  </div>
+                  <button
+                    type="button"
+                    className="saved-form-delete"
+                    onClick={() => {
+                      if (!isDeleting) onDelete(form.id);
+                    }}
+                    disabled={isDeleting}
+                    aria-label={`Delete saved form ${form.name}`}
+                  >
+                    {isDeleting ? 'Deleting...' : 'Delete'}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+      <div className="ui-dialog__actions">
+        <button className="ui-button ui-button--ghost" type="button" onClick={onClose}>
+          Exit without saving
         </button>
       </div>
     </DialogShell>

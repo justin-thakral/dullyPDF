@@ -90,38 +90,6 @@ def _humanize_group_label(group_key: str) -> str:
     return group_key.replace("_", " ")
 
 
-def _parse_checkbox_group_and_option(
-    name: str,
-    *,
-    option_label: str | None = None,
-) -> Tuple[str, str]:
-    """
-    Split a checkbox name into group/option keys.
-
-    We treat i_<group>_<option> as canonical, with a fallback to suffix splitting if
-    no option label is available.
-    """
-    base = _to_snake_case(name)
-    if base.startswith("i_"):
-        base = base[2:]
-    base = re.sub(r"_\d+$", "", base)
-
-    option_from_label = _normalize_checkbox_component(option_label or "") if option_label else ""
-    if option_from_label and base.endswith(f"_{option_from_label}"):
-        return base[: -(len(option_from_label) + 1)], option_from_label
-
-    parts = [part for part in base.split("_") if part]
-    if len(parts) >= 2:
-        last = parts[-1]
-        if last in {"yes", "no", "true", "false", "y", "n", "m", "f"}:
-            return "_".join(parts[:-1]), last
-        if len(parts) >= 3:
-            return "_".join(parts[:2]), "_".join(parts[2:])
-        return parts[0], parts[1]
-
-    return base, "yes"
-
-
 def _parse_confidence(value: str) -> float:
     """
     Parse confidence strings in percent or decimal form into [0, 1].
@@ -437,7 +405,8 @@ def _build_prompt(
         "- Use the previous-page image only to recognize labels that belong to the prior page.\n"
         "Use that ID as originalFieldName. Do NOT invent IDs.\n"
         "Candidates with isItAfieldConfidence below 0.30 are treated as not-a-field, but you must "
-        "still output a line for them (keep suggestedRename = originalFieldName and renameConfidence = 0).\n\n"
+        "still output a line for them and provide a best-guess standardized suggestedRename. "
+        "Do NOT repeat the originalFieldName as suggestedRename.\n\n"
         "Output format (one line per field, no extra text):\n"
         "|| originalFieldName | suggestedRename | renameConfidence | isItAfieldConfidence\n"
         "Example format only (do not reuse names):\n"
@@ -447,15 +416,15 @@ def _build_prompt(
         "- Only use originalFieldName values from the provided list.\n"
         "- IDs are random (not sequential); do not assume ordering beyond the provided list.\n"
         "- Use snake_case for suggestedRename.\n"
+        "- Never output the overlay ID (originalFieldName) as suggestedRename.\n"
         "- Checkbox names should start with 'i_'.\n"
         "- Confidence values must be between 0 and 1 (not percent).\n"
         "- If the item is not a real field, set isItAfieldConfidence < 0.30.\n"
-        "- If isItAfieldConfidence < 0.30, keep suggestedRename equal to originalFieldName and "
-        "set renameConfidence to 0.\n\n"
+        "- If isItAfieldConfidence < 0.30, set renameConfidence to 0 but still provide a best-guess suggestedRename.\n\n"
         "Swap avoidance:\n"
         "- Do not swap IDs between neighboring fields. The ID inside each box is authoritative.\n"
-        "- If a tight cluster makes the label ambiguous, keep suggestedRename equal to "
-        "originalFieldName and set renameConfidence to 0.0.\n"
+        "- If a tight cluster makes the label ambiguous, still provide your best-guess suggestedRename "
+        "and set renameConfidence to 0.0.\n"
         "- Do not shift label associations downward because of labels from the previous page.\n\n"
         "Row alignment (CRITICAL, highest priority):\n"
         "- For text fields, the correct label is directly to the left on the same horizontal line.\n"
@@ -464,14 +433,15 @@ def _build_prompt(
         "row/column (up/down/left/right), correct the shift so each field aligns to its same-row label.\n"
         "- If the topmost field has no same-row label and the next label aligns with the next field, "
         "mark the topmost field as not-a-field (isItAfieldConfidence < 0.30) instead of shifting all names.\n"
-        "- If any row is ambiguous, keep suggestedRename = originalFieldName and renameConfidence = 0.0.\n"
+        "- If any row is ambiguous, still provide your best-guess suggestedRename and set renameConfidence = 0.0.\n"
         "- Never cascade a one-row mistake across the page; alignment beats ordering every time.\n"
         "- In extreme misalignment cases, you may lower isItAfieldConfidence to medium/low even if the "
         "detector was confident; reserve < 0.30 for clear non-fields.\n\n"
         "Missing-field rule:\n"
         "- If matching labels would require shifting every field down/up by one to make room for "
         "a suspected missing field, treat that suspected field as not-a-field "
-        "(isItAfieldConfidence < 0.30) and keep the original per-box alignments.\n\n"
+        "(isItAfieldConfidence < 0.30) and keep the original per-box alignments. "
+        "Still output a best-guess suggestedRename with renameConfidence = 0.\n\n"
         "Common field naming:\n"
         "- Address line 1 (street/mailing address/line 1): use street_address.\n"
         "- Address line 2 (apt/unit/suite/line 2): use address_line_2.\n"
@@ -543,7 +513,7 @@ def _build_prompt(
             "\n\nCommonForms confidence guidance:\n"
             "- You may adjust isItAfieldConfidence to reflect detection quality; it replaces field confidence.\n"
             f"- Green >= {high:.2f}, yellow between {medium:.2f} and {high:.2f}, red < {medium:.2f}.\n"
-            "- If isItAfieldConfidence < 0.30, keep suggestedRename = originalFieldName and renameConfidence = 0."
+            "- If isItAfieldConfidence < 0.30, set renameConfidence to 0."
         )
 
     label_bboxes = [
@@ -1027,7 +997,6 @@ def run_openai_rename_pipeline(
         if is_not_field:
             dropped.append(original_name or f"field_{idx}")
             rename_conf = 0.0
-            suggested = original_name
 
         updated = dict(field)
         updated["originalName"] = original_name
@@ -1043,14 +1012,53 @@ def run_openai_rename_pipeline(
         renamed_fields.append(updated)
 
     _dedupe_field_names(renamed_fields)
+    checkbox_prefix_counts: Dict[str, int] = {}
+    checkbox_bases: Dict[int, Tuple[str, List[str], str | None]] = {}
     for idx, field in enumerate(renamed_fields):
         if str(field.get("type") or "").lower() != "checkbox":
             continue
+        base = _to_snake_case(str(field.get("name") or ""))
+        if base.startswith("i_"):
+            base = base[2:]
+        base = re.sub(r"_\d+$", "", base)
+        if not base:
+            continue
+        tokens = [token for token in base.split("_") if token]
         option_label = label_hints_by_index.get(idx)
-        group_key, option_key = _parse_checkbox_group_and_option(
-            str(field.get("name") or ""),
-            option_label=option_label,
-        )
+        checkbox_bases[idx] = (base, tokens, option_label)
+        if len(tokens) < 2:
+            continue
+        for i in range(1, len(tokens)):
+            prefix = "_".join(tokens[:i])
+            checkbox_prefix_counts[prefix] = checkbox_prefix_counts.get(prefix, 0) + 1
+
+    for idx, field in enumerate(renamed_fields):
+        if str(field.get("type") or "").lower() != "checkbox":
+            continue
+        base, tokens, option_label = checkbox_bases.get(idx, ("", [], None))
+        if not base:
+            continue
+        option_from_label = _normalize_checkbox_component(option_label or "") if option_label else ""
+        group_key = ""
+        option_key = ""
+        if option_from_label and base.endswith(f"_{option_from_label}"):
+            group_key = base[: -(len(option_from_label) + 1)]
+            option_key = option_from_label
+        if not group_key:
+            for i in range(len(tokens) - 1, 0, -1):
+                prefix = "_".join(tokens[:i])
+                if checkbox_prefix_counts.get(prefix, 0) >= 2:
+                    group_key = prefix
+                    option_key = "_".join(tokens[i:]) or "yes"
+                    break
+        if not group_key:
+            last = tokens[-1] if tokens else ""
+            if last in {"yes", "no", "true", "false", "y", "n", "m", "f"} and len(tokens) >= 2:
+                group_key = "_".join(tokens[:-1])
+                option_key = last
+            else:
+                group_key = base
+                option_key = "yes"
         field["groupKey"] = group_key or None
         field["optionKey"] = option_key or None
         if option_label:

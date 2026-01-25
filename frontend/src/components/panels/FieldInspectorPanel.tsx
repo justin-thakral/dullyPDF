@@ -11,8 +11,11 @@ type FieldInspectorPanelProps = {
   selectedFieldId: string | null;
   currentPage: number;
   onUpdateField: (fieldId: string, updates: Partial<PdfField>) => void;
+  onUpdateFieldDraft: (fieldId: string, updates: Partial<PdfField>) => void;
   onDeleteField: (fieldId: string) => void;
   onCreateField: (type: FieldType) => void;
+  onBeginFieldChange: () => void;
+  onCommitFieldChange: () => void;
   canUndo: boolean;
   canRedo: boolean;
   onUndo: () => void;
@@ -27,8 +30,11 @@ export function FieldInspectorPanel({
   selectedFieldId,
   currentPage,
   onUpdateField,
+  onUpdateFieldDraft,
   onDeleteField,
   onCreateField,
+  onBeginFieldChange,
+  onCommitFieldChange,
   canUndo,
   canRedo,
   onUndo,
@@ -72,7 +78,9 @@ export function FieldInspectorPanel({
                 name="field-name"
                 className="panel__input"
                 value={selected.name}
-                onChange={(event) => onUpdateField(selected.id, { name: event.target.value })}
+                onFocus={onBeginFieldChange}
+                onBlur={onCommitFieldChange}
+                onChange={(event) => onUpdateFieldDraft(selected.id, { name: event.target.value })}
               />
 
               <div className="panel__row">
@@ -105,6 +113,7 @@ export function FieldInspectorPanel({
                   type="number"
                   min={1}
                   value={selected.page}
+                  onWheel={(event) => event.currentTarget.blur()}
                   onChange={(event) => onUpdateField(selected.id, { page: Number(event.target.value) || 1 })}
                 />
               </div>

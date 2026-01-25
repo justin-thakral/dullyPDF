@@ -360,6 +360,31 @@ def _ensure_acroform(writer: PdfWriter) -> DictionaryObject:
     return acroform
 
 
+def _ensure_unique_page_annots(writer: PdfWriter) -> None:
+    """
+    Guard against PDFs that reuse a single /Annots array across pages.
+    """
+    seen: set[int] = set()
+    for page in writer.pages:
+        annots = page.get("/Annots")
+        if annots is None:
+            continue
+        try:
+            annots_obj = annots.get_object()
+        except AttributeError:
+            annots_obj = annots
+        if not isinstance(annots_obj, ArrayObject):
+            normalized = ArrayObject(list(annots_obj) if isinstance(annots_obj, list) else [])
+            page[NameObject("/Annots")] = normalized
+            seen.add(id(normalized))
+            continue
+        if id(annots_obj) in seen:
+            # Clone shared /Annots arrays so fields do not appear on every page.
+            annots_obj = ArrayObject(list(annots_obj))
+            page[NameObject("/Annots")] = annots_obj
+        seen.add(id(annots_obj))
+
+
 def _add_annotation(page, annot_ref):
     """
     Append an annotation reference to the page annotations list.
@@ -919,6 +944,7 @@ def inject_fields_from_template(
                     entry = root_src.get(key)
                 root_dst[NameObject(key)] = entry.clone(writer)
 
+    _ensure_unique_page_annots(writer)
     acroform = _ensure_acroform(writer)
     if STRIP_EXISTING_FIELDS:
         removed = _strip_existing_widget_annots(writer)

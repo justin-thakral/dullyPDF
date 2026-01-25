@@ -45,6 +45,12 @@ The dev stack uses `env/frontend.stack.env` (copied from
 `config/frontend.stack.env.example`) and sets `VITE_DISABLE_ADMIN_OVERRIDE=1`
 so admin override headers remain disabled for prod-like testing.
 
+## Contact form
+
+Set `VITE_RECAPTCHA_SITE_KEY` to enable the homepage contact form reCAPTCHA.
+Use `VITE_CONTACT_REQUIRE_RECAPTCHA` and `VITE_SIGNUP_REQUIRE_RECAPTCHA` to control
+whether contact and account creation require reCAPTCHA in each environment.
+
 ## Optional builds
 
 - Dev build: `npm run build:dev`

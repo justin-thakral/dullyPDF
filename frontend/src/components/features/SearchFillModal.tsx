@@ -2,7 +2,7 @@
  * Search & Fill modal for populating fields from data sources.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { CheckboxRule, PdfField } from '../../types';
+import type { CheckboxHint, CheckboxRule, PdfField } from '../../types';
 import type { DataSourceKind } from '../layout/HeaderBar';
 import './SearchFillModal.css';
 import { normaliseDataKey } from '../../utils/dataSource';
@@ -29,6 +29,7 @@ type SearchFillModalProps = {
   rows: Array<Record<string, unknown>>;
   fields: PdfField[];
   checkboxRules?: CheckboxRule[];
+  checkboxHints?: CheckboxHint[];
   onFieldsChange: (next: PdfField[]) => void;
   onClearFields: () => void;
   onAfterFill: () => void;
@@ -178,6 +179,7 @@ export default function SearchFillModal({
   rows,
   fields,
   checkboxRules,
+  checkboxHints,
   onFieldsChange,
   onClearFields,
   onAfterFill,
@@ -238,6 +240,7 @@ export default function SearchFillModal({
       const checkboxNameIndex = new Map<string, PdfField[]>();
       const checkboxOptionIndex = new Map<string, { groupKey: string; optionKey: string }>();
       const checkboxOptionConflicts = new Set<string>();
+      const checkboxHintsByField = new Map<string, CheckboxHint>();
       const explicitGroupKeys = new Set<string>();
       const groupValueApplied = new Set<string>();
       const clearedGroups = new Set<string>();
@@ -253,6 +256,13 @@ export default function SearchFillModal({
         } else {
           checkboxNameIndex.set(normalizedName, [field]);
         }
+      }
+
+      for (const hint of checkboxHints ?? []) {
+        if (!hint || !hint.databaseField) continue;
+        const key = normaliseDataKey(hint.databaseField);
+        if (!key || checkboxHintsByField.has(key)) continue;
+        checkboxHintsByField.set(key, hint);
       }
 
       for (const [groupKey, group] of checkboxGroups.entries()) {
@@ -421,7 +431,7 @@ export default function SearchFillModal({
       const applyDirectCheckboxMatch = (key: string, value: unknown): boolean => {
         const matches = checkboxNameIndex.get(key);
         if (!matches?.length) return false;
-        const normalizedValue = coerceCheckboxPresence(value);
+        const normalizedValue = coerceCheckboxBoolean(value);
         if (normalizedValue === null) return false;
         for (const field of matches) {
           setCheckboxOverrideByField(field, normalizedValue, true);
@@ -433,7 +443,7 @@ export default function SearchFillModal({
         if (!key || checkboxOptionConflicts.has(key)) return false;
         const match = checkboxOptionIndex.get(key);
         if (!match) return false;
-        const normalizedValue = coerceCheckboxPresence(value);
+        const normalizedValue = coerceCheckboxBoolean(value);
         if (normalizedValue === null) return false;
         return setCheckboxOverride(match.groupKey, match.optionKey, normalizedValue, true);
       };
@@ -479,6 +489,23 @@ export default function SearchFillModal({
         if (applied) groupValueApplied.add(normalizedGroup);
       };
 
+      const applyHintedBooleanGroup = (hint: CheckboxHint, value: unknown): boolean => {
+        if (!hint?.directBooleanPossible) return false;
+        const normalizedGroup = normaliseDataKey(hint.groupKey || '');
+        if (!normalizedGroup) return false;
+        if (explicitGroupKeys.has(normalizedGroup) || groupValueApplied.has(normalizedGroup)) return false;
+        if (!checkboxGroups.has(normalizedGroup)) return false;
+        const normalizedValue = coerceCheckboxBoolean(value);
+        if (normalizedValue === null) return false;
+        clearCheckboxGroup(normalizedGroup);
+        const applied = resolveCheckboxGroupValue(normalizedGroup, normalizedValue);
+        if (applied) {
+          explicitGroupKeys.add(normalizedGroup);
+          groupValueApplied.add(normalizedGroup);
+        }
+        return applied;
+      };
+
       for (const [key, value] of normalizedRow) {
         applyDirectCheckboxMatch(key, value);
       }
@@ -511,6 +538,12 @@ export default function SearchFillModal({
         if (key.startsWith('i_') || key.startsWith('checkbox_')) continue;
         if (!checkboxGroups.has(key)) continue;
         applyGroupValue(key, value);
+      }
+
+      for (const [key, value] of normalizedRow) {
+        const hint = checkboxHintsByField.get(key);
+        if (!hint) continue;
+        applyHintedBooleanGroup(hint, value);
       }
 
       for (const checkboxRule of checkboxRules ?? []) {
@@ -715,6 +748,7 @@ export default function SearchFillModal({
       }
     },
     [
+      checkboxHints,
       checkboxRules,
       fields,
       onAfterFill,

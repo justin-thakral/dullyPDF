@@ -7,12 +7,17 @@
 .app-header {
   background: linear-gradient(120deg, #0b1222 0%, #132b63 50%, #1d4ed8 100%);
   color: white;
-  padding: 0.9rem 0;
+  padding: 0;
   box-shadow: 0 14px 30px rgba(15, 23, 42, 0.28);
   border-bottom: 1px solid rgba(148, 163, 184, 0.2);
   position: sticky;
   top: 0;
   z-index: 100;
+  --header-height: 60px;
+  --header-pill-height: calc(var(--header-height) - 16px);
+  --header-pill-pad-x: 0.85rem;
+  --header-logo-size: 24px;
+  min-height: var(--header-height);
 }
 
 .header-content {
@@ -24,6 +29,7 @@
   justify-content: space-between;
   align-items: center;
   gap: 1.5rem;
+  min-height: var(--header-height);
 }
 
 .header-left {
@@ -80,10 +86,10 @@
 }
 
 .header-title {
-  margin: 0 0 0.25rem 0;
-  font-size: 1.6rem;
+  margin: 0 0 0.15rem 0;
+  font-size: 1.5rem;
   font-weight: 700;
-  line-height: 1.2;
+  line-height: 1.15;
   background: linear-gradient(135deg, #ffffff 0%, #dbeafe 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -92,10 +98,10 @@
 
 .header-description {
   margin: 0;
-  font-size: 0.9rem;
+  font-size: 0.84rem;
   opacity: 0.88;
   font-weight: 400;
-  line-height: 1.3;
+  line-height: 1.22;
 }
 
 .header-right {
@@ -110,15 +116,16 @@
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  padding: 0.45rem 0.9rem;
+  padding: 0 var(--header-pill-pad-x);
+  height: var(--header-pill-height);
   background: rgba(15, 23, 42, 0.65);
   border-radius: 10px;
   border: 1px solid rgba(148, 163, 184, 0.35);
 }
 
 .logo-image {
-  width: 26px;
-  height: 26px;
+  width: var(--header-logo-size);
+  height: var(--header-logo-size);
   object-fit: contain;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.1);
@@ -126,7 +133,7 @@
 }
 
 .logo-text {
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   font-weight: 650;
   letter-spacing: 0.01em;
   color: rgba(226, 232, 240, 0.95);
@@ -135,9 +142,10 @@
 .header-account {
   display: inline-flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.6rem;
   background: rgba(15, 23, 42, 0.55);
-  padding: 0.45rem 0.75rem;
+  padding: 0 0.7rem;
+  height: var(--header-pill-height);
   border-radius: 999px;
   border: 1px solid rgba(148, 163, 184, 0.35);
 }
@@ -145,10 +153,10 @@
 .header-account__button {
   display: inline-flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.6rem;
   background: transparent;
   border: none;
-  padding: 0.25rem 0.55rem;
+  padding: 0 0.5rem;
   color: inherit;
   font: inherit;
   border-radius: 999px;
@@ -176,8 +184,8 @@
 }
 
 .user-avatar {
-  width: 32px;
-  height: 32px;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
   background: rgba(37, 99, 235, 0.9);
   display: flex;
@@ -185,18 +193,20 @@
   justify-content: center;
   color: #f8fafc;
   font-weight: 700;
-  font-size: 0.95rem;
+  font-size: 0.72rem;
 }
 
 .user-detail {
   display: flex;
   flex-direction: column;
+  justify-content: center;
 }
 
 .user-email {
-  font-size: 0.82rem;
+  font-size: 0.76rem;
   font-weight: 600;
   color: #f8fafc;
+  line-height: 1.2;
 }
 
 @supports ((-webkit-backdrop-filter: blur(10px)) or (backdrop-filter: blur(10px))) {
@@ -233,32 +243,37 @@
   background: rgba(15, 23, 42, 0.5);
   color: #e2e8f0;
   border-radius: 999px;
-  padding: 0.35rem 0.8rem;
-  font-size: 0.75rem;
+  padding: 0 0.5rem;
+  height: 28px;
+  font-size: 0.7rem;
   font-weight: 600;
   cursor: pointer;
   transition: background 0.2s ease;
+  line-height: 1;
 }
 
 .signout-button:hover {
-  background: rgba(15, 23, 42, 0.55);
+  background: rgba(59, 130, 246, 0.3);
+  color: #ffffff;
+  box-shadow: 0 8px 16px rgba(15, 23, 42, 0.22);
 }
 
 .signin-button {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  padding: 0.55rem 1.1rem;
+  padding: 0 0.95rem;
+  height: var(--header-pill-height);
   background: rgba(15, 23, 42, 0.35);
   border-radius: 999px;
   border: 1px solid rgba(148, 163, 184, 0.35);
   backdrop-filter: blur(10px);
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   font-weight: 600;
   color: #e2e8f0;
   cursor: pointer;
   transition: all 0.2s ease;
-  min-height: 40px;
+  min-height: 0;
 }
 
 .signin-button:hover {
@@ -274,11 +289,11 @@
   }
 
   .header-title {
-    font-size: 1.5rem;
+    font-size: 1.4rem;
   }
 
   .header-description {
-    font-size: 0.875rem;
+    font-size: 0.82rem;
   }
 }
 

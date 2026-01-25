@@ -353,6 +353,39 @@ def create_template(
     return _serialize_template(doc_ref.get())
 
 
+def update_template(
+    template_id: str,
+    user_id: str,
+    *,
+    pdf_path: Optional[str] = None,
+    template_path: Optional[str] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+) -> Optional[TemplateRecord]:
+    """Update a template record if the user owns it.
+    """
+    if not template_id or not user_id:
+        return None
+    client = get_firestore_client()
+    doc_ref = client.collection(TEMPLATES_COLLECTION).document(template_id)
+    snapshot = doc_ref.get()
+    if not snapshot.exists:
+        return None
+    data = snapshot.to_dict() or {}
+    if data.get("user_id") != user_id:
+        logger.debug("Template ownership mismatch blocked: %s", template_id)
+        return None
+    payload: Dict[str, Any] = {"updated_at": now_iso()}
+    if pdf_path is not None:
+        payload["pdf_bucket_path"] = pdf_path
+    if template_path is not None:
+        payload["template_bucket_path"] = template_path
+    if metadata is not None:
+        payload["metadata"] = metadata
+    doc_ref.set(payload, merge=True)
+    logger.debug("Updated template mapping: %s", template_id)
+    return _serialize_template(doc_ref.get())
+
+
 def delete_template(template_id: str, user_id: str) -> bool:
     """Delete a template record if it belongs to the caller.
     """

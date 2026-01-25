@@ -213,7 +213,7 @@
   white-space: nowrap;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1020px) {
   .searchfill-controls {
     grid-template-columns: 1fr 1fr;
   }

@@ -58,6 +58,13 @@ export type CheckboxRule = {
   reasoning?: string;
 };
 
+export type CheckboxHint = {
+  databaseField: string;
+  groupKey: string;
+  operation?: 'yes_no' | 'enum' | 'list' | 'presence';
+  directBooleanPossible?: boolean;
+};
+
 // Cached page dimensions for rendering and clamping.
 export type PageSize = {
   width: number;

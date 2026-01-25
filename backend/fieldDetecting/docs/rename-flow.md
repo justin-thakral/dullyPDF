@@ -60,9 +60,9 @@ Files:
 
 - `renameConfidence` measures how confident the model is in the proposed name.
 - `isItAfieldConfidence` measures how confident the model is that the overlay item is a real field.
-- Fields with `isItAfieldConfidence < SANDBOX_RENAME_MIN_FIELD_CONF` are kept, but their names
-  remain unchanged (`renameConfidence = 0`). The response still records them in `dropped` for
-  visibility.
+- Fields with `isItAfieldConfidence < SANDBOX_RENAME_MIN_FIELD_CONF` are kept and
+  `renameConfidence` is set to 0, but suggested names are still applied (best-guess). The
+  response still records them in `dropped` for visibility.
 
 ## Overlay naming and mapping
 

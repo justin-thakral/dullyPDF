@@ -11,9 +11,12 @@ FastAPI service for PDF field detection, schema-only OpenAI mapping, and saved-f
 - OpenAI rename (overlay tags + PDF pages; schema headers included for combined rename+map): `POST /api/renames/ai`.
 - Schema metadata: `POST /api/schemas`, `GET /api/schemas`.
 - Schema mapping (OpenAI): `POST /api/schema-mappings/ai` (results returned only; not persisted).
-- Saved forms: `GET /api/saved-forms`, `POST /api/saved-forms`, `GET /api/saved-forms/{id}`, `GET /api/saved-forms/{id}/download`, `POST /api/saved-forms/{id}/session`, `DELETE /api/saved-forms/{id}`.
+- Saved forms: `GET /api/saved-forms`, `POST /api/saved-forms` (supports `overwriteFormId` to replace an existing saved form), `GET /api/saved-forms/{id}`, `GET /api/saved-forms/{id}/download`, `POST /api/saved-forms/{id}/session`, `DELETE /api/saved-forms/{id}`.
 - Template session (fillable upload): `POST /api/templates/session` (stores PDF bytes + fields so rename/mapping can run).
+- Materialize fillable: `POST /api/forms/materialize` (auth required; injects fields into a PDF upload and enforces fillable page limits).
 - Profile summary: `GET /api/profile` (tier info, credits, and limits).
+- Contact form: `POST /api/contact` (public; reCAPTCHA required; sends email via Gmail API).
+- reCAPTCHA verify: `POST /api/recaptcha/assess` (public; used for account creation checks).
 
 ### Runtime requirements
 
@@ -32,6 +35,16 @@ FastAPI service for PDF field detection, schema-only OpenAI mapping, and saved-f
 - `FIREBASE_CREDENTIALS_PROJECT` (Secret Manager project, if different from `FIREBASE_PROJECT_ID`)
 - `FORMS_BUCKET`, `TEMPLATES_BUCKET`
 - `OPENAI_API_KEY` (only if schema mapping enabled)
+- `CONTACT_TO_EMAIL`, `CONTACT_FROM_EMAIL`
+- `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `GMAIL_REFRESH_TOKEN`
+- `GMAIL_USER_ID` (optional; defaults to `me`)
+- `RECAPTCHA_SITE_KEY`
+- `RECAPTCHA_PROJECT_ID` (or `FIREBASE_PROJECT_ID` / `GCP_PROJECT_ID`)
+- `RECAPTCHA_MIN_SCORE` (default 0.5)
+- `CONTACT_REQUIRE_RECAPTCHA` (default true)
+- `CONTACT_RATE_LIMIT_WINDOW_SECONDS`, `CONTACT_RATE_LIMIT_PER_IP`
+- `SIGNUP_REQUIRE_RECAPTCHA` (default true)
+- `SIGNUP_RATE_LIMIT_WINDOW_SECONDS`, `SIGNUP_RATE_LIMIT_PER_IP`
 - `SANDBOX_CORS_ORIGINS` (comma-separated list)
 - `SANDBOX_ENABLE_LEGACY_ENDPOINTS` (dev-only; defaults to true; ignored in prod)
 - `ADMIN_TOKEN` (dev-only override; ignored when `ENV=prod` or `SANDBOX_ALLOW_ADMIN_OVERRIDE=false`)

@@ -13,6 +13,7 @@ Data structures:
 - Session entries cached in L1 with Firestore/GCS fallback for multi-instance access.
 """
 
+import base64
 import hashlib
 import importlib.util
 import io
@@ -20,6 +21,7 @@ import json
 import os
 import re
 import tempfile
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -29,7 +31,10 @@ from fastapi import BackgroundTasks, FastAPI, File, Form, Header, HTTPException,
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from firebase_admin import auth as firebase_auth
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+import httpx
+from google.auth import default as google_auth_default
+from google.auth.transport.requests import Request as GoogleAuthRequest
 import fitz
 
 from .detection_status import (
@@ -59,6 +64,7 @@ from .firebaseDB.app_database import (
     list_templates,
     normalize_role,
     refund_openai_credits,
+    update_template,
     ROLE_GOD,
 )
 from .firebaseDB.detection_database import record_detection_request, update_detection_request
@@ -78,6 +84,7 @@ from .firebaseDB.storage_service import (
     is_gcs_path,
     stream_pdf,
     upload_form_pdf,
+    upload_pdf_to_bucket_path,
     upload_template_pdf,
 )
 from .pdf_validation import PdfValidationError, PdfValidationResult, preflight_pdf_bytes
@@ -121,6 +128,21 @@ def _require_prod_env() -> None:
         missing.append("FORMS_BUCKET")
     if not _env_value("TEMPLATES_BUCKET"):
         missing.append("TEMPLATES_BUCKET")
+    if not _env_value("CONTACT_TO_EMAIL"):
+        missing.append("CONTACT_TO_EMAIL")
+    if not _env_value("CONTACT_FROM_EMAIL"):
+        missing.append("CONTACT_FROM_EMAIL")
+    if not _env_value("GMAIL_CLIENT_ID"):
+        missing.append("GMAIL_CLIENT_ID")
+    if not _env_value("GMAIL_CLIENT_SECRET"):
+        missing.append("GMAIL_CLIENT_SECRET")
+    if not _env_value("GMAIL_REFRESH_TOKEN"):
+        missing.append("GMAIL_REFRESH_TOKEN")
+    if _recaptcha_required_any():
+        if not _env_value("RECAPTCHA_SITE_KEY"):
+            missing.append("RECAPTCHA_SITE_KEY")
+        if not (_env_value("RECAPTCHA_PROJECT_ID") or _env_value("FIREBASE_PROJECT_ID") or _env_value("GCP_PROJECT_ID")):
+            missing.append("RECAPTCHA_PROJECT_ID (or FIREBASE_PROJECT_ID/GCP_PROJECT_ID)")
     detector_mode = _resolve_detection_mode()
     if detector_mode != "tasks":
         missing.append("DETECTOR_MODE=tasks")
@@ -378,6 +400,93 @@ class SavedFormSessionRequest(BaseModel):
     pageCount: Optional[int] = None
 
 
+CONTACT_ISSUE_LABELS = {
+    "bug_report": "Bug report",
+    "cofounder_inquiry": "Co-founder inquiry",
+    "question": "Question",
+    "feature_request": "Feature request",
+    "partnership": "Partnership",
+    "other": "Other",
+}
+
+
+class ContactRequest(BaseModel):
+    """Homepage contact form submission."""
+
+    issueType: str = Field(..., min_length=1)
+    summary: str = Field(..., min_length=1, max_length=160)
+    message: str = Field(..., min_length=1, max_length=4000)
+    contactName: Optional[str] = Field(default=None, max_length=120)
+    contactCompany: Optional[str] = Field(default=None, max_length=120)
+    contactEmail: Optional[str] = Field(default=None, max_length=254)
+    contactPhone: Optional[str] = Field(default=None, max_length=40)
+    preferredContact: Optional[str] = Field(default=None, max_length=20)
+    includeContactInSubject: bool = False
+    recaptchaToken: Optional[str] = Field(default=None, max_length=4096)
+    recaptchaAction: Optional[str] = Field(default=None, max_length=120)
+    pageUrl: Optional[str] = Field(default=None, max_length=2048)
+
+    model_config = {"extra": "ignore"}
+
+    @field_validator("issueType", mode="before")
+    @classmethod
+    def _normalize_issue_type(cls, value: Any) -> str:
+        if value is None:
+            raise ValueError("Issue type is required")
+        resolved = str(value).strip().lower()
+        if not resolved:
+            raise ValueError("Issue type is required")
+        if resolved not in CONTACT_ISSUE_LABELS:
+            raise ValueError("Unsupported issue type")
+        return resolved
+
+    @field_validator(
+        "summary",
+        "message",
+        "contactName",
+        "contactCompany",
+        "contactEmail",
+        "contactPhone",
+        "preferredContact",
+        "recaptchaAction",
+        "pageUrl",
+        mode="before",
+    )
+    @classmethod
+    def _trim_strings(cls, value: Any) -> Any:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            trimmed = value.strip()
+            return trimmed if trimmed else None
+        return value
+
+    @model_validator(mode="after")
+    def _validate_contact_channels(self) -> "ContactRequest":
+        if not self.contactEmail and not self.contactPhone:
+            raise ValueError("Provide a contact email or phone number")
+        return self
+
+
+class RecaptchaAssessmentRequest(BaseModel):
+    """Lightweight reCAPTCHA verification payload."""
+
+    token: str = Field(..., min_length=1, max_length=4096)
+    action: Optional[str] = Field(default=None, max_length=120)
+
+    model_config = {"extra": "ignore"}
+
+    @field_validator("token", "action", mode="before")
+    @classmethod
+    def _trim_strings(cls, value: Any) -> Any:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            trimmed = value.strip()
+            return trimmed if trimmed else None
+        return value
+
+
 _DEFAULT_CORS_ORIGINS = [
     "http://localhost:5173",
     "http://localhost:5174",
@@ -420,6 +529,266 @@ def _resolve_stream_cors_headers(origin: Optional[str]) -> Dict[str, str]:
     if origin in allowed:
         return {"Access-Control-Allow-Origin": origin, "Vary": "Origin"}
     return {}
+
+
+def _resolve_contact_rate_limits() -> tuple[int, int]:
+    window_seconds = _int_env("CONTACT_RATE_LIMIT_WINDOW_SECONDS", 600)
+    per_ip = _int_env("CONTACT_RATE_LIMIT_PER_IP", 6)
+    return window_seconds, per_ip
+
+
+def _resolve_signup_rate_limits() -> tuple[int, int]:
+    window_seconds = _int_env("SIGNUP_RATE_LIMIT_WINDOW_SECONDS", 600)
+    per_ip = _int_env("SIGNUP_RATE_LIMIT_PER_IP", 8)
+    return window_seconds, per_ip
+
+
+def _resolve_client_ip(request: Request) -> str:
+    forwarded_for = request.headers.get("x-forwarded-for") or ""
+    if forwarded_for:
+        first = forwarded_for.split(",")[0].strip()
+        if first:
+            return first
+    if request.client and request.client.host:
+        return request.client.host
+    return "unknown"
+
+
+def _recaptcha_required_for_contact() -> bool:
+    raw = _env_value("CONTACT_REQUIRE_RECAPTCHA")
+    if raw:
+        return _env_truthy("CONTACT_REQUIRE_RECAPTCHA")
+    return True
+
+
+def _recaptcha_required_for_signup() -> bool:
+    raw = _env_value("SIGNUP_REQUIRE_RECAPTCHA")
+    if raw:
+        return _env_truthy("SIGNUP_REQUIRE_RECAPTCHA")
+    return True
+
+
+def _recaptcha_required_any() -> bool:
+    return _recaptcha_required_for_contact() or _recaptcha_required_for_signup()
+
+
+def _resolve_recaptcha_project_id() -> str:
+    return _env_value("RECAPTCHA_PROJECT_ID") or _env_value("FIREBASE_PROJECT_ID") or _env_value("GCP_PROJECT_ID")
+
+
+def _resolve_recaptcha_min_score() -> float:
+    raw = _env_value("RECAPTCHA_MIN_SCORE")
+    if not raw:
+        return 0.5
+    try:
+        return float(raw)
+    except ValueError:
+        return 0.5
+
+
+_GMAIL_TOKEN_CACHE: Dict[str, Any] = {"access_token": None, "expires_at": 0.0}
+
+
+def _resolve_gmail_user_id() -> str:
+    return _env_value("GMAIL_USER_ID") or "me"
+
+
+async def _get_gmail_access_token() -> str:
+    cached_token = _GMAIL_TOKEN_CACHE.get("access_token")
+    expires_at = float(_GMAIL_TOKEN_CACHE.get("expires_at") or 0.0)
+    now = time.time()
+    if cached_token and now < (expires_at - 60):
+        return str(cached_token)
+
+    client_id = _env_value("GMAIL_CLIENT_ID")
+    client_secret = _env_value("GMAIL_CLIENT_SECRET")
+    refresh_token = _env_value("GMAIL_REFRESH_TOKEN")
+    if not client_id or not client_secret or not refresh_token:
+        raise RuntimeError("Gmail API credentials are missing")
+
+    payload = {
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "refresh_token": refresh_token,
+        "grant_type": "refresh_token",
+    }
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        response = await client.post("https://oauth2.googleapis.com/token", data=payload)
+    if response.status_code >= 400:
+        logger.error("Gmail token refresh failed: %s", response.text)
+        raise RuntimeError("Failed to refresh Gmail access token")
+
+    data = response.json()
+    access_token = data.get("access_token")
+    expires_in = data.get("expires_in")
+    if not access_token:
+        raise RuntimeError("Gmail token response missing access_token")
+    try:
+        expires_in_val = float(expires_in)
+    except (TypeError, ValueError):
+        expires_in_val = 3600.0
+
+    _GMAIL_TOKEN_CACHE["access_token"] = access_token
+    _GMAIL_TOKEN_CACHE["expires_at"] = now + expires_in_val
+    return str(access_token)
+
+
+def _get_google_access_token() -> str:
+    credentials, _ = google_auth_default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
+    if getattr(credentials, "requires_scopes", False):
+        credentials = credentials.with_scopes(["https://www.googleapis.com/auth/cloud-platform"])
+    if not credentials.valid:
+        credentials.refresh(GoogleAuthRequest())
+    token = credentials.token
+    if not token:
+        raise RuntimeError("Failed to acquire Google auth token")
+    return token
+
+
+async def _verify_recaptcha_token(
+    token: Optional[str],
+    action: Optional[str],
+    request: Request,
+    *,
+    required: bool,
+) -> None:
+    if not token:
+        if required:
+            raise HTTPException(status_code=400, detail="Recaptcha token missing")
+        return
+
+    site_key = _env_value("RECAPTCHA_SITE_KEY")
+    project_id = _resolve_recaptcha_project_id()
+    if not site_key or not project_id:
+        if required:
+            raise HTTPException(status_code=500, detail="Recaptcha is not configured")
+        logger.warning("Recaptcha configuration missing; skipping verification.")
+        return
+
+    expected_action = action or _env_value("RECAPTCHA_EXPECTED_ACTION") or "contact"
+    event: Dict[str, Any] = {"token": token, "siteKey": site_key}
+    if expected_action:
+        event["expectedAction"] = expected_action
+    user_agent = request.headers.get("user-agent")
+    if user_agent:
+        event["userAgent"] = user_agent
+    client_ip = _resolve_client_ip(request)
+    if client_ip != "unknown":
+        event["userIpAddress"] = client_ip
+
+    access_token = _get_google_access_token()
+    url = f"https://recaptchaenterprise.googleapis.com/v1/projects/{project_id}/assessments"
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        response = await client.post(url, headers={"Authorization": f"Bearer {access_token}"}, json={"event": event})
+    if response.status_code >= 400:
+        logger.warning("Recaptcha verification failed: %s", response.text)
+        raise HTTPException(status_code=502, detail="Recaptcha verification failed")
+
+    data = response.json()
+    token_props = data.get("tokenProperties", {}) if isinstance(data, dict) else {}
+    if not token_props.get("valid"):
+        reason = token_props.get("invalidReason") or "invalid-token"
+        raise HTTPException(status_code=400, detail=f"Recaptcha invalid ({reason})")
+    if expected_action:
+        action = token_props.get("action")
+        if action and action != expected_action:
+            raise HTTPException(status_code=400, detail="Recaptcha action mismatch")
+
+    min_score = _resolve_recaptcha_min_score()
+    risk = data.get("riskAnalysis", {}) if isinstance(data, dict) else {}
+    try:
+        score = float(risk.get("score", 0))
+    except (TypeError, ValueError):
+        score = 0.0
+    if score < min_score:
+        raise HTTPException(status_code=400, detail="Recaptcha score too low")
+
+
+async def _verify_contact_recaptcha(payload: ContactRequest, request: Request) -> None:
+    await _verify_recaptcha_token(
+        payload.recaptchaToken,
+        payload.recaptchaAction or "contact",
+        request,
+        required=_recaptcha_required_for_contact(),
+    )
+
+
+def _resolve_contact_subject(payload: ContactRequest) -> str:
+    issue_label = CONTACT_ISSUE_LABELS.get(payload.issueType, payload.issueType)
+    summary = payload.summary.strip()
+    subject = f"[DullyPDF][{issue_label}] {summary}".strip()
+    subject = re.sub(r"\s+", " ", subject)
+    if payload.includeContactInSubject:
+        contact_token = payload.contactEmail or payload.contactPhone or payload.contactName
+        if contact_token:
+            subject = f"{subject} | Contact: {contact_token}"
+    subject = re.sub(r"[\r\n]+", " ", subject).strip()
+    return subject[:200]
+
+
+def _resolve_contact_body(payload: ContactRequest, request: Request) -> str:
+    issue_label = CONTACT_ISSUE_LABELS.get(payload.issueType, payload.issueType)
+    lines = [
+        f"Issue type: {issue_label}",
+        f"Summary: {payload.summary.strip()}",
+        "",
+        "Message:",
+        payload.message.strip(),
+        "",
+        "Contact details:",
+        f"Name: {payload.contactName or '-'}",
+        f"Company: {payload.contactCompany or '-'}",
+        f"Email: {payload.contactEmail or '-'}",
+        f"Phone: {payload.contactPhone or '-'}",
+        f"Preferred contact: {payload.preferredContact or '-'}",
+    ]
+    if payload.pageUrl:
+        lines.append(f"Page: {payload.pageUrl}")
+    user_agent = request.headers.get("user-agent")
+    if user_agent:
+        lines.append(f"User-Agent: {user_agent}")
+    return "\n".join(lines).strip()
+
+
+async def _send_contact_email(subject: str, body: str, reply_to: Optional[Dict[str, str]]) -> None:
+    to_email = _env_value("CONTACT_TO_EMAIL")
+    from_email = _env_value("CONTACT_FROM_EMAIL") or to_email
+    if not to_email or not from_email:
+        raise HTTPException(status_code=500, detail="Contact email routing is not configured")
+
+    try:
+        access_token = await _get_gmail_access_token()
+    except Exception as exc:
+        if _is_prod():
+            raise HTTPException(status_code=500, detail="Gmail API is not configured") from exc
+        logger.warning("Gmail API not configured; skipping contact email.")
+        return
+
+    headers = [
+        f"From: {from_email}",
+        f"To: {to_email}",
+        f"Subject: {subject}",
+        "Content-Type: text/plain; charset=\"UTF-8\"",
+        "Content-Transfer-Encoding: 7bit",
+    ]
+    if reply_to:
+        reply_email = reply_to.get("email")
+        reply_name = reply_to.get("name")
+        if reply_email:
+            reply_label = f"{reply_name} <{reply_email}>" if reply_name else reply_email
+            headers.append(f"Reply-To: {reply_label}")
+
+    raw_message = "\r\n".join(headers) + "\r\n\r\n" + body
+    encoded_message = base64.urlsafe_b64encode(raw_message.encode("utf-8")).decode("utf-8")
+
+    gmail_payload = {"raw": encoded_message}
+    user_id = _resolve_gmail_user_id()
+    url = f"https://gmail.googleapis.com/gmail/v1/users/{user_id}/messages/send"
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        response = await client.post(url, headers={"Authorization": f"Bearer {access_token}"}, json=gmail_payload)
+    if response.status_code >= 400:
+        logger.error("Gmail API contact email failed: %s", response.text)
+        raise HTTPException(status_code=502, detail="Failed to send contact email")
 
 
 def _is_password_sign_in(decoded: Dict[str, Any]) -> bool:
@@ -915,6 +1284,61 @@ def _build_schema_mapping_payload(
             normalized_rule["groupKey"] = group_key
             checkbox_rules.append(normalized_rule)
 
+    def _coerce_hint_bool(value: Any) -> Optional[bool]:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return value != 0
+        if isinstance(value, str):
+            raw = value.strip().lower()
+            if raw in {"1", "true", "yes", "y", "t"}:
+                return True
+            if raw in {"0", "false", "no", "n", "f"}:
+                return False
+        return None
+
+    raw_hints = ai_response.get("checkboxHints") or ai_response.get("checkbox_hints") or []
+    checkbox_hints: List[Dict[str, Any]] = []
+    if isinstance(raw_hints, list):
+        for raw in raw_hints:
+            if not isinstance(raw, dict):
+                continue
+            schema_field_raw = str(raw.get("databaseField") or "").strip()
+            if not schema_field_raw:
+                continue
+            schema_field = (
+                schema_field_raw
+                if schema_field_raw in allowed_schema_set
+                else allowed_schema_map.get(_normalize_data_key(schema_field_raw))
+            )
+            if not schema_field:
+                continue
+            raw_group_key = str(raw.get("groupKey") or "").strip()
+            normalized_group_key = _normalize_data_key(raw_group_key)
+            resolved_group_key = None
+            if normalized_group_key:
+                resolved_group_key = allowed_group_key_map.get(normalized_group_key)
+            if allowed_group_key_map and not resolved_group_key:
+                continue
+            group_key = resolved_group_key or normalized_group_key
+            if not group_key:
+                continue
+            direct_boolean = _coerce_hint_bool(
+                raw.get("directBooleanPossible") if "directBooleanPossible" in raw else raw.get("direct_boolean_possible")
+            )
+            operation = str(raw.get("operation") or "").strip().lower()
+            if operation not in {"yes_no", "enum", "list", "presence"}:
+                operation = ""
+            hint: Dict[str, Any] = {
+                "databaseField": schema_field,
+                "groupKey": group_key,
+            }
+            if direct_boolean is not None:
+                hint["directBooleanPossible"] = direct_boolean
+            if operation:
+                hint["operation"] = operation
+            checkbox_hints.append(hint)
+
     identifier_key = str(
         ai_response.get("identifierKey")
         or ai_response.get("patientIdentifierField")
@@ -938,6 +1362,7 @@ def _build_schema_mapping_payload(
         "mappings": sanitized_mappings,
         "templateRules": template_rules,
         "checkboxRules": checkbox_rules,
+        "checkboxHints": checkbox_hints,
         "identifierKey": identifier_key,
         "notes": ai_response.get("notes") or "",
         "unmappedDatabaseFields": [field for field in allowed_schema if field not in mapped_schema],
@@ -961,6 +1386,21 @@ def _resolve_upload_limit() -> tuple[int, int]:
     if max_mb < 1:
         max_mb = 1
     return max_mb, max_mb * 1024 * 1024
+
+
+def _parse_json_list_form_field(raw: Optional[str], field_name: str) -> Optional[List[Dict[str, Any]]]:
+    """
+    Parse an optional JSON list payload from a multipart form field.
+    """
+    if raw is None:
+        return None
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid {field_name} payload") from exc
+    if not isinstance(parsed, list):
+        raise HTTPException(status_code=400, detail=f"{field_name} must be a JSON array")
+    return [entry for entry in parsed if isinstance(entry, dict)]
 
 
 async def _read_upload_bytes(upload: UploadFile, *, max_bytes: int, limit_message: str) -> bytes:
@@ -1060,7 +1500,7 @@ async def enforce_security_guards(request: Request, call_next):
             )
         return await call_next(request)
 
-    if path.startswith("/api/") and path != "/api/health":
+    if path.startswith("/api/") and path not in {"/api/health", "/api/contact", "/api/recaptcha/assess"}:
         authorization = request.headers.get("authorization")
         try:
             request.state.preverified_auth_payload = _verify_token(authorization)
@@ -1101,6 +1541,44 @@ async def api_health() -> Dict[str, str]:
     API health probe for clients.
     """
     return {"status": "ok"}
+
+
+@app.post("/api/contact")
+async def submit_contact(payload: ContactRequest, request: Request) -> Dict[str, Any]:
+    """
+    Accept a homepage contact form submission.
+    """
+    window_seconds, per_ip = _resolve_contact_rate_limits()
+    client_ip = _resolve_client_ip(request)
+    rate_key = f"contact:{client_ip}"
+    if not check_rate_limit(rate_key, limit=per_ip, window_seconds=window_seconds):
+        raise HTTPException(status_code=429, detail="Too many contact requests. Please wait and try again.")
+
+    await _verify_contact_recaptcha(payload, request)
+
+    subject = _resolve_contact_subject(payload)
+    body = _resolve_contact_body(payload, request)
+    reply_to = None
+    if payload.contactEmail:
+        reply_to = {"email": payload.contactEmail, "name": payload.contactName or payload.contactEmail}
+    await _send_contact_email(subject, body, reply_to)
+    return {"success": True}
+
+
+@app.post("/api/recaptcha/assess")
+async def assess_recaptcha(payload: RecaptchaAssessmentRequest, request: Request) -> Dict[str, Any]:
+    """
+    Verify a reCAPTCHA token for sensitive public flows (e.g., signup).
+    """
+    window_seconds, per_ip = _resolve_signup_rate_limits()
+    client_ip = _resolve_client_ip(request)
+    action = payload.action or "signup"
+    rate_key = f"recaptcha:{action}:{client_ip}"
+    if not check_rate_limit(rate_key, limit=per_ip, window_seconds=window_seconds):
+        raise HTTPException(status_code=429, detail="Too many verification attempts. Please wait and try again.")
+
+    await _verify_recaptcha_token(payload.token, action, request, required=_recaptcha_required_for_signup())
+    return {"success": True}
 
 
 @app.get("/api/profile")
@@ -1905,9 +2383,26 @@ async def map_schema_ai(
         allowlist_payload.get("templateTags") or [],
         ai_response,
     )
-    if skip_credit and session_entry and payload.sessionId:
-        session_entry["openai_credit_mapping_used"] = True
-        _update_session_entry(payload.sessionId, session_entry)
+    if session_entry and payload.sessionId:
+        persist_rules = False
+        persist_hints = False
+        if isinstance(mapping_results, dict):
+            checkbox_rules = list(mapping_results.get("checkboxRules") or [])
+            if checkbox_rules:
+                session_entry["checkboxRules"] = checkbox_rules
+                persist_rules = True
+            checkbox_hints = list(mapping_results.get("checkboxHints") or [])
+            if checkbox_hints:
+                session_entry["checkboxHints"] = checkbox_hints
+                persist_hints = True
+        if skip_credit:
+            session_entry["openai_credit_mapping_used"] = True
+        _update_session_entry(
+            payload.sessionId,
+            session_entry,
+            persist_checkbox_rules=persist_rules,
+            persist_checkbox_hints=persist_hints,
+        )
     return {
         "success": True,
         "requestId": request_id,
@@ -1928,7 +2423,7 @@ async def materialize_form(
     """
     Inject fields into a PDF and return a fillable PDF download.
     """
-    _verify_token(authorization)
+    user = _require_user(authorization)
     if not pdf:
         raise HTTPException(status_code=400, detail="No PDF file uploaded")
 
@@ -1957,6 +2452,19 @@ async def materialize_form(
         max_bytes=max_bytes,
         limit_message=f"PDF exceeds {max_mb}MB upload limit",
     )
+    try:
+        with fitz.open(str(temp_path)) as doc:
+            page_count = max(1, int(doc.page_count))
+    except Exception as exc:
+        _cleanup_paths([temp_path])
+        raise HTTPException(status_code=400, detail="Invalid PDF upload") from exc
+    max_pages = _resolve_fillable_max_pages(user.role)
+    if page_count > max_pages:
+        _cleanup_paths([temp_path])
+        raise HTTPException(
+            status_code=403,
+            detail=f"Fillable upload limited to {max_pages} pages for your tier (got {page_count}).",
+        )
 
     if not raw_fields:
         background_tasks.add_task(_cleanup_paths, [temp_path])
@@ -2029,11 +2537,17 @@ async def get_saved_form(form_id: str, authorization: Optional[str] = Header(def
     template = get_template(form_id, user.app_user_id)
     if not template:
         raise HTTPException(status_code=404, detail="Form not found")
-    return {
+    response: Dict[str, Any] = {
         "url": f"/api/saved-forms/{form_id}/download",
         "name": template.name or template.pdf_bucket_path or "Saved form",
         "sessionId": template.id,
     }
+    metadata = template.metadata if isinstance(template.metadata, dict) else {}
+    if isinstance(metadata.get("checkboxRules"), list):
+        response["checkboxRules"] = metadata.get("checkboxRules")
+    if isinstance(metadata.get("checkboxHints"), list):
+        response["checkboxHints"] = metadata.get("checkboxHints")
+    return response
 
 
 @app.get("/api/saved-forms/{form_id}/download")
@@ -2191,10 +2705,14 @@ async def save_form(
     pdf: UploadFile = File(...),
     name: str = Form("Saved form"),
     sessionId: Optional[str] = Form(default=None),
+    checkboxRules: Optional[str] = Form(default=None),
+    checkboxHints: Optional[str] = Form(default=None),
+    overwriteFormId: Optional[str] = Form(default=None),
     authorization: Optional[str] = Header(default=None),
 ) -> Dict[str, Any]:
     """
     Upload a PDF and persist it as a saved form + template for the user.
+    Use overwriteFormId to replace an existing saved form without consuming a new slot.
     """
     user = _require_user(authorization)
     if not pdf:
@@ -2205,13 +2723,21 @@ async def save_form(
     if not filename.lower().endswith(".pdf") and content_type not in {"application/pdf", "application/octet-stream"}:
         raise HTTPException(status_code=400, detail="Only PDF uploads are supported")
 
-    max_saved_forms = _resolve_saved_forms_limit(user.role)
-    existing_templates = list_templates(user.app_user_id)
-    if len(existing_templates) >= max_saved_forms:
-        raise HTTPException(
-            status_code=403,
-            detail=f"Saved form limit reached ({max_saved_forms} max).",
-        )
+    overwrite_form_id = overwriteFormId.strip() if overwriteFormId else ""
+    overwrite_template = None
+    if overwrite_form_id:
+        overwrite_template = get_template(overwrite_form_id, user.app_user_id)
+        if not overwrite_template:
+            raise HTTPException(status_code=404, detail="Form not found")
+
+    if not overwrite_template:
+        max_saved_forms = _resolve_saved_forms_limit(user.role)
+        existing_templates = list_templates(user.app_user_id)
+        if len(existing_templates) >= max_saved_forms:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Saved form limit reached ({max_saved_forms} max).",
+            )
 
     temp_path = None
     uploaded_paths: List[str] = []
@@ -2240,17 +2766,90 @@ async def save_form(
         forms_object = f"users/{user.app_user_id}/forms/{timestamp}-{form_id}.pdf"
         templates_object = f"users/{user.app_user_id}/templates/{timestamp}-{form_id}.pdf"
 
-        logger.debug("Uploading form to storage", {"formsObject": forms_object})
-        pdf_bucket_path = upload_form_pdf(str(temp_path), forms_object)
-        uploaded_paths.append(pdf_bucket_path)
-        template_bucket_path = upload_template_pdf(str(temp_path), templates_object)
-        uploaded_paths.append(template_bucket_path)
-
         metadata = {"name": name}
-        if sessionId and sessionId.strip():
-            metadata["originalSessionId"] = sessionId.strip()
+        sanitized_session_id = sessionId.strip() if sessionId else ""
+        if sanitized_session_id:
+            metadata["originalSessionId"] = sanitized_session_id
+
+        checkbox_rules_payload = _parse_json_list_form_field(checkboxRules, "checkboxRules")
+        checkbox_hints_payload = _parse_json_list_form_field(checkboxHints, "checkboxHints")
+        if (checkbox_rules_payload is None or checkbox_hints_payload is None) and sanitized_session_id:
+            session_entry = _get_session_entry_if_present(
+                sanitized_session_id,
+                user,
+                include_pdf_bytes=False,
+                include_fields=False,
+                include_result=False,
+                include_renames=False,
+                include_checkbox_rules=True,
+                include_checkbox_hints=True,
+            )
+            if checkbox_rules_payload is None and session_entry and isinstance(session_entry.get("checkboxRules"), list):
+                checkbox_rules_payload = [
+                    entry for entry in session_entry.get("checkboxRules") if isinstance(entry, dict)
+                ]
+            if checkbox_hints_payload is None and session_entry and isinstance(session_entry.get("checkboxHints"), list):
+                checkbox_hints_payload = [
+                    entry for entry in session_entry.get("checkboxHints") if isinstance(entry, dict)
+                ]
+        if checkbox_rules_payload is not None:
+            metadata["checkboxRules"] = checkbox_rules_payload
+        if checkbox_hints_payload is not None:
+            metadata["checkboxHints"] = checkbox_hints_payload
+
+        if overwrite_template and isinstance(overwrite_template.metadata, dict):
+            metadata = {**overwrite_template.metadata, **metadata}
+
+        pdf_bucket_path = None
+        template_bucket_path = None
+        old_pdf_path = overwrite_template.pdf_bucket_path if overwrite_template else None
+        old_template_path = overwrite_template.template_bucket_path if overwrite_template else None
+        if overwrite_template and old_pdf_path and is_gcs_path(old_pdf_path):
+            pdf_bucket_path = upload_pdf_to_bucket_path(str(temp_path), old_pdf_path)
+        else:
+            logger.debug("Uploading form to storage", {"formsObject": forms_object})
+            pdf_bucket_path = upload_form_pdf(str(temp_path), forms_object)
+            uploaded_paths.append(pdf_bucket_path)
+        if overwrite_template and old_template_path and old_template_path == old_pdf_path:
+            template_bucket_path = pdf_bucket_path
+        elif overwrite_template and old_template_path and is_gcs_path(old_template_path):
+            template_bucket_path = upload_pdf_to_bucket_path(str(temp_path), old_template_path)
+        else:
+            template_bucket_path = upload_template_pdf(str(temp_path), templates_object)
+            uploaded_paths.append(template_bucket_path)
 
         try:
+            if overwrite_template:
+                updated_template = update_template(
+                    overwrite_template.id,
+                    user.app_user_id,
+                    pdf_path=pdf_bucket_path,
+                    template_path=template_bucket_path,
+                    metadata=metadata,
+                )
+                if not updated_template:
+                    raise HTTPException(status_code=500, detail="Failed to update saved form")
+                if old_pdf_path and old_pdf_path != pdf_bucket_path and is_gcs_path(old_pdf_path):
+                    try:
+                        delete_pdf(old_pdf_path)
+                    except Exception as cleanup_exc:
+                        logger.error("Failed to delete overwritten form PDF: %s", cleanup_exc)
+                if (
+                    old_template_path
+                    and old_template_path != template_bucket_path
+                    and old_template_path != old_pdf_path
+                    and is_gcs_path(old_template_path)
+                ):
+                    try:
+                        delete_pdf(old_template_path)
+                    except Exception as cleanup_exc:
+                        logger.error("Failed to delete overwritten template PDF: %s", cleanup_exc)
+                return {
+                    "success": True,
+                    "id": updated_template.id,
+                    "name": updated_template.name or name,
+                }
+
             template = create_template(
                 user_id=user.app_user_id,
                 pdf_path=pdf_bucket_path,

@@ -133,6 +133,7 @@ def _missing_required_data(
     include_result: bool,
     include_renames: bool,
     include_checkbox_rules: bool,
+    include_checkbox_hints: bool,
 ) -> bool:
     if include_pdf_bytes and not entry.get("pdf_bytes"):
         return True
@@ -143,6 +144,8 @@ def _missing_required_data(
     if include_renames and "renames" not in entry and entry.get("renames_path"):
         return True
     if include_checkbox_rules and "checkboxRules" not in entry and entry.get("checkbox_rules_path"):
+        return True
+    if include_checkbox_hints and "checkboxHints" not in entry and entry.get("checkbox_hints_path"):
         return True
     return False
 
@@ -155,6 +158,7 @@ def _hydrate_from_l2(
     include_result: bool,
     include_renames: bool,
     include_checkbox_rules: bool,
+    include_checkbox_hints: bool,
 ) -> Optional[SessionEntry]:
     metadata = get_session_metadata(session_id)
     if not metadata:
@@ -167,6 +171,7 @@ def _hydrate_from_l2(
         "result_path": metadata.get("result_path"),
         "renames_path": metadata.get("renames_path"),
         "checkbox_rules_path": metadata.get("checkbox_rules_path"),
+        "checkbox_hints_path": metadata.get("checkbox_hints_path"),
         "openai_credit_consumed": bool(metadata.get("openai_credit_consumed")),
         "openai_credit_pages": metadata.get("openai_credit_pages"),
         "openai_credit_mapping_used": bool(metadata.get("openai_credit_mapping_used")),
@@ -193,6 +198,8 @@ def _hydrate_from_l2(
         entry["renames"] = download_session_json(entry["renames_path"]) or {}
     if include_checkbox_rules and entry.get("checkbox_rules_path"):
         entry["checkboxRules"] = download_session_json(entry["checkbox_rules_path"]) or []
+    if include_checkbox_hints and entry.get("checkbox_hints_path"):
+        entry["checkboxHints"] = download_session_json(entry["checkbox_hints_path"]) or []
 
     return entry
 
@@ -206,6 +213,7 @@ def _ensure_l2_data(
     include_result: bool,
     include_renames: bool,
     include_checkbox_rules: bool,
+    include_checkbox_hints: bool,
 ) -> None:
     if not _missing_required_data(
         entry,
@@ -214,6 +222,7 @@ def _ensure_l2_data(
         include_result=include_result,
         include_renames=include_renames,
         include_checkbox_rules=include_checkbox_rules,
+        include_checkbox_hints=include_checkbox_hints,
     ):
         return
     hydrated = _hydrate_from_l2(
@@ -223,6 +232,7 @@ def _ensure_l2_data(
         include_result=include_result,
         include_renames=include_renames,
         include_checkbox_rules=include_checkbox_rules,
+        include_checkbox_hints=include_checkbox_hints,
     )
     if hydrated:
         entry.update(hydrated)
@@ -237,6 +247,7 @@ def _persist_session_entry(
     persist_result: bool = False,
     persist_renames: bool = False,
     persist_checkbox_rules: bool = False,
+    persist_checkbox_hints: bool = False,
     include_created_at: bool = False,
 ) -> None:
     metadata: Dict[str, Any] = {
@@ -320,6 +331,16 @@ def _persist_session_entry(
     elif entry.get("checkbox_rules_path"):
         metadata["checkbox_rules_path"] = entry.get("checkbox_rules_path")
 
+    if persist_checkbox_hints:
+        checkbox_hints_path = upload_session_json(
+            entry.get("checkboxHints") or [],
+            _session_object_path(session_id, "checkbox-hints.json"),
+        )
+        entry["checkbox_hints_path"] = checkbox_hints_path
+        metadata["checkbox_hints_path"] = checkbox_hints_path
+    elif entry.get("checkbox_hints_path"):
+        metadata["checkbox_hints_path"] = entry.get("checkbox_hints_path")
+
     expires_at = _expires_at()
     if expires_at:
         metadata["expires_at"] = expires_at
@@ -335,6 +356,7 @@ def store_session_entry(
     persist_pdf: bool = True,
     persist_fields: bool = True,
     persist_result: bool = True,
+    persist_checkbox_hints: bool = False,
     persist_l1: bool = True,
 ) -> None:
     """Store a new session in L2 and optionally cache it in L1."""
@@ -344,6 +366,7 @@ def store_session_entry(
         persist_pdf=persist_pdf,
         persist_fields=persist_fields,
         persist_result=persist_result,
+        persist_checkbox_hints=persist_checkbox_hints,
         include_created_at=True,
     )
     if persist_l1:
@@ -359,6 +382,7 @@ def update_session_entry(
     persist_result: bool = False,
     persist_renames: bool = False,
     persist_checkbox_rules: bool = False,
+    persist_checkbox_hints: bool = False,
 ) -> None:
     """Persist session updates to L2.
     """
@@ -370,6 +394,7 @@ def update_session_entry(
         persist_result=persist_result,
         persist_renames=persist_renames,
         persist_checkbox_rules=persist_checkbox_rules,
+        persist_checkbox_hints=persist_checkbox_hints,
         include_created_at=False,
     )
 
@@ -383,6 +408,7 @@ def get_session_entry(
     include_result: bool = True,
     include_renames: bool = True,
     include_checkbox_rules: bool = True,
+    include_checkbox_hints: bool = False,
     force_l2: bool = False,
 ) -> SessionEntry:
     """Return a session entry, loading from L2 when needed.
@@ -395,6 +421,7 @@ def get_session_entry(
             include_result=include_result,
             include_renames=include_renames,
             include_checkbox_rules=include_checkbox_rules,
+            include_checkbox_hints=include_checkbox_hints,
         )
         if not entry:
             raise HTTPException(status_code=404, detail="Session not found")
@@ -421,6 +448,7 @@ def get_session_entry(
             include_result=include_result,
             include_renames=include_renames,
             include_checkbox_rules=include_checkbox_rules,
+            include_checkbox_hints=include_checkbox_hints,
         )
         _require_owner(entry, user)
         if _missing_required_data(
@@ -430,6 +458,7 @@ def get_session_entry(
             include_result=include_result,
             include_renames=include_renames,
             include_checkbox_rules=include_checkbox_rules,
+            include_checkbox_hints=include_checkbox_hints,
         ):
             raise HTTPException(status_code=404, detail="Session data not found")
         _touch_l2_session(session_id, entry, now)
@@ -442,6 +471,7 @@ def get_session_entry(
         include_result=include_result,
         include_renames=include_renames,
         include_checkbox_rules=include_checkbox_rules,
+        include_checkbox_hints=include_checkbox_hints,
     )
     if not entry:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -460,6 +490,7 @@ def get_session_entry_if_present(
     include_result: bool = True,
     include_renames: bool = True,
     include_checkbox_rules: bool = True,
+    include_checkbox_hints: bool = False,
     force_l2: bool = False,
 ) -> Optional[SessionEntry]:
     """Return a session entry when it exists and is owned by the caller.
@@ -474,6 +505,7 @@ def get_session_entry_if_present(
             include_result=include_result,
             include_renames=include_renames,
             include_checkbox_rules=include_checkbox_rules,
+            include_checkbox_hints=include_checkbox_hints,
         )
         if not entry:
             return None
@@ -500,6 +532,7 @@ def get_session_entry_if_present(
             include_result=include_result,
             include_renames=include_renames,
             include_checkbox_rules=include_checkbox_rules,
+            include_checkbox_hints=include_checkbox_hints,
         )
         _require_owner(entry, user)
         if _missing_required_data(
@@ -509,6 +542,7 @@ def get_session_entry_if_present(
             include_result=include_result,
             include_renames=include_renames,
             include_checkbox_rules=include_checkbox_rules,
+            include_checkbox_hints=include_checkbox_hints,
         ):
             return None
         _touch_l2_session(session_id, entry, now)
@@ -521,6 +555,7 @@ def get_session_entry_if_present(
         include_result=include_result,
         include_renames=include_renames,
         include_checkbox_rules=include_checkbox_rules,
+        include_checkbox_hints=include_checkbox_hints,
     )
     if not entry:
         return None
