@@ -35,6 +35,18 @@
   box-shadow: 0 16px 30px rgba(59, 130, 246, 0.15);
 }
 
+.upload-area:focus-visible {
+  outline: 2px solid rgba(59, 130, 246, 0.7);
+  outline-offset: 4px;
+  box-shadow:
+    0 0 0 4px rgba(59, 130, 246, 0.18),
+    0 16px 30px rgba(59, 130, 246, 0.18);
+}
+
+.upload-area:active {
+  transform: translateY(0);
+}
+
 .upload-area.drag-active {
   border-color: rgba(59, 130, 246, 0.8);
   background-color: rgba(59, 130, 246, 0.1);
@@ -248,6 +260,71 @@
   color: #6b7280;
   font-size: 0.825rem;
   white-space: nowrap;
+}
+
+@media (min-width: 1280px) {
+  .upload-container {
+    padding: 3rem 2.5rem;
+    min-height: 420px;
+  }
+
+  .upload-area {
+    padding: 3.2rem 2.6rem;
+    max-width: 680px;
+  }
+
+  .upload-icon {
+    width: 62px;
+    height: 70px;
+    margin-bottom: 20px;
+  }
+
+  .upload-area h3 {
+    font-size: 1.25rem;
+  }
+
+  .upload-area p {
+    font-size: 1rem;
+  }
+
+  .upload-requirements {
+    font-size: 0.85rem !important;
+  }
+}
+
+@media (min-width: 1600px) {
+  .upload-container {
+    padding: 3.5rem 3rem;
+    min-height: 460px;
+  }
+
+  .upload-area {
+    padding: 3.6rem 3rem;
+    max-width: 720px;
+  }
+
+  .upload-icon {
+    width: 68px;
+    height: 78px;
+  }
+
+  .upload-area h3 {
+    font-size: 1.3rem;
+  }
+
+  .upload-area p {
+    font-size: 1.05rem;
+  }
+}
+
+@media (min-width: 1920px) {
+  .upload-container {
+    padding: 3.75rem 3.25rem;
+  }
+
+  .upload-area {
+    max-width: 760px;
+  }
 }
 
 @media (max-width: 768px) {

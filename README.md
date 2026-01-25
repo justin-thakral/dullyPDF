@@ -22,6 +22,19 @@ Use the tracked fixtures in `quickTestFiles/`:
 - `quickTestFiles/new_patient_forms_1915ccb015_mock.csv`
 - `quickTestFiles/healthdb_vw_form_fields.csv`
 
+## Cleanup
+
+Use the repo cleanup entrypoint to clear generated artifacts:
+
+```bash
+python3 clean.py --mcp --mcp-logs --mcp-screenshots
+python3 clean.py --runs --tmp --test-results
+python3 clean.py --field-detect-logs --mcp-bug-logs --frontend-tmp
+python3 clean.py --all --dry-run
+```
+
+Each directory also ships its own `cleanOutput.py` script (see `mcp/`, `runs/`, `test-results/`, `tmp/`, `backend/fieldDetecting/logs/`, `mcp/codexBugs/logs/`, and `frontend/`).
+
 ## Docs
 
 - `docs/getting-started.md`

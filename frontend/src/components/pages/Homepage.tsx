@@ -122,6 +122,39 @@ const Homepage: React.FC<HomepageProps> = ({
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    const mediaQuery = window.matchMedia('(max-width: 900px)');
+    const heightQuery = window.matchMedia('(max-height: 749px)');
+    const updateScrollLock = () => {
+      const shouldLockScroll = !mediaQuery.matches && !heightQuery.matches;
+      document.documentElement.classList.toggle('homepage-no-scroll', shouldLockScroll);
+      document.body.classList.toggle('homepage-no-scroll', shouldLockScroll);
+    };
+
+    updateScrollLock();
+    if ('addEventListener' in mediaQuery) {
+      mediaQuery.addEventListener('change', updateScrollLock);
+      heightQuery.addEventListener('change', updateScrollLock);
+    } else {
+      mediaQuery.addListener(updateScrollLock);
+      heightQuery.addListener(updateScrollLock);
+    }
+    window.addEventListener('resize', updateScrollLock);
+    return () => {
+      if ('removeEventListener' in mediaQuery) {
+        mediaQuery.removeEventListener('change', updateScrollLock);
+        heightQuery.removeEventListener('change', updateScrollLock);
+      } else {
+        mediaQuery.removeListener(updateScrollLock);
+        heightQuery.removeListener(updateScrollLock);
+      }
+      window.removeEventListener('resize', updateScrollLock);
+      document.documentElement.classList.remove('homepage-no-scroll');
+      document.body.classList.remove('homepage-no-scroll');
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
     if (!window.matchMedia('(max-width: 900px)').matches) return;
     if (!demoFocusActive) return;
     if (!demoNavRef.current) return;
@@ -366,7 +399,7 @@ const Homepage: React.FC<HomepageProps> = ({
                 </div>
                 <div className="info-item">
                   <span className="info-label">Processing:</span>
-                  <span className="info-value">Typically under 30 seconds</span>
+                  <span className="info-value">Typically 30 seconds per page</span>
                 </div>
                 <div className="info-item">
                   <span className="info-label">Output:</span>

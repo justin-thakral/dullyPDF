@@ -3,6 +3,12 @@ body {
   height: 100%;
 }
 
+html.homepage-no-scroll,
+body.homepage-no-scroll {
+  height: 100%;
+  overflow: hidden;
+}
+
 :root {
   --font-body: 'IBM Plex Sans', 'Space Grotesk', sans-serif;
   --font-display: 'Space Grotesk', 'IBM Plex Sans', sans-serif;

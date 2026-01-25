@@ -66,3 +66,11 @@ Prod is disabled by default. Set `DULLY_MCP_ENV=prod` and keep `DULLY_MCP_ALLOW_
 ## Artifacts
 
 Write UI proof to `mcp/debugging/mcp-screenshots`. If you add request/response logging later, keep it under `mcp/debugging/` as well.
+
+## Cleanup
+
+```bash
+python3 mcp/cleanOutput.py --logs --screenshots
+```
+
+Use `--snapshots`, `--sessions`, or `--all` as needed. Add `--dry-run` to preview. You can also run `python3 clean.py --mcp` from the repo root.

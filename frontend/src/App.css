@@ -231,6 +231,56 @@
   margin-top: 1rem;
 }
 
+@media (min-width: 1280px) {
+  .upload-layout {
+    max-width: 1320px;
+    gap: 2.25rem;
+  }
+
+  .upload-primary-grid {
+    gap: 1.65rem;
+  }
+}
+
+@media (min-width: 1440px) {
+  .upload-layout {
+    max-width: 1480px;
+    gap: 2.5rem;
+  }
+
+  .upload-options {
+    padding: 1.5rem 1.75rem;
+  }
+
+  .saved-forms-section {
+    padding: 2rem;
+  }
+
+  .saved-forms-title {
+    font-size: 1.6rem;
+  }
+}
+
+@media (min-width: 1600px) {
+  .upload-layout {
+    max-width: 1620px;
+  }
+
+  .upload-options {
+    padding: 1.75rem 2rem;
+  }
+
+  .upload-primary-grid {
+    gap: 1.8rem;
+  }
+}
+
+@media (min-width: 1920px) {
+  .upload-layout {
+    max-width: 1760px;
+  }
+}
+
 @media (max-width: 768px) {
   .upload-primary-grid {
     grid-template-columns: 1fr;

@@ -53,6 +53,20 @@ endpoints disabled) while targeting dev resources. It reads
 override headers stay disabled for
 prod-like testing.
 
+## Cleanup
+
+```bash
+python3 frontend/cleanOutput.py --tmp
+```
+
+Or from the repo root:
+
+```bash
+python3 clean.py --frontend-tmp
+```
+
+Add `--dry-run` to preview.
+
 ## Docs
 
 See `frontend/docs/README.md` for architecture and workflow notes.

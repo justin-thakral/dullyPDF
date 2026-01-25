@@ -16,9 +16,10 @@
 }
 
 .header-content {
-  max-width: 1400px;
+  max-width: none;
+  width: 100%;
   margin: 0 auto;
-  padding: 0 2rem;
+  padding: 0 clamp(0.75rem, 1.6vw, 1.75rem);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -101,6 +102,8 @@
   display: flex;
   align-items: center;
   gap: 1rem;
+  margin-left: auto;
+  justify-content: flex-end;
 }
 
 .header-logo {

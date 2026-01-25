@@ -138,6 +138,14 @@ If no bugs were found, create a log that states "No bugs found" and note the run
 
 Suggested filename: `session-YYYYMMDD-HHMM.md`.
 
+Cleanup:
+
+```
+python3 mcp/codexBugs/logs/cleanOutput.py --sessions
+```
+
+Or run `python3 clean.py --mcp-bug-logs` from the repo root. Add `--dry-run` to preview.
+
 ## Reporting template
 
 - Context: environment, PDF/CSV used, user account, time.

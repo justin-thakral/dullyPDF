@@ -31,6 +31,18 @@ When rename is enabled, artifacts land under `backend/fieldDetecting/outputArtif
 - overlays: rendered pages + field IDs
 - json: candidate lists, renamed field payloads, and rename reports
 
+### Runtime logs
+
+Runtime logs are written under `backend/fieldDetecting/logs/`.
+
+Cleanup:
+
+```
+python3 backend/fieldDetecting/logs/cleanOutput.py --all
+```
+
+You can also run `python3 clean.py --field-detect-logs` from the repo root. Add `--dry-run` to preview.
+
 ### Setup
 
 - Python 3.10+
