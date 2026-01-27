@@ -25,7 +25,6 @@ type DemoTourProps = {
 
 const CALLOUT_PADDING = 16;
 const CALLOUT_GAP = 18;
-const CALLOUT_ARROW = 10;
 const CALLOUT_ARROW_TIP = 5;
 
 function clamp(value: number, min: number, max: number) {
@@ -46,9 +45,14 @@ export function DemoTour({ open, step, stepIndex, stepCount, onNext, onBack, onC
     let rafId = 0;
     let rafFrames = 0;
     const maxFrames = 48;
+    const selector = step.targetSelector;
+    if (!selector) {
+      setTargetRect(null);
+      return;
+    }
 
     const updateRect = () => {
-      const target = document.querySelector(step.targetSelector);
+      const target = document.querySelector(selector);
       setTargetRect(target instanceof Element ? target.getBoundingClientRect() : null);
     };
 

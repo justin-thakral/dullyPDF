@@ -142,6 +142,58 @@ Production hardening:
    - Keep any admin override on the server only.
 4) **Disable the override in prod-like environments** by setting `SANDBOX_ALLOW_ADMIN_OVERRIDE=false`.
 
+## 1a) Role CLI (god-mode scripting)
+
+Use `backend/firebaseDB/role_cli.py` whenever you need to flip a user into `role=god` (or back to `base`), reset rename quotas, or sync Firestore metadata with Firebase custom claims. The script is typically invoked through the helper wrappers so that it inherits a production-like environment and credential loading:
+
+- `scripts/set-role-dev.sh [env-file]`
+- `scripts/set-role-prod.sh [env-file]`
+
+Each wrapper loads the matching `env/backend.*.env`, exports the values (`set -a`), and then sources `scripts/_load_firebase_secret.sh` to hydrate `FIREBASE_CREDENTIALS` from Secret Manager via `FIREBASE_CREDENTIALS_SECRET`/`FIREBASE_CREDENTIALS_PROJECT` if present. Afterward it runs the CLI inside `backend/.venv/bin/python` for consistent dependencies.
+
+If you prefer to call the module directly, ensure your shell exports the same key environment variables:
+
+- `FIREBASE_CREDENTIALS` (either a JSON blob or a path to a service account file) *or* `GOOGLE_APPLICATION_CREDENTIALS` when relying on ADC.
+- `FIREBASE_PROJECT_ID` (or set `GCP_PROJECT_ID`/embed it in the credentials payload).
+- `ENV` (typically `dev` or `prod`) so Firebase revocation checks default appropriately.
+- Any overrides you need for the target environment (e.g., `SANDBOX_ALLOW_ADMIN_OVERRIDE` or `FIREBASE_CREDENTIALS_SECRET`).
+
+The script resolves credentials via `backend/firebaseDB/firebase_service.py`, requiring valid service account data with a `private_key`. Typical invocation looks like:
+
+```
+FIREBASE_PROJECT_ID=dullypdf python -m backend.firebaseDB.role_cli --email admin@example.com --role god
+```
+
+If you rely on Secret Manager, configure `FIREBASE_CREDENTIALS_SECRET` (and `FIREBASE_CREDENTIALS_PROJECT` if the secret is housed in a different GCP project) before running the helper scripts so that `_load_firebase_secret.sh` can run `gcloud secrets versions access latest ...` and export the JSON into `FIREBASE_CREDENTIALS` at runtime.
+
+Keep the CLI invocations gated inside secure admin environments because they write custom claims and Firestore documents that give users unlimited renames, DB access, search, and schema mapping capabilities.
+
+### Copy-paste instructions
+
+Use this snippet wherever you need a simple checklist or bash command to grant someone god mode:
+
+````markdown
+1. Load the matching env + secrets:
+   - `scripts/set-role-dev.sh --email aparcelluzzi30@gmail.com --role god`
+   - `scripts/set-role-prod.sh --email aparcelluzzi30@gmail.com --role god`
+   - Add `--reset-rename-count` to zero the rename quota.
+
+2. Explicit credentials command (if not using the helper scripts):
+
+   ```bash
+   FIREBASE_PROJECT_ID=dullypdf python -m backend.firebaseDB.role_cli \
+     --email aparcelluzzi30@gmail.com --role god
+   ```
+
+3. Ensure the environment exports:
+   - `FIREBASE_CREDENTIALS` (JSON blob or service-account path) *or* `GOOGLE_APPLICATION_CREDENTIALS`
+   - `FIREBASE_PROJECT_ID` (or `GCP_PROJECT_ID` / embedded project ID)
+   - `ENV` (`dev` or `prod`) for revocation defaults
+   - Any required overrides such as `FIREBASE_CREDENTIALS_SECRET` + `_load_firebase_secret.sh`
+
+4. This CLI writes `role=god` custom claims plus Firestore metadata (unlimited renames, DB/search/mapping access). Keep execution limited to secure admin hosts.
+````
+
 ## 2) Firebase token revocation enforcement
 
 Current behavior:
