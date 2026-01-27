@@ -548,12 +548,16 @@ function App() {
     const mediaQuery = window.matchMedia('(max-width: 1020px)');
     const update = () => setIsMobileView(mediaQuery.matches);
     update();
-    if ('addEventListener' in mediaQuery) {
+    if (typeof mediaQuery.addEventListener === 'function') {
       mediaQuery.addEventListener('change', update);
       return () => mediaQuery.removeEventListener('change', update);
     }
-    mediaQuery.addListener(update);
-    return () => mediaQuery.removeListener(update);
+    const legacyMediaQuery = mediaQuery as MediaQueryList & {
+      addListener: (listener: (event: MediaQueryListEvent) => void) => void;
+      removeListener: (listener: (event: MediaQueryListEvent) => void) => void;
+    };
+    legacyMediaQuery.addListener(update);
+    return () => legacyMediaQuery.removeListener(update);
   }, []);
 
   useEffect(() => {
@@ -1150,8 +1154,12 @@ function App() {
         if (!commitPdfLoad(doc, sizes, [], loadToken)) return;
         setActiveSavedFormId(formId);
         setActiveSavedFormName(savedMeta?.name || null);
-        const savedCheckboxRules = Array.isArray(savedMeta?.checkboxRules) ? savedMeta.checkboxRules : [];
-        const savedCheckboxHints = Array.isArray(savedMeta?.checkboxHints) ? savedMeta.checkboxHints : [];
+        const savedCheckboxRules = Array.isArray(savedMeta?.checkboxRules)
+          ? (savedMeta.checkboxRules as CheckboxRule[])
+          : [];
+        const savedCheckboxHints = Array.isArray(savedMeta?.checkboxHints)
+          ? (savedMeta.checkboxHints as CheckboxHint[])
+          : [];
         setCheckboxRules(savedCheckboxRules);
         setCheckboxHints(savedCheckboxHints);
 
@@ -1485,9 +1493,13 @@ function App() {
         debugLog('Applied AI mappings', { total: updates.size });
       }
 
-      const rules = Array.isArray(mappingResults.checkboxRules) ? mappingResults.checkboxRules : [];
+      const rules = Array.isArray(mappingResults.checkboxRules)
+        ? (mappingResults.checkboxRules as CheckboxRule[])
+        : [];
       setCheckboxRules(rules);
-      const hints = Array.isArray(mappingResults.checkboxHints) ? mappingResults.checkboxHints : [];
+      const hints = Array.isArray(mappingResults.checkboxHints)
+        ? (mappingResults.checkboxHints as CheckboxHint[])
+        : [];
       setCheckboxHints(hints);
       const resolvedIdentifier = resolveIdentifierKey(
         mappingResults.identifierKey || mappingResults.identifier_key,
@@ -1652,7 +1664,7 @@ function App() {
               pendingAutoActionsRef.current = {
                 loadToken: loadTokenRef.current,
                 sessionId: activeSessionId,
-                schemaId: renameSchemaId,
+                schemaId: renameSchemaId ?? null,
                 autoRename: true,
                 autoMap: Boolean(renameSchemaId),
               };

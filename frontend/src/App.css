@@ -480,6 +480,9 @@
   animation: header-rise 0.7s ease both;
   position: relative;
   z-index: 120;
+  --header-logo-size: 26px;
+  --header-pill-height: 40px;
+  --header-pill-pad-x: 0.7rem;
 }
 
 .ui-header__brand {
@@ -705,6 +708,11 @@
   align-items: center;
   gap: 0.6rem;
   line-height: 1;
+  background: rgba(15, 23, 42, 0.55);
+  padding: 0 var(--header-pill-pad-x);
+  height: var(--header-pill-height);
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
 }
 
 .ui-header .header-account__button {
@@ -713,10 +721,21 @@
   gap: 0.6rem;
   background: transparent;
   border: none;
-  padding: 0;
+  padding: 0 0.5rem;
   color: inherit;
   font: inherit;
+  border-radius: 999px;
+  transition: background 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.ui-header .header-account__button--interactive {
   cursor: pointer;
+}
+
+.ui-header .header-account__button--interactive:hover {
+  background: rgba(255, 255, 255, 0.18);
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.25);
+  transform: translateY(-1px);
 }
 
 .ui-header .header-account__button:focus-visible {
@@ -725,12 +744,34 @@
   border-radius: 999px;
 }
 
-.ui-header .header-account__button:hover .user-email {
-  color: rgba(248, 250, 252, 0.95);
+.ui-header .header-account__button--interactive:hover .user-email {
+  color: #ffffff;
+}
+
+.ui-header .user-avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: rgba(37, 99, 235, 0.9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #f8fafc;
+  font-weight: 700;
+  font-size: 0.72rem;
+}
+
+.ui-header .user-detail {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 
 .ui-header .user-email {
-  line-height: 1.1;
+  line-height: 1.2;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: #f8fafc;
 }
 
 .ui-header .signout-button,
@@ -741,17 +782,50 @@
   white-space: nowrap;
 }
 
+.ui-header .signout-button {
+  border: none;
+  background: rgba(15, 23, 42, 0.5);
+  color: #e2e8f0;
+  border-radius: 999px;
+  padding: 0 0.5rem;
+  height: 28px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.ui-header .signout-button:hover {
+  background: rgba(59, 130, 246, 0.3);
+  color: #ffffff;
+  box-shadow: 0 8px 16px rgba(15, 23, 42, 0.22);
+  transform: translateY(-1px);
+}
+
 .ui-header .signin-button,
 .ui-header .header-logo {
   min-height: 40px;
 }
 
 .ui-header .signin-button {
-  padding: 0.45rem 0.95rem;
+  padding: 0.25rem 1.2rem;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.4);
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  box-shadow: 0 8px 16px rgba(15, 23, 42, 0.2);
 }
 
 .ui-header .header-logo {
   padding: 0.45rem 0.95rem;
+}
+
+.ui-header .logo-image {
+  width: var(--header-logo-size);
+  height: var(--header-logo-size);
+  object-fit: contain;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.2);
 }
 
 .ui-header__save {
@@ -828,17 +902,6 @@
 .ui-button--primary:hover {
   transform: translateY(-1px);
   box-shadow: 0 16px 30px rgba(37, 99, 235, 0.45);
-}
-
-.ui-button--danger {
-  background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
-  color: #fef2f2;
-  box-shadow: 0 10px 20px rgba(220, 38, 38, 0.3);
-}
-
-.ui-button--danger:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 16px 30px rgba(220, 38, 38, 0.4);
 }
 
 .ui-button--ghost {

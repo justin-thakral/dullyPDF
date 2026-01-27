@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ApiService, type ContactPayload } from '../../api';
 import { ApiError } from '../../services/apiConfig';
 import {

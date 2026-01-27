@@ -40,11 +40,15 @@ FastAPI service for PDF field detection, schema-only OpenAI mapping, and saved-f
 - `GMAIL_USER_ID` (optional; defaults to `me`)
 - `RECAPTCHA_SITE_KEY`
 - `RECAPTCHA_PROJECT_ID` (or `FIREBASE_PROJECT_ID` / `GCP_PROJECT_ID`)
+- `RECAPTCHA_CONTACT_ACTION` (default `contact`; overrides legacy `RECAPTCHA_EXPECTED_ACTION`)
+- `RECAPTCHA_SIGNUP_ACTION` (default `signup`; overrides legacy `RECAPTCHA_EXPECTED_ACTION`)
+- `RECAPTCHA_ALLOWED_HOSTNAMES` (optional comma-separated allowlist; supports `*.example.com`)
 - `RECAPTCHA_MIN_SCORE` (default 0.5)
 - `CONTACT_REQUIRE_RECAPTCHA` (default true)
 - `CONTACT_RATE_LIMIT_WINDOW_SECONDS`, `CONTACT_RATE_LIMIT_PER_IP`
 - `SIGNUP_REQUIRE_RECAPTCHA` (default true)
 - `SIGNUP_RATE_LIMIT_WINDOW_SECONDS`, `SIGNUP_RATE_LIMIT_PER_IP`
+- `SANDBOX_TRUST_PROXY_HEADERS` (default false; trust `X-Forwarded-For` for rate limiting)
 - `SANDBOX_CORS_ORIGINS` (comma-separated list)
 - `SANDBOX_ENABLE_LEGACY_ENDPOINTS` (dev-only; defaults to true; ignored in prod)
 - `ADMIN_TOKEN` (dev-only override; ignored when `ENV=prod` or `SANDBOX_ALLOW_ADMIN_OVERRIDE=false`)

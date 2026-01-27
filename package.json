@@ -15,7 +15,10 @@
     "frontend:build:dev": "bash scripts/use-frontend-env.sh dev && cd frontend && npm run build",
     "frontend:build:prod": "bash scripts/use-frontend-env.sh prod && cd frontend && npm run build",
     "backend:dev": "bash scripts/run-backend-dev.sh",
-    "backend:prod": "bash scripts/run-backend-prod.sh"
+    "backend:prod": "bash scripts/run-backend-prod.sh",
+    "deploy": "npm run deploy:backend && npm run deploy:frontend",
+    "deploy:backend": "bash scripts/deploy-backend.sh",
+    "deploy:frontend": "bash scripts/deploy-frontend.sh"
   },
   "devDependencies": {
     "@playwright/test": "^1.57.0",

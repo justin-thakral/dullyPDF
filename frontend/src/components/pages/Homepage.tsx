@@ -141,21 +141,37 @@ const Homepage: React.FC<HomepageProps> = ({
     };
 
     updateScrollLock();
-    if ('addEventListener' in mediaQuery) {
+    if (typeof mediaQuery.addEventListener === 'function') {
       mediaQuery.addEventListener('change', updateScrollLock);
       heightQuery.addEventListener('change', updateScrollLock);
     } else {
-      mediaQuery.addListener(updateScrollLock);
-      heightQuery.addListener(updateScrollLock);
+      const legacyMediaQuery = mediaQuery as MediaQueryList & {
+        addListener: (listener: (event: MediaQueryListEvent) => void) => void;
+        removeListener: (listener: (event: MediaQueryListEvent) => void) => void;
+      };
+      const legacyHeightQuery = heightQuery as MediaQueryList & {
+        addListener: (listener: (event: MediaQueryListEvent) => void) => void;
+        removeListener: (listener: (event: MediaQueryListEvent) => void) => void;
+      };
+      legacyMediaQuery.addListener(updateScrollLock);
+      legacyHeightQuery.addListener(updateScrollLock);
     }
     window.addEventListener('resize', updateScrollLock);
     return () => {
-      if ('removeEventListener' in mediaQuery) {
+      if (typeof mediaQuery.removeEventListener === 'function') {
         mediaQuery.removeEventListener('change', updateScrollLock);
         heightQuery.removeEventListener('change', updateScrollLock);
       } else {
-        mediaQuery.removeListener(updateScrollLock);
-        heightQuery.removeListener(updateScrollLock);
+        const legacyMediaQuery = mediaQuery as MediaQueryList & {
+          addListener: (listener: (event: MediaQueryListEvent) => void) => void;
+          removeListener: (listener: (event: MediaQueryListEvent) => void) => void;
+        };
+        const legacyHeightQuery = heightQuery as MediaQueryList & {
+          addListener: (listener: (event: MediaQueryListEvent) => void) => void;
+          removeListener: (listener: (event: MediaQueryListEvent) => void) => void;
+        };
+        legacyMediaQuery.removeListener(updateScrollLock);
+        legacyHeightQuery.removeListener(updateScrollLock);
       }
       window.removeEventListener('resize', updateScrollLock);
       document.documentElement.classList.remove('homepage-no-scroll');

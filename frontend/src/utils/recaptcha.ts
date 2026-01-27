@@ -69,14 +69,14 @@ export function loadRecaptcha(siteKey: string): Promise<void> {
 
 export async function getRecaptchaToken(siteKey: string, action: string): Promise<string> {
   await loadRecaptcha(siteKey);
-  if (!window.grecaptcha?.enterprise) {
+  const enterprise = window.grecaptcha?.enterprise;
+  if (!enterprise) {
     throw new Error('reCAPTCHA is unavailable');
   }
 
   return new Promise((resolve, reject) => {
-    window.grecaptcha.enterprise.ready(() => {
-      window.grecaptcha
-        .enterprise
+    enterprise.ready(() => {
+      enterprise
         .execute(siteKey, { action })
         .then(resolve)
         .catch(reject);

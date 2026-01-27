@@ -89,7 +89,7 @@ export function HeaderBar({
   const renameLabel = renameInProgress ? 'Renaming' : hasRenamedFields ? 'Renamed' : 'Rename';
   const renameAndMapLabel = mapSchemaInProgress ? 'Mapping' : 'Rename + Map';
   const demoOverride = demoLocked && Boolean(onDemoLockedAction);
-  const disableMapSchema = demoOverride ? false : !canMapSchema || mappingInProgress || mapSchemaInProgress;
+  const disableMapSchema = demoOverride ? false : mappingInProgress || mapSchemaInProgress;
   const disableRename =
     demoOverride ? false : !canRename || mappingInProgress || renameInProgress || mapSchemaInProgress;
   const disableRenameAndMap =
@@ -356,6 +356,7 @@ export function HeaderBar({
                 className="ui-button ui-button--ghost ui-button--compact"
                 type="button"
                 data-demo-target="openai-remap"
+                aria-disabled={!canMapSchema}
                 onClick={() => {
                   if (demoOverride) {
                     onDemoLockedAction?.();

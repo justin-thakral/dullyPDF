@@ -14,6 +14,7 @@ Data structures:
 """
 
 import base64
+from email.utils import formataddr, getaddresses
 import hashlib
 import importlib.util
 import io
@@ -545,7 +546,7 @@ def _resolve_signup_rate_limits() -> tuple[int, int]:
 
 def _resolve_client_ip(request: Request) -> str:
     forwarded_for = request.headers.get("x-forwarded-for") or ""
-    if forwarded_for:
+    if forwarded_for and _trust_proxy_headers():
         first = forwarded_for.split(",")[0].strip()
         if first:
             return first
@@ -572,6 +573,21 @@ def _recaptcha_required_any() -> bool:
     return _recaptcha_required_for_contact() or _recaptcha_required_for_signup()
 
 
+def _trust_proxy_headers() -> bool:
+    raw = _env_value("SANDBOX_TRUST_PROXY_HEADERS")
+    if raw:
+        return _env_truthy("SANDBOX_TRUST_PROXY_HEADERS")
+    return False
+
+
+def _resolve_contact_recaptcha_action() -> str:
+    return _env_value("RECAPTCHA_CONTACT_ACTION") or _env_value("RECAPTCHA_EXPECTED_ACTION") or "contact"
+
+
+def _resolve_signup_recaptcha_action() -> str:
+    return _env_value("RECAPTCHA_SIGNUP_ACTION") or _env_value("RECAPTCHA_EXPECTED_ACTION") or "signup"
+
+
 def _resolve_recaptcha_project_id() -> str:
     return _env_value("RECAPTCHA_PROJECT_ID") or _env_value("FIREBASE_PROJECT_ID") or _env_value("GCP_PROJECT_ID")
 
@@ -584,6 +600,29 @@ def _resolve_recaptcha_min_score() -> float:
         return float(raw)
     except ValueError:
         return 0.5
+
+
+def _resolve_recaptcha_allowed_hostnames() -> list[str]:
+    raw = _env_value("RECAPTCHA_ALLOWED_HOSTNAMES")
+    if not raw:
+        return []
+    return [host.strip().lower() for host in raw.split(",") if host.strip()]
+
+
+def _recaptcha_hostname_allowed(hostname: str, allowed: list[str]) -> bool:
+    if not hostname:
+        return False
+    normalized = hostname.strip().lower()
+    if not normalized:
+        return False
+    for entry in allowed:
+        if normalized == entry:
+            return True
+        if entry.startswith("*."):
+            suffix = entry[1:]
+            if normalized.endswith(suffix) and normalized != suffix.lstrip("."):
+                return True
+    return False
 
 
 _GMAIL_TOKEN_CACHE: Dict[str, Any] = {"access_token": None, "expires_at": 0.0}
@@ -647,7 +686,7 @@ def _get_google_access_token() -> str:
 
 async def _verify_recaptcha_token(
     token: Optional[str],
-    action: Optional[str],
+    expected_action: Optional[str],
     request: Request,
     *,
     required: bool,
@@ -665,7 +704,7 @@ async def _verify_recaptcha_token(
         logger.warning("Recaptcha configuration missing; skipping verification.")
         return
 
-    expected_action = action or _env_value("RECAPTCHA_EXPECTED_ACTION") or "contact"
+    expected_action = (expected_action or "").strip() or None
     event: Dict[str, Any] = {"token": token, "siteKey": site_key}
     if expected_action:
         event["expectedAction"] = expected_action
@@ -691,8 +730,14 @@ async def _verify_recaptcha_token(
         raise HTTPException(status_code=400, detail=f"Recaptcha invalid ({reason})")
     if expected_action:
         action = token_props.get("action")
-        if action and action != expected_action:
+        if action != expected_action:
             raise HTTPException(status_code=400, detail="Recaptcha action mismatch")
+
+    allowed_hostnames = _resolve_recaptcha_allowed_hostnames()
+    if allowed_hostnames:
+        hostname = str(token_props.get("hostname") or "").strip()
+        if not _recaptcha_hostname_allowed(hostname, allowed_hostnames):
+            raise HTTPException(status_code=400, detail="Recaptcha hostname not allowed")
 
     min_score = _resolve_recaptcha_min_score()
     risk = data.get("riskAnalysis", {}) if isinstance(data, dict) else {}
@@ -707,7 +752,7 @@ async def _verify_recaptcha_token(
 async def _verify_contact_recaptcha(payload: ContactRequest, request: Request) -> None:
     await _verify_recaptcha_token(
         payload.recaptchaToken,
-        payload.recaptchaAction or "contact",
+        _resolve_contact_recaptcha_action(),
         request,
         required=_recaptcha_required_for_contact(),
     )
@@ -750,6 +795,30 @@ def _resolve_contact_body(payload: ContactRequest, request: Request) -> str:
     return "\n".join(lines).strip()
 
 
+def _sanitize_email_header_value(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    cleaned = re.sub(r"[\r\n]+", " ", str(value)).strip()
+    return cleaned or None
+
+
+def _format_reply_to_header(reply_to: Optional[Dict[str, str]]) -> Optional[str]:
+    if not reply_to:
+        return None
+    reply_email = _sanitize_email_header_value(reply_to.get("email"))
+    if not reply_email:
+        return None
+    reply_name = _sanitize_email_header_value(reply_to.get("name"))
+    parsed = getaddresses([reply_email])
+    addr = parsed[0][1] if parsed else reply_email
+    addr = _sanitize_email_header_value(addr)
+    if not addr:
+        return None
+    if reply_name:
+        return formataddr((reply_name, addr))
+    return addr
+
+
 async def _send_contact_email(subject: str, body: str, reply_to: Optional[Dict[str, str]]) -> None:
     to_email = _env_value("CONTACT_TO_EMAIL")
     from_email = _env_value("CONTACT_FROM_EMAIL") or to_email
@@ -772,10 +841,8 @@ async def _send_contact_email(subject: str, body: str, reply_to: Optional[Dict[s
         "Content-Transfer-Encoding: 7bit",
     ]
     if reply_to:
-        reply_email = reply_to.get("email")
-        reply_name = reply_to.get("name")
-        if reply_email:
-            reply_label = f"{reply_name} <{reply_email}>" if reply_name else reply_email
+        reply_label = _format_reply_to_header(reply_to)
+        if reply_label:
             headers.append(f"Reply-To: {reply_label}")
 
     raw_message = "\r\n".join(headers) + "\r\n\r\n" + body
@@ -1572,7 +1639,7 @@ async def assess_recaptcha(payload: RecaptchaAssessmentRequest, request: Request
     """
     window_seconds, per_ip = _resolve_signup_rate_limits()
     client_ip = _resolve_client_ip(request)
-    action = payload.action or "signup"
+    action = _resolve_signup_recaptcha_action()
     rate_key = f"recaptcha:{action}:{client_ip}"
     if not check_rate_limit(rate_key, limit=per_ip, window_seconds=window_seconds):
         raise HTTPException(status_code=429, detail="Too many verification attempts. Please wait and try again.")
