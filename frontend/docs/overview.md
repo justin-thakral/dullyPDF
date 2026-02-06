@@ -8,9 +8,10 @@ The frontend is a React + TypeScript workspace for visualizing PDFs, editing det
 - Imports existing AcroForm widgets when present.
 - Calls `/detect-fields` to enqueue CommonForms (by [jbarrow](https://github.com/jbarrow/commonforms)) detection and polls `/detect-fields/{sessionId}` for results.
 - Calls `/api/renames/ai` for OpenAI field rename (PDF page images + overlay tags; schema headers are included for rename+map).
+- Uses same-origin `/api/...` calls (via Firebase Hosting rewrites) for fast endpoints like profile, contact, and reCAPTCHA verification to avoid CORS preflights and reduce perceived cold-start delays.
 - Lets you drag, resize, rename, and retype fields.
 - Maps schema columns to PDF fields using OpenAI mapping of schema headers + template tags; the UI warns users before sending headers.
-- Consumes OpenAI credits per PDF page for rename or mapping (combined counts once per page).
+- Consumes OpenAI credits per OpenAI action: Rename (1), Remap (1), Rename + Remap (2).
 - Runs Search & Fill to populate values from a selected local record.
 - Search & Fill applies checkbox values from explicit checkbox columns (including `i_`/`checkbox_` prefixes), group enums/lists, and AI checkbox rules when available.
 - Saves filled forms to your profile via the backend, including checkbox rules/hints for later Search & Fill.

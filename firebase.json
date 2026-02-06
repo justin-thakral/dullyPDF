@@ -8,6 +8,69 @@
     ],
     "rewrites": [
       {
+        "source": "/api/health",
+        "run": {
+          "serviceId": "dullypdf-backend",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/recaptcha/assess",
+        "run": {
+          "serviceId": "dullypdf-backend",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/contact",
+        "run": {
+          "serviceId": "dullypdf-backend",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/profile",
+        "run": {
+          "serviceId": "dullypdf-backend",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/schemas",
+        "run": {
+          "serviceId": "dullypdf-backend",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/sessions/*/touch",
+        "run": {
+          "serviceId": "dullypdf-backend",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/saved-forms",
+        "run": {
+          "serviceId": "dullypdf-backend",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/saved-forms/*",
+        "run": {
+          "serviceId": "dullypdf-backend",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/saved-forms/*/session",
+        "run": {
+          "serviceId": "dullypdf-backend",
+          "region": "us-central1"
+        }
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }

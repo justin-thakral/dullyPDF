@@ -26,6 +26,18 @@ npm run dev
 
 This runs backend + frontend together via `concurrently`.
 
+## API routing notes
+
+In production, the site uses Firebase Hosting rewrites so the browser can call some backend routes
+as same-origin requests under `/api/...` (for example `/api/recaptcha/assess`). This avoids CORS
+preflights and makes cold starts feel less blocking.
+
+In local development, Vite proxies `/api` to `VITE_API_URL` (see `frontend/vite.config.ts`) so the same
+relative `/api/...` calls work without CORS. Endpoints that are not proxied in production (OpenAI and
+some large upload/stream routes) still call the backend base URL directly via `VITE_API_URL`.
+
+For the full details and the current allowlist/blocklist, see `frontend/docs/api-routing.md`.
+
 ## Running prod-like dev stack
 
 ```bash

@@ -1,7 +1,7 @@
 /**
  * Detection API helpers for field extraction.
  */
-import { apiFetch, apiJsonFetch, buildApiUrl } from './apiConfig';
+import { apiFetch, apiJsonFetch } from './apiConfig';
 
 const DEFAULT_DETECTION_API = 'http://localhost:8000';
 const DETECTION_POLL_INTERVAL_MS = 1500;
@@ -74,21 +74,9 @@ export async function detectFields(
     return startPayload;
   }
 
-  try {
-    return await pollDetection(sessionId, startPayload, { onStatus: options.onStatus });
-  } catch (error) {
-    if (error instanceof DetectionFailedError) {
-      throw error;
-    }
-    const message = error instanceof Error ? error.message : 'Detection polling failed.';
-    return {
-      sessionId,
-      status: 'running',
-      timedOut: true,
-      error: message,
-      pollError: true,
-    };
-  }
+  // Important: do not mask polling errors as "timed out".
+  // Auth failures and backend errors should surface so the UI can prompt re-auth / show a real error.
+  return pollDetection(sessionId, startPayload, { onStatus: options.onStatus });
 }
 
 export async function pollDetectionStatus(
@@ -152,10 +140,10 @@ function sleep(durationMs: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, durationMs));
 }
 
-async function touchDetectionSession(sessionId: string): Promise<void> {
-  try {
-    await apiFetch('POST', buildApiUrl('api', 'sessions', sessionId, 'touch'));
-  } catch {
-    // Best-effort; detection polling should continue even if touch fails.
+  async function touchDetectionSession(sessionId: string): Promise<void> {
+    try {
+      await apiFetch('POST', `/api/sessions/${encodeURIComponent(sessionId)}/touch`);
+    } catch {
+      // Best-effort; detection polling should continue even if touch fails.
+    }
   }
-}

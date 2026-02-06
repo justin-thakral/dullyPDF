@@ -124,7 +124,7 @@ Repo hygiene:
 - **Logging**: ensure schema metadata and request metadata are the only stored OpenAI metadata.
 - **Retention**: OpenAI + detection logs expire via `SANDBOX_OPENAI_LOG_TTL_SECONDS` and Firestore TTL on
   `openai_requests.expires_at`, `openai_rename_requests.expires_at`, `detection_requests.expires_at`.
-- **Credits**: base users start with 10 lifetime OpenAI credits; credits are consumed per page. Credits are refunded when an OpenAI request fails before producing a response.
+- **Credits**: base users start with 10 lifetime OpenAI credits; credits are consumed per OpenAI action: Rename (1), Remap (1), Rename + Remap (2). Credits are refunded when an OpenAI request fails before producing a response.
 - **Secret access**: restrict `roles/secretmanager.secretAccessor` to only the backend runtime SA.
 - **Keyless prod**: prefer ADC/Workload Identity in production to avoid JSON keys entirely
   (`FIREBASE_USE_ADC=true` on Cloud Run).

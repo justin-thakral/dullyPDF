@@ -81,7 +81,9 @@ const ProfilePage: React.FC<ProfilePageProps> = ({
           <div className="metric-card">
             <span className="metric-label">OpenAI credits left</span>
             <span className="metric-value">{creditsLabel}</span>
-            <p className="metric-note">Credits are consumed per page during rename or mapping.</p>
+            <p className="metric-note">
+              Credits are consumed per OpenAI action: Rename (1), Remap (1), Rename + Remap (2).
+            </p>
           </div>
           <div className="metric-card">
             <span className="metric-label">Max pages per scan</span>

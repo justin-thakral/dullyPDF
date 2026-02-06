@@ -102,24 +102,34 @@ const Homepage: React.FC<HomepageProps> = ({
   const hasPrev = activeDemoIndex > 0;
   const hasNext = activeDemoIndex < DEMO_WALKTHROUGH.length - 1;
 
-  const scrollToDemoNav = (behavior: ScrollBehavior) => {
-    const target = demoNavRef.current ?? demoRef.current;
-    target?.scrollIntoView({ behavior, block: 'end' });
+  const pendingScrollBehavior = useRef<ScrollBehavior | null>(null);
+
+  const scrollToBottom = (behavior: ScrollBehavior) => {
+    if (typeof window === 'undefined') return;
+    const maxScroll = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+    window.scrollTo({ top: maxScroll, behavior });
+  };
+
+  const requestBottomScroll = (behavior: ScrollBehavior) => {
+    pendingScrollBehavior.current = behavior;
+    scrollToBottom(behavior);
   };
 
   const handleScrollToDemo = () => {
     setDemoFocusActive(true);
-    scrollToDemoNav('smooth');
+    requestBottomScroll('smooth');
   };
 
   const handlePrevStep = () => {
     setDemoFocusActive(true);
     setActiveDemoIndex((prev) => Math.max(0, prev - 1));
+    requestBottomScroll('auto');
   };
 
   const handleNextStep = () => {
     setDemoFocusActive(true);
     setActiveDemoIndex((prev) => Math.min(DEMO_WALKTHROUGH.length - 1, prev + 1));
+    requestBottomScroll('auto');
   };
 
   const handleOpenContact = () => {
@@ -183,10 +193,18 @@ const Homepage: React.FC<HomepageProps> = ({
     if (typeof window === 'undefined') return;
     if (!window.matchMedia('(max-width: 1020px)').matches) return;
     if (!demoFocusActive) return;
-    if (!demoNavRef.current) return;
-    requestAnimationFrame(() => {
-      scrollToDemoNav('auto');
+    const behavior = pendingScrollBehavior.current ?? 'auto';
+    pendingScrollBehavior.current = null;
+    const raf = requestAnimationFrame(() => {
+      scrollToBottom(behavior);
     });
+    const timeout = window.setTimeout(() => {
+      scrollToBottom(behavior);
+    }, 150);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.clearTimeout(timeout);
+    };
   }, [activeDemoIndex, demoFocusActive]);
 
   const authAction = userEmail ? (
@@ -232,6 +250,9 @@ const Homepage: React.FC<HomepageProps> = ({
           <button type="button" className="mobile-contact-button" onClick={handleOpenContact}>
             Contact
           </button>
+          <a href="/privacy" className="mobile-contact-button mobile-legal-button">
+            Privacy &amp; Terms
+          </a>
         </div>
 
         <div className="mobile-copy">
@@ -290,7 +311,16 @@ const Homepage: React.FC<HomepageProps> = ({
         </div>
         <div className="mobile-demo-card">
           <div className="mobile-demo-media">
-            <img src={activeStep.image} alt={activeStep.alt} loading="lazy" />
+            <img
+              src={activeStep.image}
+              alt={activeStep.alt}
+              loading="lazy"
+              onLoad={() => {
+                if (demoFocusActive) {
+                  scrollToBottom('auto');
+                }
+              }}
+            />
           </div>
           <div className="mobile-demo-content">
             <span className="mobile-demo-step">Step {activeDemoIndex + 1} of {DEMO_WALKTHROUGH.length}</span>
@@ -452,6 +482,13 @@ const Homepage: React.FC<HomepageProps> = ({
           </div>
         </div>
       </div>
+      <footer className="homepage-legal">
+        <span>© 2026 DullyPDF</span>
+        <div className="homepage-legal__links">
+          <a href="/privacy">Privacy Policy</a>
+          <a href="/terms">Terms of Service</a>
+        </div>
+      </footer>
       <ContactDialog open={contactOpen} onClose={handleCloseContact} defaultEmail={userEmail} />
     </div>
   );

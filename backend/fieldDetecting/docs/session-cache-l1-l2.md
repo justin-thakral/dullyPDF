@@ -55,10 +55,7 @@ L1 fields:
 - `user_id`: owner of the session (from Firebase auth).
 - `renames`: OpenAI rename report.
 - `checkboxRules`: rename checkbox hints.
-- `openai_credit_consumed`: prevents double charging on rename + mapping.
-- `openai_credit_pages`: page count used for credits.
-- `page_count`: page count derived from the source PDF.
-- `openai_credit_mapping_used`: ensures mapping does not charge twice.
+- `page_count`: page count derived from the source PDF (routing/limits; not used for OpenAI credits).
 - `created_at`, `last_access`: for TTL sweeps and LRU.
 - `detection_status`, `detection_error`: detector job status metadata (when present).
 
@@ -82,13 +79,12 @@ Stored fields:
 - `last_access_at`: timestamp (optional, use sparingly to reduce writes).
 - `expires_at`: timestamp used by Firestore TTL.
 - `source_pdf`: original filename.
-- `page_count`: page count for credits.
+- `page_count`: page count for routing/limits.
 - `pdf_path`: GCS path for the PDF bytes.
 - `fields_path`: GCS path for detected or renamed fields JSON.
 - `result_path`: GCS path for the full detection result JSON.
 - `renames_path`: GCS path for rename report JSON (if present).
 - `checkbox_rules_path`: GCS path for checkbox rules JSON (if present).
-- `openai_credit_consumed`, `openai_credit_pages`, `openai_credit_mapping_used`.
 - `version`: schema version for future migrations.
 - `detection_status`, `detection_error`, `detection_queued_at`, `detection_started_at`,
   `detection_completed_at`, `detection_task_name`.

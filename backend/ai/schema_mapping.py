@@ -115,24 +115,65 @@ def _split_template_tags(
 ) -> List[Dict[str, Any]]:
     """Greedily split template tags into payload-sized chunks to satisfy size limits.
 
-    We repeatedly serialize candidate payloads to stay under the byte cap.
-    Time complexity: O(T * P) for T tags and payload size P due to JSON size checks.
+    Implementation note:
+    Instead of repeatedly json.dumps() the full candidate payload (O(T * P)),
+    we precompute JSON sizes for schema + per-tag fragments and maintain an
+    incremental byte budget (O(T)).
     """
-    base_payload = _assemble_payload(schema_fields, [])
-    if _payload_size(base_payload) > MAX_PAYLOAD_BYTES:
+    schema_fields_json = json.dumps(schema_fields, ensure_ascii=True)
+    schema_count_str = str(len(schema_fields))
+
+    # Reconstruct the exact JSON layout produced by json.dumps(_assemble_payload(...)).
+    prefix = f'{{"schemaFields": {schema_fields_json}, "templateTags": '
+    suffix_prefix = f', "totalSchemaFields": {schema_count_str}, "totalTemplateTags": '
+    suffix_end_len = 1  # "}"
+
+    # Empty templateTags list ("[]") and totalTemplateTags=0.
+    base_len = len(prefix) + 2 + len(suffix_prefix) + 1 + suffix_end_len
+    if base_len > MAX_PAYLOAD_BYTES:
         raise ValueError("OpenAI payload too large; reduce schema/template size")
 
     chunks: List[Dict[str, Any]] = []
     current: List[Dict[str, Any]] = []
+    current_tag_json_lens: List[int] = []
+    current_tags_sum_len = 0
+
+    def _template_tags_list_len(tag_lens: List[int], total_len: int) -> int:
+        """Return the length of json.dumps(templateTags) for a list of dicts."""
+        if not tag_lens:
+            return 2  # "[]"
+        # "[" + tag0 + ", " + tag1 + ... + "]"
+        return 2 + total_len + (2 * (len(tag_lens) - 1))
+
+    def _payload_len(template_tags_len: int, total_template_tags: int) -> int:
+        return (
+            len(prefix)
+            + template_tags_len
+            + len(suffix_prefix)
+            + len(str(total_template_tags))
+            + suffix_end_len
+        )
+
     for tag in template_tags:
-        current.append(tag)
-        candidate = _assemble_payload(schema_fields, current)
-        if _payload_size(candidate) > MAX_PAYLOAD_BYTES:
-            if len(current) == 1:
+        tag_json_len = len(json.dumps(tag, ensure_ascii=True))
+        candidate_tag_lens = current_tag_json_lens + [tag_json_len]
+        candidate_sum_len = current_tags_sum_len + tag_json_len
+        candidate_list_len = _template_tags_list_len(candidate_tag_lens, candidate_sum_len)
+        candidate_payload_len = _payload_len(candidate_list_len, len(candidate_tag_lens))
+
+        if candidate_payload_len > MAX_PAYLOAD_BYTES:
+            if not current:
                 raise ValueError("OpenAI payload too large; reduce schema/template size")
-            current.pop()
             chunks.append(_assemble_payload(schema_fields, current))
             current = [tag]
+            current_tag_json_lens = [tag_json_len]
+            current_tags_sum_len = tag_json_len
+            continue
+
+        current.append(tag)
+        current_tag_json_lens = candidate_tag_lens
+        current_tags_sum_len = candidate_sum_len
+
     if current:
         chunks.append(_assemble_payload(schema_fields, current))
     return chunks

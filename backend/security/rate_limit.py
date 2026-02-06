@@ -75,7 +75,6 @@ def _firestore_rate_limit(key: str, *, limit: int, window_seconds: int) -> bool:
             txn.set(
                 doc_ref,
                 {
-                    "key": key,
                     "window_start": window_start,
                     "count": count,
                     "updated_at": firebase_firestore.SERVER_TIMESTAMP,
@@ -89,7 +88,6 @@ def _firestore_rate_limit(key: str, *, limit: int, window_seconds: int) -> bool:
         txn.set(
             doc_ref,
             {
-                "key": key,
                 "window_start": window_start,
                 "count": count,
                 "updated_at": firebase_firestore.SERVER_TIMESTAMP,

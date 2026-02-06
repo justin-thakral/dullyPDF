@@ -15,6 +15,7 @@ frontend/
         FieldListPanel.tsx
       pages/
         Homepage.tsx
+        LegalPage.tsx
         LoginPage.tsx
         ProfilePage.tsx
         VerifyEmailPage.tsx
@@ -52,6 +53,7 @@ frontend/
 
 - `frontend/src/App.tsx`: Top-level state and workflow orchestration.
 - `frontend/src/components/pages/LoginPage.tsx`: FirebaseUI sign-in entry point.
+- `frontend/src/components/pages/LegalPage.tsx`: Privacy Policy and Terms of Service public pages.
 - `frontend/src/components/pages/VerifyEmailPage.tsx`: Email verification gate for password logins.
 - `frontend/src/components/pages/ProfilePage.tsx`: Profile view for tier limits and saved forms.
 - `frontend/src/utils/pdf.ts`: PDF.js loader + AcroForm extraction.

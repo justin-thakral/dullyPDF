@@ -14,14 +14,13 @@ RUN apt-get update \
 
 WORKDIR /app
 
+RUN adduser --disabled-password --gecos "" appuser
+
 COPY backend/requirements.txt /app/backend/requirements.txt
 RUN pip install --upgrade pip \
   && pip install -r /app/backend/requirements.txt
 
-COPY backend /app/backend
-
-RUN adduser --disabled-password --gecos "" appuser \
-  && chown -R appuser:appuser /app
+COPY --chown=appuser:appuser backend /app/backend
 
 USER appuser
 ENV HOME=/home/appuser

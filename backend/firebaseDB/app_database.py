@@ -116,8 +116,25 @@ def ensure_user(decoded: Dict[str, Any]) -> RequestUser:
     )
 
 
-def consume_openai_credits(uid: str, *, pages: int, role: Optional[str] = None) -> tuple[int, bool]:
+def _resolve_openai_credits_remaining(data: Dict[str, Any]) -> int:
+    """
+    Resolve credits remaining from a Firestore payload.
+
+    Important: a stored value of 0 is valid and must not fall back to the default.
+    """
+    raw = data.get(OPENAI_CREDITS_FIELD)
+    if raw is None:
+        return BASE_OPENAI_CREDITS
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return BASE_OPENAI_CREDITS
+
+
+def consume_openai_credits(uid: str, *, credits: int, role: Optional[str] = None) -> tuple[int, bool]:
     """Atomically decrement OpenAI credits for a user.
+
+    Credits are consumed per OpenAI action (rename or schema mapping), not per page.
     """
     if not uid:
         raise ValueError("Missing firebase uid")
@@ -125,11 +142,11 @@ def consume_openai_credits(uid: str, *, pages: int, role: Optional[str] = None) 
     if normalized_role == ROLE_GOD:
         return -1, True
     try:
-        pages_required = int(pages)
+        credits_required = int(credits)
     except (TypeError, ValueError):
-        pages_required = 1
-    if pages_required < 1:
-        pages_required = 1
+        credits_required = 1
+    if credits_required < 1:
+        credits_required = 1
 
     client = get_firestore_client()
     doc_ref = client.collection(USERS_COLLECTION).document(uid)
@@ -139,13 +156,10 @@ def consume_openai_credits(uid: str, *, pages: int, role: Optional[str] = None) 
     def _update(txn: firebase_firestore.Transaction) -> tuple[int, bool]:
         snapshot = doc_ref.get(transaction=txn)
         data = snapshot.to_dict() or {}
-        try:
-            remaining = int(data.get(OPENAI_CREDITS_FIELD) or BASE_OPENAI_CREDITS)
-        except (TypeError, ValueError):
-            remaining = BASE_OPENAI_CREDITS
-        if remaining < pages_required:
+        remaining = _resolve_openai_credits_remaining(data)
+        if remaining < credits_required:
             return remaining, False
-        new_remaining = remaining - pages_required
+        new_remaining = remaining - credits_required
         updates = {
             OPENAI_CREDITS_FIELD: new_remaining,
             "updated_at": now_iso(),
@@ -156,20 +170,19 @@ def consume_openai_credits(uid: str, *, pages: int, role: Optional[str] = None) 
     return _update(transaction)
 
 
-def refund_openai_credits(uid: str, *, pages: int, role: Optional[str] = None) -> int:
-    """Atomically refund OpenAI credits after a failed request.
-    """
+def refund_openai_credits(uid: str, *, credits: int, role: Optional[str] = None) -> int:
+    """Atomically refund OpenAI credits after a failed request."""
     if not uid:
         raise ValueError("Missing firebase uid")
     normalized_role = normalize_role(role)
     if normalized_role == ROLE_GOD:
         return -1
     try:
-        pages_refund = int(pages)
+        credits_refund = int(credits)
     except (TypeError, ValueError):
-        pages_refund = 1
-    if pages_refund < 1:
-        pages_refund = 1
+        credits_refund = 1
+    if credits_refund < 1:
+        credits_refund = 1
 
     client = get_firestore_client()
     doc_ref = client.collection(USERS_COLLECTION).document(uid)
@@ -179,11 +192,8 @@ def refund_openai_credits(uid: str, *, pages: int, role: Optional[str] = None) -
     def _update(txn: firebase_firestore.Transaction) -> int:
         snapshot = doc_ref.get(transaction=txn)
         data = snapshot.to_dict() or {}
-        try:
-            remaining = int(data.get(OPENAI_CREDITS_FIELD) or BASE_OPENAI_CREDITS)
-        except (TypeError, ValueError):
-            remaining = BASE_OPENAI_CREDITS
-        new_remaining = remaining + pages_refund
+        remaining = _resolve_openai_credits_remaining(data)
+        new_remaining = remaining + credits_refund
         updates = {
             OPENAI_CREDITS_FIELD: new_remaining,
             "updated_at": now_iso(),
@@ -262,10 +272,7 @@ def get_user_profile(uid: str) -> Optional[UserProfileRecord]:
     if role == ROLE_GOD:
         credits = None
     else:
-        try:
-            credits = int(data.get(OPENAI_CREDITS_FIELD) or BASE_OPENAI_CREDITS)
-        except (TypeError, ValueError):
-            credits = BASE_OPENAI_CREDITS
+        credits = _resolve_openai_credits_remaining(data)
     return UserProfileRecord(
         uid=uid,
         email=email,
