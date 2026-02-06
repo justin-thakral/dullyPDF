@@ -19,6 +19,16 @@ export type AuthStateListener = (user: User | null) => void;
 
 let idTokenListenerInitialised = false;
 
+function resolveEmailActionSettings(): { url: string; handleCodeInApp?: boolean } | undefined {
+  if (typeof window === 'undefined' || !window.location?.origin) {
+    return undefined;
+  }
+  // Keep users on the branded app domain after clicking verification links.
+  // This does not change the email sender (Firebase), but it improves UX and can help
+  // deliverability compared to sending users to a generic Firebase-hosted handler page.
+  return { url: window.location.origin, handleCodeInApp: false };
+}
+
 /**
  * Register a token refresh listener once per app session.
  */
@@ -93,7 +103,12 @@ export const Auth = {
       await updateProfile(credential.user, { displayName: displayName.trim() });
     }
     if (!credential.user.emailVerified) {
-      await sendEmailVerification(credential.user);
+      const actionSettings = resolveEmailActionSettings();
+      if (actionSettings) {
+        await sendEmailVerification(credential.user, actionSettings);
+      } else {
+        await sendEmailVerification(credential.user);
+      }
     }
     const token = await credential.user.getIdToken();
     setAuthToken(token);
@@ -123,7 +138,12 @@ export const Auth = {
     if (!user) {
       throw new Error('No authenticated user found.');
     }
-    await sendEmailVerification(user);
+    const actionSettings = resolveEmailActionSettings();
+    if (actionSettings) {
+      await sendEmailVerification(user, actionSettings);
+    } else {
+      await sendEmailVerification(user);
+    }
   },
 
   /**

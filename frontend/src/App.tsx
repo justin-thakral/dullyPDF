@@ -1605,13 +1605,14 @@ function App() {
           throw new Error(mappingResult?.error || 'Mapping generation failed');
         }
         applyMappingResults(mappingResult.mappingResults);
+        void loadUserProfile();
         return true;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Schema mapping failed.';
-      setSchemaError(message);
-      debugLog('Schema mapping failed', message);
-      return false;
-    }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Schema mapping failed.';
+        setSchemaError(message);
+        debugLog('Schema mapping failed', message);
+        return false;
+      }
     },
     [
       activeSavedFormId,
@@ -1620,6 +1621,7 @@ function App() {
       buildTemplateFields,
       clearPendingAutoActions,
       detectSessionId,
+      loadUserProfile,
       schemaId,
     ],
   );
@@ -1741,6 +1743,8 @@ function App() {
           });
         }
         setHasRenamedFields(true);
+        // Refresh credits/limits after OpenAI actions so the UI matches Firestore immediately.
+        void loadUserProfile();
         return updated;
       } catch (error) {
         const message = error instanceof Error ? error.message : 'OpenAI rename failed.';
@@ -1761,6 +1765,7 @@ function App() {
       buildTemplateFields,
       clearPendingAutoActions,
       detectSessionId,
+      loadUserProfile,
       requestConfirm,
     ],
   );
@@ -2317,6 +2322,31 @@ function App() {
     if (!pendingDetectFile) return;
     const wantsRename = uploadWantsRename;
     const wantsMap = uploadWantsMap;
+    if (wantsRename || wantsMap) {
+      if (!verifiedUser) {
+        setPipelineError('Sign in to use OpenAI actions.');
+        return;
+      }
+      const requiredCredits = wantsRename && wantsMap ? 2 : 1;
+      // Always refresh the profile before an auto-OpenAI run so admin-side credit changes
+      // (or credits consumed in another tab) are reflected immediately.
+      const profile = await loadUserProfile();
+      if (!profile) {
+        setPipelineError('Unable to check OpenAI credits. Try signing out and signing in again.');
+        return;
+      }
+      const role = String(profile.role || '').toLowerCase();
+      if (role !== 'god') {
+        const remaining = typeof profile.creditsRemaining === 'number' ? profile.creditsRemaining : 0;
+        if (remaining < requiredCredits) {
+          setPipelineError(
+            `OpenAI credits exhausted. Remaining=${remaining}, required=${requiredCredits}. ` +
+              'Uncheck OpenAI actions to run field detection without AI.',
+          );
+          return;
+        }
+      }
+    }
     let resolvedSchemaId = wantsMap ? schemaId : null;
     if (wantsMap) {
       if (schemaUploadInProgress) {
@@ -2356,6 +2386,7 @@ function App() {
       schemaIdOverride: wantsMap ? resolvedSchemaId : null,
     });
   }, [
+    loadUserProfile,
     pendingDetectFile,
     pendingSchemaPayload,
     persistSchemaPayload,
@@ -3126,6 +3157,7 @@ function App() {
   const bannerAlert: BannerNotice | null = activeErrorMessage
     ? { tone: 'error', message: activeErrorMessage }
     : bannerNotice;
+  const shouldShowBannerAlert = Boolean(bannerAlert) && !(demoActive && !isMobileView);
   const handleDemoLockedAction = useCallback(() => {
     if (typeof window === 'undefined') return;
     window.alert(DEMO_DISABLED_MESSAGE);
@@ -3221,7 +3253,7 @@ function App() {
         id="excel-file-input"
         name="excel-file"
         type="file"
-        accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+        accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         style={{ display: 'none' }}
         onChange={handleExcelFileSelected}
       />
@@ -3291,7 +3323,7 @@ function App() {
   if (showProfile && verifiedUser) {
     return (
       <>
-        {bannerAlert ? (
+        {shouldShowBannerAlert && bannerAlert ? (
           <Alert
             tone={bannerAlert.tone}
             variant="banner"
@@ -3321,7 +3353,7 @@ function App() {
   if (currentView !== 'editor') {
     return (
       <div className="homepage-shell">
-        {bannerAlert ? (
+        {shouldShowBannerAlert && bannerAlert ? (
           <Alert
             tone={bannerAlert.tone}
             variant="banner"
@@ -3395,7 +3427,10 @@ function App() {
                           id="pipeline-rename"
                           name="pipeline-rename"
                           checked={uploadWantsRename}
-                          onChange={(event) => setUploadWantsRename(event.target.checked)}
+                          onChange={(event) => {
+                            setPipelineError(null);
+                            setUploadWantsRename(event.target.checked);
+                          }}
                         />
                         Rename fields with OpenAI
                       </label>
@@ -3405,7 +3440,10 @@ function App() {
                           id="pipeline-map"
                           name="pipeline-map"
                           checked={uploadWantsMap}
-                          onChange={(event) => setUploadWantsMap(event.target.checked)}
+                          onChange={(event) => {
+                            setPipelineError(null);
+                            setUploadWantsMap(event.target.checked);
+                          }}
                         />
                         Map to schema (CSV/Excel/JSON/TXT)
                       </label>
@@ -3554,7 +3592,7 @@ function App() {
 
   return (
     <div className={appShellClassName}>
-      {bannerAlert ? (
+      {shouldShowBannerAlert && bannerAlert ? (
         <Alert
           tone={bannerAlert.tone}
           variant="banner"

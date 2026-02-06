@@ -16,6 +16,7 @@
     "frontend:build:prod": "bash scripts/use-frontend-env.sh prod && cd frontend && npm run build",
     "backend:dev": "bash scripts/run-backend-dev.sh",
     "backend:prod": "bash scripts/run-backend-prod.sh",
+    "clean": "python3 clean.py",
     "deploy": "npm run deploy:backend && npm run deploy:frontend",
     "deploy:backend": "bash scripts/deploy-backend.sh",
     "deploy:frontend": "bash scripts/deploy-frontend.sh"

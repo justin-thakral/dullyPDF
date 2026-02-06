@@ -142,6 +142,34 @@
   align-items: center;
 }
 
+.homepage-legal {
+  margin-top: 2rem;
+  padding: 1.5rem clamp(1.5rem, 3vw, 3rem);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid #e5e7eb;
+  color: #4b5563;
+  background: #f9fafb;
+  font-size: 0.95rem;
+  gap: 1rem;
+}
+
+.homepage-legal__links {
+  display: flex;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.homepage-legal a {
+  color: #1e3a8a;
+  font-weight: 600;
+}
+
+.homepage-legal a:hover {
+  color: #1d4ed8;
+}
+
 .cta-section {
   margin-bottom: 2rem;
 }
@@ -502,6 +530,10 @@
   border-color: rgba(37, 99, 235, 0.85);
   transform: translateY(-1px);
   box-shadow: 0 16px 28px rgba(30, 64, 175, 0.18);
+}
+
+.mobile-legal-button {
+  text-decoration: none;
 }
 
 .mobile-description {
@@ -1150,6 +1182,11 @@
   .homepage-mobile-demo {
     padding: 0 1rem;
   }
+
+  .homepage-legal {
+    flex-direction: column;
+    text-align: center;
+  }
 }
 
 @media (hover: hover) and (min-width: 1021px) {
@@ -1185,6 +1222,7 @@
   .homepage-auth-button,
   .mobile-demo-button,
   .mobile-contact-button,
+  .mobile-legal-button,
   .mobile-demo-arrow,
   .feature-item,
   .quick-info,
@@ -1198,6 +1236,7 @@
   .homepage-auth-button:hover,
   .mobile-demo-button:hover,
   .mobile-contact-button:hover,
+  .mobile-legal-button:hover,
   .mobile-demo-arrow:hover,
   .feature-item:hover,
   .quick-info:hover,

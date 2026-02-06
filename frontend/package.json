@@ -18,7 +18,10 @@
     "pdfjs-dist": "^4.5.136",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "xlsx": "^0.18.5"
+    "read-excel-file": "^6.0.3"
+  },
+  "overrides": {
+    "undici": "6.23.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",

@@ -1,4 +1,4 @@
-n.git
+.git
 .gitignore
 .github
 .vscode
@@ -20,7 +20,12 @@ scripts
 package.json
 package-lock.json
 backend/.venv
+backend/.venv-*
+backend/.venv*
 backend/fieldDetecting/outputArtifacts
+backend/tests
+.pytest_cache
+**/.pytest_cache
 **/__pycache__
 **/*.pyc
 **/*.pyo

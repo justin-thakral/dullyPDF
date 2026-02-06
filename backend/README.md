@@ -18,6 +18,19 @@ FastAPI service for PDF field detection, schema-only OpenAI mapping, and saved-f
 - Contact form: `POST /api/contact` (public; reCAPTCHA required; sends email via Gmail API).
 - reCAPTCHA verify: `POST /api/recaptcha/assess` (public; used for account creation checks).
 
+### Production API routing (Firebase Hosting rewrites)
+
+In production, the SPA is served from Firebase Hosting and a subset of backend endpoints are proxied
+through Hosting rewrites so the browser can call them as same-origin `/api/...` requests. This is
+primarily to remove CORS preflights (OPTIONS) from fast JSON endpoints (notably reCAPTCHA verification
+and profile fetches) so Cloud Run scale-to-zero cold starts feel less blocking.
+
+Some endpoints are intentionally not proxied (OpenAI routes, detection routes, and large upload/stream
+routes) to avoid Firebase Hosting's Cloud Run rewrite timeout (approximately 60 seconds) and to keep
+large transfers direct-to-Cloud-Run.
+
+See `frontend/docs/api-routing.md` for the current rewrite list and frontend call rules.
+
 ### Runtime requirements
 
 - Main API: Cloud Tasks client + Firebase Admin + OpenAI (optional).
@@ -87,7 +100,7 @@ Detector env examples:
 - Encrypted PDFs are rejected before detection to avoid repeated task retries.
 - `DETECTOR_TASKS_MAX_ATTEMPTS` on the detector service should match the Cloud Tasks queue max attempts to finalize failures on the last retry.
 - Session ownership guards can be sanity-checked with `python -m backend.scripts.verify_session_owner`.
-- Base users start with 10 lifetime OpenAI credits; each page consumed per rename/mapping run (combined counts once per page). God role bypasses credits.
+- Base users start with 10 lifetime OpenAI credits; credits are consumed per OpenAI action: Rename (1), Remap (1), Rename + Remap (2). God role bypasses credits.
 - Email/password logins must be email-verified; OAuth providers are treated as verified.
 - Schema metadata (headers/types) is stored in Firestore; CSV/Excel/JSON rows and field values never reach the server.
 - Postgres/SQL integrations are not part of the runtime path (moved to `legacy/`).
@@ -115,7 +128,15 @@ Detector env examples:
 ### Running locally
 
 Prefer the repo scripts so the backend uses `backend/.venv` (CommonForms (by [jbarrow](https://github.com/jbarrow/commonforms)) requires
-NumPy 1.x and will fail under NumPy 2.x if you run with a system Python):
+NumPy 1.x and will fail under NumPy 2.x if you run with a system Python). For local dev, prefer Python 3.11+
+to match Docker and avoid future dependency support warnings (Google libs warn on Python 3.10):
+
+```bash
+python3.11 -m venv backend/.venv
+backend/.venv/bin/python -m pip install -r backend/requirements.txt
+```
+
+Then run:
 
 ```
 ./scripts/run-backend-dev.sh env/backend.dev.env

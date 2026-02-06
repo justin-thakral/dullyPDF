@@ -49,7 +49,7 @@ export class ApiService {
    * Fetch profile details and tier limits for the current user.
    */
   static async getProfile(): Promise<UserProfile | null> {
-    const response = await apiFetch('GET', buildApiUrl('api', 'profile'), {
+    const response = await apiFetch('GET', '/api/profile', {
       allowStatuses: [401, 403],
     });
     if (response.status === 401 || response.status === 403) {
@@ -62,7 +62,7 @@ export class ApiService {
    * Submit the homepage contact form.
    */
   static async submitContact(payload: ContactPayload): Promise<{ success: boolean }> {
-    const response = await apiFetch('POST', buildApiUrl('api', 'contact'), {
+    const response = await apiFetch('POST', '/api/contact', {
       headers: {
         'Content-Type': 'application/json',
       },
@@ -76,7 +76,10 @@ export class ApiService {
    * Verify a reCAPTCHA token for public actions (signup).
    */
   static async verifyRecaptcha(payload: RecaptchaAssessmentPayload): Promise<{ success: boolean }> {
-    const response = await apiFetch('POST', buildApiUrl('api', 'recaptcha', 'assess'), {
+    // Prefer same-origin requests so browsers skip the CORS preflight (OPTIONS) that can
+    // amplify Cloud Run cold starts for first-time signups. Firebase Hosting rewrites
+    // proxy this path to the Cloud Run backend in prod, and Vite proxies it in dev.
+    const response = await apiFetch('POST', '/api/recaptcha/assess', {
       headers: {
         'Content-Type': 'application/json',
       },
@@ -95,7 +98,7 @@ export class ApiService {
     source?: string;
     sampleCount?: number;
   }): Promise<{ schemaId: string; fieldCount: number; fields: Array<{ name: string; type: string }> }> {
-    const response = await apiFetch('POST', buildApiUrl('api', 'schemas'), {
+    const response = await apiFetch('POST', '/api/schemas', {
       headers: {
         'Content-Type': 'application/json',
       },
@@ -171,7 +174,7 @@ export class ApiService {
   static async getSavedForms(options?: { suppressErrors?: boolean; timeoutMs?: number }): Promise<SavedFormSummary[]> {
     const suppressErrors = options?.suppressErrors ?? true;
     try {
-      const response = await apiFetch('GET', buildApiUrl('api', 'saved-forms'), {
+      const response = await apiFetch('GET', '/api/saved-forms', {
         allowStatuses: [401],
         timeoutMs: options?.timeoutMs,
       });
@@ -197,7 +200,7 @@ export class ApiService {
     checkboxRules?: Array<Record<string, any>>;
     checkboxHints?: Array<Record<string, any>>;
   }> {
-    const response = await apiFetch('GET', buildApiUrl('api', 'saved-forms', formId));
+    const response = await apiFetch('GET', `/api/saved-forms/${encodeURIComponent(formId)}`);
     return apiJsonFetch(response);
   }
 
@@ -219,7 +222,8 @@ export class ApiService {
     formId: string,
     payload: { fields: Array<Record<string, any>>; pageCount?: number },
   ): Promise<{ success: boolean; sessionId: string; fieldCount: number }> {
-    const response = await apiFetch('POST', buildApiUrl('api', 'saved-forms', formId, 'session'), {
+    const encoded = encodeURIComponent(formId);
+    const response = await apiFetch('POST', `/api/saved-forms/${encoded}/session`, {
       headers: {
         'Content-Type': 'application/json',
       },
@@ -253,7 +257,8 @@ export class ApiService {
    * Refresh the backend session TTL for long-lived editor sessions.
    */
   static async touchSession(sessionId: string): Promise<{ success: boolean; sessionId: string }> {
-    const response = await apiFetch('POST', buildApiUrl('api', 'sessions', sessionId, 'touch'));
+    const encoded = encodeURIComponent(sessionId);
+    const response = await apiFetch('POST', `/api/sessions/${encoded}/touch`);
     return apiJsonFetch(response);
   }
 
@@ -261,7 +266,7 @@ export class ApiService {
    * Delete a saved form by id.
    */
   static async deleteSavedForm(formId: string): Promise<{ success: boolean }> {
-    const response = await apiFetch('DELETE', buildApiUrl('api', 'saved-forms', formId));
+    const response = await apiFetch('DELETE', `/api/saved-forms/${encodeURIComponent(formId)}`);
     return apiJsonFetch(response);
   }
 

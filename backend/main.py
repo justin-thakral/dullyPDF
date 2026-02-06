@@ -22,6 +22,7 @@ import json
 import os
 import re
 import tempfile
+import threading
 import time
 import uuid
 from datetime import datetime, timezone
@@ -100,6 +101,18 @@ from .sessions.session_store import (
 from .time_utils import now_iso
 
 logger = get_logger(__name__)
+
+
+def _log_external_http_failure(context: str, response: httpx.Response) -> None:
+    """Log external HTTP failures without leaking response bodies in normal runs.
+
+    Response bodies can contain sensitive details (tokens, PII, upstream diagnostics). We only
+    include them when debug mode is explicitly enabled.
+    """
+    if debug_enabled():
+        logger.error("%s failed (status=%s): %s", context, response.status_code, response.text)
+    else:
+        logger.error("%s failed (status=%s)", context, response.status_code)
 
 
 def _is_prod() -> bool:
@@ -253,7 +266,15 @@ def _enqueue_detection_job(
         "detection_queue": task_config["queue"],
         "detection_service_url": task_config["service_url"],
     }
-    _store_session_entry(session_id, entry, persist_l1=False)
+    # For queued sessions, persist only the PDF + metadata upfront. Fields/result artifacts are
+    # written once the detector completes to avoid creating empty L2 objects.
+    _store_session_entry(
+        session_id,
+        entry,
+        persist_fields=False,
+        persist_result=False,
+        persist_l1=False,
+    )
     pdf_path = entry.get("pdf_path")
     if not pdf_path:
         raise HTTPException(status_code=500, detail="Session PDF storage failed")
@@ -654,7 +675,7 @@ async def _get_gmail_access_token() -> str:
     async with httpx.AsyncClient(timeout=10.0) as client:
         response = await client.post("https://oauth2.googleapis.com/token", data=payload)
     if response.status_code >= 400:
-        logger.error("Gmail token refresh failed: %s", response.text)
+        _log_external_http_failure("Gmail token refresh", response)
         raise RuntimeError("Failed to refresh Gmail access token")
 
     data = response.json()
@@ -671,14 +692,34 @@ async def _get_gmail_access_token() -> str:
     _GMAIL_TOKEN_CACHE["expires_at"] = now + expires_in_val
     return str(access_token)
 
+_GOOGLE_ACCESS_TOKEN_SCOPES = ("https://www.googleapis.com/auth/cloud-platform",)
+_GOOGLE_CREDENTIALS = None
+_GOOGLE_CREDENTIALS_LOCK = threading.Lock()
+
 
 def _get_google_access_token() -> str:
-    credentials, _ = google_auth_default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
-    if getattr(credentials, "requires_scopes", False):
-        credentials = credentials.with_scopes(["https://www.googleapis.com/auth/cloud-platform"])
-    if not credentials.valid:
-        credentials.refresh(GoogleAuthRequest())
-    token = credentials.token
+    """
+    Return a cached Google access token for calling Google APIs from the backend (e.g. reCAPTCHA Enterprise).
+
+    Rationale:
+    - `google.auth.default()` + `credentials.refresh()` can involve network I/O.
+    - The previous implementation created a fresh credentials object for every request, which forces
+      a refresh on most calls and adds avoidable latency (and blocks the async event loop).
+    - Cloud Run instances are long-lived enough that caching credentials per instance materially
+      improves median signup latency after the first request.
+    """
+    global _GOOGLE_CREDENTIALS
+    with _GOOGLE_CREDENTIALS_LOCK:
+        credentials = _GOOGLE_CREDENTIALS
+        if credentials is None:
+            credentials, _ = google_auth_default(scopes=list(_GOOGLE_ACCESS_TOKEN_SCOPES))
+            if getattr(credentials, "requires_scopes", False):
+                credentials = credentials.with_scopes(list(_GOOGLE_ACCESS_TOKEN_SCOPES))
+            _GOOGLE_CREDENTIALS = credentials
+
+        if not credentials.valid:
+            credentials.refresh(GoogleAuthRequest())
+        token = credentials.token
     if not token:
         raise RuntimeError("Failed to acquire Google auth token")
     return token
@@ -720,7 +761,11 @@ async def _verify_recaptcha_token(
     async with httpx.AsyncClient(timeout=10.0) as client:
         response = await client.post(url, headers={"Authorization": f"Bearer {access_token}"}, json={"event": event})
     if response.status_code >= 400:
-        logger.warning("Recaptcha verification failed: %s", response.text)
+        # Body may contain upstream diagnostics; keep it behind debug mode.
+        if debug_enabled():
+            logger.warning("Recaptcha verification failed (status=%s): %s", response.status_code, response.text)
+        else:
+            logger.warning("Recaptcha verification failed (status=%s)", response.status_code)
         raise HTTPException(status_code=502, detail="Recaptcha verification failed")
 
     data = response.json()
@@ -854,7 +899,7 @@ async def _send_contact_email(subject: str, body: str, reply_to: Optional[Dict[s
     async with httpx.AsyncClient(timeout=10.0) as client:
         response = await client.post(url, headers={"Authorization": f"Bearer {access_token}"}, json=gmail_payload)
     if response.status_code >= 400:
-        logger.error("Gmail API contact email failed: %s", response.text)
+        _log_external_http_failure("Gmail API contact email send", response)
         raise HTTPException(status_code=502, detail="Failed to send contact email")
 
 
@@ -2233,16 +2278,19 @@ async def rename_fields_ai(
     if not check_rate_limit(f"rename:user:{user.app_user_id}", limit=user_rate, window_seconds=window_seconds):
         raise HTTPException(status_code=429, detail="Rate limit exceeded for user")
 
+    # Credits are consumed per OpenAI action (rename/mapping), not per page.
+    # The combined rename+schema flow sends both overlays + schema headers and is charged 2 credits.
+    credits_required = 2 if schema_id else 1
     page_count = entry.get("page_count") or _get_pdf_page_count(pdf_bytes)
     remaining, allowed = consume_openai_credits(
         user.app_user_id,
-        pages=page_count,
+        credits=credits_required,
         role=user.role,
     )
     if not allowed:
         raise HTTPException(
             status_code=402,
-            detail=f"OpenAI credits exhausted (remaining={remaining}, required={page_count})",
+            detail=f"OpenAI credits exhausted (remaining={remaining}, required={credits_required})",
         )
     credits_charged = normalize_role(user.role) != ROLE_GOD
 
@@ -2272,7 +2320,7 @@ async def rename_fields_ai(
             try:
                 refund_openai_credits(
                     user.app_user_id,
-                    pages=page_count,
+                    credits=credits_required,
                     role=user.role,
                 )
             except Exception as refund_exc:
@@ -2284,9 +2332,6 @@ async def rename_fields_ai(
     entry["fields"] = renamed_fields
     entry["renames"] = rename_report
     entry["checkboxRules"] = checkbox_rules
-    entry["openai_credit_consumed"] = True
-    entry["openai_credit_pages"] = page_count
-    entry["openai_credit_mapping_used"] = False
     entry["page_count"] = page_count
     _update_session_entry(
         payload.sessionId,
@@ -2370,40 +2415,18 @@ async def map_schema_ai(
             include_renames=False,
             include_checkbox_rules=False,
         )
-    skip_credit = False
-    if session_entry and session_entry.get("openai_credit_consumed"):
-        if not session_entry.get("openai_credit_mapping_used"):
-            skip_credit = True
-
-    credits_charged = False
-    charged_pages = 0
-    if not skip_credit:
-        page_count = None
-        if session_entry:
-            page_count = session_entry.get("openai_credit_pages") or session_entry.get("page_count")
-            if not page_count and session_entry.get("pdf_bytes"):
-                page_count = _get_pdf_page_count(session_entry["pdf_bytes"])
-        elif template and template.pdf_bucket_path and is_gcs_path(template.pdf_bucket_path):
-            try:
-                pdf_bytes = download_pdf_bytes(template.pdf_bucket_path)
-            except Exception as exc:
-                logger.exception("Failed to load template PDF for mapping credits")
-                raise HTTPException(status_code=500, detail="Failed to load template PDF") from exc
-            page_count = _get_pdf_page_count(pdf_bytes)
-        if not page_count:
-            page_count = _estimate_template_page_count(template_fields)
-        remaining, allowed = consume_openai_credits(
-            user.app_user_id,
-            pages=page_count,
-            role=user.role,
+    credits_required = 1
+    remaining, allowed = consume_openai_credits(
+        user.app_user_id,
+        credits=credits_required,
+        role=user.role,
+    )
+    if not allowed:
+        raise HTTPException(
+            status_code=402,
+            detail=f"OpenAI credits exhausted (remaining={remaining}, required={credits_required})",
         )
-        if not allowed:
-            raise HTTPException(
-                status_code=402,
-                detail=f"OpenAI credits exhausted (remaining={remaining}, required={page_count})",
-            )
-        credits_charged = normalize_role(user.role) != ROLE_GOD
-        charged_pages = page_count
+    credits_charged = normalize_role(user.role) != ROLE_GOD
 
     request_id = uuid.uuid4().hex
     record_openai_request(
@@ -2426,7 +2449,7 @@ async def map_schema_ai(
             try:
                 refund_openai_credits(
                     user.app_user_id,
-                    pages=charged_pages,
+                    credits=credits_required,
                     role=user.role,
                 )
             except Exception as refund_exc:
@@ -2437,7 +2460,7 @@ async def map_schema_ai(
             try:
                 refund_openai_credits(
                     user.app_user_id,
-                    pages=charged_pages,
+                    credits=credits_required,
                     role=user.role,
                 )
             except Exception as refund_exc:
@@ -2462,8 +2485,6 @@ async def map_schema_ai(
             if checkbox_hints:
                 session_entry["checkboxHints"] = checkbox_hints
                 persist_hints = True
-        if skip_credit:
-            session_entry["openai_credit_mapping_used"] = True
         _update_session_entry(
             payload.sessionId,
             session_entry,
