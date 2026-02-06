@@ -8,6 +8,7 @@ yarn-error.log*
 pnpm-debug.log*
 frontend/dist/
 frontend/.vite/
+playwright-report/
 
 # Local PDFs (keep untracked)
 *.pdf
@@ -28,12 +29,15 @@ frontend/.env.*
 frontend/.env.*.local
 
 # Python artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+.venv-*/
 backend/.venv/
 backend/.venv-*/
-backend/__pycache__/
-backend/**/__pycache__/
-backend/**/*.pyc
-backend/.pytest_cache/
 
 # Backend output artifacts + temp files
 backend/fieldDetecting/outputArtifacts/
@@ -48,13 +52,29 @@ backend/fieldDetecting/sandbox/ML/data/
 backend/fieldDetecting/sandbox/ML/data/raw/
 
 # Sample datasets (local-only)
-samples/
+/samples/
 
 # Local generated assets
-mcp/debugging/
+/mcp/debugging/
 mcp/.env.local
 mcp/.env.*.local
-legacy/
+/legacy/
+
+# Local run artifacts (keep cleanup scripts/README tracked)
+/output/
+/runs/*
+!/runs/README.md
+!/runs/cleanOutput.py
+/test-results/*
+!/test-results/README.md
+!/test-results/cleanOutput.py
+/tmp/*
+!/tmp/README.md
+!/tmp/cleanOutput.py
+
+# Firebase local state
+/.firebase/
+firebase-debug.log*
 
 # OS + misc
 .DS_Store
@@ -67,3 +87,8 @@ Thumbs.db
 firebase-adminsdk-*.json
 *service_account*.json
 serviceAccounts/
+
+# IDE + local scratch
+/.vscode/
+/.idea/
+/.tmp/

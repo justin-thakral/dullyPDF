@@ -18,6 +18,7 @@ from email.utils import formataddr, getaddresses
 import hashlib
 import importlib.util
 import io
+import ipaddress
 import json
 import os
 import re
@@ -553,16 +554,18 @@ def _resolve_stream_cors_headers(origin: Optional[str]) -> Dict[str, str]:
     return {}
 
 
-def _resolve_contact_rate_limits() -> tuple[int, int]:
+def _resolve_contact_rate_limits() -> tuple[int, int, int]:
     window_seconds = _int_env("CONTACT_RATE_LIMIT_WINDOW_SECONDS", 600)
     per_ip = _int_env("CONTACT_RATE_LIMIT_PER_IP", 6)
-    return window_seconds, per_ip
+    global_limit = _int_env("CONTACT_RATE_LIMIT_GLOBAL", 0)
+    return window_seconds, per_ip, global_limit
 
 
-def _resolve_signup_rate_limits() -> tuple[int, int]:
+def _resolve_signup_rate_limits() -> tuple[int, int, int]:
     window_seconds = _int_env("SIGNUP_RATE_LIMIT_WINDOW_SECONDS", 600)
     per_ip = _int_env("SIGNUP_RATE_LIMIT_PER_IP", 8)
-    return window_seconds, per_ip
+    global_limit = _int_env("SIGNUP_RATE_LIMIT_GLOBAL", 0)
+    return window_seconds, per_ip, global_limit
 
 
 def _resolve_client_ip(request: Request) -> str:
@@ -574,6 +577,28 @@ def _resolve_client_ip(request: Request) -> str:
     if request.client and request.client.host:
         return request.client.host
     return "unknown"
+
+
+def _is_public_ip(value: str) -> bool:
+    """
+    Return True when the IP is a public, routable address.
+
+    We intentionally treat private, loopback, link-local, multicast, and reserved ranges
+    as non-public so callers do not accidentally forward internal proxy IPs to third
+    parties (or key rate limiting on them).
+    """
+    try:
+        addr = ipaddress.ip_address(str(value or "").strip())
+    except ValueError:
+        return False
+    return not (
+        addr.is_private
+        or addr.is_loopback
+        or addr.is_link_local
+        or addr.is_multicast
+        or addr.is_reserved
+        or getattr(addr, "is_unspecified", False)
+    )
 
 
 def _recaptcha_required_for_contact() -> bool:
@@ -753,7 +778,7 @@ async def _verify_recaptcha_token(
     if user_agent:
         event["userAgent"] = user_agent
     client_ip = _resolve_client_ip(request)
-    if client_ip != "unknown":
+    if client_ip != "unknown" and _is_public_ip(client_ip):
         event["userIpAddress"] = client_ip
 
     access_token = _get_google_access_token()
@@ -1660,10 +1685,16 @@ async def submit_contact(payload: ContactRequest, request: Request) -> Dict[str,
     """
     Accept a homepage contact form submission.
     """
-    window_seconds, per_ip = _resolve_contact_rate_limits()
-    client_ip = _resolve_client_ip(request)
-    rate_key = f"contact:{client_ip}"
-    if not check_rate_limit(rate_key, limit=per_ip, window_seconds=window_seconds):
+    window_seconds, per_ip, global_limit = _resolve_contact_rate_limits()
+    if global_limit > 0:
+        rate_key = "contact:global"
+        allowed = check_rate_limit(rate_key, limit=global_limit, window_seconds=window_seconds)
+    else:
+        client_ip = _resolve_client_ip(request)
+        rate_key = f"contact:{client_ip}"
+        allowed = check_rate_limit(rate_key, limit=per_ip, window_seconds=window_seconds)
+
+    if not allowed:
         raise HTTPException(status_code=429, detail="Too many contact requests. Please wait and try again.")
 
     await _verify_contact_recaptcha(payload, request)
@@ -1682,11 +1713,17 @@ async def assess_recaptcha(payload: RecaptchaAssessmentRequest, request: Request
     """
     Verify a reCAPTCHA token for sensitive public flows (e.g., signup).
     """
-    window_seconds, per_ip = _resolve_signup_rate_limits()
-    client_ip = _resolve_client_ip(request)
+    window_seconds, per_ip, global_limit = _resolve_signup_rate_limits()
     action = _resolve_signup_recaptcha_action()
-    rate_key = f"recaptcha:{action}:{client_ip}"
-    if not check_rate_limit(rate_key, limit=per_ip, window_seconds=window_seconds):
+    if global_limit > 0:
+        rate_key = f"recaptcha:{action}:global"
+        allowed = check_rate_limit(rate_key, limit=global_limit, window_seconds=window_seconds)
+    else:
+        client_ip = _resolve_client_ip(request)
+        rate_key = f"recaptcha:{action}:{client_ip}"
+        allowed = check_rate_limit(rate_key, limit=per_ip, window_seconds=window_seconds)
+
+    if not allowed:
         raise HTTPException(status_code=429, detail="Too many verification attempts. Please wait and try again.")
 
     await _verify_recaptcha_token(payload.token, action, request, required=_recaptcha_required_for_signup())

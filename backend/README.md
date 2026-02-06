@@ -59,9 +59,11 @@ See `frontend/docs/api-routing.md` for the current rewrite list and frontend cal
 - `RECAPTCHA_MIN_SCORE` (default 0.5)
 - `CONTACT_REQUIRE_RECAPTCHA` (default true)
 - `CONTACT_RATE_LIMIT_WINDOW_SECONDS`, `CONTACT_RATE_LIMIT_PER_IP`
+- `CONTACT_RATE_LIMIT_GLOBAL` (optional; global cap for `/api/contact` regardless of caller IP)
 - `SIGNUP_REQUIRE_RECAPTCHA` (default true)
 - `SIGNUP_RATE_LIMIT_WINDOW_SECONDS`, `SIGNUP_RATE_LIMIT_PER_IP`
-- `SANDBOX_TRUST_PROXY_HEADERS` (default false; trust `X-Forwarded-For` for rate limiting)
+- `SIGNUP_RATE_LIMIT_GLOBAL` (optional; global cap for `/api/recaptcha/assess` regardless of caller IP)
+- `SANDBOX_TRUST_PROXY_HEADERS` (default false; only enable when Cloud Run is reachable *only* via a trusted proxy that strips spoofed headers)
 - `SANDBOX_CORS_ORIGINS` (comma-separated list)
 - `SANDBOX_ENABLE_LEGACY_ENDPOINTS` (dev-only; defaults to true; ignored in prod)
 - `ADMIN_TOKEN` (dev-only override; ignored when `ENV=prod` or `SANDBOX_ALLOW_ADMIN_OVERRIDE=false`)

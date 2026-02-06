@@ -86,6 +86,10 @@ out of the Hosting proxy timeout.
 ## Operational Notes
 
 - Client IP: when requests are proxied through Hosting, `request.client.host` in FastAPI will be a Google
-  infrastructure IP. If you use IP-based rate limiting or pass `userIpAddress` to reCAPTCHA, you likely
-  want to trust and parse `X-Forwarded-For` (controlled by `SANDBOX_TRUST_PROXY_HEADERS` in the backend).
+  infrastructure IP. Because the Cloud Run service is also publicly reachable, we treat `X-Forwarded-For`
+  as attacker-controlled in the general case (direct callers can spoof it). In production we keep
+  `SANDBOX_TRUST_PROXY_HEADERS=false` and use global caps like `CONTACT_RATE_LIMIT_GLOBAL` /
+  `SIGNUP_RATE_LIMIT_GLOBAL` for public endpoints instead of per-IP limits.
 
+- reCAPTCHA hostname allowlist: in production we set `RECAPTCHA_ALLOWED_HOSTNAMES` (for example
+  `dullypdf.com,dullypdf.web.app,dullypdf.firebaseapp.com`) so tokens minted on other origins are rejected.
