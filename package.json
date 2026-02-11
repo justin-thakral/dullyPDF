@@ -19,7 +19,8 @@
     "clean": "python3 clean.py",
     "deploy": "npm run deploy:backend && npm run deploy:frontend",
     "deploy:backend": "bash scripts/deploy-backend.sh",
-    "deploy:frontend": "bash scripts/deploy-frontend.sh"
+    "deploy:frontend": "bash scripts/deploy-frontend.sh",
+    "test:backend": "backend/.venv/bin/python -m pytest backend/test/unit/ --cov=backend --cov-config=.coveragerc --cov-report=term-missing -q"
   },
   "devDependencies": {
     "@playwright/test": "^1.57.0",

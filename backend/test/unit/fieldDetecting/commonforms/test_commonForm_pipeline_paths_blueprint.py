@@ -180,6 +180,27 @@ def test_detect_ffdnet_fast_mode_predicts_per_page(mocker) -> None:
     assert widgets_by_page[1][0].widget_type == "ChoiceButton"
 
 
+def test_detect_ffdnet_skips_page_when_boxes_is_none(mocker) -> None:
+    model = mocker.Mock()
+    model.predict.return_value = [_FakeYoloResult(None)]
+    detector = SimpleNamespace(
+        fast=False,
+        model=model,
+        id_to_cls={0: "TextBox"},
+        device="cpu",
+    )
+
+    widgets_by_page = cf._detect_ffdnet(
+        detector,
+        [_page()],
+        confidence=0.3,
+        image_size=1024,
+        bounding_box_cls=_BoundingBoxStub,
+    )
+
+    assert widgets_by_page == {}
+
+
 def test_detect_ffdetr_extracts_widgets_and_sorts(mocker) -> None:
     detections_page_1 = _FakeDetections(
         xyxy=[

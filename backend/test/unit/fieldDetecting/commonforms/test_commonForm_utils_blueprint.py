@@ -121,3 +121,18 @@ def test_resolve_output_root_honors_priority_rules() -> None:
     assert cf._resolve_output_root(Path("/tmp/artifacts.json"), None) == Path("/tmp")
     assert cf._resolve_output_root(Path("/tmp/output-root"), None) == Path("/tmp/output-root")
     assert cf._resolve_output_root(None, None) == Path("backend/fieldDetecting/outputArtifacts")
+
+
+def test_page_sizes_uses_mediabox_when_cropbox_missing(mocker, tmp_path: Path) -> None:
+    pdf_path = tmp_path / "sample.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4\n%mock\n")
+    page = SimpleNamespace(
+        cropbox=None,
+        mediabox=SimpleNamespace(width=612.0, height=792.0),
+    )
+    reader = SimpleNamespace(pages=[page])
+    mocker.patch.object(cf, "PdfReader", return_value=reader)
+
+    sizes = cf._page_sizes(pdf_path)
+
+    assert sizes == {0: (612.0, 792.0)}

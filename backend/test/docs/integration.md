@@ -41,17 +41,19 @@ backend/.venv/bin/pytest backend/test/integration --cov=backend --cov-config=.co
 ## Recommended Boundary Patches
 
 - auth/user:
-  - `backend.main._verify_token`
-  - `backend.main.ensure_user`
+  - `backend.services.auth_service.verify_token`
+  - `backend.services.auth_service.require_user`
+  - `backend.firebaseDB.app_database.ensure_user`
 - session/storage:
-  - `backend.main._get_session_entry`
-  - `backend.main._update_session_entry`
-  - storage helper functions in `backend.main`
+  - `backend.sessions.session_store.get_session_entry`
+  - `backend.sessions.session_store.update_session_entry`
+  - storage helper functions in `backend.firebaseDB.storage_service`
 - OpenAI flows:
-  - `backend.main.run_openai_rename_on_pdf`
-  - `backend.main.call_openai_schema_mapping_chunked`
+  - `backend.ai.rename_pipeline.run_openai_rename_on_pdf`
+  - `backend.ai.schema_mapping.call_openai_schema_mapping_chunked`
 - detection queue:
-  - `backend.main.enqueue_detection_task`
+  - `backend.services.detection_service.enqueue_detection_job`
+  - `backend.detection_tasks.enqueue_detection_task`
 
 ## Test Priorities for This Project
 

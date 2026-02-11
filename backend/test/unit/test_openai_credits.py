@@ -70,20 +70,20 @@ def test_rename_charges_one_credit_without_schema(
 ) -> None:
     from backend.main import app
 
-    consume_mock = mocker.patch("backend.main.consume_openai_credits", return_value=(9, True))
-    mocker.patch("backend.main._verify_token", return_value={"uid": "user_1", "email": "e", "name": "d"})
+    consume_mock = mocker.patch("backend.api.routes.ai.consume_openai_credits", return_value=(9, True))
+    mocker.patch("backend.api.middleware.security.verify_token", return_value={"uid": "user_1", "email": "e", "name": "d"})
     mocker.patch(
-        "backend.main.ensure_user",
+        "backend.api.routes.ai.ensure_user",
         return_value=mocker.Mock(app_user_id="user_1", role="base", email="e", display_name="d"),
     )
-    mocker.patch("backend.main._get_session_entry", return_value=dummy_session_entry)
-    mocker.patch("backend.main.check_rate_limit", return_value=True)
-    mocker.patch("backend.main.record_openai_rename_request", return_value=None)
+    mocker.patch("backend.api.routes.ai._get_session_entry", return_value=dummy_session_entry)
+    mocker.patch("backend.api.routes.ai.check_rate_limit", return_value=True)
+    mocker.patch("backend.api.routes.ai.record_openai_rename_request", return_value=None)
     mocker.patch(
-        "backend.main.run_openai_rename_on_pdf",
+        "backend.api.routes.ai.run_openai_rename_on_pdf",
         return_value=({}, [{"name": "first_name", "originalName": "A1"}]),
     )
-    mocker.patch("backend.main._update_session_entry", return_value=None)
+    mocker.patch("backend.api.routes.ai._update_session_entry", return_value=None)
 
     client = TestClient(app)
     resp = client.post(
@@ -107,21 +107,21 @@ def test_rename_charges_two_credits_with_schema(
 ) -> None:
     from backend.main import app
 
-    consume_mock = mocker.patch("backend.main.consume_openai_credits", return_value=(8, True))
-    mocker.patch("backend.main._verify_token", return_value={"uid": "user_1", "email": "e", "name": "d"})
+    consume_mock = mocker.patch("backend.api.routes.ai.consume_openai_credits", return_value=(8, True))
+    mocker.patch("backend.api.middleware.security.verify_token", return_value={"uid": "user_1", "email": "e", "name": "d"})
     mocker.patch(
-        "backend.main.ensure_user",
+        "backend.api.routes.ai.ensure_user",
         return_value=mocker.Mock(app_user_id="user_1", role="base", email="e", display_name="d"),
     )
-    mocker.patch("backend.main._get_session_entry", return_value=dummy_session_entry)
-    mocker.patch("backend.main.check_rate_limit", return_value=True)
-    mocker.patch("backend.main.get_schema", return_value=_dummy_schema_record(schema_id="schema_1"))
-    mocker.patch("backend.main.record_openai_rename_request", return_value=None)
+    mocker.patch("backend.api.routes.ai._get_session_entry", return_value=dummy_session_entry)
+    mocker.patch("backend.api.routes.ai.check_rate_limit", return_value=True)
+    mocker.patch("backend.api.routes.ai.get_schema", return_value=_dummy_schema_record(schema_id="schema_1"))
+    mocker.patch("backend.api.routes.ai.record_openai_rename_request", return_value=None)
     mocker.patch(
-        "backend.main.run_openai_rename_on_pdf",
+        "backend.api.routes.ai.run_openai_rename_on_pdf",
         return_value=({}, [{"name": "first_name", "originalName": "A1"}]),
     )
-    mocker.patch("backend.main._update_session_entry", return_value=None)
+    mocker.patch("backend.api.routes.ai._update_session_entry", return_value=None)
 
     client = TestClient(app)
     resp = client.post(
@@ -145,21 +145,21 @@ def test_schema_mapping_charges_one_credit(
 ) -> None:
     from backend.main import app
 
-    consume_mock = mocker.patch("backend.main.consume_openai_credits", return_value=(9, True))
-    mocker.patch("backend.main._verify_token", return_value={"uid": "user_1", "email": "e", "name": "d"})
+    consume_mock = mocker.patch("backend.api.routes.ai.consume_openai_credits", return_value=(9, True))
+    mocker.patch("backend.api.middleware.security.verify_token", return_value={"uid": "user_1", "email": "e", "name": "d"})
     mocker.patch(
-        "backend.main.ensure_user",
+        "backend.api.routes.ai.ensure_user",
         return_value=mocker.Mock(app_user_id="user_1", role="base", email="e", display_name="d"),
     )
-    mocker.patch("backend.main._get_session_entry", return_value=dummy_session_entry)
-    mocker.patch("backend.main.check_rate_limit", return_value=True)
-    mocker.patch("backend.main.get_schema", return_value=_dummy_schema_record(schema_id="schema_1"))
-    mocker.patch("backend.main.record_openai_request", return_value=None)
+    mocker.patch("backend.api.routes.ai._get_session_entry", return_value=dummy_session_entry)
+    mocker.patch("backend.api.routes.ai.check_rate_limit", return_value=True)
+    mocker.patch("backend.api.routes.ai.get_schema", return_value=_dummy_schema_record(schema_id="schema_1"))
+    mocker.patch("backend.api.routes.ai.record_openai_request", return_value=None)
     mocker.patch(
-        "backend.main.call_openai_schema_mapping_chunked",
+        "backend.api.routes.ai.call_openai_schema_mapping_chunked",
         return_value={"mappings": [], "checkboxRules": [], "checkboxHints": [], "notes": ""},
     )
-    mocker.patch("backend.main._update_session_entry", return_value=None)
+    mocker.patch("backend.api.routes.ai._update_session_entry", return_value=None)
 
     client = TestClient(app)
     resp = client.post(
@@ -182,3 +182,31 @@ def test_schema_mapping_charges_one_credit(
 
     consume_mock.assert_called()
     assert consume_mock.call_args.kwargs.get("credits") == 1
+
+
+# ---------------------------------------------------------------------------
+# Edge-case tests for _resolve_openai_credits_remaining
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_openai_credits_remaining_non_numeric_value_falls_back_to_base() -> None:
+    """When the stored value for openai_credits_remaining is a non-numeric
+    string (e.g. 'not-a-number'), int() raises ValueError and the function
+    should fall back to BASE_OPENAI_CREDITS."""
+    from backend.firebaseDB import app_database
+
+    data = {app_database.OPENAI_CREDITS_FIELD: "not-a-number"}
+    result = app_database._resolve_openai_credits_remaining(data)
+    assert result == app_database.BASE_OPENAI_CREDITS
+
+
+def test_resolve_openai_credits_remaining_negative_value_preserved() -> None:
+    """When the stored value is a valid negative integer (e.g. -5), int()
+    succeeds and the function should return the negative value as-is rather
+    than falling back to the default. This tests that negative credits are
+    not masked by the fallback logic."""
+    from backend.firebaseDB import app_database
+
+    data = {app_database.OPENAI_CREDITS_FIELD: -5}
+    result = app_database._resolve_openai_credits_remaining(data)
+    assert result == -5

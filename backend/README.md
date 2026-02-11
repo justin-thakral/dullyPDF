@@ -1,6 +1,13 @@
 ## Backend
 
-FastAPI service for PDF field detection, schema-only OpenAI mapping, and saved-form storage. The entrypoint is `backend/main.py`, and detection is executed by the dedicated detector service (`backend/detector_main.py`) which runs CommonForms (by [jbarrow](https://github.com/jbarrow/commonforms)) under `backend/fieldDetecting/commonforms/`. The legacy OpenCV pipeline lives in `legacy/fieldDetecting/` and is not part of the main pipeline.
+FastAPI service for PDF field detection, schema-only OpenAI mapping, and saved-form storage. Runtime entrypoint remains `backend/main.py`, while app construction and routing now live under `backend/api/`:
+
+- `backend/api/app.py`: app factory + middleware + router registration
+- `backend/api/routes/`: endpoint modules grouped by domain
+- `backend/api/schemas/`: request model definitions
+- `backend/services/`: shared business/helpers used by routes
+
+Detection is executed by the dedicated detector service (`backend/detector_main.py`) which runs CommonForms (by [jbarrow](https://github.com/jbarrow/commonforms)) under `backend/fieldDetecting/commonforms/`. The legacy OpenCV pipeline lives in `legacy/fieldDetecting/` and is not part of the main pipeline.
 
 ### Core flows
 

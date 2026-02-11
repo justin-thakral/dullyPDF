@@ -311,5 +311,8 @@ def _parse_json(content: str) -> Dict[str, Any]:
     except json.JSONDecodeError:
         match = re.search(r"\{[\s\S]*\}", content)
         if match:
-            return json.loads(match.group(0))
+            try:
+                return json.loads(match.group(0))
+            except json.JSONDecodeError:
+                pass
         return {"mappings": [], "notes": "Non-JSON response received"}

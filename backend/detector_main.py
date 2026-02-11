@@ -120,8 +120,6 @@ def _require_internal_auth(authorization: Optional[str]) -> Dict[str, Any]:
     if not raw.lower().startswith("bearer "):
         raise HTTPException(status_code=401, detail="Missing detector auth token")
     token = raw.split(" ", 1)[1].strip()
-    if not token:
-        raise HTTPException(status_code=401, detail="Missing detector auth token")
     audience = env_value("DETECTOR_TASKS_AUDIENCE") or env_value("DETECTOR_SERVICE_URL")
     if not audience:
         raise HTTPException(status_code=500, detail="Detector audience is not configured")

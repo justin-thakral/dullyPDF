@@ -118,13 +118,23 @@ import sys
 
 env_path = sys.argv[1]
 out_path = sys.argv[2]
-script_only = set([
+script_only = {
     "PORT",
     "OPENAI_API_KEY_SECRET",
     "ADMIN_TOKEN_SECRET",
     "GMAIL_CLIENT_SECRET_SECRET",
     "GMAIL_REFRESH_TOKEN_SECRET",
-])
+}
+
+# If a Secret Manager binding is configured, do not also emit the literal env var
+# into --env-vars-file. Cloud Run treats secret-backed env vars as a different
+# "type", and deploying a string literal for the same key will fail.
+secret_bindings = {
+    "OPENAI_API_KEY_SECRET": "OPENAI_API_KEY",
+    "ADMIN_TOKEN_SECRET": "ADMIN_TOKEN",
+    "GMAIL_CLIENT_SECRET_SECRET": "GMAIL_CLIENT_SECRET",
+    "GMAIL_REFRESH_TOKEN_SECRET": "GMAIL_REFRESH_TOKEN",
+}
 
 def parse_env(path):
     values = {}
@@ -145,7 +155,22 @@ def parse_env(path):
             values[key] = value
     return values
 
-data = parse_env(env_path)
+raw_values = parse_env(env_path)
+
+omit_keys = set(script_only)
+for binding_key, target_key in secret_bindings.items():
+    binding_value = (raw_values.get(binding_key) or "").strip()
+    if not binding_value:
+        continue
+    target_value = (raw_values.get(target_key) or "").strip()
+    if target_value:
+        print(
+            f"Warning: {binding_key} is set; ignoring literal {target_key} from {env_path}.",
+            file=sys.stderr,
+        )
+    omit_keys.add(target_key)
+
+data = {key: value for key, value in raw_values.items() if key not in omit_keys}
 with open(out_path, "w", encoding="utf-8") as handle:
     for key in sorted(data.keys()):
         handle.write(f"{key}: {json.dumps(data[key])}\n")
@@ -160,17 +185,48 @@ gcloud builds submit \
   .
 
 SECRET_FLAGS=()
+SECRETS_TO_UPDATE=()
+SECRETS_TO_REMOVE=()
+
+append_csv() {
+  local -n arr="$1"
+  local value="$2"
+  if [[ -z "$value" ]]; then
+    return
+  fi
+  arr+=("$value")
+}
+
 if [[ -n "${OPENAI_API_KEY_SECRET:-}" ]]; then
-  SECRET_FLAGS+=("--set-secrets" "OPENAI_API_KEY=${OPENAI_API_KEY_SECRET}:latest")
+  append_csv SECRETS_TO_UPDATE "OPENAI_API_KEY=${OPENAI_API_KEY_SECRET}:latest"
+elif [[ -n "${OPENAI_API_KEY:-}" ]]; then
+  # Switching from secret -> literal requires removing the secret binding first.
+  append_csv SECRETS_TO_REMOVE "OPENAI_API_KEY"
 fi
+
 if [[ -n "${ADMIN_TOKEN_SECRET:-}" ]]; then
-  SECRET_FLAGS+=("--set-secrets" "ADMIN_TOKEN=${ADMIN_TOKEN_SECRET}:latest")
+  append_csv SECRETS_TO_UPDATE "ADMIN_TOKEN=${ADMIN_TOKEN_SECRET}:latest"
+elif [[ -n "${ADMIN_TOKEN:-}" ]]; then
+  append_csv SECRETS_TO_REMOVE "ADMIN_TOKEN"
 fi
+
 if [[ -n "${GMAIL_CLIENT_SECRET_SECRET:-}" ]]; then
-  SECRET_FLAGS+=("--set-secrets" "GMAIL_CLIENT_SECRET=${GMAIL_CLIENT_SECRET_SECRET}:latest")
+  append_csv SECRETS_TO_UPDATE "GMAIL_CLIENT_SECRET=${GMAIL_CLIENT_SECRET_SECRET}:latest"
+else
+  append_csv SECRETS_TO_REMOVE "GMAIL_CLIENT_SECRET"
 fi
+
 if [[ -n "${GMAIL_REFRESH_TOKEN_SECRET:-}" ]]; then
-  SECRET_FLAGS+=("--set-secrets" "GMAIL_REFRESH_TOKEN=${GMAIL_REFRESH_TOKEN_SECRET}:latest")
+  append_csv SECRETS_TO_UPDATE "GMAIL_REFRESH_TOKEN=${GMAIL_REFRESH_TOKEN_SECRET}:latest"
+else
+  append_csv SECRETS_TO_REMOVE "GMAIL_REFRESH_TOKEN"
+fi
+
+if [[ ${#SECRETS_TO_UPDATE[@]} -gt 0 ]]; then
+  SECRET_FLAGS+=("--update-secrets" "$(IFS=,; echo "${SECRETS_TO_UPDATE[*]}")")
+fi
+if [[ ${#SECRETS_TO_REMOVE[@]} -gt 0 ]]; then
+  SECRET_FLAGS+=("--remove-secrets" "$(IFS=,; echo "${SECRETS_TO_REMOVE[*]}")")
 fi
 
 gcloud run deploy "$SERVICE_NAME" \

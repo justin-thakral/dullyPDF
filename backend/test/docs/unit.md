@@ -64,12 +64,38 @@ def test_branch(mocker):
 
 ## Important Backend-Specific Notes
 
-- `backend.main` has import-time env checks (`_require_prod_env`). For unit tests, set `ENV=test` before import.
+- `backend.main` still triggers app bootstrap on import (prod env checks run via `backend/api/app.py`). For unit tests, set `ENV=test` before import.
+- Prefer patching route/service modules directly (`backend/api/routes/*`, `backend/services/*`) instead of relying only on `backend.main` re-exports.
 - Several modules cache global state; clear/reset between tests when needed:
   - `backend.main` token caches
   - `backend.security.rate_limit._RATE_LIMIT_BUCKETS`
   - `backend.sessions.session_store` L1 cache globals
 - `debug_flags.py` mutates `sys.argv` at import time. Use isolated imports/reloads for those tests.
+
+## Handling Failing Tests
+
+Failing tests are acceptable only as a short-term development signal while debugging. A failing test is not a done state for merge.
+
+When a test fails:
+
+1. First verify the test is correct (assertions, fixtures, mocks, and expected behavior).
+2. If the test itself is wrong, fix the test first.
+3. If the test is correct and product code is failing, report failing test ids, a brief issue summary, and why it failed (expected vs observed).
+4. Write a detailed bug report in `test/bugs/` as `YYYY-MM-DD_<area>_<short-slug>.md`.
+
+Required bug report sections:
+
+- Title + date
+- Failing test ids and exact command used
+- Reproduction steps
+- Expected behavior
+- Actual behavior
+- Root-cause analysis (or strongest hypothesis)
+- Suggested fix options
+- Risk/impact assessment
+- Follow-up validation plan
+
+If a failure must be kept temporarily, mark it explicitly (for example `xfail`) with a reason and a link/path to its bug report.
 
 ## Definition of Done for a Completed Unit File
 

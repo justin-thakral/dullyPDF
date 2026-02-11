@@ -1,10 +1,14 @@
-"""Blueprint for unit tests of `backend/time_utils.py`.
+"""Unit tests for backend.time_utils."""
 
-Required coverage:
-- `now_iso()` returns ISO-8601 string
-- Value is parseable with timezone info
-- Offset is UTC (`+00:00`)
+from datetime import datetime, timedelta
 
-Important context:
-- Timestamp strings are used in Firestore metadata and logs across the backend.
-"""
+from backend.time_utils import now_iso
+
+
+def test_now_iso_returns_parseable_utc_timestamp() -> None:
+    value = now_iso()
+    parsed = datetime.fromisoformat(value)
+
+    assert isinstance(value, str)
+    assert parsed.tzinfo is not None
+    assert parsed.utcoffset() == timedelta(0)

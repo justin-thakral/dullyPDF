@@ -90,7 +90,8 @@ Firebase Admin + auth:
 - `backend/firebaseDB/firebase_service.py` loads credentials and verifies ID tokens.
 - `backend/firebaseDB/role_cli.py` sets custom claims and writes roles to Firestore.
 - `backend/firebaseDB/app_database.py` stores user role + OpenAI credit balances in Firestore.
-- `backend/main.py` enforces auth checks for schema mapping endpoints.
+- `backend/api/middleware/security.py` pre-verifies auth for `/api/*` routes and detection endpoints.
+- `backend/services/auth_service.py` enforces token verification + email verification checks.
 
 Schema mapping data:
 - `backend/firebaseDB/schema_database.py` stores schema metadata (headers/types only).
