@@ -41,6 +41,16 @@
   line-height: 1.6;
 }
 
+.verify-spam-note {
+  padding: 0.85rem 1rem;
+  border-radius: 14px;
+  border: 1px solid var(--alert-warning-border);
+  background: var(--alert-warning-bg);
+  color: var(--alert-warning-ink);
+  font-weight: 700;
+  line-height: 1.45;
+}
+
 .verify-badge {
   align-self: flex-start;
   padding: 0.4rem 0.8rem;

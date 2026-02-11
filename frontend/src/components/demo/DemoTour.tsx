@@ -100,7 +100,7 @@ export function DemoTour({ open, step, stepIndex, stepCount, onNext, onBack, onC
 
   const calloutMeta = useMemo(() => {
     if (!open || !step || step.variant === 'modal') return null;
-    const placement = step.placement ?? 'bottom';
+    const preferredPlacement = step.placement ?? 'bottom';
     const width = calloutSize.width || Math.min(360, window.innerWidth - CALLOUT_PADDING * 2);
     const height = calloutSize.height || 180;
 
@@ -118,7 +118,7 @@ export function DemoTour({ open, step, stepIndex, stepCount, onNext, onBack, onC
       const arrowLeft = width / 2;
       const arrowTop = height / 2;
       return {
-        placement,
+        placement: preferredPlacement,
         top,
         left,
         width,
@@ -134,44 +134,95 @@ export function DemoTour({ open, step, stepIndex, stepCount, onNext, onBack, onC
       };
     }
 
+    type Placement = NonNullable<DemoStep['placement']>;
+
     const targetCenterX = targetRect.left + targetRect.width / 2;
     const targetCenterY = targetRect.top + targetRect.height / 2;
 
-    let top = targetRect.bottom + CALLOUT_GAP;
-    let left = targetCenterX - width / 2;
+    const computeMetaForPlacement = (placement: Placement) => {
+      let top = targetRect.bottom + CALLOUT_GAP;
+      let left = targetCenterX - width / 2;
 
-    if (placement === 'top') {
-      top = targetRect.top - CALLOUT_GAP - height;
-      left = targetCenterX - width / 2;
-    } else if (placement === 'left') {
-      top = targetCenterY - height / 2;
-      left = targetRect.left - CALLOUT_GAP - width;
-    } else if (placement === 'right') {
-      top = targetCenterY - height / 2;
-      left = targetRect.right + CALLOUT_GAP;
-    }
+      if (placement === 'top') {
+        top = targetRect.top - CALLOUT_GAP - height;
+        left = targetCenterX - width / 2;
+      } else if (placement === 'left') {
+        top = targetCenterY - height / 2;
+        left = targetRect.left - CALLOUT_GAP - width;
+      } else if (placement === 'right') {
+        top = targetCenterY - height / 2;
+        left = targetRect.right + CALLOUT_GAP;
+      }
 
-    top = clamp(top, CALLOUT_PADDING, window.innerHeight - height - CALLOUT_PADDING);
-    left = clamp(left, CALLOUT_PADDING, window.innerWidth - width - CALLOUT_PADDING);
+      top = clamp(top, CALLOUT_PADDING, window.innerHeight - height - CALLOUT_PADDING);
+      left = clamp(left, CALLOUT_PADDING, window.innerWidth - width - CALLOUT_PADDING);
 
-    const arrowLeft = clamp(targetCenterX - left, 28, width - 28);
-    const arrowTop = clamp(targetCenterY - top, 28, height - 28);
+      const arrowLeft = clamp(targetCenterX - left, 28, width - 28);
+      const arrowTop = clamp(targetCenterY - top, 28, height - 28);
 
-    return {
-      placement,
-      top,
-      left,
-      width,
-      height,
-      arrowLeft,
-      arrowTop,
-      style: {
+      return {
+        placement,
         top,
         left,
-        ['--demo-arrow-left' as string]: `${arrowLeft}px`,
-        ['--demo-arrow-top' as string]: `${arrowTop}px`,
-      },
+        width,
+        height,
+        arrowLeft,
+        arrowTop,
+        style: {
+          top,
+          left,
+          ['--demo-arrow-left' as string]: `${arrowLeft}px`,
+          ['--demo-arrow-top' as string]: `${arrowTop}px`,
+        },
+      };
     };
+
+    const opposite: Record<Placement, Placement> = {
+      bottom: 'top',
+      top: 'bottom',
+      left: 'right',
+      right: 'left',
+    };
+
+    const candidates: Placement[] = [
+      preferredPlacement,
+      opposite[preferredPlacement],
+      'bottom',
+      'top',
+      'left',
+      'right',
+    ];
+    const placementsToTry = Array.from(new Set(candidates));
+
+    const overlapPadding = 10;
+    const paddedTarget = {
+      left: targetRect.left - overlapPadding,
+      top: targetRect.top - overlapPadding,
+      right: targetRect.right + overlapPadding,
+      bottom: targetRect.bottom + overlapPadding,
+    };
+
+    let best: { overlap: number; meta: ReturnType<typeof computeMetaForPlacement> } | null = null;
+    for (const placement of placementsToTry) {
+      const meta = computeMetaForPlacement(placement);
+      const calloutRect = {
+        left: meta.left,
+        top: meta.top,
+        right: meta.left + meta.width,
+        bottom: meta.top + meta.height,
+      };
+      const overlapWidth = Math.max(0, Math.min(calloutRect.right, paddedTarget.right) - Math.max(calloutRect.left, paddedTarget.left));
+      const overlapHeight = Math.max(0, Math.min(calloutRect.bottom, paddedTarget.bottom) - Math.max(calloutRect.top, paddedTarget.top));
+      const overlapArea = overlapWidth * overlapHeight;
+      if (overlapArea === 0) {
+        return meta;
+      }
+      if (!best || overlapArea < best.overlap) {
+        best = { overlap: overlapArea, meta };
+      }
+    }
+
+    return best ? best.meta : computeMetaForPlacement(preferredPlacement);
   }, [open, step, targetRect, calloutSize]);
 
   const connectorStyle = useMemo(() => {
@@ -273,7 +324,7 @@ export function DemoTour({ open, step, stepIndex, stepCount, onNext, onBack, onC
         <div
           ref={calloutRef}
           className="demo-tour__callout"
-          data-placement={step.placement ?? 'bottom'}
+          data-placement={calloutMeta?.placement ?? step.placement ?? 'bottom'}
           style={(calloutMeta?.style ?? {}) as CSSProperties}
         >
           <div className="demo-tour__header">

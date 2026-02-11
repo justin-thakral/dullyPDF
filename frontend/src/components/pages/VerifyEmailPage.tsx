@@ -58,6 +58,9 @@ const VerifyEmailPage: React.FC<VerifyEmailPageProps> = ({ email, onRefresh, onS
             We sent a verification link to <strong>{email || 'your email address'}</strong>. Please
             verify your email before accessing the workspace.
           </p>
+          <p className="verify-spam-note">
+            Email might be sent to spam please check there if you don&apos;t see email in inbox
+          </p>
         </div>
 
         {error || info ? (
