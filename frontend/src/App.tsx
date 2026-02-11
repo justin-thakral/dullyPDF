@@ -59,9 +59,17 @@ const DEMO_ASSETS = {
   openAiRenamePdf: 'openAiRename.pdf',
   openAiRemapPdf: 'openAiRemap.pdf',
   csv: 'new_patient_forms_1915ccb015_mock.csv',
+  openAiRenameNameMap: 'generated/baseToOpenAiRenameNameMap.json',
+  openAiRemapNameMap: 'generated/baseToOpenAiRemapNameMap.json',
 };
 const DEMO_DISABLED_MESSAGE = 'Disabled during demo.';
 const DEMO_STEPS: DemoStep[] = [
+  {
+    id: 'raw-pdf',
+    title: 'Start with the raw intake PDF',
+    body: 'Begin with the source form exactly as the clinic provides it.',
+    variant: 'modal',
+  },
   {
     id: 'commonforms',
     title: (
@@ -521,6 +529,11 @@ function App() {
   const jsonInputRef = useRef<HTMLInputElement>(null);
   const txtInputRef = useRef<HTMLInputElement>(null);
   const demoAssetCacheRef = useRef<Map<string, File>>(new Map());
+  const demoPdfFieldCacheRef = useRef<Map<string, PdfField[]>>(new Map());
+  const demoPdfFieldPromiseCacheRef = useRef<Map<string, Promise<PdfField[]>>>(new Map());
+  const demoNameMapCacheRef = useRef<Map<string, Record<string, string>>>(new Map());
+  const demoNameMapPromiseCacheRef = useRef<Map<string, Promise<Record<string, string>>>>(new Map());
+  const demoStepTokenRef = useRef(0);
   const lastDemoStepRef = useRef<number | null>(null);
   const fieldsRef = useRef<PdfField[]>([]);
   const historyRef = useRef<{ undo: PdfField[][]; redo: PdfField[][] }>({ undo: [], redo: [] });
@@ -1014,7 +1027,7 @@ function App() {
   );
 
   const handleFillableUpload = useCallback(
-    async (file: File, options: { isDemo?: boolean } = {}) => {
+    async (file: File, options: { isDemo?: boolean; skipExistingFields?: boolean } = {}) => {
       const loadToken = loadTokenRef.current + 1;
       loadTokenRef.current = loadToken;
       setShowSearchFill(false);
@@ -1050,19 +1063,27 @@ function App() {
           return;
         }
         const sizesPromise = loadPageSizes(doc);
-        const existingFieldsPromise = (async () => {
-          try {
-            return await extractFieldsFromPdf(doc);
-          } catch (error) {
-            debugLog('Failed to extract existing fields', error);
-            return [];
-          }
-        })();
+        const existingFieldsPromise = options.skipExistingFields
+          ? null
+          : (async () => {
+              try {
+                return await extractFieldsFromPdf(doc);
+              } catch (error) {
+                debugLog('Failed to extract existing fields', error);
+                return [];
+              }
+            })();
         const sizes = await sizesPromise;
         if (!commitPdfLoad(doc, sizes, [], loadToken)) return;
 
+        const safeExistingFieldsPromise = existingFieldsPromise;
+        if (!safeExistingFieldsPromise) {
+          debugLog('Loaded fillable PDF (existing fields suppressed)', { name: file.name, pages: doc.numPages });
+          return;
+        }
+
         void (async () => {
-          const existingFields = await existingFieldsPromise;
+          const existingFields = await safeExistingFieldsPromise;
           if (loadTokenRef.current !== loadToken) return;
           resetFieldHistory(existingFields);
           setSelectedFieldId(null);
@@ -2524,11 +2545,146 @@ function App() {
   );
 
   const loadDemoPdf = useCallback(
-    async (filename: string) => {
+    async (filename: string, options: { skipExistingFields?: boolean } = {}) => {
       const file = await loadDemoAsset(filename, 'application/pdf');
-      await handleFillableUpload(file, { isDemo: true });
+      await handleFillableUpload(file, { isDemo: true, skipExistingFields: options.skipExistingFields });
     },
     [handleFillableUpload, loadDemoAsset],
+  );
+
+  const loadDemoPdfFields = useCallback(
+    async (filename: string): Promise<PdfField[]> => {
+      const cached = demoPdfFieldCacheRef.current.get(filename);
+      if (cached) return cached;
+
+      const pending = demoPdfFieldPromiseCacheRef.current.get(filename);
+      if (pending) return pending;
+
+      const loadDemoNameMap = async (nameMapFilename: string): Promise<Record<string, string>> => {
+        const cachedMap = demoNameMapCacheRef.current.get(nameMapFilename);
+        if (cachedMap) return cachedMap;
+        const pendingMap = demoNameMapPromiseCacheRef.current.get(nameMapFilename);
+        if (pendingMap) return pendingMap;
+
+        const promiseMap = (async () => {
+          const file = await loadDemoAsset(nameMapFilename, 'application/json');
+          const text = await file.text();
+          const parsed = JSON.parse(text) as unknown;
+          if (!parsed || typeof parsed !== 'object') {
+            throw new Error(`Invalid demo name map: ${nameMapFilename}`);
+          }
+          const candidate = (parsed as { map?: unknown }).map ?? parsed;
+          if (!candidate || typeof candidate !== 'object') {
+            throw new Error(`Invalid demo name map payload: ${nameMapFilename}`);
+          }
+          const output: Record<string, string> = {};
+          for (const [key, value] of Object.entries(candidate as Record<string, unknown>)) {
+            if (typeof value === 'string') {
+              output[key] = value;
+            }
+          }
+          if (!Object.keys(output).length) {
+            throw new Error(`Demo name map is empty: ${nameMapFilename}`);
+          }
+          return output;
+        })();
+
+        demoNameMapPromiseCacheRef.current.set(nameMapFilename, promiseMap);
+        try {
+          const resolved = await promiseMap;
+          demoNameMapCacheRef.current.set(nameMapFilename, resolved);
+          return resolved;
+        } finally {
+          demoNameMapPromiseCacheRef.current.delete(nameMapFilename);
+        }
+      };
+
+      const applyNameMap = (baseFields: PdfField[], nameMap: Record<string, string>): PdfField[] => {
+        const seen = new Set<string>();
+        return baseFields.map((field) => {
+          const desiredName = nameMap[field.name] ?? field.name;
+          // Keep names unique even if the mapping produces duplicates.
+          const name = ensureUniqueFieldName(desiredName, seen);
+          return { ...field, name };
+        });
+      };
+
+      const promise = (async () => {
+        const extractFromPdf = async (): Promise<PdfField[]> => {
+          const file = await loadDemoAsset(filename, 'application/pdf');
+          const doc = await loadPdfFromFile(file);
+          try {
+            return await extractFieldsFromPdf(doc);
+          } finally {
+            try {
+              await doc.destroy();
+            } catch {
+              // Best-effort cleanup; demo overlay docs are never rendered.
+            }
+          }
+        };
+
+        if (filename === DEMO_ASSETS.openAiRenamePdf) {
+          try {
+            const [baseFields, nameMap] = await Promise.all([
+              loadDemoPdfFields(DEMO_ASSETS.baseDetectionsPdf),
+              loadDemoNameMap(DEMO_ASSETS.openAiRenameNameMap),
+            ]);
+            return applyNameMap(baseFields, nameMap);
+          } catch (error) {
+            debugLog('Failed to apply demo rename map; falling back to PDF extraction.', error);
+            return await extractFromPdf();
+          }
+        }
+
+        if (filename === DEMO_ASSETS.openAiRemapPdf) {
+          try {
+            const [baseFields, nameMap] = await Promise.all([
+              loadDemoPdfFields(DEMO_ASSETS.baseDetectionsPdf),
+              loadDemoNameMap(DEMO_ASSETS.openAiRemapNameMap),
+            ]);
+            return applyNameMap(baseFields, nameMap);
+          } catch (error) {
+            debugLog('Failed to apply demo remap map; falling back to PDF extraction.', error);
+            return await extractFromPdf();
+          }
+        }
+
+        return await extractFromPdf();
+      })();
+
+      demoPdfFieldPromiseCacheRef.current.set(filename, promise);
+      try {
+        const fields = await promise;
+        demoPdfFieldCacheRef.current.set(filename, fields);
+        return fields;
+      } finally {
+        demoPdfFieldPromiseCacheRef.current.delete(filename);
+      }
+    },
+    [loadDemoAsset],
+  );
+
+  const ensureDemoBasePdf = useCallback(async () => {
+    if (pdfDoc && sourceFileName === DEMO_ASSETS.rawPdf) return;
+    await loadDemoPdf(DEMO_ASSETS.rawPdf, { skipExistingFields: true });
+  }, [loadDemoPdf, pdfDoc, sourceFileName]);
+
+  const applyDemoOverlayFromPdf = useCallback(
+    async (filename: string, options: { guardToken?: number } = {}) => {
+      const guardToken = options.guardToken;
+      await ensureDemoBasePdf();
+      if (guardToken !== undefined && demoStepTokenRef.current !== guardToken) return;
+      const overlayFields = await loadDemoPdfFields(filename);
+      if (guardToken !== undefined && demoStepTokenRef.current !== guardToken) return;
+      // The demo keeps the raw PDF loaded for rendering stability, then swaps overlay field sets.
+      resetFieldHistory(overlayFields);
+      setSelectedFieldId(null);
+      setShowFields(true);
+      setShowFieldNames(true);
+      setShowFieldInfo(false);
+    },
+    [ensureDemoBasePdf, loadDemoPdfFields, resetFieldHistory],
   );
 
   const notifyHeaderRenames = useCallback(
@@ -2576,8 +2732,12 @@ function App() {
     setDemoStepIndex(0);
     setDemoCompletionOpen(false);
     setDemoSearchPreset(null);
+    // Warm caches so stepping through the demo feels instant.
+    void loadDemoPdfFields(DEMO_ASSETS.baseDetectionsPdf);
+    void loadDemoPdfFields(DEMO_ASSETS.openAiRenamePdf);
+    void loadDemoPdfFields(DEMO_ASSETS.openAiRemapPdf);
     lastDemoStepRef.current = null;
-  }, [clearWorkspace]);
+  }, [clearWorkspace, loadDemoPdfFields]);
 
   const exitDemo = useCallback(() => {
     setDemoActive(false);
@@ -2622,31 +2782,60 @@ function App() {
     const stepId = DEMO_STEPS[demoStepIndex]?.id;
     if (!stepId) return;
 
+    const token = demoStepTokenRef.current + 1;
+    demoStepTokenRef.current = token;
+
     void (async () => {
       try {
         setDemoSearchPreset(null);
+        setShowSearchFill(false);
+        if (stepId === 'raw-pdf') {
+          await ensureDemoBasePdf();
+          if (demoStepTokenRef.current !== token) return;
+          resetFieldHistory([]);
+          setSelectedFieldId(null);
+          setHasRenamedFields(false);
+          setHasMappedSchema(false);
+          return;
+        }
         if (stepId === 'commonforms') {
-          setShowSearchFill(false);
-          await loadDemoPdf(DEMO_ASSETS.baseDetectionsPdf);
+          await applyDemoOverlayFromPdf(DEMO_ASSETS.baseDetectionsPdf, { guardToken: token });
+          if (demoStepTokenRef.current !== token) return;
+          setHasRenamedFields(false);
+          setHasMappedSchema(false);
           return;
         }
         if (stepId === 'rename') {
-          setShowSearchFill(false);
+          await applyDemoOverlayFromPdf(DEMO_ASSETS.openAiRenamePdf, { guardToken: token });
+          if (demoStepTokenRef.current !== token) return;
+          setHasRenamedFields(true);
+          setHasMappedSchema(false);
           return;
         }
         if (stepId === 'csv') {
-          setShowSearchFill(false);
           await loadDemoCsv(DEMO_ASSETS.csv);
           return;
         }
         if (stepId === 'remap') {
-          setShowSearchFill(false);
+          if (!dataColumns.length) {
+            await loadDemoCsv(DEMO_ASSETS.csv);
+            if (demoStepTokenRef.current !== token) return;
+          }
+          await applyDemoOverlayFromPdf(DEMO_ASSETS.openAiRemapPdf, { guardToken: token });
+          if (demoStepTokenRef.current !== token) return;
+          setHasRenamedFields(true);
+          setHasMappedSchema(true);
           return;
         }
         if (stepId === 'search-fill') {
-          setShowSearchFill(false);
-          await loadDemoPdf(DEMO_ASSETS.openAiRemapPdf);
-          await loadDemoCsv(DEMO_ASSETS.csv);
+          if (!dataColumns.length) {
+            await loadDemoCsv(DEMO_ASSETS.csv);
+            if (demoStepTokenRef.current !== token) return;
+          }
+          await applyDemoOverlayFromPdf(DEMO_ASSETS.openAiRemapPdf, { guardToken: token });
+          if (demoStepTokenRef.current !== token) return;
+          setHasRenamedFields(true);
+          setHasMappedSchema(true);
           setDemoSearchPreset({
             query: 'Justin Thakral',
             searchKey: 'patient_name',
@@ -2663,7 +2852,16 @@ function App() {
         exitDemo();
       }
     })();
-  }, [demoActive, demoStepIndex, exitDemo, loadDemoCsv, loadDemoPdf]);
+  }, [
+    applyDemoOverlayFromPdf,
+    dataColumns.length,
+    demoActive,
+    demoStepIndex,
+    ensureDemoBasePdf,
+    exitDemo,
+    loadDemoCsv,
+    resetFieldHistory,
+  ]);
 
   const runSchemaUpload = useCallback(
     async (work: () => Promise<void>, fallbackMessage: string) => {
@@ -3096,21 +3294,6 @@ function App() {
     };
   }, [demoSessionSuppressed, detectSessionId, mappingSessionId, pdfDoc, setBannerNotice, verifiedUser]);
 
-  useEffect(() => {
-    if (!isDemoAsset) return;
-    if (sourceFileName !== DEMO_ASSETS.openAiRemapPdf) return;
-    if (!dataColumns.length || !fields.length) return;
-    if (fields.length !== dataColumns.length) return;
-    const needsMapping = fields.some((field, index) => field.name !== dataColumns[index]);
-    if (!needsMapping) return;
-    const mappedFields = fields.map((field, index) => ({
-      ...field,
-      name: dataColumns[index],
-    }));
-    resetFieldHistory(mappedFields);
-    setSelectedFieldId(null);
-  }, [dataColumns, fields, isDemoAsset, resetFieldHistory, setSelectedFieldId, sourceFileName]);
-
   const userEmail = useMemo(() => verifiedUser?.email ?? undefined, [verifiedUser]);
   const hasDocument = !!pdfDoc;
   const canSaveToProfile = Boolean(pdfDoc && verifiedUser);
@@ -3164,22 +3347,28 @@ function App() {
   }, []);
   const handleDemoRename = useCallback(async () => {
     setShowSearchFill(false);
-    await loadDemoPdf(DEMO_ASSETS.openAiRenamePdf);
-  }, [loadDemoPdf]);
+    await applyDemoOverlayFromPdf(DEMO_ASSETS.openAiRenamePdf);
+    setHasRenamedFields(true);
+    setHasMappedSchema(false);
+  }, [applyDemoOverlayFromPdf]);
   const handleDemoMapSchema = useCallback(async () => {
     setShowSearchFill(false);
     if (!dataColumns.length) {
       await loadDemoCsv(DEMO_ASSETS.csv);
     }
-    await loadDemoPdf(DEMO_ASSETS.openAiRemapPdf);
-  }, [dataColumns.length, loadDemoCsv, loadDemoPdf]);
+    await applyDemoOverlayFromPdf(DEMO_ASSETS.openAiRemapPdf);
+    setHasRenamedFields(true);
+    setHasMappedSchema(true);
+  }, [applyDemoOverlayFromPdf, dataColumns.length, loadDemoCsv]);
   const handleDemoRenameAndMap = useCallback(async () => {
     setShowSearchFill(false);
     if (!dataColumns.length) {
       await loadDemoCsv(DEMO_ASSETS.csv);
     }
-    await loadDemoPdf(DEMO_ASSETS.openAiRemapPdf);
-  }, [dataColumns.length, loadDemoCsv, loadDemoPdf]);
+    await applyDemoOverlayFromPdf(DEMO_ASSETS.openAiRemapPdf);
+    setHasRenamedFields(true);
+    setHasMappedSchema(true);
+  }, [applyDemoOverlayFromPdf, dataColumns.length, loadDemoCsv]);
   const dialogContent = (() => {
     if (!dialogRequest) return null;
     if (dialogRequest.kind === 'confirm') {

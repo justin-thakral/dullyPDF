@@ -104,15 +104,24 @@ const Homepage: React.FC<HomepageProps> = ({
 
   const pendingScrollBehavior = useRef<ScrollBehavior | null>(null);
 
-  const scrollToBottom = (behavior: ScrollBehavior) => {
+  const scrollDemoToViewportBottom = (behavior: ScrollBehavior) => {
     if (typeof window === 'undefined') return;
+
+    // On mobile we keep the demo card pinned to the bottom of the viewport while stepping.
+    // This avoids scrolling all the way to the page footer (which sits below the demo).
+    const anchor = demoNavRef.current ?? demoRef.current;
+    if (!anchor) return;
+
+    const rect = anchor.getBoundingClientRect();
+    const anchorBottom = rect.bottom + window.scrollY;
     const maxScroll = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
-    window.scrollTo({ top: maxScroll, behavior });
+    const targetTop = Math.min(maxScroll, Math.max(0, anchorBottom - window.innerHeight));
+    window.scrollTo({ top: targetTop, behavior });
   };
 
   const requestBottomScroll = (behavior: ScrollBehavior) => {
     pendingScrollBehavior.current = behavior;
-    scrollToBottom(behavior);
+    scrollDemoToViewportBottom(behavior);
   };
 
   const handleScrollToDemo = () => {
@@ -196,10 +205,10 @@ const Homepage: React.FC<HomepageProps> = ({
     const behavior = pendingScrollBehavior.current ?? 'auto';
     pendingScrollBehavior.current = null;
     const raf = requestAnimationFrame(() => {
-      scrollToBottom(behavior);
+      scrollDemoToViewportBottom(behavior);
     });
     const timeout = window.setTimeout(() => {
-      scrollToBottom(behavior);
+      scrollDemoToViewportBottom(behavior);
     }, 150);
     return () => {
       cancelAnimationFrame(raf);
@@ -317,7 +326,7 @@ const Homepage: React.FC<HomepageProps> = ({
               loading="lazy"
               onLoad={() => {
                 if (demoFocusActive) {
-                  scrollToBottom('auto');
+                  scrollDemoToViewportBottom('auto');
                 }
               }}
             />
