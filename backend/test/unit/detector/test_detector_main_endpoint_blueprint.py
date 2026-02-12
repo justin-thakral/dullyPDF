@@ -588,3 +588,75 @@ def test_run_detection_inner_http_exception_with_string_detail(
 
     assert response.status_code == 200
     finish.assert_called_once_with("sess_1", "Model loading failed")
+
+
+def test_run_detection_triggers_openai_prewarm_near_completion(
+    client: TestClient,
+    mocker,
+    detect_payload: dict[str, Any],
+) -> None:
+    payload = dict(detect_payload)
+    payload["prewarmRename"] = True
+    payload["prewarmRemap"] = False
+
+    _patch_request_setup(mocker, metadata=_metadata(payload["pdfPath"]), gcs_path_ok=True)
+    mocker.patch.object(dm, "download_pdf_bytes", return_value=b"%PDF-1.4\n")
+    mocker.patch.object(
+        dm,
+        "preflight_pdf_bytes",
+        return_value=SimpleNamespace(pdf_bytes=b"%PDF-1.4\n", was_decrypted=False, page_count=5),
+    )
+
+    def _fake_detect(*args, **kwargs):
+        callback = kwargs.get("progress_callback")
+        if callback:
+            callback(2, 5)  # remaining=3 -> trigger at default threshold
+            callback(4, 5)
+        return {"fields": []}
+
+    mocker.patch.object(dm, "detect_commonforms_fields", side_effect=_fake_detect)
+    prewarm_mock = mocker.patch.object(dm, "prewarm_openai_services", return_value=["https://rename/health"])
+    mocker.patch.object(dm, "update_session_entry")
+    mocker.patch.object(dm, "now_iso", side_effect=["2026-02-11T00:00:00+00:00", "2026-02-11T00:00:01+00:00"])
+    mocker.patch.object(dm, "time", SimpleNamespace(monotonic=mocker.Mock(side_effect=[1.0, 1.2])))
+
+    response = client.post("/internal/detect", json=payload)
+
+    assert response.status_code == 200
+    prewarm_mock.assert_called_once_with(
+        page_count=5,
+        prewarm_rename=True,
+        prewarm_remap=False,
+    )
+
+
+def test_run_detection_skips_openai_prewarm_when_flags_not_requested(
+    client: TestClient,
+    mocker,
+    detect_payload: dict[str, Any],
+) -> None:
+    _patch_request_setup(mocker, metadata=_metadata(detect_payload["pdfPath"]), gcs_path_ok=True)
+    mocker.patch.object(dm, "download_pdf_bytes", return_value=b"%PDF-1.4\n")
+    mocker.patch.object(
+        dm,
+        "preflight_pdf_bytes",
+        return_value=SimpleNamespace(pdf_bytes=b"%PDF-1.4\n", was_decrypted=False, page_count=5),
+    )
+
+    def _fake_detect(*args, **kwargs):
+        callback = kwargs.get("progress_callback")
+        if callback:
+            callback(2, 5)
+            callback(4, 5)
+        return {"fields": []}
+
+    mocker.patch.object(dm, "detect_commonforms_fields", side_effect=_fake_detect)
+    prewarm_mock = mocker.patch.object(dm, "prewarm_openai_services")
+    mocker.patch.object(dm, "update_session_entry")
+    mocker.patch.object(dm, "now_iso", side_effect=["2026-02-11T00:00:00+00:00", "2026-02-11T00:00:01+00:00"])
+    mocker.patch.object(dm, "time", SimpleNamespace(monotonic=mocker.Mock(side_effect=[1.0, 1.2])))
+
+    response = client.post("/internal/detect", json=detect_payload)
+
+    assert response.status_code == 200
+    prewarm_mock.assert_not_called()

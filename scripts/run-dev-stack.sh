@@ -31,7 +31,7 @@ DETECTOR_TASKS_QUEUE_HEAVY="${DETECTOR_TASKS_QUEUE_HEAVY:-commonforms-detect-hea
 DETECTOR_TASKS_SERVICE_ACCOUNT="${DETECTOR_TASKS_SERVICE_ACCOUNT:-dullypdf-backend-runtime@dullypdf-dev.iam.gserviceaccount.com}"
 
 if command -v gcloud >/dev/null 2>&1; then
-  if [[ -z "${DETECTOR_SERVICE_URL_LIGHT:-}" && -n "${DETECTOR_TASKS_PROJECT:-}" ]]; then
+  if [[ ("${DEV_STACK_BUILD:-}" == "1" || -z "${DETECTOR_SERVICE_URL_LIGHT:-}") && -n "${DETECTOR_TASKS_PROJECT:-}" ]]; then
     DETECTOR_SERVICE_URL_LIGHT="$(
       gcloud run services describe dullypdf-detector-light \
         --region "$DETECTOR_TASKS_LOCATION" \
@@ -39,7 +39,7 @@ if command -v gcloud >/dev/null 2>&1; then
         --format='value(status.url)' 2>/dev/null || true
     )"
   fi
-  if [[ -z "${DETECTOR_SERVICE_URL_HEAVY:-}" && -n "${DETECTOR_TASKS_PROJECT:-}" ]]; then
+  if [[ ("${DEV_STACK_BUILD:-}" == "1" || -z "${DETECTOR_SERVICE_URL_HEAVY:-}") && -n "${DETECTOR_TASKS_PROJECT:-}" ]]; then
     DETECTOR_SERVICE_URL_HEAVY="$(
       gcloud run services describe dullypdf-detector-heavy \
         --region "$DETECTOR_TASKS_LOCATION" \
@@ -63,6 +63,86 @@ DETECTOR_SERVICE_URL="${DETECTOR_SERVICE_URL:-$DETECTOR_SERVICE_URL_LIGHT}"
 DETECTOR_TASKS_AUDIENCE="${DETECTOR_TASKS_AUDIENCE:-$DETECTOR_SERVICE_URL}"
 DETECTOR_TASKS_AUDIENCE_LIGHT="${DETECTOR_TASKS_AUDIENCE_LIGHT:-$DETECTOR_SERVICE_URL_LIGHT}"
 DETECTOR_TASKS_AUDIENCE_HEAVY="${DETECTOR_TASKS_AUDIENCE_HEAVY:-$DETECTOR_SERVICE_URL_HEAVY}"
+
+# Default to local OpenAI execution for dev stack unless task mode is explicitly enabled.
+OPENAI_RENAME_MODE="${OPENAI_RENAME_MODE:-local}"
+OPENAI_REMAP_MODE="${OPENAI_REMAP_MODE:-local}"
+
+OPENAI_RENAME_TASKS_PROJECT="${OPENAI_RENAME_TASKS_PROJECT:-${DETECTOR_TASKS_PROJECT:-${FIREBASE_PROJECT_ID:-}}}"
+OPENAI_RENAME_TASKS_LOCATION="${OPENAI_RENAME_TASKS_LOCATION:-${DETECTOR_TASKS_LOCATION:-us-central1}}"
+OPENAI_RENAME_TASKS_QUEUE_LIGHT="${OPENAI_RENAME_TASKS_QUEUE_LIGHT:-openai-rename-light}"
+OPENAI_RENAME_TASKS_QUEUE_HEAVY="${OPENAI_RENAME_TASKS_QUEUE_HEAVY:-openai-rename-heavy}"
+OPENAI_RENAME_TASKS_SERVICE_ACCOUNT="${OPENAI_RENAME_TASKS_SERVICE_ACCOUNT:-${DETECTOR_TASKS_SERVICE_ACCOUNT}}"
+
+OPENAI_REMAP_TASKS_PROJECT="${OPENAI_REMAP_TASKS_PROJECT:-${DETECTOR_TASKS_PROJECT:-${FIREBASE_PROJECT_ID:-}}}"
+OPENAI_REMAP_TASKS_LOCATION="${OPENAI_REMAP_TASKS_LOCATION:-${DETECTOR_TASKS_LOCATION:-us-central1}}"
+OPENAI_REMAP_TASKS_QUEUE_LIGHT="${OPENAI_REMAP_TASKS_QUEUE_LIGHT:-openai-remap-light}"
+OPENAI_REMAP_TASKS_QUEUE_HEAVY="${OPENAI_REMAP_TASKS_QUEUE_HEAVY:-openai-remap-heavy}"
+OPENAI_REMAP_TASKS_SERVICE_ACCOUNT="${OPENAI_REMAP_TASKS_SERVICE_ACCOUNT:-${DETECTOR_TASKS_SERVICE_ACCOUNT}}"
+
+if command -v gcloud >/dev/null 2>&1; then
+  if [[ "${OPENAI_RENAME_MODE}" == "tasks" && ("${DEV_STACK_BUILD:-}" == "1" || -z "${OPENAI_RENAME_SERVICE_URL_LIGHT:-}") && -n "${OPENAI_RENAME_TASKS_PROJECT:-}" ]]; then
+    OPENAI_RENAME_SERVICE_URL_LIGHT="$(
+      gcloud run services describe dullypdf-openai-rename-light \
+        --region "$OPENAI_RENAME_TASKS_LOCATION" \
+        --project "$OPENAI_RENAME_TASKS_PROJECT" \
+        --format='value(status.url)' 2>/dev/null || true
+    )"
+  fi
+  if [[ "${OPENAI_RENAME_MODE}" == "tasks" && ("${DEV_STACK_BUILD:-}" == "1" || -z "${OPENAI_RENAME_SERVICE_URL_HEAVY:-}") && -n "${OPENAI_RENAME_TASKS_PROJECT:-}" ]]; then
+    OPENAI_RENAME_SERVICE_URL_HEAVY="$(
+      gcloud run services describe dullypdf-openai-rename-heavy \
+        --region "$OPENAI_RENAME_TASKS_LOCATION" \
+        --project "$OPENAI_RENAME_TASKS_PROJECT" \
+        --format='value(status.url)' 2>/dev/null || true
+    )"
+  fi
+  if [[ "${OPENAI_REMAP_MODE}" == "tasks" && ("${DEV_STACK_BUILD:-}" == "1" || -z "${OPENAI_REMAP_SERVICE_URL_LIGHT:-}") && -n "${OPENAI_REMAP_TASKS_PROJECT:-}" ]]; then
+    OPENAI_REMAP_SERVICE_URL_LIGHT="$(
+      gcloud run services describe dullypdf-openai-remap-light \
+        --region "$OPENAI_REMAP_TASKS_LOCATION" \
+        --project "$OPENAI_REMAP_TASKS_PROJECT" \
+        --format='value(status.url)' 2>/dev/null || true
+    )"
+  fi
+  if [[ "${OPENAI_REMAP_MODE}" == "tasks" && ("${DEV_STACK_BUILD:-}" == "1" || -z "${OPENAI_REMAP_SERVICE_URL_HEAVY:-}") && -n "${OPENAI_REMAP_TASKS_PROJECT:-}" ]]; then
+    OPENAI_REMAP_SERVICE_URL_HEAVY="$(
+      gcloud run services describe dullypdf-openai-remap-heavy \
+        --region "$OPENAI_REMAP_TASKS_LOCATION" \
+        --project "$OPENAI_REMAP_TASKS_PROJECT" \
+        --format='value(status.url)' 2>/dev/null || true
+    )"
+  fi
+fi
+
+if [[ "${OPENAI_RENAME_MODE}" == "tasks" ]]; then
+  if [[ -z "${OPENAI_RENAME_SERVICE_URL_LIGHT:-}" ]]; then
+    echo "Missing OPENAI_RENAME_SERVICE_URL_LIGHT. Deploy dullypdf-openai-rename-light or set it in $ENV_FILE." >&2
+    exit 1
+  fi
+  if [[ -z "${OPENAI_RENAME_SERVICE_URL_HEAVY:-}" ]]; then
+    echo "Missing OPENAI_RENAME_SERVICE_URL_HEAVY. Deploy dullypdf-openai-rename-heavy or set it in $ENV_FILE." >&2
+    exit 1
+  fi
+fi
+
+if [[ "${OPENAI_REMAP_MODE}" == "tasks" ]]; then
+  if [[ -z "${OPENAI_REMAP_SERVICE_URL_LIGHT:-}" ]]; then
+    echo "Missing OPENAI_REMAP_SERVICE_URL_LIGHT. Deploy dullypdf-openai-remap-light or set it in $ENV_FILE." >&2
+    exit 1
+  fi
+  if [[ -z "${OPENAI_REMAP_SERVICE_URL_HEAVY:-}" ]]; then
+    echo "Missing OPENAI_REMAP_SERVICE_URL_HEAVY. Deploy dullypdf-openai-remap-heavy or set it in $ENV_FILE." >&2
+    exit 1
+  fi
+fi
+
+OPENAI_RENAME_SERVICE_URL="${OPENAI_RENAME_SERVICE_URL:-${OPENAI_RENAME_SERVICE_URL_LIGHT:-}}"
+OPENAI_RENAME_TASKS_AUDIENCE_LIGHT="${OPENAI_RENAME_TASKS_AUDIENCE_LIGHT:-${OPENAI_RENAME_SERVICE_URL_LIGHT:-}}"
+OPENAI_RENAME_TASKS_AUDIENCE_HEAVY="${OPENAI_RENAME_TASKS_AUDIENCE_HEAVY:-${OPENAI_RENAME_SERVICE_URL_HEAVY:-}}"
+OPENAI_REMAP_SERVICE_URL="${OPENAI_REMAP_SERVICE_URL:-${OPENAI_REMAP_SERVICE_URL_LIGHT:-}}"
+OPENAI_REMAP_TASKS_AUDIENCE_LIGHT="${OPENAI_REMAP_TASKS_AUDIENCE_LIGHT:-${OPENAI_REMAP_SERVICE_URL_LIGHT:-}}"
+OPENAI_REMAP_TASKS_AUDIENCE_HEAVY="${OPENAI_REMAP_TASKS_AUDIENCE_HEAVY:-${OPENAI_REMAP_SERVICE_URL_HEAVY:-}}"
 
 BACKEND_PORT="${DEV_STACK_BACKEND_PORT:-8010}"
 FRONTEND_PORT="${DEV_STACK_FRONTEND_PORT:-5173}"
@@ -96,6 +176,17 @@ trap cleanup EXIT INT TERM
 
 if [[ "${DEV_STACK_BUILD:-}" == "1" ]] || ! docker image inspect "$IMAGE_TAG" >/dev/null 2>&1; then
   docker build -t "$IMAGE_TAG" -f Dockerfile .
+fi
+
+if [[ "${DEV_STACK_BUILD:-}" == "1" ]]; then
+  if [[ "${DETECTOR_MODE}" == "tasks" ]]; then
+    echo "DEV_STACK_BUILD=1 -> deploying detector Cloud Run services to keep stack config in sync..."
+    bash scripts/deploy-detector-services.sh "$ENV_FILE"
+  fi
+  if [[ "${OPENAI_RENAME_MODE}" == "tasks" || "${OPENAI_REMAP_MODE}" == "tasks" ]]; then
+    echo "DEV_STACK_BUILD=1 -> deploying OpenAI worker Cloud Run services to keep stack config in sync..."
+    bash scripts/deploy-openai-workers.sh "$ENV_FILE"
+  fi
 fi
 
 if [[ -n "${FIREBASE_CREDENTIALS:-}" ]]; then
@@ -132,6 +223,31 @@ ENV_ARGS=(
   "-e" "DETECTOR_TASKS_AUDIENCE=${DETECTOR_TASKS_AUDIENCE}"
   "-e" "DETECTOR_TASKS_AUDIENCE_LIGHT=${DETECTOR_TASKS_AUDIENCE_LIGHT}"
   "-e" "DETECTOR_TASKS_AUDIENCE_HEAVY=${DETECTOR_TASKS_AUDIENCE_HEAVY}"
+  "-e" "OPENAI_RENAME_MODE=${OPENAI_RENAME_MODE}"
+  "-e" "OPENAI_RENAME_TASKS_PROJECT=${OPENAI_RENAME_TASKS_PROJECT}"
+  "-e" "OPENAI_RENAME_TASKS_LOCATION=${OPENAI_RENAME_TASKS_LOCATION}"
+  "-e" "OPENAI_RENAME_TASKS_QUEUE_LIGHT=${OPENAI_RENAME_TASKS_QUEUE_LIGHT}"
+  "-e" "OPENAI_RENAME_TASKS_QUEUE_HEAVY=${OPENAI_RENAME_TASKS_QUEUE_HEAVY}"
+  "-e" "OPENAI_RENAME_SERVICE_URL=${OPENAI_RENAME_SERVICE_URL}"
+  "-e" "OPENAI_RENAME_SERVICE_URL_LIGHT=${OPENAI_RENAME_SERVICE_URL_LIGHT:-}"
+  "-e" "OPENAI_RENAME_SERVICE_URL_HEAVY=${OPENAI_RENAME_SERVICE_URL_HEAVY:-}"
+  "-e" "OPENAI_RENAME_TASKS_SERVICE_ACCOUNT=${OPENAI_RENAME_TASKS_SERVICE_ACCOUNT}"
+  "-e" "OPENAI_RENAME_TASKS_AUDIENCE_LIGHT=${OPENAI_RENAME_TASKS_AUDIENCE_LIGHT:-}"
+  "-e" "OPENAI_RENAME_TASKS_AUDIENCE_HEAVY=${OPENAI_RENAME_TASKS_AUDIENCE_HEAVY:-}"
+  "-e" "OPENAI_REMAP_MODE=${OPENAI_REMAP_MODE}"
+  "-e" "OPENAI_REMAP_TASKS_PROJECT=${OPENAI_REMAP_TASKS_PROJECT}"
+  "-e" "OPENAI_REMAP_TASKS_LOCATION=${OPENAI_REMAP_TASKS_LOCATION}"
+  "-e" "OPENAI_REMAP_TASKS_QUEUE_LIGHT=${OPENAI_REMAP_TASKS_QUEUE_LIGHT}"
+  "-e" "OPENAI_REMAP_TASKS_QUEUE_HEAVY=${OPENAI_REMAP_TASKS_QUEUE_HEAVY}"
+  "-e" "OPENAI_REMAP_SERVICE_URL=${OPENAI_REMAP_SERVICE_URL}"
+  "-e" "OPENAI_REMAP_SERVICE_URL_LIGHT=${OPENAI_REMAP_SERVICE_URL_LIGHT:-}"
+  "-e" "OPENAI_REMAP_SERVICE_URL_HEAVY=${OPENAI_REMAP_SERVICE_URL_HEAVY:-}"
+  "-e" "OPENAI_REMAP_TASKS_SERVICE_ACCOUNT=${OPENAI_REMAP_TASKS_SERVICE_ACCOUNT}"
+  "-e" "OPENAI_REMAP_TASKS_AUDIENCE_LIGHT=${OPENAI_REMAP_TASKS_AUDIENCE_LIGHT:-}"
+  "-e" "OPENAI_REMAP_TASKS_AUDIENCE_HEAVY=${OPENAI_REMAP_TASKS_AUDIENCE_HEAVY:-}"
+  "-e" "OPENAI_PREWARM_ENABLED=${OPENAI_PREWARM_ENABLED:-true}"
+  "-e" "OPENAI_PREWARM_REMAINING_PAGES=${OPENAI_PREWARM_REMAINING_PAGES:-3}"
+  "-e" "OPENAI_PREWARM_TIMEOUT_SECONDS=${OPENAI_PREWARM_TIMEOUT_SECONDS:-2}"
   "-e" "SANDBOX_ENABLE_LEGACY_ENDPOINTS=false"
   "-e" "ADMIN_TOKEN="
   "-e" "SANDBOX_DEBUG=false"

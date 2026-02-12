@@ -29,6 +29,12 @@ const apiServiceMocks = vi.hoisted(() => ({
   touchSession: vi.fn(),
 }));
 
+const detectionApiMocks = vi.hoisted(() => ({
+  detectFields: vi.fn(),
+  fetchDetectionStatus: vi.fn(),
+  pollDetectionStatus: vi.fn(),
+}));
+
 const pdfMocks = vi.hoisted(() => ({
   loadPdfFromFile: vi.fn(),
   loadPageSizes: vi.fn(),
@@ -82,9 +88,9 @@ vi.mock('../../../src/services/api', () => ({
 }));
 
 vi.mock('../../../src/services/detectionApi', () => ({
-  detectFields: vi.fn(),
-  fetchDetectionStatus: vi.fn(),
-  pollDetectionStatus: vi.fn(),
+  detectFields: detectionApiMocks.detectFields,
+  fetchDetectionStatus: detectionApiMocks.fetchDetectionStatus,
+  pollDetectionStatus: detectionApiMocks.pollDetectionStatus,
 }));
 
 vi.mock('../../../src/utils/pdf', () => ({
@@ -184,6 +190,16 @@ const makePdfDoc = () => ({
   getData: vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3])),
 });
 
+const makeAuthUser = () => ({
+  email: 'qa@example.com',
+  emailVerified: true,
+  providerData: [{ providerId: 'password' }],
+  getIdTokenResult: vi.fn().mockResolvedValue({
+    token: 'token-1',
+    signInProvider: 'password',
+  }),
+});
+
 const importApp = async () => {
   vi.resetModules();
   const module = await import('../../../src/App');
@@ -205,6 +221,11 @@ describe('App', () => {
     for (const mock of Object.values(apiServiceMocks)) {
       if ('mockClear' in mock) {
         (mock as unknown as { mockClear: () => void }).mockClear();
+      }
+    }
+    for (const mock of Object.values(detectionApiMocks)) {
+      if ('mockReset' in mock) {
+        (mock as unknown as { mockReset: () => void }).mockReset();
       }
     }
     pdfMocks.loadPdfFromFile.mockReset().mockResolvedValue(makePdfDoc());
@@ -235,6 +256,22 @@ describe('App', () => {
 
     expect(await screen.findByTestId('upload-detect')).toBeTruthy();
     expect(screen.getByTestId('upload-fillable')).toBeTruthy();
+  });
+
+  it('does not register duplicate auth listeners after signed-in state updates', async () => {
+    const App = await importApp();
+    render(<App />);
+
+    expect(authMocks.onAuthStateChanged).toHaveBeenCalledTimes(1);
+
+    const user = makeAuthUser();
+    await act(async () => {
+      await appState.authStateCallback?.(user);
+    });
+
+    await waitFor(() => {
+      expect(authMocks.onAuthStateChanged).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('gates save action for signed-out users after loading a fillable PDF', async () => {
@@ -279,4 +316,49 @@ describe('App', () => {
       expect(screen.getByTestId('field-list').textContent).toContain('Renamed Name');
     });
   });
+
+  it(
+    'does not show OpenAI warmup messaging for detection-only uploads',
+    async () => {
+      const pendingDetection = new Promise<never>(() => {});
+      detectionApiMocks.detectFields.mockImplementation(async (_file, options) => {
+        options?.onStatus?.({
+          status: 'queued',
+          detectionProfile: 'light',
+          detectionQueuedAt: new Date().toISOString(),
+        });
+        window.setTimeout(() => {
+          options?.onStatus?.({
+            status: 'running',
+            detectionProfile: 'light',
+          });
+        }, 50);
+        return pendingDetection;
+      });
+      const App = await importApp();
+      const { unmount } = render(<App />);
+
+      await settleAuthAsSignedOut();
+      fireEvent.click(await screen.findByTestId('start-workflow'));
+      fireEvent.click(await screen.findByTestId('upload-detect'));
+      fireEvent.click(await screen.findByRole('button', { name: 'Continue' }));
+
+      expect(await screen.findByText('Waiting for standard CPU to start...')).toBeTruthy();
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      });
+      expect(await screen.findByText('Detecting fields on the standard CPU...')).toBeTruthy();
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 3_100));
+      });
+      expect(screen.queryByText('Warming up rename detector')).toBeNull();
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 5_100));
+      });
+      expect(screen.queryByText('Warming up rename detector')).toBeNull();
+      expect(await screen.findByText('Detecting fields on the standard CPU...')).toBeTruthy();
+      unmount();
+    },
+    25_000,
+  );
 });

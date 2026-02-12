@@ -225,7 +225,7 @@ def test_call_openai_schema_mapping_uses_json_response_format_and_parses_wrapped
     client = _FakeOpenAIClient(
         [_response_with_content("prefix {\"mappings\": [], \"notes\": \"wrapped\"} suffix")]
     )
-    mocker.patch("backend.ai.schema_mapping.OpenAI", return_value=client)
+    mocker.patch("backend.ai.schema_mapping.create_openai_client", return_value=client)
 
     result = schema_mapping.call_openai_schema_mapping({"schemaFields": [], "templateTags": []})
 
@@ -243,7 +243,7 @@ def test_call_openai_schema_mapping_retries_without_response_format_when_rejecte
     client = _FakeOpenAIClient(
         [_ResponseFormatError(), _response_with_content("{\"mappings\": [{\"schemaField\": \"ok\"}]}")]
     )
-    mocker.patch("backend.ai.schema_mapping.OpenAI", return_value=client)
+    mocker.patch("backend.ai.schema_mapping.create_openai_client", return_value=client)
 
     result = schema_mapping.call_openai_schema_mapping({"schemaFields": [], "templateTags": []})
 
@@ -251,6 +251,44 @@ def test_call_openai_schema_mapping_retries_without_response_format_when_rejecte
     assert len(client.chat.completions.calls) == 2
     assert "response_format" in client.chat.completions.calls[0]
     assert "response_format" not in client.chat.completions.calls[1]
+
+
+def test_call_openai_schema_mapping_collects_usage_and_honors_retry_override(
+    monkeypatch: pytest.MonkeyPatch,
+    mocker,
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    response = _response_with_content("{\"mappings\": []}")
+    response.usage = {
+        "prompt_tokens": 11,
+        "completion_tokens": 7,
+        "total_tokens": 18,
+        "prompt_tokens_details": {"cached_tokens": 3},
+        "completion_tokens_details": {"reasoning_tokens": 2},
+    }
+    client = _FakeOpenAIClient([response])
+    create_client = mocker.patch("backend.ai.schema_mapping.create_openai_client", return_value=client)
+    usage_events = []
+
+    result = schema_mapping.call_openai_schema_mapping(
+        {"schemaFields": [], "templateTags": []},
+        usage_collector=usage_events,
+        openai_max_retries=0,
+    )
+
+    assert result == {"mappings": []}
+    create_client.assert_called_once_with(api_key="test-key", max_retries_override=0)
+    assert usage_events == [
+        {
+            "api": "chat_completions",
+            "model": schema_mapping.OPENAI_SCHEMA_MODEL,
+            "input_tokens": 11,
+            "output_tokens": 7,
+            "total_tokens": 18,
+            "cached_input_tokens": 3,
+            "reasoning_output_tokens": 2,
+        }
+    ]
 
 
 def test_call_openai_schema_mapping_chunked_merges_chunk_responses(mocker) -> None:
@@ -340,7 +378,7 @@ def test_call_openai_schema_mapping_none_content_falls_back_to_empty_dict(
     # The `or "{}"` fallback in call_openai_schema_mapping turns None into "{}"
     response.choices[0].message.content = None
     client = _FakeOpenAIClient([response])
-    mocker.patch("backend.ai.schema_mapping.OpenAI", return_value=client)
+    mocker.patch("backend.ai.schema_mapping.create_openai_client", return_value=client)
 
     result = schema_mapping.call_openai_schema_mapping(
         {"schemaFields": [], "templateTags": []}

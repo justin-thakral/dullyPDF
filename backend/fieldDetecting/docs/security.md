@@ -257,6 +257,17 @@ Current behavior:
 Production hardening:
 1) Tune `SANDBOX_DETECT_RATE_LIMIT_WINDOW_SECONDS` and `SANDBOX_DETECT_RATE_LIMIT_PER_USER`.
 
+## 4d) Public endpoint rate limiting
+
+Current behavior:
+- Public endpoints (`/api/contact`, `/api/recaptcha/assess`) use the shared rate limiter.
+- If Firestore rate limiting is unavailable, these public checks fail closed (request denied)
+  instead of falling back to in-memory counters.
+
+Production hardening:
+1) Keep `SANDBOX_RATE_LIMIT_BACKEND=firestore` so limits stay consistent across instances.
+2) Set `CONTACT_RATE_LIMIT_GLOBAL` / `SIGNUP_RATE_LIMIT_GLOBAL` to bound flood impact even if caller IPs rotate.
+
 ## 5) Environment + secrets hygiene
 
 Checklist:

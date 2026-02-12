@@ -79,6 +79,11 @@ export const PROCESSING_AD_VIDEO_URL =
 export const PROCESSING_AD_POSTER_URL =
   typeof env.VITE_PROCESSING_AD_POSTER_URL === 'string' ? env.VITE_PROCESSING_AD_POSTER_URL.trim() : '';
 export const DEFAULT_PROCESSING_MESSAGE = 'Detecting fields and building the editor.';
+export const DETECTION_WARMUP_MESSAGE = 'Warming up rename detector';
+export const DETECTION_POST_WARMUP_MESSAGE = 'Detecting fields on the standard CPU...';
+export const DETECTION_WARMUP_DURATION_MS = 5_000;
+export const DETECTION_WARMUP_DELAY_MS = 3_000;
+export const DETECTION_WARMUP_PAGE_THRESHOLD = 3;
 export const SAVED_FORM_PROCESSING_MESSAGE = 'Grabbing your template from the cloud.';
 export const FILLABLE_TEMPLATE_PROCESSING_MESSAGE = 'Opening template in editor.';
 export const QUEUE_WAIT_THRESHOLD_MS = 15000;

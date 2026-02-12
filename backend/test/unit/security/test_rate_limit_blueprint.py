@@ -144,6 +144,17 @@ def test_check_rate_limit_falls_back_to_memory_on_firestore_error(mocker) -> Non
     warning.assert_called_once()
 
 
+def test_check_rate_limit_fail_closed_denies_on_firestore_error(mocker) -> None:
+    mocker.patch.object(rl, "_RATE_LIMIT_BACKEND", "firestore")
+    mocker.patch.object(rl, "_firestore_rate_limit", side_effect=RuntimeError("firestore down"))
+    memory_limit = mocker.patch.object(rl, "_memory_rate_limit", return_value=True)
+    warning = mocker.patch.object(rl.logger, "warning")
+
+    assert rl.check_rate_limit("k", limit=3, window_seconds=30, fail_closed=True) is False
+    memory_limit.assert_not_called()
+    warning.assert_called_once()
+
+
 def test_check_rate_limit_unknown_backend_still_falls_back_on_firestore_error(mocker) -> None:
     mocker.patch.object(rl, "_RATE_LIMIT_BACKEND", "unknown")
     firestore_limit = mocker.patch.object(rl, "_firestore_rate_limit", side_effect=RuntimeError("boom"))
@@ -152,6 +163,16 @@ def test_check_rate_limit_unknown_backend_still_falls_back_on_firestore_error(mo
     assert rl.check_rate_limit("k", limit=3, window_seconds=30) is True
     firestore_limit.assert_called_once_with("k", limit=3, window_seconds=30)
     memory_limit.assert_called_once_with("k", limit=3, window_seconds=30)
+
+
+def test_check_rate_limit_memory_backend_ignores_fail_closed_flag(mocker) -> None:
+    mocker.patch.object(rl, "_RATE_LIMIT_BACKEND", "memory")
+    memory_limit = mocker.patch.object(rl, "_memory_rate_limit", return_value=True)
+    firestore_limit = mocker.patch.object(rl, "_firestore_rate_limit")
+
+    assert rl.check_rate_limit("k", limit=3, window_seconds=30, fail_closed=True) is True
+    memory_limit.assert_called_once_with("k", limit=3, window_seconds=30)
+    firestore_limit.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,29 @@
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PYTHONPATH=/app \
+    PORT=8000
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends \
+    libglib2.0-0 \
+    libgomp1 \
+  && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+RUN adduser --disabled-password --gecos "" appuser
+
+COPY backend/requirements.txt /app/backend/requirements.txt
+RUN pip install --upgrade pip \
+  && pip install -r /app/backend/requirements.txt
+
+COPY --chown=appuser:appuser backend /app/backend
+
+USER appuser
+ENV HOME=/home/appuser
+
+CMD ["sh", "-c", "uvicorn backend.ai.remap_worker_app:app --host 0.0.0.0 --port ${PORT}"]
+

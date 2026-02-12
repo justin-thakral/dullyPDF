@@ -21,6 +21,9 @@
     "demo:generate-name-maps": "backend/.venv/bin/python scripts/demo/generate_demo_name_maps.py",
     "deploy": "npm run deploy:backend && npm run deploy:frontend",
     "deploy:backend": "bash scripts/deploy-backend.sh",
+    "deploy:all-services": "bash scripts/deploy-all-services.sh",
+    "deploy:detector-services": "bash scripts/deploy-detector-services.sh",
+    "deploy:openai-workers": "bash scripts/deploy-openai-workers.sh",
     "deploy:frontend": "bash scripts/deploy-frontend.sh",
     "test:backend": "backend/.venv/bin/python -m pytest backend/test/unit/ --cov=backend --cov-config=.coveragerc --cov-report=term-missing -q",
     "test:frontend": "cd frontend && npm run test"

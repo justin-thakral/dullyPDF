@@ -100,17 +100,28 @@ def _firestore_rate_limit(key: str, *, limit: int, window_seconds: int) -> bool:
     return _update(transaction)
 
 
-def check_rate_limit(key: str, *, limit: int, window_seconds: int) -> bool:
+def check_rate_limit(
+    key: str,
+    *,
+    limit: int,
+    window_seconds: int,
+    fail_closed: bool = False,
+) -> bool:
     """
     Return True when the key is within the configured rate limit.
 
-    Firestore-backed rate limiting keeps counters shared across instances. We fall back
-    to in-memory limits on backend errors to avoid blocking requests unnecessarily.
+    Firestore-backed rate limiting keeps counters shared across instances.
+    When ``fail_closed`` is False (default), backend errors fall back to in-memory
+    limits to preserve availability. When ``fail_closed`` is True, backend errors
+    deny the request to avoid weakening abuse protections.
     """
     if _RATE_LIMIT_BACKEND == "memory":
         return _memory_rate_limit(key, limit=limit, window_seconds=window_seconds)
     try:
         return _firestore_rate_limit(key, limit=limit, window_seconds=window_seconds)
     except Exception as exc:
+        if fail_closed:
+            logger.warning("Rate limit fail-closed on backend error: %s", exc)
+            return False
         logger.warning("Rate limit fallback to memory: %s", exc)
         return _memory_rate_limit(key, limit=limit, window_seconds=window_seconds)

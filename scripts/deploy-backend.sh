@@ -63,9 +63,13 @@ require_exact SANDBOX_ALLOW_ADMIN_OVERRIDE "false"
 require_exact SANDBOX_DEBUG "false"
 require_exact SANDBOX_DEBUG_FORCE "false"
 require_empty SANDBOX_DEBUG_PASSWORD
+require_empty ADMIN_TOKEN
+require_empty ADMIN_TOKEN_SECRET
 require_exact FIREBASE_CHECK_REVOKED "true"
 require_exact FIREBASE_USE_ADC "true"
 require_exact DETECTOR_MODE "tasks"
+require_exact OPENAI_RENAME_MODE "tasks"
+require_exact OPENAI_REMAP_MODE "tasks"
 require_nonempty FIREBASE_PROJECT_ID
 require_nonempty FORMS_BUCKET
 require_nonempty TEMPLATES_BUCKET
@@ -73,6 +77,20 @@ require_nonempty SANDBOX_CORS_ORIGINS
 require_nonempty CONTACT_TO_EMAIL
 require_nonempty CONTACT_FROM_EMAIL
 require_nonempty GMAIL_CLIENT_ID
+require_nonempty OPENAI_RENAME_TASKS_PROJECT
+require_nonempty OPENAI_RENAME_TASKS_LOCATION
+require_nonempty OPENAI_RENAME_TASKS_QUEUE_LIGHT
+require_nonempty OPENAI_RENAME_TASKS_QUEUE_HEAVY
+require_nonempty OPENAI_RENAME_SERVICE_URL_LIGHT
+require_nonempty OPENAI_RENAME_SERVICE_URL_HEAVY
+require_nonempty OPENAI_RENAME_TASKS_SERVICE_ACCOUNT
+require_nonempty OPENAI_REMAP_TASKS_PROJECT
+require_nonempty OPENAI_REMAP_TASKS_LOCATION
+require_nonempty OPENAI_REMAP_TASKS_QUEUE_LIGHT
+require_nonempty OPENAI_REMAP_TASKS_QUEUE_HEAVY
+require_nonempty OPENAI_REMAP_SERVICE_URL_LIGHT
+require_nonempty OPENAI_REMAP_SERVICE_URL_HEAVY
+require_nonempty OPENAI_REMAP_TASKS_SERVICE_ACCOUNT
 
 if [[ "${SANDBOX_CORS_ORIGINS}" == "*" ]]; then
   echo "SANDBOX_CORS_ORIGINS cannot be '*'" >&2
@@ -120,10 +138,6 @@ env_path = sys.argv[1]
 out_path = sys.argv[2]
 script_only = {
     "PORT",
-    "OPENAI_API_KEY_SECRET",
-    "ADMIN_TOKEN_SECRET",
-    "GMAIL_CLIENT_SECRET_SECRET",
-    "GMAIL_REFRESH_TOKEN_SECRET",
 }
 
 # If a Secret Manager binding is configured, do not also emit the literal env var
@@ -131,9 +145,10 @@ script_only = {
 # "type", and deploying a string literal for the same key will fail.
 secret_bindings = {
     "OPENAI_API_KEY_SECRET": "OPENAI_API_KEY",
-    "ADMIN_TOKEN_SECRET": "ADMIN_TOKEN",
     "GMAIL_CLIENT_SECRET_SECRET": "GMAIL_CLIENT_SECRET",
     "GMAIL_REFRESH_TOKEN_SECRET": "GMAIL_REFRESH_TOKEN",
+    "FIREBASE_GITHUB_CLIENT_SECRET_SECRET": "FIREBASE_GITHUB_CLIENT_SECRET",
+    "FIREBASE_GOOGLE_CLIENT_SECRET_SECRET": "FIREBASE_GOOGLE_CLIENT_SECRET",
 }
 
 def parse_env(path):
@@ -148,7 +163,7 @@ def parse_env(path):
             key, value = line.split("=", 1)
             key = key.strip()
             value = value.strip()
-            if not key or key in script_only:
+            if not key:
                 continue
             if value and value[0] == value[-1] and value[0] in ("'", '"'):
                 value = value[1:-1]
@@ -158,6 +173,7 @@ def parse_env(path):
 raw_values = parse_env(env_path)
 
 omit_keys = set(script_only)
+omit_keys.update(secret_bindings.keys())
 for binding_key, target_key in secret_bindings.items():
     binding_value = (raw_values.get(binding_key) or "").strip()
     if not binding_value:
@@ -204,12 +220,6 @@ elif [[ -n "${OPENAI_API_KEY:-}" ]]; then
   append_csv SECRETS_TO_REMOVE "OPENAI_API_KEY"
 fi
 
-if [[ -n "${ADMIN_TOKEN_SECRET:-}" ]]; then
-  append_csv SECRETS_TO_UPDATE "ADMIN_TOKEN=${ADMIN_TOKEN_SECRET}:latest"
-elif [[ -n "${ADMIN_TOKEN:-}" ]]; then
-  append_csv SECRETS_TO_REMOVE "ADMIN_TOKEN"
-fi
-
 if [[ -n "${GMAIL_CLIENT_SECRET_SECRET:-}" ]]; then
   append_csv SECRETS_TO_UPDATE "GMAIL_CLIENT_SECRET=${GMAIL_CLIENT_SECRET_SECRET}:latest"
 else
@@ -220,6 +230,18 @@ if [[ -n "${GMAIL_REFRESH_TOKEN_SECRET:-}" ]]; then
   append_csv SECRETS_TO_UPDATE "GMAIL_REFRESH_TOKEN=${GMAIL_REFRESH_TOKEN_SECRET}:latest"
 else
   append_csv SECRETS_TO_REMOVE "GMAIL_REFRESH_TOKEN"
+fi
+
+if [[ -n "${FIREBASE_GITHUB_CLIENT_SECRET_SECRET:-}" ]]; then
+  append_csv SECRETS_TO_UPDATE "FIREBASE_GITHUB_CLIENT_SECRET=${FIREBASE_GITHUB_CLIENT_SECRET_SECRET}:latest"
+else
+  append_csv SECRETS_TO_REMOVE "FIREBASE_GITHUB_CLIENT_SECRET"
+fi
+
+if [[ -n "${FIREBASE_GOOGLE_CLIENT_SECRET_SECRET:-}" ]]; then
+  append_csv SECRETS_TO_UPDATE "FIREBASE_GOOGLE_CLIENT_SECRET=${FIREBASE_GOOGLE_CLIENT_SECRET_SECRET}:latest"
+else
+  append_csv SECRETS_TO_REMOVE "FIREBASE_GOOGLE_CLIENT_SECRET"
 fi
 
 if [[ ${#SECRETS_TO_UPDATE[@]} -gt 0 ]]; then

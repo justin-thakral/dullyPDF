@@ -54,6 +54,8 @@ def enqueue_detection_job(
     user: Optional[RequestUser],
     *,
     page_count: Optional[int] = None,
+    prewarm_rename: bool = False,
+    prewarm_remap: bool = False,
 ) -> Dict[str, Any]:
     session_id = str(uuid.uuid4())
     resolved_page_count = page_count if page_count is not None else get_pdf_page_count(pdf_bytes)
@@ -72,6 +74,8 @@ def enqueue_detection_job(
         "detection_profile": task_config["profile"],
         "detection_queue": task_config["queue"],
         "detection_service_url": task_config["service_url"],
+        "openai_prewarm_rename": bool(prewarm_rename),
+        "openai_prewarm_remap": bool(prewarm_remap),
     }
     _store_session_entry(
         session_id,
@@ -88,6 +92,8 @@ def enqueue_detection_job(
         "sessionId": session_id,
         "pdfPath": pdf_path,
         "pipeline": "commonforms",
+        "prewarmRename": bool(prewarm_rename),
+        "prewarmRemap": bool(prewarm_remap),
     }
     record_detection_request(
         request_id=session_id,

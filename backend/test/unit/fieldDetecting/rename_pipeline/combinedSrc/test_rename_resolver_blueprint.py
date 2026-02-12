@@ -139,7 +139,7 @@ def test_run_openai_rename_pipeline_orchestrates_with_mocked_boundaries(
             rr.CHECKBOX_RULES_END,
         ]
     )
-    monkeypatch.setattr(rr, "OpenAI", lambda: object())
+    monkeypatch.setattr(rr, "create_openai_client", lambda **_kwargs: object())
     monkeypatch.setattr(
         rr,
         "responses_create_with_temperature_fallback",
@@ -227,7 +227,7 @@ def test_run_openai_rename_pipeline_includes_prev_page_context_for_top_fields(
         captured_messages.append(kwargs["input"])
         return SimpleNamespace(output_text="|| a1b | patient_name | 0.8 | 0.9")
 
-    monkeypatch.setattr(rr, "OpenAI", lambda: object())
+    monkeypatch.setattr(rr, "create_openai_client", lambda **_kwargs: object())
     monkeypatch.setattr(rr, "responses_create_with_temperature_fallback", _fake_response)
     monkeypatch.setattr(rr, "extract_response_text", lambda response: response.output_text)
 
@@ -298,7 +298,7 @@ def test_run_openai_rename_pipeline_uses_dense_overlay_env_tuning(
         return "data:image/jpeg;base64,abc"
 
     monkeypatch.setattr(rr, "image_bgr_to_data_url", _capture_data_url)
-    monkeypatch.setattr(rr, "OpenAI", lambda: object())
+    monkeypatch.setattr(rr, "create_openai_client", lambda **_kwargs: object())
     monkeypatch.setattr(
         rr,
         "responses_create_with_temperature_fallback",
@@ -350,7 +350,7 @@ def test_run_openai_rename_pipeline_dedupes_checkbox_rules_by_highest_confidence
             rr.CHECKBOX_RULES_END,
         ]
     )
-    monkeypatch.setattr(rr, "OpenAI", lambda: object())
+    monkeypatch.setattr(rr, "create_openai_client", lambda **_kwargs: object())
     monkeypatch.setattr(
         rr,
         "responses_create_with_temperature_fallback",

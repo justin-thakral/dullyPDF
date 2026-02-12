@@ -3,16 +3,16 @@
 import json
 import os
 import re
-from typing import Any, Dict, List
+from typing import Any, Dict, List, MutableSequence, Optional
 
-from openai import OpenAI
-
+from backend.ai.openai_client import create_openai_client
+from backend.ai.openai_usage import normalize_chat_usage
 from backend.logging_config import get_logger
 
 
 logger = get_logger(__name__)
 
-OPENAI_SCHEMA_MODEL = os.getenv("OPENAI_SCHEMA_MAPPING_MODEL", "gpt-5.2")
+OPENAI_SCHEMA_MODEL = os.getenv("OPENAI_SCHEMA_MAPPING_MODEL", "gpt-5-mini")
 MAX_SCHEMA_FIELDS = int(os.getenv("OPENAI_SCHEMA_MAX_FIELDS", "200"))
 MAX_TEMPLATE_FIELDS = int(os.getenv("OPENAI_TEMPLATE_MAX_FIELDS", "200"))
 MAX_PAYLOAD_BYTES = int(os.getenv("OPENAI_SCHEMA_MAX_PAYLOAD_BYTES", "80000"))
@@ -179,7 +179,36 @@ def _split_template_tags(
     return chunks
 
 
-def call_openai_schema_mapping(payload: Dict[str, Any]) -> Dict[str, Any]:
+def _append_usage_event(
+    usage_collector: Optional[MutableSequence[Dict[str, Any]]],
+    response: Any,
+    *,
+    chunk_index: Optional[int] = None,
+    chunk_count: Optional[int] = None,
+) -> None:
+    if usage_collector is None:
+        return
+    usage = normalize_chat_usage(response)
+    event: Dict[str, Any] = {
+        "api": "chat_completions",
+        "model": OPENAI_SCHEMA_MODEL,
+        **usage,
+    }
+    if chunk_index is not None:
+        event["chunk"] = int(chunk_index)
+    if chunk_count is not None:
+        event["chunkCount"] = int(chunk_count)
+    usage_collector.append(event)
+
+
+def call_openai_schema_mapping(
+    payload: Dict[str, Any],
+    *,
+    usage_collector: Optional[MutableSequence[Dict[str, Any]]] = None,
+    openai_max_retries: Optional[int] = None,
+    chunk_index: Optional[int] = None,
+    chunk_count: Optional[int] = None,
+) -> Dict[str, Any]:
     """
     Call OpenAI with a schema + overlay payload and return parsed JSON output.
     """
@@ -210,7 +239,7 @@ def call_openai_schema_mapping(payload: Dict[str, Any]) -> Dict[str, Any]:
         "directBooleanPossible (true/false), and optional operation (yes_no|enum|list|presence).\n"
     )
 
-    client = OpenAI(api_key=key)
+    client = create_openai_client(api_key=key, max_retries_override=openai_max_retries)
     base_req = {
         "model": OPENAI_SCHEMA_MODEL,
         "messages": [
@@ -222,6 +251,12 @@ def call_openai_schema_mapping(payload: Dict[str, Any]) -> Dict[str, Any]:
 
     try:
         response = client.chat.completions.create(**json_req)
+        _append_usage_event(
+            usage_collector,
+            response,
+            chunk_index=chunk_index,
+            chunk_count=chunk_count,
+        )
         content = response.choices[0].message.content or "{}"
         return _parse_json(content)
     except Exception as exc:
@@ -229,6 +264,12 @@ def call_openai_schema_mapping(payload: Dict[str, Any]) -> Dict[str, Any]:
         param = getattr(exc, "param", None)
         if param == "response_format" or "response_format" in msg:
             response = client.chat.completions.create(**base_req)
+            _append_usage_event(
+                usage_collector,
+                response,
+                chunk_index=chunk_index,
+                chunk_count=chunk_count,
+            )
             content = response.choices[0].message.content or "{}"
             return _parse_json(content)
         raise
@@ -267,13 +308,24 @@ def _merge_schema_mapping_response(
         aggregate.setdefault("notes", []).append(str(notes))
 
 
-def call_openai_schema_mapping_chunked(payload: Dict[str, Any]) -> Dict[str, Any]:
+def call_openai_schema_mapping_chunked(
+    payload: Dict[str, Any],
+    *,
+    usage_collector: Optional[MutableSequence[Dict[str, Any]]] = None,
+    openai_max_retries: Optional[int] = None,
+) -> Dict[str, Any]:
     """Call OpenAI for schema mapping, splitting template tags when the payload is too large.
 
     This merges mappings and rules across chunks so the caller sees one unified result.
     """
     if _payload_size(payload) <= MAX_PAYLOAD_BYTES:
-        return call_openai_schema_mapping(payload)
+        if usage_collector is None and openai_max_retries is None:
+            return call_openai_schema_mapping(payload)
+        return call_openai_schema_mapping(
+            payload,
+            usage_collector=usage_collector,
+            openai_max_retries=openai_max_retries,
+        )
 
     schema_fields = payload.get("schemaFields") or []
     template_tags = payload.get("templateTags") or []
@@ -295,8 +347,15 @@ def call_openai_schema_mapping_chunked(payload: Dict[str, Any]) -> Dict[str, Any
         "checkboxHints": [],
         "notes": [],
     }
-    for chunk in chunks:
-        response = call_openai_schema_mapping(chunk)
+    chunk_count = len(chunks)
+    for idx, chunk in enumerate(chunks, start=1):
+        response = call_openai_schema_mapping(
+            chunk,
+            usage_collector=usage_collector,
+            openai_max_retries=openai_max_retries,
+            chunk_index=idx,
+            chunk_count=chunk_count,
+        )
         _merge_schema_mapping_response(aggregate, response)
 
     notes = aggregate.get("notes") or []

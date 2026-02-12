@@ -6,6 +6,10 @@ import { parseConfidence } from './confidence';
 import { makeId } from './fields';
 import { rectToBox } from './coords';
 
+export const DETECTION_WAITING_STANDARD_CPU_MESSAGE = 'Waiting for standard CPU to start...';
+export const DETECTION_RUNNING_STANDARD_CPU_MESSAGE = 'Detecting fields on the standard CPU...';
+export const DETECTION_RUNNING_HEAVY_CPU_MESSAGE = 'Detecting fields on the high-capacity CPU...';
+
 /**
  * Normalize backend field types into UI field categories.
  */
@@ -67,11 +71,14 @@ export function resolveDetectionStatusMessage(
       if (queuedAt && Date.now() - queuedAt > queueWaitThresholdMs) {
         return `Waiting for an available ${profileLabel}...`;
       }
+      if (profile === 'light') return DETECTION_WAITING_STANDARD_CPU_MESSAGE;
       return `Waiting for ${profileLabel} to start...`;
     }
   }
   if (status === 'running') {
-    return `Detecting fields on the ${profileLabel}...`;
+    if (profile === 'light') return DETECTION_RUNNING_STANDARD_CPU_MESSAGE;
+    if (profile === 'heavy') return DETECTION_RUNNING_HEAVY_CPU_MESSAGE;
+    return 'Detecting fields on the CPU...';
   }
   return null;
 }

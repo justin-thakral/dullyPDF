@@ -11,6 +11,7 @@ from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token
 from pydantic import BaseModel, Field
 
+from ..ai.prewarm import prewarm_openai_services
 from .status import (
     DETECTION_STATUS_COMPLETE,
     DETECTION_STATUS_FAILED,
@@ -59,6 +60,8 @@ class DetectJobRequest(BaseModel):
     sessionId: str = Field(..., min_length=1)
     pdfPath: str = Field(..., min_length=1)
     pipeline: str = "commonforms"
+    prewarmRename: bool = False
+    prewarmRemap: bool = False
 
 
 def _parse_retry_count(raw: Optional[str]) -> int:
@@ -199,7 +202,37 @@ async def run_detection(
         temp_path = Path(temp_name)
         try:
             temp_path.write_bytes(pdf_bytes)
-            resolved = detect_commonforms_fields(Path(temp_path))
+            prewarm_remaining_pages = max(0, int_env("OPENAI_PREWARM_REMAINING_PAGES", 3))
+            should_prewarm_rename = bool(payload.prewarmRename)
+            should_prewarm_remap = bool(payload.prewarmRemap)
+            prewarm_triggered = False
+
+            def _maybe_prewarm(processed_pages: int, total_pages: int) -> None:
+                nonlocal prewarm_triggered
+                if prewarm_triggered:
+                    return
+                if not (should_prewarm_rename or should_prewarm_remap):
+                    return
+                remaining = max(0, int(total_pages) - int(processed_pages))
+                if remaining > prewarm_remaining_pages:
+                    return
+                prewarm_openai_services(
+                    page_count=total_pages,
+                    prewarm_rename=should_prewarm_rename,
+                    prewarm_remap=should_prewarm_remap,
+                )
+                prewarm_triggered = True
+
+            resolved = detect_commonforms_fields(
+                Path(temp_path),
+                progress_callback=_maybe_prewarm,
+            )
+            if (should_prewarm_rename or should_prewarm_remap) and not prewarm_triggered:
+                prewarm_openai_services(
+                    page_count=validation.page_count,
+                    prewarm_rename=should_prewarm_rename,
+                    prewarm_remap=should_prewarm_remap,
+                )
         finally:
             temp_path.unlink(missing_ok=True)
         resolved["pipeline"] = "commonforms"

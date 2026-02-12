@@ -56,6 +56,7 @@ def run_openai_rename_on_pdf(
     pdf_name: str,
     fields: List[Dict[str, Any]],
     database_fields: List[str] | None = None,
+    openai_max_retries: int | None = None,
 ) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
     """
     Render PDF pages, extract labels, and run the OpenAI rename pipeline.
@@ -77,6 +78,7 @@ def run_openai_rename_on_pdf(
             output_dir=overlay_dir,
             confidence_profile="commonforms",
             database_fields=database_fields,
+            openai_max_retries=openai_max_retries,
         )
 
         if debug_enabled():

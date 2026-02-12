@@ -38,6 +38,8 @@ export function getDetectionApiBase(): string {
 
 type DetectOptions = {
   pipeline?: 'commonforms';
+  prewarmRename?: boolean;
+  prewarmRemap?: boolean;
   onStatus?: (payload: any) => void;
 };
 
@@ -59,6 +61,12 @@ export async function detectFields(
   formData.append('file', file);
   if (options.pipeline) {
     formData.append('pipeline', options.pipeline);
+  }
+  if (options.prewarmRename) {
+    formData.append('prewarmRename', 'true');
+  }
+  if (options.prewarmRemap) {
+    formData.append('prewarmRemap', 'true');
   }
 
   const response = await apiFetch('POST', `${getDetectionApiBase()}/detect-fields`, {

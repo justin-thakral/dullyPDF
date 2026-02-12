@@ -111,6 +111,51 @@ describe('ApiService', () => {
     );
   });
 
+  it('polls queued OpenAI jobs until completion for rename and mapping calls', async () => {
+    apiConfigMocks.apiFetch
+      .mockResolvedValueOnce({ id: 'rename-enqueue' })
+      .mockResolvedValueOnce({ id: 'rename-status-complete' })
+      .mockResolvedValueOnce({ id: 'map-enqueue' })
+      .mockResolvedValueOnce({ id: 'map-status-complete' });
+
+    apiConfigMocks.apiJsonFetch
+      .mockResolvedValueOnce({ status: 'queued', jobId: 'rename-job-1' })
+      .mockResolvedValueOnce({
+        status: 'complete',
+        result: { success: true, fields: [{ name: 'first_name' }], checkboxRules: [] },
+      })
+      .mockResolvedValueOnce({ status: 'queued', jobId: 'map-job-1' })
+      .mockResolvedValueOnce({
+        status: 'complete',
+        result: { success: true, mappingResults: { mappings: [{ pdfField: 'first_name' }] } },
+      });
+
+    const rename = await ApiService.renameFields({
+      sessionId: 'sess-1',
+      templateFields: [{ name: 'First Name', type: 'text' }],
+    });
+    const mapping = await ApiService.mapSchema(
+      'schema-1',
+      [{ name: 'First Name', type: 'text' }],
+      undefined,
+      'sess-1',
+    );
+
+    expect(rename.fields).toEqual([{ name: 'first_name' }]);
+    expect(mapping.mappingResults.mappings).toHaveLength(1);
+
+    expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(
+      2,
+      'GET',
+      'https://api.local/api/renames/ai/rename-job-1',
+    );
+    expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(
+      4,
+      'GET',
+      'https://api.local/api/schema-mappings/ai/map-job-1',
+    );
+  });
+
   it('handles saved-form list/load/download/delete/session/touch operations', async () => {
     apiConfigMocks.apiFetch
       .mockResolvedValueOnce({ status: 200, id: 'saved-forms' })

@@ -20,6 +20,11 @@ export function useAuth(deps: {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
   const authUserRef = useRef<User | null>(null);
+  const depsRef = useRef(deps);
+
+  useEffect(() => {
+    depsRef.current = deps;
+  }, [deps]);
 
   const requiresEmailVerification = useMemo(
     () => Boolean(authUser && authSignInProvider === 'password' && !authUser.emailVerified),
@@ -62,8 +67,8 @@ export function useAuth(deps: {
       setAuthSignInProvider(null);
 
       if (!user) {
-        deps.clearSavedFormsRetry();
-        deps.clearSavedForms();
+        depsRef.current.clearSavedFormsRetry();
+        depsRef.current.clearSavedForms();
         setUserProfile(null);
         setShowProfile(false);
         return;
@@ -78,25 +83,25 @@ export function useAuth(deps: {
         setAuthSignInProvider(provider);
         const needsVerification = provider === 'password' && !user.emailVerified;
         if (needsVerification) {
-          deps.clearSavedFormsRetry();
-          deps.clearSavedForms();
+          depsRef.current.clearSavedFormsRetry();
+          depsRef.current.clearSavedForms();
           setUserProfile(null);
           setShowProfile(false);
           return;
         }
         authUserRef.current = user;
         if (options?.deferSavedForms) {
-          void deps.refreshSavedForms({ allowRetry: true });
+          void depsRef.current.refreshSavedForms({ allowRetry: true });
           void loadUserProfile();
         } else {
-          await deps.refreshSavedForms({ allowRetry: true });
+          await depsRef.current.refreshSavedForms({ allowRetry: true });
           await loadUserProfile();
         }
       } catch (error) {
         console.error('Failed to initialize session', error);
       }
     },
-    [deps, loadUserProfile],
+    [loadUserProfile],
   );
 
   useEffect(() => {
@@ -113,10 +118,10 @@ export function useAuth(deps: {
     return () => {
       isActive = false;
       clearTimeout(readyTimer);
-      deps.clearSavedFormsRetry();
+      depsRef.current.clearSavedFormsRetry();
       unsubscribe();
     };
-  }, [deps, syncAuthSession]);
+  }, [syncAuthSession]);
 
   useEffect(() => {
     if (!showProfile || !verifiedUser) return;

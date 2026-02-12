@@ -51,12 +51,19 @@ def _is_storage_not_found_error(exc: Exception) -> bool:
     return exc.__class__.__name__.lower() == "notfound"
 
 
+def _form_truthy(value: Optional[str]) -> bool:
+    raw = str(value or "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
 @router.post("/detect-fields")
 async def detect_fields(
     request: Request,
     file: UploadFile = File(...),
     pipeline: Optional[str] = None,
     pipeline_form: Optional[str] = Form(None, alias="pipeline"),
+    prewarm_rename_form: Optional[str] = Form(None, alias="prewarmRename"),
+    prewarm_remap_form: Optional[str] = Form(None, alias="prewarmRemap"),
     authorization: Optional[str] = Header(default=None),
     x_admin_token: Optional[str] = Header(default=None),
 ) -> Dict[str, Any]:
@@ -131,6 +138,8 @@ async def detect_fields(
     pipeline_choice = (pipeline or pipeline_form or "commonforms").strip().lower()
     if pipeline_choice != "commonforms":
         raise HTTPException(status_code=400, detail="Unsupported pipeline selection")
+    prewarm_rename = _form_truthy(prewarm_rename_form)
+    prewarm_remap = _form_truthy(prewarm_remap_form)
 
     detection_mode = resolve_detection_mode()
     if detection_mode == "local":
@@ -183,7 +192,14 @@ async def detect_fields(
             raise
 
     if detection_mode == "tasks":
-        response = enqueue_detection_job(pdf_bytes, source_pdf, user, page_count=page_count)
+        response = enqueue_detection_job(
+            pdf_bytes,
+            source_pdf,
+            user,
+            page_count=page_count,
+            prewarm_rename=prewarm_rename,
+            prewarm_remap=prewarm_remap,
+        )
         logger.info("Session %s -> queued detection job", response.get("sessionId"))
         return response
 

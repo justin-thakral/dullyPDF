@@ -32,11 +32,21 @@ async def submit_contact(payload: ContactRequest, request: Request) -> Dict[str,
     window_seconds, per_ip, global_limit = resolve_contact_rate_limits()
     if global_limit > 0:
         rate_key = "contact:global"
-        allowed = check_rate_limit(rate_key, limit=global_limit, window_seconds=window_seconds)
+        allowed = check_rate_limit(
+            rate_key,
+            limit=global_limit,
+            window_seconds=window_seconds,
+            fail_closed=True,
+        )
     else:
         client_ip = resolve_client_ip(request)
         rate_key = f"contact:{client_ip}"
-        allowed = check_rate_limit(rate_key, limit=per_ip, window_seconds=window_seconds)
+        allowed = check_rate_limit(
+            rate_key,
+            limit=per_ip,
+            window_seconds=window_seconds,
+            fail_closed=True,
+        )
 
     if not allowed:
         raise HTTPException(status_code=429, detail="Too many contact requests. Please wait and try again.")
@@ -59,11 +69,21 @@ async def assess_recaptcha(payload: RecaptchaAssessmentRequest, request: Request
     action = resolve_signup_recaptcha_action()
     if global_limit > 0:
         rate_key = f"recaptcha:{action}:global"
-        allowed = check_rate_limit(rate_key, limit=global_limit, window_seconds=window_seconds)
+        allowed = check_rate_limit(
+            rate_key,
+            limit=global_limit,
+            window_seconds=window_seconds,
+            fail_closed=True,
+        )
     else:
         client_ip = resolve_client_ip(request)
         rate_key = f"recaptcha:{action}:{client_ip}"
-        allowed = check_rate_limit(rate_key, limit=per_ip, window_seconds=window_seconds)
+        allowed = check_rate_limit(
+            rate_key,
+            limit=per_ip,
+            window_seconds=window_seconds,
+            fail_closed=True,
+        )
 
     if not allowed:
         raise HTTPException(status_code=429, detail="Too many verification attempts. Please wait and try again.")

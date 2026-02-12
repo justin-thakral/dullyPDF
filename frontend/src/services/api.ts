@@ -4,6 +4,9 @@
 import type { PdfField } from '../types';
 import { apiFetch, apiJsonFetch, buildApiUrl } from './apiConfig';
 
+const OPENAI_JOB_POLL_INTERVAL_MS = 1500;
+const OPENAI_JOB_POLL_TIMEOUT_MS = 600000;
+
 export type SavedFormSummary = {
   id: string;
   name: string;
@@ -45,6 +48,29 @@ export type RecaptchaAssessmentPayload = {
 };
 
 export class ApiService {
+  private static async pollOpenAiJob(
+    resource: 'renames' | 'schema-mappings',
+    jobId: string,
+    timeoutMs = OPENAI_JOB_POLL_TIMEOUT_MS,
+  ): Promise<any> {
+    const deadline = Date.now() + timeoutMs;
+    let attempt = 0;
+    while (Date.now() < deadline) {
+      const response = await apiFetch('GET', buildApiUrl('api', resource, 'ai', jobId));
+      const payload = await apiJsonFetch<any>(response);
+      const status = String(payload?.status || '').toLowerCase();
+      if (status === 'complete') {
+        return payload?.result && typeof payload.result === 'object' ? payload.result : payload;
+      }
+      if (status === 'failed') {
+        throw new Error(String(payload?.error || 'OpenAI worker request failed.'));
+      }
+      attempt += 1;
+      await new Promise((resolve) => setTimeout(resolve, Math.min(OPENAI_JOB_POLL_INTERVAL_MS * attempt, 6000)));
+    }
+    throw new Error('OpenAI worker request timed out while waiting for completion.');
+  }
+
   /**
    * Fetch profile details and tier limits for the current user.
    */
@@ -137,8 +163,12 @@ export class ApiService {
         sessionId,
       }),
     });
-
-    return apiJsonFetch(response);
+    const payload = await apiJsonFetch<any>(response);
+    const status = String(payload?.status || '').toLowerCase();
+    if ((status === 'queued' || status === 'running') && payload?.jobId) {
+      return ApiService.pollOpenAiJob('schema-mappings', String(payload.jobId));
+    }
+    return payload;
   }
 
   /**
@@ -164,8 +194,12 @@ export class ApiService {
       },
       body: JSON.stringify(payload),
     });
-
-    return apiJsonFetch(response);
+    const result = await apiJsonFetch<any>(response);
+    const status = String(result?.status || '').toLowerCase();
+    if ((status === 'queued' || status === 'running') && result?.jobId) {
+      return ApiService.pollOpenAiJob('renames', String(result.jobId));
+    }
+    return result;
   }
 
   /**

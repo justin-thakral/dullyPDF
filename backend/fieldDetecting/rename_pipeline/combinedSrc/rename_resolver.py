@@ -24,17 +24,22 @@ from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 import cv2
-from openai import OpenAI
 
+from backend.ai.openai_client import create_openai_client
+from backend.ai.openai_usage import build_openai_usage_summary
 from .concurrency import resolve_workers, run_threaded_map
 from .config import LOG_OPENAI_RESPONSE, get_logger
 from .field_overlay import draw_overlay
-from .openai_utils import extract_response_text, responses_create_with_temperature_fallback
+from .openai_utils import (
+    extract_response_text,
+    extract_response_usage,
+    responses_create_with_temperature_fallback,
+)
 from .vision_utils import image_bgr_to_data_url
 
 logger = get_logger(__name__)
 
-DEFAULT_RENAME_MODEL = os.getenv("SANDBOX_RENAME_MODEL", "gpt-5.2")
+DEFAULT_RENAME_MODEL = os.getenv("SANDBOX_RENAME_MODEL", "gpt-5-mini")
 COMMONFORMS_CONFIDENCE_GREEN = float(os.getenv("COMMONFORMS_CONFIDENCE_GREEN", "0.8"))
 COMMONFORMS_CONFIDENCE_YELLOW = float(os.getenv("COMMONFORMS_CONFIDENCE_YELLOW", "0.65"))
 
@@ -726,6 +731,7 @@ def run_openai_rename_pipeline(
     confidence_profile: str = "sandbox",
     adjust_field_confidence: bool = False,
     database_fields: List[str] | None = None,
+    openai_max_retries: int | None = None,
 ) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
     """
     Rename fields via OpenAI using one overlay per page.
@@ -929,7 +935,7 @@ def run_openai_rename_pipeline(
                 "content": user_content,
             },
         ]
-        client = OpenAI()
+        client = create_openai_client(max_retries_override=openai_max_retries)
         response = responses_create_with_temperature_fallback(
             client,
             model=model,
@@ -939,6 +945,7 @@ def run_openai_rename_pipeline(
             text={"format": {"type": "text"}},
         )
         response_text = extract_response_text(response)
+        response_usage = extract_response_usage(response)
         if LOG_OPENAI_RESPONSE:
             logger.info(
                 "OpenAI rename response page %s (model %s):\n%s",
@@ -955,7 +962,12 @@ def run_openai_rename_pipeline(
                 len(entries),
                 len(context["overlay_map"]),
             )
-        return {"page_idx": page_idx, "entries": entries, "checkbox_rules": checkbox_rules}
+        return {
+            "page_idx": page_idx,
+            "entries": entries,
+            "checkbox_rules": checkbox_rules,
+            "usage": response_usage,
+        }
 
     if tasks:
         results = run_threaded_map(
@@ -968,10 +980,21 @@ def run_openai_rename_pipeline(
         results = []
 
     raw_checkbox_rules: List[Dict[str, Any]] = []
+    usage_by_page: List[Dict[str, Any]] = []
     for result in results:
         for rule in result.get("checkbox_rules") or []:
             if isinstance(rule, dict):
                 raw_checkbox_rules.append(rule)
+        usage = result.get("usage")
+        if isinstance(usage, dict):
+            usage_by_page.append(
+                {
+                    "page": int(result.get("page_idx") or 0),
+                    "api": "responses",
+                    "model": model,
+                    **usage,
+                }
+            )
 
     # Keep the highest-confidence entry per field index (multiple pages can reference a field).
     entries_by_index: Dict[int, Dict[str, Any]] = {}
@@ -1130,6 +1153,7 @@ def run_openai_rename_pipeline(
             }
         )
 
+    usage_summary = build_openai_usage_summary(usage_by_page, model=model)
     return (
         {
             "generatedAt": datetime.now(tz=timezone.utc).isoformat(),
@@ -1137,6 +1161,8 @@ def run_openai_rename_pipeline(
             "renames": renames_report,
             "dropped": dropped,
             "checkboxRules": checkbox_rules,
+            "usage": usage_summary,
+            "usageByPage": usage_by_page,
         },
         renamed_fields,
     )

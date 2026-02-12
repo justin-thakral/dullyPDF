@@ -2,7 +2,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { User } from 'firebase/auth';
 import type { PDFDocumentProxy } from 'pdfjs-dist/types/src/display/api';
 import type { BannerNotice, CheckboxHint, CheckboxRule, PageSize, PdfField, PendingAutoActions, ProcessingMode } from '../types';
-import { mapDetectionFields, resolveDetectionStatusMessage } from '../utils/detection';
+import {
+  DETECTION_RUNNING_STANDARD_CPU_MESSAGE,
+  DETECTION_WAITING_STANDARD_CPU_MESSAGE,
+  mapDetectionFields,
+  resolveDetectionStatusMessage,
+} from '../utils/detection';
 import { extractFieldsFromPdf, loadPageSizes, loadPdfFromFile } from '../utils/pdf';
 import { buildTemplateFields } from '../utils/fields';
 import { debugLog } from '../utils/debug';
@@ -10,6 +15,11 @@ import { ApiError } from '../services/apiConfig';
 import { ApiService } from '../services/api';
 import { detectFields, pollDetectionStatus } from '../services/detectionApi';
 import {
+  DETECTION_POST_WARMUP_MESSAGE,
+  DETECTION_WARMUP_DELAY_MS,
+  DETECTION_WARMUP_DURATION_MS,
+  DETECTION_WARMUP_MESSAGE,
+  DETECTION_WARMUP_PAGE_THRESHOLD,
   DEFAULT_PROCESSING_MESSAGE,
   DEMO_ASSETS,
   DETECTION_BACKGROUND_MAX_RETRIES,
@@ -447,6 +457,38 @@ export function useDetection(deps: UseDetectionDeps) {
       deps.setSourceFileIsDemo(false);
       deps.setActiveSavedFormId(null);
       deps.setActiveSavedFormName(null);
+      const openAiActionsRequested = Boolean(options.autoRename || options.autoMap);
+      let warmupActive = false;
+      let warmupCompleted = false;
+      let warmupStartTimer: number | null = null;
+      let warmupEndTimer: number | null = null;
+      let shouldShowRenameWarmup = false;
+      const clearWarmupTimers = () => {
+        if (warmupStartTimer !== null) {
+          window.clearTimeout(warmupStartTimer);
+          warmupStartTimer = null;
+        }
+        if (warmupEndTimer !== null) {
+          window.clearTimeout(warmupEndTimer);
+          warmupEndTimer = null;
+        }
+      };
+      const scheduleRenameWarmup = () => {
+        if (!shouldShowRenameWarmup || warmupCompleted || warmupActive || warmupStartTimer !== null) return;
+        warmupStartTimer = window.setTimeout(() => {
+          warmupStartTimer = null;
+          if (loadTokenRef.current !== loadToken || !shouldShowRenameWarmup || warmupCompleted) return;
+          warmupActive = true;
+          setProcessingDetail(DETECTION_WARMUP_MESSAGE);
+          warmupEndTimer = window.setTimeout(() => {
+            warmupEndTimer = null;
+            if (loadTokenRef.current !== loadToken) return;
+            warmupActive = false;
+            warmupCompleted = true;
+            setProcessingDetail(DETECTION_POST_WARMUP_MESSAGE);
+          }, DETECTION_WARMUP_DURATION_MS);
+        }, DETECTION_WARMUP_DELAY_MS);
+      };
       try {
         const doc = await loadPdfFromFile(file);
         if (doc.numPages > deps.profileLimits.detectMaxPages) {
@@ -459,6 +501,10 @@ export function useDetection(deps: UseDetectionDeps) {
         }
         const sizes = await loadPageSizes(doc);
         if (loadTokenRef.current !== loadToken) return;
+        shouldShowRenameWarmup = openAiActionsRequested && doc.numPages < DETECTION_WARMUP_PAGE_THRESHOLD;
+        if (shouldShowRenameWarmup) {
+          setProcessingDetail(DETECTION_WAITING_STANDARD_CPU_MESSAGE);
+        }
         const activeSchemaId = options.schemaIdOverride ?? deps.schemaId;
 
         let detectedFields: PdfField[] = [];
@@ -470,10 +516,21 @@ export function useDetection(deps: UseDetectionDeps) {
         try {
           const detection = await detectFields(file, {
             pipeline: detectionPipeline,
+            prewarmRename: Boolean(options.autoRename),
+            prewarmRemap: Boolean(options.autoMap),
             onStatus: (payload) => {
               if (loadTokenRef.current !== loadToken) return;
               const message = resolveDetectionStatusMessage(payload, QUEUE_WAIT_THRESHOLD_MS);
-              if (message) setProcessingDetail(message);
+              if (!message) return;
+              if (warmupActive) return;
+              const status = String(payload?.status || '').toLowerCase();
+              const profile = String(payload?.detectionProfile || '').toLowerCase();
+              if (shouldShowRenameWarmup && status === 'running' && profile === 'light') {
+                setProcessingDetail(DETECTION_RUNNING_STANDARD_CPU_MESSAGE);
+                scheduleRenameWarmup();
+                return;
+              }
+              setProcessingDetail(message);
             },
           });
           detectedSessionId = detection?.sessionId || null;
@@ -572,6 +629,8 @@ export function useDetection(deps: UseDetectionDeps) {
         setProcessingMode(null);
         deps.setLoadError(message);
         debugLog('Failed to load PDF', message);
+      } finally {
+        clearWarmupTimers();
       }
     },
     [commitPdfLoad, resumeDetectionPolling, deps],

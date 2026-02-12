@@ -16,7 +16,7 @@ import time
 import types
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, List
+from typing import Any, Callable, Dict, Iterable, List, Optional
 
 from pypdf import PdfReader
 
@@ -271,6 +271,7 @@ def _detect_ffdetr(
     confidence: float,
     batch_size: int,
     bounding_box_cls: Any,
+    progress_callback: Optional[Callable[[int, int], None]] = None,
 ) -> Dict[int, List[DetectedWidget]]:
     """
     Run FFDetr detection and return widgets grouped by page index.
@@ -284,6 +285,7 @@ def _detect_ffdetr(
         results.extend(predictions)
 
     widgets: Dict[int, List[DetectedWidget]] = {}
+    total_pages = len(pages)
     for page_ix, detections in enumerate(results):
         if detections is None:
             continue
@@ -314,6 +316,11 @@ def _detect_ffdetr(
             )
 
         widgets[page_ix] = _sort_detected_widgets(page_widgets)
+        if progress_callback:
+            try:
+                progress_callback(page_ix + 1, total_pages)
+            except Exception:
+                pass
 
     return widgets
 
@@ -325,22 +332,30 @@ def _detect_ffdnet(
     confidence: float,
     image_size: int,
     bounding_box_cls: Any,
+    progress_callback: Optional[Callable[[int, int], None]] = None,
 ) -> Dict[int, List[DetectedWidget]]:
     """
     Run FFDNet detection and return widgets grouped by page index.
     """
+    total_pages = len(pages)
     if detector.fast:
-        results = [
-            detector.model.predict(
-                p.image,
-                iou=1,
-                conf=confidence,
-                augment=False,
-                imgsz=1216,
-                device=detector.device,
+        results = []
+        for page_ix, page in enumerate(pages):
+            results.append(
+                detector.model.predict(
+                    page.image,
+                    iou=1,
+                    conf=confidence,
+                    augment=False,
+                    imgsz=1216,
+                    device=detector.device,
+                )
             )
-            for p in pages
-        ]
+            if progress_callback:
+                try:
+                    progress_callback(page_ix + 1, total_pages)
+                except Exception:
+                    pass
     else:
         results = detector.model.predict(
             [p.image for p in pages],
@@ -377,6 +392,11 @@ def _detect_ffdnet(
             )
 
         widgets[page_ix] = _sort_detected_widgets(page_widgets)
+        if progress_callback and not detector.fast:
+            try:
+                progress_callback(page_ix + 1, total_pages)
+            except Exception:
+                pass
 
     return widgets
 
@@ -473,6 +493,7 @@ def detect_commonforms_fields(
     multiline: bool = DEFAULT_MULTILINE,
     keep_existing_fields: bool = False,
     use_signature_fields: bool = False,
+    progress_callback: Optional[Callable[[int, int], None]] = None,
 ) -> Dict[str, Any]:
     """
     Run CommonForms detection and return the standardized field payload.
@@ -506,6 +527,7 @@ def detect_commonforms_fields(
             confidence=confidence,
             image_size=image_size,
             bounding_box_cls=BoundingBox,
+            progress_callback=progress_callback,
         )
     elif "FFDETR" in model_upper:
         detector = FFDetrDetector(resolved_model, device=device)
@@ -515,6 +537,7 @@ def detect_commonforms_fields(
             confidence=confidence,
             batch_size=DEFAULT_BATCH_SIZE,
             bounding_box_cls=BoundingBox,
+            progress_callback=progress_callback,
         )
     else:
         raise ValueError(

@@ -55,7 +55,11 @@ describe('detectionApi', () => {
 
     const file = new File(['pdf'], 'a.pdf', { type: 'application/pdf' });
 
-    const complete = await module.detectFields(file, { pipeline: 'commonforms' });
+    const complete = await module.detectFields(file, {
+      pipeline: 'commonforms',
+      prewarmRename: true,
+      prewarmRemap: true,
+    });
     const accepted = await module.detectFields(file);
 
     expect(complete.status).toBe('complete');
@@ -69,6 +73,13 @@ describe('detectionApi', () => {
     const formData = firstCall[2].body as FormData;
     expect((formData.get('file') as File).name).toBe('a.pdf');
     expect(formData.get('pipeline')).toBe('commonforms');
+    expect(formData.get('prewarmRename')).toBe('true');
+    expect(formData.get('prewarmRemap')).toBe('true');
+
+    const secondCall = apiMocks.apiFetch.mock.calls[1];
+    const secondFormData = secondCall[2].body as FormData;
+    expect(secondFormData.get('prewarmRename')).toBeNull();
+    expect(secondFormData.get('prewarmRemap')).toBeNull();
   });
 
   it('polls running sessions to completion and emits status updates', async () => {

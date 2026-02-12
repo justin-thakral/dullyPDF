@@ -72,6 +72,27 @@ def resolve_detection_mode() -> str:
     return "local"
 
 
+def _resolve_openai_mode(prefix: str) -> str:
+    tasks_configured = bool(
+        _env_value(f"{prefix}_TASKS_QUEUE")
+        or _env_value(f"{prefix}_TASKS_QUEUE_LIGHT")
+    )
+    raw = _env_value(f"{prefix}_MODE").lower()
+    if raw:
+        return raw
+    if tasks_configured:
+        return "tasks"
+    return "local"
+
+
+def resolve_openai_rename_mode() -> str:
+    return _resolve_openai_mode("OPENAI_RENAME")
+
+
+def resolve_openai_remap_mode() -> str:
+    return _resolve_openai_mode("OPENAI_REMAP")
+
+
 def _recaptcha_required_for_contact() -> bool:
     from backend.services.recaptcha_service import recaptcha_required_for_contact
     return recaptcha_required_for_contact()
@@ -142,6 +163,40 @@ def require_prod_env() -> None:
             missing.append("DETECTOR_TASKS_QUEUE_HEAVY (required with DETECTOR_SERVICE_URL_HEAVY)")
         if not _env_value("DETECTOR_TASKS_SERVICE_ACCOUNT"):
             missing.append("DETECTOR_TASKS_SERVICE_ACCOUNT")
+
+    rename_mode = resolve_openai_rename_mode()
+    if rename_mode == "tasks":
+        if not (_env_value("OPENAI_RENAME_TASKS_PROJECT") or _env_value("GCP_PROJECT_ID")):
+            missing.append("OPENAI_RENAME_TASKS_PROJECT (or GCP_PROJECT_ID)")
+        if not _env_value("OPENAI_RENAME_TASKS_LOCATION"):
+            missing.append("OPENAI_RENAME_TASKS_LOCATION")
+        if not (_env_value("OPENAI_RENAME_TASKS_QUEUE") or _env_value("OPENAI_RENAME_TASKS_QUEUE_LIGHT")):
+            missing.append("OPENAI_RENAME_TASKS_QUEUE (or OPENAI_RENAME_TASKS_QUEUE_LIGHT)")
+        if not (_env_value("OPENAI_RENAME_SERVICE_URL") or _env_value("OPENAI_RENAME_SERVICE_URL_LIGHT")):
+            missing.append("OPENAI_RENAME_SERVICE_URL (or OPENAI_RENAME_SERVICE_URL_LIGHT)")
+        if _env_value("OPENAI_RENAME_TASKS_QUEUE_HEAVY") and not _env_value("OPENAI_RENAME_SERVICE_URL_HEAVY"):
+            missing.append("OPENAI_RENAME_SERVICE_URL_HEAVY (required with OPENAI_RENAME_TASKS_QUEUE_HEAVY)")
+        if _env_value("OPENAI_RENAME_SERVICE_URL_HEAVY") and not _env_value("OPENAI_RENAME_TASKS_QUEUE_HEAVY"):
+            missing.append("OPENAI_RENAME_TASKS_QUEUE_HEAVY (required with OPENAI_RENAME_SERVICE_URL_HEAVY)")
+        if not _env_value("OPENAI_RENAME_TASKS_SERVICE_ACCOUNT"):
+            missing.append("OPENAI_RENAME_TASKS_SERVICE_ACCOUNT")
+
+    remap_mode = resolve_openai_remap_mode()
+    if remap_mode == "tasks":
+        if not (_env_value("OPENAI_REMAP_TASKS_PROJECT") or _env_value("GCP_PROJECT_ID")):
+            missing.append("OPENAI_REMAP_TASKS_PROJECT (or GCP_PROJECT_ID)")
+        if not _env_value("OPENAI_REMAP_TASKS_LOCATION"):
+            missing.append("OPENAI_REMAP_TASKS_LOCATION")
+        if not (_env_value("OPENAI_REMAP_TASKS_QUEUE") or _env_value("OPENAI_REMAP_TASKS_QUEUE_LIGHT")):
+            missing.append("OPENAI_REMAP_TASKS_QUEUE (or OPENAI_REMAP_TASKS_QUEUE_LIGHT)")
+        if not (_env_value("OPENAI_REMAP_SERVICE_URL") or _env_value("OPENAI_REMAP_SERVICE_URL_LIGHT")):
+            missing.append("OPENAI_REMAP_SERVICE_URL (or OPENAI_REMAP_SERVICE_URL_LIGHT)")
+        if _env_value("OPENAI_REMAP_TASKS_QUEUE_HEAVY") and not _env_value("OPENAI_REMAP_SERVICE_URL_HEAVY"):
+            missing.append("OPENAI_REMAP_SERVICE_URL_HEAVY (required with OPENAI_REMAP_TASKS_QUEUE_HEAVY)")
+        if _env_value("OPENAI_REMAP_SERVICE_URL_HEAVY") and not _env_value("OPENAI_REMAP_TASKS_QUEUE_HEAVY"):
+            missing.append("OPENAI_REMAP_TASKS_QUEUE_HEAVY (required with OPENAI_REMAP_SERVICE_URL_HEAVY)")
+        if not _env_value("OPENAI_REMAP_TASKS_SERVICE_ACCOUNT"):
+            missing.append("OPENAI_REMAP_TASKS_SERVICE_ACCOUNT")
     if missing:
         raise RuntimeError("Missing required prod env vars: " + ", ".join(missing))
 

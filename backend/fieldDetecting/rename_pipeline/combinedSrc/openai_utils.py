@@ -11,6 +11,8 @@ from typing import Any, Dict, Optional
 
 from openai import OpenAI, OpenAIError
 
+from backend.ai.openai_usage import normalize_responses_usage
+
 from .config import get_logger
 
 logger = get_logger(__name__)
@@ -110,4 +112,13 @@ def extract_response_text(response: Any) -> str:
     return "".join(parts)
 
 
-__all__ = ["responses_create_with_temperature_fallback", "extract_response_text"]
+def extract_response_usage(response: Any) -> Dict[str, int]:
+    """Extract normalized usage metrics from a Responses API response."""
+    return normalize_responses_usage(response)
+
+
+__all__ = [
+    "responses_create_with_temperature_fallback",
+    "extract_response_text",
+    "extract_response_usage",
+]

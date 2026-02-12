@@ -156,7 +156,11 @@ def test_run_openai_rename_pipeline_skips_openai_when_page_candidates_missing(
 ) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     openai_ctor = pytest.fail
-    monkeypatch.setattr(rr, "OpenAI", lambda: openai_ctor("OpenAI should not be called"))
+    monkeypatch.setattr(
+        rr,
+        "create_openai_client",
+        lambda **_kwargs: openai_ctor("OpenAI should not be called"),
+    )
     monkeypatch.setattr(rr, "run_threaded_map", lambda tasks, fn, max_workers, label: [])
 
     report, renamed = rr.run_openai_rename_pipeline(
@@ -239,7 +243,7 @@ def test_run_openai_rename_pipeline_keeps_defaults_for_missing_openai_lines(
     monkeypatch.setattr(rr, "_build_prompt", lambda *_args, **_kwargs: ("system", "user"))
     monkeypatch.setattr(rr, "draw_overlay", lambda *_args, **_kwargs: np.zeros((20, 20, 3), dtype=np.uint8))
     monkeypatch.setattr(rr, "image_bgr_to_data_url", lambda *_args, **_kwargs: "data:image/png;base64,abc")
-    monkeypatch.setattr(rr, "OpenAI", lambda: object())
+    monkeypatch.setattr(rr, "create_openai_client", lambda **_kwargs: object())
     monkeypatch.setattr(
         rr,
         "responses_create_with_temperature_fallback",

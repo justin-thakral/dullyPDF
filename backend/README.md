@@ -16,8 +16,10 @@ Detection is executed by the dedicated detector service (`backend/detection/dete
 - CommonForms-only (by [jbarrow](https://github.com/jbarrow/commonforms)): `POST /api/process-pdf` (legacy upload helper; dev-only; auth required; no rename/mapping).
 - Register fillable: `POST /api/register-fillable` (dev-only; auth required; store PDF bytes without running detection).
 - OpenAI rename (overlay tags + PDF pages; schema headers included for combined rename+map): `POST /api/renames/ai`.
+- OpenAI rename job status (task mode): `GET /api/renames/ai/{jobId}`.
 - Schema metadata: `POST /api/schemas`, `GET /api/schemas`.
 - Schema mapping (OpenAI): `POST /api/schema-mappings/ai` (results returned only; not persisted).
+- Schema mapping job status (task mode): `GET /api/schema-mappings/ai/{jobId}`.
 - Saved forms: `GET /api/saved-forms`, `POST /api/saved-forms` (supports `overwriteFormId` to replace an existing saved form), `GET /api/saved-forms/{id}`, `GET /api/saved-forms/{id}/download`, `POST /api/saved-forms/{id}/session`, `DELETE /api/saved-forms/{id}`.
 - Template session (fillable upload): `POST /api/templates/session` (stores PDF bytes + fields so rename/mapping can run).
 - Materialize fillable: `POST /api/forms/materialize` (auth required; injects fields into a PDF upload and enforces fillable page limits).
@@ -42,6 +44,8 @@ See `frontend/docs/api-routing.md` for the current rewrite list and frontend cal
 
 - Main API: Cloud Tasks client + Firebase Admin + OpenAI (optional).
 - Detector service: CommonForms (by [jbarrow](https://github.com/jbarrow/commonforms)) + PyTorch for detection.
+- Rename worker service: OpenAI rename execution (`backend/ai/rename_worker_app.py`).
+- Remap worker service: OpenAI schema mapping execution (`backend/ai/remap_worker_app.py`).
 - OpenAI API key for rename + schema mapping (schema metadata only).
 - Firebase Admin for auth and role claims.
 - GCS buckets for saved forms and templates.
@@ -90,6 +94,32 @@ See `frontend/docs/api-routing.md` for the current rewrite list and frontend cal
 - `DETECTOR_TASKS_AUDIENCE`, `DETECTOR_TASKS_AUDIENCE_LIGHT`, `DETECTOR_TASKS_AUDIENCE_HEAVY` (optional)
 - `DETECTOR_TASKS_DISPATCH_DEADLINE_SECONDS_LIGHT`, `DETECTOR_TASKS_DISPATCH_DEADLINE_SECONDS_HEAVY` (optional)
 - `DETECTOR_TASKS_FORCE_IMMEDIATE` (optional; schedule tasks in the past to bypass host clock skew)
+- `OPENAI_RENAME_MODE` (`tasks` for production async rename workers)
+- `OPENAI_RENAME_TASKS_PROJECT`, `OPENAI_RENAME_TASKS_LOCATION`
+- `OPENAI_RENAME_TASKS_QUEUE` or `OPENAI_RENAME_TASKS_QUEUE_LIGHT`
+- `OPENAI_RENAME_SERVICE_URL` or `OPENAI_RENAME_SERVICE_URL_LIGHT`
+- `OPENAI_RENAME_TASKS_QUEUE_HEAVY`, `OPENAI_RENAME_SERVICE_URL_HEAVY` (optional; for larger PDFs)
+- `OPENAI_RENAME_TASKS_HEAVY_PAGE_THRESHOLD` (default 10)
+- `OPENAI_RENAME_TASKS_SERVICE_ACCOUNT`
+- `OPENAI_RENAME_TASKS_AUDIENCE`, `OPENAI_RENAME_TASKS_AUDIENCE_LIGHT`, `OPENAI_RENAME_TASKS_AUDIENCE_HEAVY` (optional)
+- `OPENAI_RENAME_TASKS_DISPATCH_DEADLINE_SECONDS_LIGHT`, `OPENAI_RENAME_TASKS_DISPATCH_DEADLINE_SECONDS_HEAVY` (optional)
+- `OPENAI_REMAP_MODE` (`tasks` for production async remap workers)
+- `OPENAI_REMAP_TASKS_PROJECT`, `OPENAI_REMAP_TASKS_LOCATION`
+- `OPENAI_REMAP_TASKS_QUEUE` or `OPENAI_REMAP_TASKS_QUEUE_LIGHT`
+- `OPENAI_REMAP_SERVICE_URL` or `OPENAI_REMAP_SERVICE_URL_LIGHT`
+- `OPENAI_REMAP_TASKS_QUEUE_HEAVY`, `OPENAI_REMAP_SERVICE_URL_HEAVY` (optional; for large template tag sets)
+- `OPENAI_REMAP_TASKS_HEAVY_TAG_THRESHOLD` (default 120)
+- `OPENAI_REMAP_TASKS_SERVICE_ACCOUNT`
+- `OPENAI_REMAP_TASKS_AUDIENCE`, `OPENAI_REMAP_TASKS_AUDIENCE_LIGHT`, `OPENAI_REMAP_TASKS_AUDIENCE_HEAVY` (optional)
+- `OPENAI_REMAP_TASKS_DISPATCH_DEADLINE_SECONDS_LIGHT`, `OPENAI_REMAP_TASKS_DISPATCH_DEADLINE_SECONDS_HEAVY` (optional)
+- `OPENAI_REQUEST_TIMEOUT_SECONDS` (default 75; bounds each OpenAI request to avoid long UI stalls)
+- `OPENAI_MAX_RETRIES` (default 1; OpenAI SDK retry count for rename/remap calls)
+- `OPENAI_WORKER_MAX_RETRIES` (default 0; worker-only OpenAI SDK retries to avoid multiplying Cloud Tasks retries)
+- `OPENAI_PRICE_INPUT_PER_1M_USD`, `OPENAI_PRICE_OUTPUT_PER_1M_USD` (optional; enables per-job USD estimates)
+- `OPENAI_PRICE_CACHED_INPUT_PER_1M_USD`, `OPENAI_PRICE_REASONING_OUTPUT_PER_1M_USD` (optional; refine USD estimates when token subclasses are available)
+- `OPENAI_PREWARM_ENABLED` (default false; best-effort worker warmup during detection)
+- `OPENAI_PREWARM_REMAINING_PAGES` (default 3; trigger point for prewarm)
+- `OPENAI_PREWARM_TIMEOUT_SECONDS` (default 2; health check timeout)
 
 Detector env examples:
 - `config/detector.dev.env.example`
@@ -106,6 +136,10 @@ Detector env examples:
 - Schema metadata TTL uses `SANDBOX_SCHEMA_TTL_SECONDS` (default 3600) with Firestore TTL on `schema_metadata.expires_at`.
 - Detector jobs are queued via Cloud Tasks; the detector service writes fields/results to GCS + Firestore.
 - Detector routing picks the heavy queue when `page_count >= DETECTOR_TASKS_HEAVY_PAGE_THRESHOLD` and the heavy service URLs are configured.
+- Rename/remap jobs can run in `tasks` mode and are persisted in Firestore (`openai_jobs`) with pollable status.
+- Async rename/remap jobs store OpenAI usage summaries (`openai_usage_summary`, `openai_usage_events`) so status polling can report token usage (and optional USD estimates when pricing env vars are set).
+- Rename/remap task workers refund consumed credits on terminal failures.
+- Detection can emit best-effort OpenAI worker prewarm requests when `OPENAI_PREWARM_ENABLED=true` and remaining pages are below `OPENAI_PREWARM_REMAINING_PAGES`.
 - Encrypted PDFs are rejected before detection to avoid repeated task retries.
 - `DETECTOR_TASKS_MAX_ATTEMPTS` on the detector service should match the Cloud Tasks queue max attempts to finalize failures on the last retry.
 - Session ownership guards can be sanity-checked with `python -m backend.scripts.verify_session_owner`.
@@ -115,6 +149,7 @@ Detector env examples:
 - Postgres/SQL integrations are not part of the runtime path (moved to `legacy/`).
 - OpenAI rate limiting uses Firestore (`SANDBOX_RATE_LIMIT_BACKEND=firestore`) with the `rate_limits` collection by default.
 - Detection rate limiting uses `SANDBOX_DETECT_RATE_LIMIT_WINDOW_SECONDS` and `SANDBOX_DETECT_RATE_LIMIT_PER_USER`.
+- Public `/api/contact` and `/api/recaptcha/assess` rate limits fail closed when the Firestore limiter is unavailable.
 - Enable Firestore TTL on `rate_limits.expires_at` to auto-expire rate limit counters.
 - OpenAI and detection request logs use `SANDBOX_OPENAI_LOG_TTL_SECONDS` with Firestore TTL on `openai_requests.expires_at`,
   `openai_rename_requests.expires_at`, and `detection_requests.expires_at`.
@@ -169,7 +204,13 @@ The dev stack expects `env/backend.dev.stack.env` (created from
 detector in `dullypdf-dev`. The stack forces prod-mode backend behavior
 (`ENV=prod`, revocation checks on, legacy endpoints disabled) while still using
 dev resources. It only reads the stack env file, so export `OPENAI_API_KEY`
-separately if you want rename/mapping enabled. To clean up lingering processes,
+separately if you want rename/mapping enabled. In task mode, it also resolves
+OpenAI rename/remap worker URLs (`dullypdf-openai-rename-*`, `dullypdf-openai-remap-*`).
+When `DEV_STACK_BUILD=1` is set, `npm run dev:stack` now rebuilds the local
+backend image and redeploys detector + OpenAI worker Cloud Run services using
+`scripts/deploy-detector-services.sh` and `scripts/deploy-openai-workers.sh`
+before starting the local stack.
+To clean up lingering processes,
 run:
 
 ```
@@ -182,7 +223,45 @@ Detector service entrypoint (for Cloud Run or local dev):
 uvicorn backend.detection.detector_app:app --host 0.0.0.0 --port 8000
 ```
 
+Rename worker service entrypoint:
+
+```
+uvicorn backend.ai.rename_worker_app:app --host 0.0.0.0 --port 8000
+```
+
+Remap worker service entrypoint:
+
+```
+uvicorn backend.ai.remap_worker_app:app --host 0.0.0.0 --port 8000
+```
+
 Docker images:
 - `Dockerfile` (main API)
 - `Dockerfile.detector` (detector service)
+- `Dockerfile.ai-rename` (rename worker service)
+- `Dockerfile.ai-remap` (remap worker service)
 - `backend/requirements.txt` is main API deps; `backend/requirements-detector.txt` adds CommonForms (by [jbarrow](https://github.com/jbarrow/commonforms)).
+
+Worker deploy script (Cloud Run):
+
+```
+npm run deploy:openai-workers
+```
+
+`scripts/deploy-openai-workers.sh` deploys rename/remap light+heavy services with `--no-allow-unauthenticated`, enforces caller service-account invoker IAM, and refreshes per-service worker audience/service URL env vars from each deployed Cloud Run URL.
+
+Detector deploy script (Cloud Run):
+
+```
+npm run deploy:detector-services
+```
+
+`scripts/deploy-detector-services.sh` deploys detector light+heavy services with `--no-allow-unauthenticated`, enforces caller service-account invoker IAM, and refreshes detector audience/service URL env vars from each deployed Cloud Run URL.
+
+Full prod deploy (backend + detector + OpenAI workers + frontend):
+
+```
+npm run deploy:all-services
+```
+
+`scripts/deploy-all-services.sh` orchestrates all service deploy steps in prod order and requires `ENV=prod` in the backend env file before proceeding.

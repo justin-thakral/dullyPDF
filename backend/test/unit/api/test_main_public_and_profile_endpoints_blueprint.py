@@ -76,6 +76,7 @@ def test_contact_endpoint_rate_limit_global_and_per_ip(client, app_main, mocker)
     response = client.post("/api/contact", json=_contact_payload())
     assert response.status_code == 429
     assert check_rate_limit.call_args.args[0] == "contact:global"
+    assert check_rate_limit.call_args.kwargs["fail_closed"] is True
 
     check_rate_limit.reset_mock(return_value=True)
     check_rate_limit.return_value = True
@@ -86,6 +87,7 @@ def test_contact_endpoint_rate_limit_global_and_per_ip(client, app_main, mocker)
     response = client.post("/api/contact", json=_contact_payload())
     assert response.status_code == 200
     assert check_rate_limit.call_args.args[0] == "contact:unknown"
+    assert check_rate_limit.call_args.kwargs["fail_closed"] is True
 
 
 def test_contact_endpoint_recaptcha_required_optional_and_email_failure(client, app_main, mocker) -> None:
@@ -137,6 +139,7 @@ def test_recaptcha_assess_endpoint_rate_limit_and_required_flag(client, app_main
     response = client.post("/api/recaptcha/assess", json={"token": "tok", "action": "signup"})
     assert response.status_code == 429
     assert check_rate_limit.call_args.args[0] == "recaptcha:signup:global"
+    assert check_rate_limit.call_args.kwargs["fail_closed"] is True
 
     check_rate_limit.return_value = True
     mocker.patch.object(app_main, "_resolve_signup_rate_limits", return_value=(60, 5, 0))
@@ -147,6 +150,7 @@ def test_recaptcha_assess_endpoint_rate_limit_and_required_flag(client, app_main
     assert response.status_code == 200
     assert response.json() == {"success": True}
     assert verify_mock.call_args.kwargs["required"] is False
+    assert check_rate_limit.call_args.kwargs["fail_closed"] is True
 
 
 def test_touch_session_endpoint_ownership_and_refresh(

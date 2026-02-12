@@ -1,0 +1,15 @@
+"""Shared constants for OpenAI async rename/mapping jobs."""
+
+OPENAI_JOB_STATUS_QUEUED = "queued"
+OPENAI_JOB_STATUS_RUNNING = "running"
+OPENAI_JOB_STATUS_COMPLETE = "complete"
+OPENAI_JOB_STATUS_FAILED = "failed"
+
+OPENAI_JOB_TERMINAL_STATUSES = {
+    OPENAI_JOB_STATUS_COMPLETE,
+    OPENAI_JOB_STATUS_FAILED,
+}
+
+OPENAI_JOB_TYPE_RENAME = "rename"
+OPENAI_JOB_TYPE_REMAP = "remap"
+

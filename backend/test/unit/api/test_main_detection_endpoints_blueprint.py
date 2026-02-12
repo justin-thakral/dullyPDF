@@ -149,6 +149,61 @@ def test_detect_fields_tasks_mode_enqueue_path(client, app_main, base_user, mock
     assert response.json()["status"] == DETECTION_STATUS_QUEUED
 
 
+def test_detect_fields_passes_openai_prewarm_flags_to_enqueue(client, app_main, base_user, mocker, auth_headers) -> None:
+    _patch_detect_auth(mocker, app_main, base_user)
+    mocker.patch.object(app_main, "_read_upload_bytes", return_value=b"%PDF-1.4\n")
+    mocker.patch.object(
+        app_main,
+        "_validate_pdf_for_detection",
+        return_value=PdfValidationResult(pdf_bytes=b"%PDF-1.4\n", page_count=4, was_decrypted=False),
+    )
+    mocker.patch.object(app_main, "_resolve_detect_max_pages", return_value=10)
+    mocker.patch.object(app_main, "_resolve_detection_mode", return_value="tasks")
+    enqueue_mock = mocker.patch.object(
+        app_main,
+        "_enqueue_detection_job",
+        return_value={"sessionId": "sess-q", "status": DETECTION_STATUS_QUEUED, "pipeline": "commonforms"},
+    )
+
+    response = client.post(
+        "/detect-fields",
+        data={"prewarmRename": "true", "prewarmRemap": "true"},
+        files={"file": ("x.pdf", b"%PDF-1.4\n", "application/pdf")},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    assert enqueue_mock.call_args.kwargs["prewarm_rename"] is True
+    assert enqueue_mock.call_args.kwargs["prewarm_remap"] is True
+
+
+def test_detect_fields_defaults_openai_prewarm_flags_to_false(client, app_main, base_user, mocker, auth_headers) -> None:
+    _patch_detect_auth(mocker, app_main, base_user)
+    mocker.patch.object(app_main, "_read_upload_bytes", return_value=b"%PDF-1.4\n")
+    mocker.patch.object(
+        app_main,
+        "_validate_pdf_for_detection",
+        return_value=PdfValidationResult(pdf_bytes=b"%PDF-1.4\n", page_count=4, was_decrypted=False),
+    )
+    mocker.patch.object(app_main, "_resolve_detect_max_pages", return_value=10)
+    mocker.patch.object(app_main, "_resolve_detection_mode", return_value="tasks")
+    enqueue_mock = mocker.patch.object(
+        app_main,
+        "_enqueue_detection_job",
+        return_value={"sessionId": "sess-q", "status": DETECTION_STATUS_QUEUED, "pipeline": "commonforms"},
+    )
+
+    response = client.post(
+        "/detect-fields",
+        files={"file": ("x.pdf", b"%PDF-1.4\n", "application/pdf")},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    assert enqueue_mock.call_args.kwargs["prewarm_rename"] is False
+    assert enqueue_mock.call_args.kwargs["prewarm_remap"] is False
+
+
 def test_detect_fields_rate_limit_env_fallback_defaults_on_invalid_values(
     client,
     app_main,

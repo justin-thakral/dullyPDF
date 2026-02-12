@@ -40,7 +40,11 @@ Outputs:
 API response note:
 - `POST /detect-fields` queues detection and returns a `sessionId`.
 - `GET /detect-fields/{sessionId}` returns the baseline `fields` array once ready.
-- `POST /api/renames/ai` returns renamed `fields`, the rename report, optional `checkboxRules`, and the same `sessionId`.
+- `POST /api/renames/ai` returns renamed `fields`, the rename report, optional `checkboxRules`, and the same `sessionId` when running inline mode.
+- `POST /api/renames/ai` can also return `status=queued` + `jobId` in task mode.
+- `GET /api/renames/ai/{jobId}` returns queued/running/failed/complete status for async rename jobs.
+- `POST /api/schema-mappings/ai` can return `status=queued` + `jobId` in task mode.
+- `GET /api/schema-mappings/ai/{jobId}` returns queued/running/failed/complete status for async remap jobs.
 - The original name is preserved in `originalName` so the UI can reconcile edits.
 - Template overlay `rect` values may be sent as `{x,y,width,height}` or `[x1,y1,x2,y2]` (originTop points). The backend normalizes to a consistent numeric shape before use: schema mapping allowlists use `{x,y,width,height}`, while rename geometry uses `[x1,y1,x2,y2]`.
 
@@ -130,6 +134,22 @@ Schema alignment can happen in two ways:
 Both paths send only schema header names/types and template tags. No row data or field values
 are sent. The UI warns users before sending schema headers to OpenAI.
 
+## Async worker mode
+
+When `OPENAI_RENAME_MODE=tasks` / `OPENAI_REMAP_MODE=tasks`, the main API enqueues Cloud Tasks jobs
+instead of waiting for OpenAI calls inline. Dedicated worker services execute the heavy steps:
+
+- Rename worker: `backend/ai/rename_worker_app.py`
+- Remap worker: `backend/ai/remap_worker_app.py`
+
+This avoids long request/response windows on the main API and makes frontend polling explicit.
+
+Optional prewarm behavior:
+- Detection requests can include `prewarmRename=true` / `prewarmRemap=true`.
+- The detector service triggers a best-effort `/health` call to worker services when
+  remaining pages are below `OPENAI_PREWARM_REMAINING_PAGES` (default 3), if
+  `OPENAI_PREWARM_ENABLED=true`.
+
 ## Prompt behavior
 
 The prompt explicitly instructs the model to reject:
@@ -173,7 +193,7 @@ Artifacts:
 
 Common rename settings (all optional):
 
-- `SANDBOX_RENAME_MODEL`: model name (default is `gpt-5.2`)
+- `SANDBOX_RENAME_MODEL`: model name (default is `gpt-5-mini`)
 - `SANDBOX_RENAME_MAX_OUTPUT_TOKENS`: cap output tokens per page
 - `SANDBOX_RENAME_MIN_FIELD_CONF`: drop threshold for `isItAfieldConfidence`
 - `SANDBOX_RENAME_OVERLAY_QUALITY`: overlay image quality (default 92, 96 for commonforms)
@@ -185,6 +205,11 @@ Common rename settings (all optional):
 - `SANDBOX_RENAME_DENSE_FORMAT`: format override for dense pages
 - `SANDBOX_RENAME_PREV_PAGE_FRACTION`: previous-page crop height fraction
 - `SANDBOX_RENAME_PREV_PAGE_TOP_FRACTION`: top-of-page trigger threshold
+- `OPENAI_REQUEST_TIMEOUT_SECONDS`: OpenAI SDK per-request timeout (default 75)
+- `OPENAI_MAX_RETRIES`: OpenAI SDK retry count (default 1)
+- `OPENAI_WORKER_MAX_RETRIES`: worker-side OpenAI SDK retries (default 0 to avoid multiplying Cloud Tasks retries)
+- `OPENAI_PRICE_INPUT_PER_1M_USD` / `OPENAI_PRICE_OUTPUT_PER_1M_USD`: optional token rates used for per-job USD estimates
+- `OPENAI_PRICE_CACHED_INPUT_PER_1M_USD` / `OPENAI_PRICE_REASONING_OUTPUT_PER_1M_USD`: optional subclass rates for cached/reasoning tokens
 
 CommonForms (by [jbarrow](https://github.com/jbarrow/commonforms)) specific:
 

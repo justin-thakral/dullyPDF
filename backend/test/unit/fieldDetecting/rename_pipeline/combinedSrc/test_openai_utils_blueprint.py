@@ -93,6 +93,26 @@ def test_extract_response_text_prefers_output_text_then_joins_parts() -> None:
     assert openai_utils.extract_response_text(nested) == "hello world"
 
 
+def test_extract_response_usage_normalizes_response_shape() -> None:
+    response = SimpleNamespace(
+        usage=SimpleNamespace(
+            input_tokens=33,
+            output_tokens=7,
+            total_tokens=40,
+            input_tokens_details=SimpleNamespace(cached_tokens=5),
+            output_tokens_details=SimpleNamespace(reasoning_tokens=2),
+        )
+    )
+
+    assert openai_utils.extract_response_usage(response) == {
+        "input_tokens": 33,
+        "output_tokens": 7,
+        "total_tokens": 40,
+        "cached_input_tokens": 5,
+        "reasoning_output_tokens": 2,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Edge-case tests added below
 # ---------------------------------------------------------------------------
