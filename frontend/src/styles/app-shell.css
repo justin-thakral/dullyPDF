@@ -1,0 +1,62 @@
+.app {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.app--demo-locked .viewer,
+.app--demo-locked .field-list {
+  overflow: hidden;
+}
+
+.auth-loading-screen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at top, #1e3a8a 0%, #000000 70%);
+  color: #f8fafc;
+}
+
+.auth-loading-card {
+  padding: 1.25rem 2rem;
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.75);
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  box-shadow: 0 20px 45px rgba(15, 23, 42, 0.4);
+  font-size: 1rem;
+  font-weight: 500;
+}
+
+.homepage-shell {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+}
+
+.landing-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.app-shell {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(300px, 340px) minmax(0, 1fr) minmax(300px, 340px);
+  gap: 1.5rem;
+  padding: 1.5rem 1.8rem 2rem;
+  overflow: hidden;
+}
+
+
+.workspace {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}

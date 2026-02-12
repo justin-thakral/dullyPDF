@@ -16,14 +16,14 @@ from backend.ai.schema_mapping import (
     validate_payload_size,
 )
 from backend.api.schemas import RenameFieldsRequest, SchemaMappingRequest
-from backend.firebaseDB.app_database import (
+from backend.firebaseDB.user_database import (
     ROLE_GOD,
     consume_openai_credits,
     ensure_user,
-    get_template,
     normalize_role,
     refund_openai_credits,
 )
+from backend.firebaseDB.template_database import get_template
 from backend.firebaseDB.schema_database import (
     get_schema,
     record_openai_rename_request,
@@ -49,6 +49,26 @@ def _resolve_user_from_request(request: Request, authorization: Optional[str]):
         return ensure_user(auth_payload)
     except Exception as exc:
         raise HTTPException(status_code=500, detail="Failed to synchronize user profile") from exc
+
+
+def _safe_positive_int_env(name: str, default: int) -> int:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
+def _refund_credits_if_charged(*, user_id: str, role: str, credits: int, charged: bool) -> None:
+    if not charged:
+        return
+    try:
+        refund_openai_credits(user_id, credits=credits, role=role)
+    except Exception:
+        pass
 
 
 @router.post("/api/renames/ai")
@@ -97,14 +117,8 @@ async def rename_fields_ai(
         database_fields = [field.get("name") for field in schema_fields if field.get("name")]
         schema_id = schema.id
 
-    try:
-        window_seconds = int(os.getenv("OPENAI_RENAME_RATE_LIMIT_WINDOW_SECONDS", "60"))
-    except ValueError:
-        window_seconds = 60
-    try:
-        user_rate = int(os.getenv("OPENAI_RENAME_RATE_LIMIT_PER_USER", "6"))
-    except ValueError:
-        user_rate = 6
+    window_seconds = _safe_positive_int_env("OPENAI_RENAME_RATE_LIMIT_WINDOW_SECONDS", 60)
+    user_rate = _safe_positive_int_env("OPENAI_RENAME_RATE_LIMIT_PER_USER", 6)
 
     if not check_rate_limit(f"rename:user:{user.app_user_id}", limit=user_rate, window_seconds=window_seconds):
         raise HTTPException(status_code=429, detail="Rate limit exceeded for user")
@@ -124,12 +138,22 @@ async def rename_fields_ai(
     credits_charged = normalize_role(user.role) != ROLE_GOD
 
     request_id = uuid.uuid4().hex
-    record_openai_rename_request(
-        request_id=request_id,
-        user_id=user.app_user_id,
-        session_id=payload.sessionId,
-        schema_id=schema_id,
-    )
+    try:
+        record_openai_rename_request(
+            request_id=request_id,
+            user_id=user.app_user_id,
+            session_id=payload.sessionId,
+            schema_id=schema_id,
+        )
+    except Exception as exc:
+        _refund_credits_if_charged(
+            user_id=user.app_user_id,
+            role=user.role,
+            credits=credits_required,
+            charged=credits_charged,
+        )
+        status_code = getattr(exc, "status_code", None) or 500
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
 
     try:
         rename_report, renamed_fields = run_openai_rename_on_pdf(
@@ -139,15 +163,12 @@ async def rename_fields_ai(
             database_fields=database_fields,
         )
     except Exception as exc:
-        if credits_charged:
-            try:
-                refund_openai_credits(
-                    user.app_user_id,
-                    credits=credits_required,
-                    role=user.role,
-                )
-            except Exception:
-                pass
+        _refund_credits_if_charged(
+            user_id=user.app_user_id,
+            role=user.role,
+            credits=credits_required,
+            charged=credits_charged,
+        )
         status_code = getattr(exc, "status_code", None) or 500
         raise HTTPException(status_code=status_code, detail=str(exc)) from exc
 
@@ -204,14 +225,8 @@ async def map_schema_ai(
     template_tags = allowlist_payload.get("templateTags") or []
     if not template_tags:
         raise HTTPException(status_code=400, detail="No valid template tags provided")
-    try:
-        window_seconds = int(os.getenv("OPENAI_SCHEMA_RATE_LIMIT_WINDOW_SECONDS", "60"))
-    except ValueError:
-        window_seconds = 60
-    try:
-        user_rate = int(os.getenv("OPENAI_SCHEMA_RATE_LIMIT_PER_USER", "10"))
-    except ValueError:
-        user_rate = 10
+    window_seconds = _safe_positive_int_env("OPENAI_SCHEMA_RATE_LIMIT_WINDOW_SECONDS", 60)
+    user_rate = _safe_positive_int_env("OPENAI_SCHEMA_RATE_LIMIT_PER_USER", 10)
 
     if not check_rate_limit(f"user:{user.app_user_id}", limit=user_rate, window_seconds=window_seconds):
         raise HTTPException(status_code=429, detail="Rate limit exceeded for user")
@@ -241,28 +256,40 @@ async def map_schema_ai(
     credits_charged = normalize_role(user.role) != ROLE_GOD
 
     request_id = uuid.uuid4().hex
-    record_openai_request(
-        request_id=request_id,
-        user_id=user.app_user_id,
-        schema_id=schema.id,
-        template_id=payload.templateId,
-    )
+    try:
+        record_openai_request(
+            request_id=request_id,
+            user_id=user.app_user_id,
+            schema_id=schema.id,
+            template_id=payload.templateId,
+        )
+    except Exception as exc:
+        _refund_credits_if_charged(
+            user_id=user.app_user_id,
+            role=user.role,
+            credits=credits_required,
+            charged=credits_charged,
+        )
+        status_code = getattr(exc, "status_code", None) or 500
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
 
     try:
         ai_response = call_openai_schema_mapping_chunked(allowlist_payload)
     except ValueError as exc:
-        if credits_charged:
-            try:
-                refund_openai_credits(user.app_user_id, credits=credits_required, role=user.role)
-            except Exception:
-                pass
+        _refund_credits_if_charged(
+            user_id=user.app_user_id,
+            role=user.role,
+            credits=credits_required,
+            charged=credits_charged,
+        )
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
-        if credits_charged:
-            try:
-                refund_openai_credits(user.app_user_id, credits=credits_required, role=user.role)
-            except Exception:
-                pass
+        _refund_credits_if_charged(
+            user_id=user.app_user_id,
+            role=user.role,
+            credits=credits_required,
+            charged=credits_charged,
+        )
         status_code = getattr(exc, "status_code", None) or 500
         raise HTTPException(status_code=status_code, detail=str(exc)) from exc
 

@@ -70,3 +70,4 @@ Add `--dry-run` to preview.
 ## Docs
 
 See `frontend/docs/README.md` for architecture and workflow notes.
+See `frontend/test/docs/unit.md` for frontend unit test implementation guidance.

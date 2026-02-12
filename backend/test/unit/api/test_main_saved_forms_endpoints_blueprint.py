@@ -2,8 +2,8 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from backend.firebaseDB.app_database import TemplateRecord
-from backend.pdf_validation import PdfValidationResult
+from backend.firebaseDB.template_database import TemplateRecord
+from backend.detection.pdf_validation import PdfValidationResult
 
 
 def _template_record(
@@ -52,6 +52,42 @@ def test_saved_form_download_requires_gcs_path(client, app_main, base_user, mock
     assert "not found in storage" in response.text
 
 
+def test_saved_form_download_missing_storage_blob_returns_404(
+    app_main,
+    base_user,
+    mocker,
+    auth_headers,
+) -> None:
+    _patch_auth(mocker, app_main, base_user)
+    mocker.patch.object(app_main, "get_template", return_value=_template_record(pdf_path="gs://forms/missing.pdf"))
+    mocker.patch.object(app_main, "is_gcs_path", return_value=True)
+    mocker.patch.object(app_main, "stream_pdf", side_effect=FileNotFoundError("missing blob"))
+
+    local_client = TestClient(app_main.app, raise_server_exceptions=False)
+    response = local_client.get("/api/saved-forms/tpl-1/download", headers=auth_headers)
+
+    assert response.status_code == 404
+    assert "Form PDF not found in storage" in response.text
+
+
+def test_saved_form_download_storage_failure_returns_500(
+    app_main,
+    base_user,
+    mocker,
+    auth_headers,
+) -> None:
+    _patch_auth(mocker, app_main, base_user)
+    mocker.patch.object(app_main, "get_template", return_value=_template_record(pdf_path="gs://forms/error.pdf"))
+    mocker.patch.object(app_main, "is_gcs_path", return_value=True)
+    mocker.patch.object(app_main, "stream_pdf", side_effect=RuntimeError("storage outage"))
+
+    local_client = TestClient(app_main.app, raise_server_exceptions=False)
+    response = local_client.get("/api/saved-forms/tpl-1/download", headers=auth_headers)
+
+    assert response.status_code == 500
+    assert "Failed to load saved form PDF" in response.text
+
+
 def test_saved_form_session_creation_not_found_and_success(client, app_main, base_user, mocker, auth_headers) -> None:
     _patch_auth(mocker, app_main, base_user)
     mocker.patch.object(app_main, "get_template", return_value=None)
@@ -71,6 +107,28 @@ def test_saved_form_session_creation_not_found_and_success(client, app_main, bas
     assert response.status_code == 200
     assert response.json()["success"] is True
     assert response.json()["fieldCount"] == 1
+
+
+def test_saved_form_session_missing_storage_blob_returns_404(
+    client,
+    app_main,
+    base_user,
+    mocker,
+    auth_headers,
+) -> None:
+    _patch_auth(mocker, app_main, base_user)
+    mocker.patch.object(app_main, "get_template", return_value=_template_record(pdf_path="gs://forms/missing.pdf"))
+    mocker.patch.object(app_main, "is_gcs_path", return_value=True)
+    mocker.patch.object(app_main, "download_pdf_bytes", side_effect=FileNotFoundError("missing blob"))
+
+    response = client.post(
+        "/api/saved-forms/tpl-1/session",
+        json={"fields": [{"name": "f", "x": 1, "y": 2, "width": 3, "height": 4}]},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 404
+    assert "Form PDF not found in storage" in response.text
 
 
 def test_save_form_enforces_saved_form_limit_for_base_and_allows_god(
@@ -193,6 +251,41 @@ def test_save_form_merges_checkbox_metadata_and_cleans_up_on_db_failure(
     assert delete_mock.call_count == 2
 
 
+def test_save_form_cleans_uploaded_form_blob_when_template_upload_fails(
+    app_main,
+    base_user,
+    mocker,
+    auth_headers,
+    tmp_path: Path,
+) -> None:
+    temp_pdf = tmp_path / "partial-upload.pdf"
+    temp_pdf.write_bytes(b"%PDF-1.4\n")
+    _patch_auth(mocker, app_main, base_user)
+    mocker.patch.object(app_main, "_write_upload_to_temp", return_value=temp_pdf)
+    mocker.patch.object(
+        app_main,
+        "_validate_pdf_for_detection",
+        return_value=PdfValidationResult(pdf_bytes=b"%PDF-1.4\n", page_count=1, was_decrypted=False),
+    )
+    mocker.patch.object(app_main, "_resolve_fillable_max_pages", return_value=10)
+    mocker.patch.object(app_main, "_resolve_saved_forms_limit", return_value=10)
+    mocker.patch.object(app_main, "list_templates", return_value=[])
+    mocker.patch.object(app_main, "upload_form_pdf", return_value="gs://forms/new.pdf")
+    mocker.patch.object(app_main, "upload_template_pdf", side_effect=RuntimeError("template upload failed"))
+    delete_mock = mocker.patch.object(app_main, "delete_pdf", return_value=None)
+
+    local_client = TestClient(app_main.app, raise_server_exceptions=False)
+    response = local_client.post(
+        "/api/saved-forms",
+        files={"pdf": ("x.pdf", b"%PDF-1.4\n", "application/pdf")},
+        data={"name": "Name"},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 500
+    delete_mock.assert_called_once_with("gs://forms/new.pdf")
+
+
 def test_delete_saved_form_handles_storage_failure_and_success(
     client,
     app_main,
@@ -213,6 +306,27 @@ def test_delete_saved_form_handles_storage_failure_and_success(
     response = client.delete("/api/saved-forms/tpl-1", headers=auth_headers)
     assert response.status_code == 200
     assert response.json() == {"success": True}
+
+
+def test_delete_saved_form_allows_missing_storage_blob(
+    client,
+    app_main,
+    base_user,
+    mocker,
+    auth_headers,
+) -> None:
+    _patch_auth(mocker, app_main, base_user)
+    template = _template_record(pdf_path="gs://forms/a.pdf", template_path="gs://templates/a.pdf")
+    mocker.patch.object(app_main, "get_template", return_value=template)
+    mocker.patch.object(app_main, "is_gcs_path", return_value=True)
+    mocker.patch.object(app_main, "delete_pdf", side_effect=FileNotFoundError("already deleted"))
+    delete_template_mock = mocker.patch.object(app_main, "delete_template", return_value=True)
+
+    response = client.delete("/api/saved-forms/tpl-1", headers=auth_headers)
+
+    assert response.status_code == 200
+    assert response.json() == {"success": True}
+    assert delete_template_mock.called
 
 
 # ---------------------------------------------------------------------------

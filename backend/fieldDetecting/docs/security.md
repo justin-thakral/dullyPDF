@@ -89,7 +89,8 @@ Backend scripts + env:
 Firebase Admin + auth:
 - `backend/firebaseDB/firebase_service.py` loads credentials and verifies ID tokens.
 - `backend/firebaseDB/role_cli.py` sets custom claims and writes roles to Firestore.
-- `backend/firebaseDB/app_database.py` stores user role + OpenAI credit balances in Firestore.
+- `backend/firebaseDB/user_database.py` stores user role + OpenAI credit balances in Firestore.
+- `backend/firebaseDB/template_database.py` stores template metadata and ownership records in Firestore.
 - `backend/api/middleware/security.py` pre-verifies auth for `/api/*` routes and detection endpoints.
 - `backend/services/auth_service.py` enforces token verification + email verification checks.
 

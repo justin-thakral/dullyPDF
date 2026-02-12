@@ -3,7 +3,7 @@
  */
 import React, { useMemo, useState } from 'react';
 import './ProfilePage.css';
-import type { ProfileLimits, SavedFormSummary } from '../../api';
+import type { ProfileLimits, SavedFormSummary } from '../../services/api';
 
 interface ProfilePageProps {
   email?: string | null;

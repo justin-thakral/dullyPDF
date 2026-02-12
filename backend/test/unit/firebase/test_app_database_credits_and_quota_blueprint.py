@@ -2,14 +2,14 @@
 
 import pytest
 
-from backend.firebaseDB import app_database as adb
+from backend.firebaseDB import user_database as adb
 from backend.test.unit.firebase._fakes import FakeFirestoreClient
 
 
 @pytest.fixture(autouse=True)
 def _no_transaction_wrapper(mocker):
     mocker.patch(
-        "backend.firebaseDB.app_database.firebase_firestore.transactional",
+        "backend.firebaseDB.user_database.firebase_firestore.transactional",
         side_effect=lambda fn: fn,
     )
 
@@ -26,7 +26,7 @@ def test_consume_openai_credits_rejects_missing_uid() -> None:
 
 
 def test_consume_openai_credits_god_role_bypasses_storage(mocker) -> None:
-    get_client = mocker.patch("backend.firebaseDB.app_database.get_firestore_client")
+    get_client = mocker.patch("backend.firebaseDB.user_database.get_firestore_client")
 
     remaining, allowed = adb.consume_openai_credits("uid-1", credits=5, role=adb.ROLE_GOD)
 
@@ -37,7 +37,7 @@ def test_consume_openai_credits_god_role_bypasses_storage(mocker) -> None:
 def test_consume_openai_credits_returns_false_when_insufficient(mocker) -> None:
     client = FakeFirestoreClient()
     client.collection(adb.USERS_COLLECTION).document("uid-1").seed({adb.OPENAI_CREDITS_FIELD: 1})
-    mocker.patch("backend.firebaseDB.app_database.get_firestore_client", return_value=client)
+    mocker.patch("backend.firebaseDB.user_database.get_firestore_client", return_value=client)
 
     remaining, allowed = adb.consume_openai_credits("uid-1", credits=2, role=adb.ROLE_BASE)
 
@@ -50,8 +50,8 @@ def test_consume_openai_credits_returns_false_when_insufficient(mocker) -> None:
 def test_consume_openai_credits_coerces_invalid_credit_count_to_one(mocker) -> None:
     client = FakeFirestoreClient()
     doc = client.collection(adb.USERS_COLLECTION).document("uid-1").seed({adb.OPENAI_CREDITS_FIELD: "5"})
-    mocker.patch("backend.firebaseDB.app_database.get_firestore_client", return_value=client)
-    mocker.patch("backend.firebaseDB.app_database.now_iso", return_value="ts-updated")
+    mocker.patch("backend.firebaseDB.user_database.get_firestore_client", return_value=client)
+    mocker.patch("backend.firebaseDB.user_database.now_iso", return_value="ts-updated")
 
     remaining, allowed = adb.consume_openai_credits("uid-1", credits="bad", role=adb.ROLE_BASE)
 
@@ -64,8 +64,8 @@ def test_consume_openai_credits_coerces_invalid_credit_count_to_one(mocker) -> N
 def test_consume_openai_credits_coerces_non_positive_credit_count_to_one(mocker) -> None:
     client = FakeFirestoreClient()
     doc = client.collection(adb.USERS_COLLECTION).document("uid-1").seed({adb.OPENAI_CREDITS_FIELD: 5})
-    mocker.patch("backend.firebaseDB.app_database.get_firestore_client", return_value=client)
-    mocker.patch("backend.firebaseDB.app_database.now_iso", return_value="ts-updated")
+    mocker.patch("backend.firebaseDB.user_database.get_firestore_client", return_value=client)
+    mocker.patch("backend.firebaseDB.user_database.now_iso", return_value="ts-updated")
 
     remaining, allowed = adb.consume_openai_credits("uid-1", credits=0, role=adb.ROLE_BASE)
 
@@ -79,7 +79,7 @@ def test_refund_openai_credits_rejects_missing_uid() -> None:
 
 
 def test_refund_openai_credits_god_role_bypasses_storage(mocker) -> None:
-    get_client = mocker.patch("backend.firebaseDB.app_database.get_firestore_client")
+    get_client = mocker.patch("backend.firebaseDB.user_database.get_firestore_client")
 
     remaining = adb.refund_openai_credits("uid-1", credits=3, role=adb.ROLE_GOD)
 
@@ -90,8 +90,8 @@ def test_refund_openai_credits_god_role_bypasses_storage(mocker) -> None:
 def test_refund_openai_credits_coerces_invalid_refund_count_to_one(mocker) -> None:
     client = FakeFirestoreClient()
     doc = client.collection(adb.USERS_COLLECTION).document("uid-1").seed({adb.OPENAI_CREDITS_FIELD: 2})
-    mocker.patch("backend.firebaseDB.app_database.get_firestore_client", return_value=client)
-    mocker.patch("backend.firebaseDB.app_database.now_iso", return_value="ts-refund")
+    mocker.patch("backend.firebaseDB.user_database.get_firestore_client", return_value=client)
+    mocker.patch("backend.firebaseDB.user_database.now_iso", return_value="ts-refund")
 
     remaining = adb.refund_openai_credits("uid-1", credits="bad", role=adb.ROLE_BASE)
 
@@ -104,8 +104,8 @@ def test_refund_openai_credits_coerces_invalid_refund_count_to_one(mocker) -> No
 def test_refund_openai_credits_coerces_non_positive_refund_count_to_one(mocker) -> None:
     client = FakeFirestoreClient()
     doc = client.collection(adb.USERS_COLLECTION).document("uid-1").seed({adb.OPENAI_CREDITS_FIELD: 2})
-    mocker.patch("backend.firebaseDB.app_database.get_firestore_client", return_value=client)
-    mocker.patch("backend.firebaseDB.app_database.now_iso", return_value="ts-refund")
+    mocker.patch("backend.firebaseDB.user_database.get_firestore_client", return_value=client)
+    mocker.patch("backend.firebaseDB.user_database.now_iso", return_value="ts-refund")
 
     remaining = adb.refund_openai_credits("uid-1", credits=-5, role=adb.ROLE_BASE)
 
@@ -121,8 +121,8 @@ def test_consume_rename_quota_rejects_missing_uid() -> None:
 def test_consume_rename_quota_coerces_invalid_count_and_increments(mocker) -> None:
     client = FakeFirestoreClient()
     doc = client.collection(adb.USERS_COLLECTION).document("uid-1").seed({adb.RENAME_COUNT_FIELD: "bad"})
-    mocker.patch("backend.firebaseDB.app_database.get_firestore_client", return_value=client)
-    mocker.patch("backend.firebaseDB.app_database.now_iso", return_value="ts-rename")
+    mocker.patch("backend.firebaseDB.user_database.get_firestore_client", return_value=client)
+    mocker.patch("backend.firebaseDB.user_database.now_iso", return_value="ts-rename")
 
     count, allowed = adb.consume_rename_quota("uid-1", limit=2)
 
@@ -134,7 +134,7 @@ def test_consume_rename_quota_coerces_invalid_count_and_increments(mocker) -> No
 def test_consume_rename_quota_blocks_when_limit_reached(mocker) -> None:
     client = FakeFirestoreClient()
     client.collection(adb.USERS_COLLECTION).document("uid-1").seed({adb.RENAME_COUNT_FIELD: 2})
-    mocker.patch("backend.firebaseDB.app_database.get_firestore_client", return_value=client)
+    mocker.patch("backend.firebaseDB.user_database.get_firestore_client", return_value=client)
 
     count, allowed = adb.consume_rename_quota("uid-1", limit=2)
 
@@ -145,8 +145,8 @@ def test_consume_rename_quota_blocks_when_limit_reached(mocker) -> None:
 def test_consume_rename_quota_backfills_create_fields_when_doc_missing(mocker) -> None:
     client = FakeFirestoreClient()
     doc = client.collection(adb.USERS_COLLECTION).document("uid-1")
-    mocker.patch("backend.firebaseDB.app_database.get_firestore_client", return_value=client)
-    mocker.patch("backend.firebaseDB.app_database.now_iso", return_value="ts-created")
+    mocker.patch("backend.firebaseDB.user_database.get_firestore_client", return_value=client)
+    mocker.patch("backend.firebaseDB.user_database.now_iso", return_value="ts-created")
 
     count, allowed = adb.consume_rename_quota("uid-1", limit=3)
 
@@ -159,7 +159,7 @@ def test_consume_rename_quota_backfills_create_fields_when_doc_missing(mocker) -
 
 def test_get_user_profile_handles_missing_uid_and_missing_doc(mocker) -> None:
     client = FakeFirestoreClient()
-    mocker.patch("backend.firebaseDB.app_database.get_firestore_client", return_value=client)
+    mocker.patch("backend.firebaseDB.user_database.get_firestore_client", return_value=client)
 
     assert adb.get_user_profile("") is None
     assert adb.get_user_profile("uid-missing") is None
@@ -175,7 +175,7 @@ def test_get_user_profile_returns_none_credits_for_god_role(mocker) -> None:
             adb.OPENAI_CREDITS_FIELD: 99,
         }
     )
-    mocker.patch("backend.firebaseDB.app_database.get_firestore_client", return_value=client)
+    mocker.patch("backend.firebaseDB.user_database.get_firestore_client", return_value=client)
 
     profile = adb.get_user_profile("uid-1")
 
@@ -194,7 +194,7 @@ def test_get_user_profile_resolves_invalid_credit_to_base_for_base_role(mocker) 
             adb.OPENAI_CREDITS_FIELD: "bad-value",
         }
     )
-    mocker.patch("backend.firebaseDB.app_database.get_firestore_client", return_value=client)
+    mocker.patch("backend.firebaseDB.user_database.get_firestore_client", return_value=client)
 
     profile = adb.get_user_profile("uid-1")
 
@@ -213,8 +213,8 @@ def test_consume_openai_credits_happy_path_deducts_valid_integer(mocker) -> None
     doc = client.collection(adb.USERS_COLLECTION).document("uid-1").seed(
         {adb.OPENAI_CREDITS_FIELD: 5}
     )
-    mocker.patch("backend.firebaseDB.app_database.get_firestore_client", return_value=client)
-    mocker.patch("backend.firebaseDB.app_database.now_iso", return_value="ts-consume")
+    mocker.patch("backend.firebaseDB.user_database.get_firestore_client", return_value=client)
+    mocker.patch("backend.firebaseDB.user_database.now_iso", return_value="ts-consume")
 
     remaining, allowed = adb.consume_openai_credits("uid-1", credits=2, role=adb.ROLE_BASE)
 
@@ -236,8 +236,8 @@ def test_refund_openai_credits_happy_path_adds_valid_integer(mocker) -> None:
     doc = client.collection(adb.USERS_COLLECTION).document("uid-1").seed(
         {adb.OPENAI_CREDITS_FIELD: 2}
     )
-    mocker.patch("backend.firebaseDB.app_database.get_firestore_client", return_value=client)
-    mocker.patch("backend.firebaseDB.app_database.now_iso", return_value="ts-refund")
+    mocker.patch("backend.firebaseDB.user_database.get_firestore_client", return_value=client)
+    mocker.patch("backend.firebaseDB.user_database.now_iso", return_value="ts-refund")
 
     remaining = adb.refund_openai_credits("uid-1", credits=3, role=adb.ROLE_BASE)
 

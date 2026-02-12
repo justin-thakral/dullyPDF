@@ -29,13 +29,24 @@ function isIntegerValue(value: string): boolean {
 function isDateValue(value: string): boolean {
   const trimmed = value.trim();
   if (!trimmed) return false;
-  if (/^(19|20)\d{2}[-/](0[1-9]|1[0-2])[-/](0[1-9]|[12]\d|3[01])$/.test(trimmed)) {
-    return true;
+  let year: number, month: number, day: number;
+  const ymdMatch = trimmed.match(/^((?:19|20)\d{2})[-/](0[1-9]|1[0-2])[-/](0[1-9]|[12]\d|3[01])$/);
+  if (ymdMatch) {
+    year = Number(ymdMatch[1]);
+    month = Number(ymdMatch[2]);
+    day = Number(ymdMatch[3]);
+  } else {
+    const mdyMatch = trimmed.match(/^(0[1-9]|1[0-2])[-/](0[1-9]|[12]\d|3[01])[-/]((?:19|20)\d{2})$/);
+    if (mdyMatch) {
+      month = Number(mdyMatch[1]);
+      day = Number(mdyMatch[2]);
+      year = Number(mdyMatch[3]);
+    } else {
+      return false;
+    }
   }
-  if (/^(0[1-9]|1[0-2])[-/](0[1-9]|[12]\d|3[01])[-/](19|20)\d{2}$/.test(trimmed)) {
-    return true;
-  }
-  return false;
+  const d = new Date(year, month - 1, day);
+  return d.getFullYear() === year && d.getMonth() === month - 1 && d.getDate() === day;
 }
 
 function inferColumnType(values: string[]): SchemaFieldType {

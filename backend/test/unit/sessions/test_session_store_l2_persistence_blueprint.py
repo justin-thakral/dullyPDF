@@ -7,11 +7,12 @@ from datetime import datetime, timezone
 import pytest
 
 from backend.sessions import session_store as store
+from backend.sessions import l2_persistence
 
 
 def test_persist_session_entry_raises_when_persist_pdf_missing_bytes(mocker) -> None:
-    upload_pdf = mocker.patch.object(store, "upload_session_pdf_bytes")
-    upsert = mocker.patch.object(store, "upsert_session_metadata")
+    upload_pdf = mocker.patch.object(l2_persistence, "upload_session_pdf_bytes")
+    upsert = mocker.patch.object(l2_persistence, "upsert_session_metadata")
 
     with pytest.raises(ValueError, match="Session PDF bytes missing"):
         store._persist_session_entry("sess-1", {}, persist_pdf=True)
@@ -33,9 +34,9 @@ def test_persist_session_entry_persists_flagged_artifacts_and_metadata(mocker, m
         "checkboxHints": [{"name": "agree", "hint": "x"}],
         "detection_status": "complete",
     }
-    upload_pdf = mocker.patch.object(store, "upload_session_pdf_bytes", return_value="gs://bucket/sess/source.pdf")
+    upload_pdf = mocker.patch.object(l2_persistence, "upload_session_pdf_bytes", return_value="gs://bucket/sess/source.pdf")
     upload_json = mocker.patch.object(
-        store,
+        l2_persistence,
         "upload_session_json",
         side_effect=[
             "gs://bucket/sess/fields.json",
@@ -45,11 +46,11 @@ def test_persist_session_entry_persists_flagged_artifacts_and_metadata(mocker, m
             "gs://bucket/sess/checkbox-hints.json",
         ],
     )
-    upsert = mocker.patch.object(store, "upsert_session_metadata")
-    mocker.patch.object(store, "now_iso", return_value="2026-02-11T00:00:00+00:00")
-    monkeypatch.setattr(store, "_session_now", lambda: 42.0)
+    upsert = mocker.patch.object(l2_persistence, "upsert_session_metadata")
+    mocker.patch.object(l2_persistence, "now_iso", return_value="2026-02-11T00:00:00+00:00")
+    monkeypatch.setattr(l2_persistence, "_session_now", lambda: 42.0)
     expires_at = datetime(2026, 2, 11, tzinfo=timezone.utc)
-    monkeypatch.setattr(store, "_expires_at", lambda: expires_at)
+    monkeypatch.setattr(l2_persistence, "_expires_at", lambda: expires_at)
 
     store._persist_session_entry(
         "sess-1",
@@ -102,12 +103,12 @@ def test_persist_session_entry_reuses_existing_paths_when_flags_disabled(mocker,
         "checkbox_rules_path": "gs://bucket/sess/checkbox-rules.json",
         "checkbox_hints_path": "gs://bucket/sess/checkbox-hints.json",
     }
-    upload_pdf = mocker.patch.object(store, "upload_session_pdf_bytes")
-    upload_json = mocker.patch.object(store, "upload_session_json")
-    upsert = mocker.patch.object(store, "upsert_session_metadata")
-    mocker.patch.object(store, "now_iso", return_value="2026-02-11T00:00:00+00:00")
-    monkeypatch.setattr(store, "_session_now", lambda: 9.0)
-    monkeypatch.setattr(store, "_expires_at", lambda: None)
+    upload_pdf = mocker.patch.object(l2_persistence, "upload_session_pdf_bytes")
+    upload_json = mocker.patch.object(l2_persistence, "upload_session_json")
+    upsert = mocker.patch.object(l2_persistence, "upsert_session_metadata")
+    mocker.patch.object(l2_persistence, "now_iso", return_value="2026-02-11T00:00:00+00:00")
+    monkeypatch.setattr(l2_persistence, "_session_now", lambda: 9.0)
+    monkeypatch.setattr(l2_persistence, "_expires_at", lambda: None)
 
     store._persist_session_entry("sess-1", entry, persist_pdf=False, persist_fields=False, include_created_at=False)
 
@@ -154,9 +155,9 @@ def test_missing_required_data_logic(entry, kwargs, expected) -> None:
 
 
 def test_hydrate_from_l2_returns_none_when_metadata_missing(mocker) -> None:
-    mocker.patch.object(store, "get_session_metadata", return_value=None)
-    download_pdf = mocker.patch.object(store, "download_pdf_bytes")
-    download_json = mocker.patch.object(store, "download_session_json")
+    mocker.patch.object(l2_persistence, "get_session_metadata", return_value=None)
+    download_pdf = mocker.patch.object(l2_persistence, "download_pdf_bytes")
+    download_json = mocker.patch.object(l2_persistence, "download_session_json")
 
     entry = store._hydrate_from_l2(
         "sess-1",
@@ -175,7 +176,7 @@ def test_hydrate_from_l2_returns_none_when_metadata_missing(mocker) -> None:
 
 def test_hydrate_from_l2_populates_only_requested_artifacts(mocker) -> None:
     mocker.patch.object(
-        store,
+        l2_persistence,
         "get_session_metadata",
         return_value={
             "user_id": "user-1",
@@ -189,9 +190,9 @@ def test_hydrate_from_l2_populates_only_requested_artifacts(mocker) -> None:
             "page_count": 1,
         },
     )
-    download_pdf = mocker.patch.object(store, "download_pdf_bytes", return_value=b"%PDF")
+    download_pdf = mocker.patch.object(l2_persistence, "download_pdf_bytes", return_value=b"%PDF")
     download_json = mocker.patch.object(
-        store,
+        l2_persistence,
         "download_session_json",
         side_effect=[
             None,
@@ -224,9 +225,9 @@ def test_hydrate_from_l2_populates_only_requested_artifacts(mocker) -> None:
 
 
 def test_hydrate_from_l2_skips_downloads_when_paths_absent(mocker) -> None:
-    mocker.patch.object(store, "get_session_metadata", return_value={"user_id": "user-1", "source_pdf": "a.pdf"})
-    download_pdf = mocker.patch.object(store, "download_pdf_bytes")
-    download_json = mocker.patch.object(store, "download_session_json")
+    mocker.patch.object(l2_persistence, "get_session_metadata", return_value={"user_id": "user-1", "source_pdf": "a.pdf"})
+    download_pdf = mocker.patch.object(l2_persistence, "download_pdf_bytes")
+    download_json = mocker.patch.object(l2_persistence, "download_session_json")
 
     entry = store._hydrate_from_l2(
         "sess-1",
@@ -246,23 +247,23 @@ def test_hydrate_from_l2_skips_downloads_when_paths_absent(mocker) -> None:
 
 
 def test_touch_l2_session_skips_when_ttl_or_interval_disabled(mocker, monkeypatch) -> None:
-    upsert = mocker.patch.object(store, "upsert_session_metadata")
+    upsert = mocker.patch.object(l2_persistence, "upsert_session_metadata")
 
-    monkeypatch.setattr(store, "_SESSION_TTL_SECONDS", 0)
-    monkeypatch.setattr(store, "_SESSION_L2_TOUCH_SECONDS", 60)
+    monkeypatch.setattr(l2_persistence, "_SESSION_TTL_SECONDS", 0)
+    monkeypatch.setattr(l2_persistence, "_SESSION_L2_TOUCH_SECONDS", 60)
     store._touch_l2_session("sess-1", {}, now=100.0)
     upsert.assert_not_called()
 
-    monkeypatch.setattr(store, "_SESSION_TTL_SECONDS", 60)
-    monkeypatch.setattr(store, "_SESSION_L2_TOUCH_SECONDS", 0)
+    monkeypatch.setattr(l2_persistence, "_SESSION_TTL_SECONDS", 60)
+    monkeypatch.setattr(l2_persistence, "_SESSION_L2_TOUCH_SECONDS", 0)
     store._touch_l2_session("sess-1", {}, now=100.0)
     upsert.assert_not_called()
 
 
 def test_touch_l2_session_throttles_when_recently_touched(mocker, monkeypatch) -> None:
-    upsert = mocker.patch.object(store, "upsert_session_metadata")
-    monkeypatch.setattr(store, "_SESSION_TTL_SECONDS", 60)
-    monkeypatch.setattr(store, "_SESSION_L2_TOUCH_SECONDS", 20)
+    upsert = mocker.patch.object(l2_persistence, "upsert_session_metadata")
+    monkeypatch.setattr(l2_persistence, "_SESSION_TTL_SECONDS", 60)
+    monkeypatch.setattr(l2_persistence, "_SESSION_L2_TOUCH_SECONDS", 20)
 
     entry = {"_l2_touch_at": 90.0}
     store._touch_l2_session("sess-1", entry, now=100.0)
@@ -272,12 +273,12 @@ def test_touch_l2_session_throttles_when_recently_touched(mocker, monkeypatch) -
 
 
 def test_touch_l2_session_updates_metadata_with_expires_at_when_due(mocker, monkeypatch) -> None:
-    upsert = mocker.patch.object(store, "upsert_session_metadata")
-    mocker.patch.object(store, "now_iso", return_value="2026-02-11T00:00:00+00:00")
+    upsert = mocker.patch.object(l2_persistence, "upsert_session_metadata")
+    mocker.patch.object(l2_persistence, "now_iso", return_value="2026-02-11T00:00:00+00:00")
     expires_at = datetime(2026, 2, 11, tzinfo=timezone.utc)
-    monkeypatch.setattr(store, "_expires_at", lambda: expires_at)
-    monkeypatch.setattr(store, "_SESSION_TTL_SECONDS", 60)
-    monkeypatch.setattr(store, "_SESSION_L2_TOUCH_SECONDS", 20)
+    monkeypatch.setattr(l2_persistence, "_expires_at", lambda: expires_at)
+    monkeypatch.setattr(l2_persistence, "_SESSION_TTL_SECONDS", 60)
+    monkeypatch.setattr(l2_persistence, "_SESSION_L2_TOUCH_SECONDS", 20)
     entry = {}
 
     store._touch_l2_session("sess-1", entry, now=100.0)
@@ -290,11 +291,11 @@ def test_touch_l2_session_updates_metadata_with_expires_at_when_due(mocker, monk
 
 
 def test_touch_l2_session_swallow_unexpected_upsert_errors(mocker, monkeypatch) -> None:
-    mocker.patch.object(store, "upsert_session_metadata", side_effect=RuntimeError("l2 unavailable"))
-    mocker.patch.object(store, "now_iso", return_value="2026-02-11T00:00:00+00:00")
-    monkeypatch.setattr(store, "_SESSION_TTL_SECONDS", 60)
-    monkeypatch.setattr(store, "_SESSION_L2_TOUCH_SECONDS", 20)
-    monkeypatch.setattr(store, "_expires_at", lambda: None)
+    mocker.patch.object(l2_persistence, "upsert_session_metadata", side_effect=RuntimeError("l2 unavailable"))
+    mocker.patch.object(l2_persistence, "now_iso", return_value="2026-02-11T00:00:00+00:00")
+    monkeypatch.setattr(l2_persistence, "_SESSION_TTL_SECONDS", 60)
+    monkeypatch.setattr(l2_persistence, "_SESSION_L2_TOUCH_SECONDS", 20)
+    monkeypatch.setattr(l2_persistence, "_expires_at", lambda: None)
     entry = {}
 
     store._touch_l2_session("sess-1", entry, now=100.0)
@@ -303,7 +304,7 @@ def test_touch_l2_session_swallow_unexpected_upsert_errors(mocker, monkeypatch) 
 
 
 def test_ensure_l2_data_short_circuits_when_no_required_data_missing(mocker) -> None:
-    hydrate = mocker.patch.object(store, "_hydrate_from_l2")
+    hydrate = mocker.patch.object(l2_persistence, "_hydrate_from_l2")
     entry = {"user_id": "user-1", "pdf_bytes": b"%PDF", "fields": []}
 
     store._ensure_l2_data(
@@ -321,7 +322,7 @@ def test_ensure_l2_data_short_circuits_when_no_required_data_missing(mocker) -> 
 
 
 def test_ensure_l2_data_merges_hydrated_payload_when_required_data_missing(mocker) -> None:
-    mocker.patch.object(store, "_hydrate_from_l2", return_value={"pdf_bytes": b"%PDF", "fields": []})
+    mocker.patch.object(l2_persistence, "_hydrate_from_l2", return_value={"pdf_bytes": b"%PDF", "fields": []})
     entry = {"user_id": "user-1"}
 
     store._ensure_l2_data(
@@ -420,11 +421,11 @@ def test_persist_session_entry_skips_upload_when_pdf_path_already_set(mocker, mo
         "pdf_bytes": b"%PDF-1.4",
         "pdf_path": "gs://bucket/sess/already-uploaded.pdf",
     }
-    upload_pdf = mocker.patch.object(store, "upload_session_pdf_bytes")
-    upsert = mocker.patch.object(store, "upsert_session_metadata")
-    mocker.patch.object(store, "now_iso", return_value="2026-02-11T00:00:00+00:00")
-    monkeypatch.setattr(store, "_session_now", lambda: 10.0)
-    monkeypatch.setattr(store, "_expires_at", lambda: None)
+    upload_pdf = mocker.patch.object(l2_persistence, "upload_session_pdf_bytes")
+    upsert = mocker.patch.object(l2_persistence, "upsert_session_metadata")
+    mocker.patch.object(l2_persistence, "now_iso", return_value="2026-02-11T00:00:00+00:00")
+    monkeypatch.setattr(l2_persistence, "_session_now", lambda: 10.0)
+    monkeypatch.setattr(l2_persistence, "_expires_at", lambda: None)
 
     store._persist_session_entry("sess-1", entry, persist_pdf=True)
 
@@ -449,10 +450,10 @@ def test_persist_session_entry_filters_out_detection_key_with_none_value(mocker,
         "detection_status": "complete",
         "detection_error": None,  # explicit None -- must be excluded
     }
-    upsert = mocker.patch.object(store, "upsert_session_metadata")
-    mocker.patch.object(store, "now_iso", return_value="2026-02-11T00:00:00+00:00")
-    monkeypatch.setattr(store, "_session_now", lambda: 20.0)
-    monkeypatch.setattr(store, "_expires_at", lambda: None)
+    upsert = mocker.patch.object(l2_persistence, "upsert_session_metadata")
+    mocker.patch.object(l2_persistence, "now_iso", return_value="2026-02-11T00:00:00+00:00")
+    monkeypatch.setattr(l2_persistence, "_session_now", lambda: 20.0)
+    monkeypatch.setattr(l2_persistence, "_expires_at", lambda: None)
 
     store._persist_session_entry("sess-1", entry)
 
@@ -469,7 +470,7 @@ def test_ensure_l2_data_does_not_update_entry_when_hydrate_returns_none(mocker) 
     _hydrate_from_l2 returns None (session not found in L2), the entry dict
     must remain unchanged.  The ``if hydrated:`` guard prevents None from being
     passed to entry.update()."""
-    mocker.patch.object(store, "_hydrate_from_l2", return_value=None)
+    mocker.patch.object(l2_persistence, "_hydrate_from_l2", return_value=None)
     entry = {"user_id": "user-1"}
     original_keys = set(entry.keys())
 

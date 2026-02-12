@@ -1,0 +1,51 @@
+import { describe, expect, it } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import LegalPage from '../../../../src/components/pages/LegalPage';
+
+describe('LegalPage', () => {
+  it('renders privacy copy with active privacy navigation and metadata', () => {
+    render(<LegalPage kind="privacy" />);
+
+    expect(screen.getByRole('heading', { name: 'Privacy Policy' })).toBeTruthy();
+    expect(screen.getByText('Last updated: February 3, 2026')).toBeTruthy();
+
+    const privacyLink = screen.getByRole('link', { name: 'Privacy' });
+    const termsLink = screen.getByRole('link', { name: 'Terms' });
+    expect(privacyLink.className.includes('legal-nav__link--active')).toBe(true);
+    expect(termsLink.className.includes('legal-nav__link--active')).toBe(false);
+
+    const supportLink = screen.getByRole('link', { name: 'justin@ttcommercial.com' });
+    expect(supportLink.getAttribute('href')).toBe('mailto:justin@ttcommercial.com');
+  });
+
+  it('renders terms copy with active terms navigation', () => {
+    render(<LegalPage kind="terms" />);
+
+    expect(screen.getByRole('heading', { name: 'Terms of Service' })).toBeTruthy();
+
+    const privacyLink = screen.getByRole('link', { name: 'Privacy' });
+    const termsLink = screen.getByRole('link', { name: 'Terms' });
+    expect(privacyLink.className.includes('legal-nav__link--active')).toBe(false);
+    expect(termsLink.className.includes('legal-nav__link--active')).toBe(true);
+  });
+
+  it('updates document title per legal page kind', () => {
+    const { rerender } = render(<LegalPage kind="privacy" />);
+    expect(document.title).toBe('Privacy Policy | DullyPDF');
+
+    rerender(<LegalPage kind="terms" />);
+    expect(document.title).toBe('Terms of Service | DullyPDF');
+  });
+
+  it('renders legal section ids for in-page anchors', () => {
+    const { rerender } = render(<LegalPage kind="privacy" />);
+
+    expect(document.querySelector('section#information-we-collect')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Information we collect' })).toBeTruthy();
+
+    rerender(<LegalPage kind="terms" />);
+
+    expect(document.querySelector('section#acceptable-use')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Acceptable use' })).toBeTruthy();
+  });
+});

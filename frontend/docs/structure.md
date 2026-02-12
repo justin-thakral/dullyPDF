@@ -1,71 +1,43 @@
 # Source Structure
 
-```
+```text
 frontend/
   src/
-    components/
-      features/
-        SearchFillModal.tsx
-        UploadComponent.tsx
-      layout/
-        HeaderBar.tsx
-        LegacyHeader.tsx
-      panels/
-        FieldInspectorPanel.tsx
-        FieldListPanel.tsx
-      pages/
-        Homepage.tsx
-        LegalPage.tsx
-        LoginPage.tsx
-        ProfilePage.tsx
-        VerifyEmailPage.tsx
-      ui/
-        Alert.tsx
-        Dialog.tsx
-      viewer/
-        FieldOverlay.tsx
-        FieldInputOverlay.tsx
-        PdfViewer.tsx
-    services/
-      apiConfig.ts
-      auth.ts
-      authTokenStore.ts
-      detectionApi.ts
-      firebaseClient.ts
-    api.ts
-    utils/
-      confidence.ts
-      coords.ts
-      csv.ts
-      dataSource.ts
-      excel.ts
-      json.ts
-      schema.ts
-      fieldUi.ts
-      fields.ts
-      pdf.ts
     App.tsx
     App.css
+    main.tsx
     index.css
+    components/
+      demo/
+      features/
+      layout/
+      panels/
+      pages/
+      ui/
+      viewer/
+    hooks/
+    services/
+    config/
+    styles/
+    types/
+    utils/
 ```
 
-## Key files
+## Key files and directories
 
-- `frontend/src/App.tsx`: Top-level state and workflow orchestration.
-- `frontend/src/components/pages/LoginPage.tsx`: FirebaseUI sign-in entry point.
-- `frontend/src/components/pages/LegalPage.tsx`: Privacy Policy and Terms of Service public pages.
-- `frontend/src/components/pages/VerifyEmailPage.tsx`: Email verification gate for password logins.
-- `frontend/src/components/pages/ProfilePage.tsx`: Profile view for tier limits and saved forms.
-- `frontend/src/utils/pdf.ts`: PDF.js loader + AcroForm extraction.
-- `frontend/src/components/viewer/PdfViewer.tsx`: Canvas rendering and overlay host.
-- `frontend/src/components/viewer/FieldOverlay.tsx`: Drag/resize overlay logic.
-- `frontend/src/components/panels/FieldListPanel.tsx`: Filtering + selection list.
-- `frontend/src/components/panels/FieldInspectorPanel.tsx`: Inspector edits and actions.
-- `frontend/src/components/features/SearchFillModal.tsx`: Search & Fill workflow.
-- `frontend/src/api.ts`: Backend API wrapper for schema + rename endpoints.
-- `frontend/src/services/apiConfig.ts`: API base URL + auth headers.
-- `frontend/src/utils/alertMessages.ts`: Shared alert copy for UI flows.
-- `frontend/src/utils/schema.ts`: Schema inference + TXT parsing.
-- `frontend/src/utils/json.ts`: JSON schema + row parsing for Search & Fill.
-- `frontend/src/App.css`: UI shell styles.
-- `frontend/src/index.css`: Global tokens and base styles.
+- `frontend/src/App.tsx`: Top-level orchestration that composes feature hooks and renders app states (homepage/upload/processing/editor/profile/auth).
+- `frontend/src/hooks/`: App feature hooks extracted from `App.tsx` (`useAuth`, `useSavedForms`, `useDetection`, `useOpenAiPipeline`, `useDataSource`, `usePipelineModal`, `useSaveDownload`, `useDemo`, `useFieldHistory`, `useFieldState`, `useDialog`).
+- `frontend/src/services/apiConfig.ts`: Shared fetch wrapper, auth headers, status normalization, and API base URL resolution.
+- `frontend/src/services/api.ts`: Profile/contact/recaptcha, schema persistence, OpenAI endpoints, saved forms, materialize/download operations.
+- `frontend/src/services/detectionApi.ts`: Detection upload + polling (`/detect-fields`) and detection-session keep-alive.
+- `frontend/src/components/viewer/PdfViewer.tsx`: PDF canvas rendering and overlay mounting.
+- `frontend/src/components/panels/FieldListPanel.tsx`: Field list, page navigation, filter/search, and display toggles.
+- `frontend/src/components/panels/FieldInspectorPanel.tsx`: Selected-field metadata/geometry editing, create/delete actions, undo/redo controls.
+- `frontend/src/components/features/SearchFillModal.tsx`: Record search and field fill logic.
+- `frontend/src/components/features/UploadView.tsx`: Upload + saved-form selection UI and OpenAI preflight modal entry.
+- `frontend/src/components/pages/*.tsx`: Homepage, auth pages, profile page, and legal pages.
+- `frontend/src/config/appConstants.tsx`: Shared app-level constants (history limits, demo assets/steps, processing copy).
+- `frontend/src/utils/pdf.ts`: PDF.js loading, page size extraction, and AcroForm field extraction.
+- `frontend/src/styles/*.css` + `frontend/src/components/**/*.css`: Shared shell styles and component-scoped styles.
+
+For the hook interaction map, see `frontend/docs/app-hooks.md`.

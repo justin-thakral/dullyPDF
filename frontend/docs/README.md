@@ -1,8 +1,9 @@
 # Frontend Docs
 
-- `overview.md` - Purpose, scope, and user workflows.
-- `running.md` - How to start the UI locally and set env vars.
-- `structure.md` - Source layout and key modules.
-- `api-routing.md` - How production `/api/*` calls are routed (Firebase Hosting rewrites vs direct Cloud Run).
-- `field-editing.md` - Field creation, editing, and coordinate notes.
-- `styling.md` - Theme tokens and layout intentions.
+- `overview.md` - Product scope and end-to-end workflow.
+- `running.md` - Local startup, env files, and script entrypoints.
+- `structure.md` - Current `src` layout and key modules.
+- `app-hooks.md` - How `App.tsx` composes extracted hooks.
+- `api-routing.md` - Same-origin `/api/*` calls vs direct backend calls.
+- `field-editing.md` - Overlay, inspector, and fill behavior.
+- `styling.md` - Tokens, stylesheet modules, and typography rules.

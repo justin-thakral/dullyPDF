@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Dict, Optional
 
 from backend.env_utils import int_env as _int_env
-from backend.firebaseDB.app_database import ROLE_GOD, normalize_role
+from backend.firebaseDB.user_database import ROLE_GOD, normalize_role
 
 
 def resolve_detect_max_pages(role: Optional[str]) -> int:

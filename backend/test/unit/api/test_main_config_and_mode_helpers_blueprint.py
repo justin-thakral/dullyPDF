@@ -171,3 +171,31 @@ def test_commonforms_available_returns_false_on_find_spec_exception(monkeypatch,
         side_effect=ModuleNotFoundError("broken loader"),
     )
     assert app_main._commonforms_available() is False
+
+
+def test_resolve_detection_mode_defaults_to_tasks_when_only_light_queue_is_configured(
+    monkeypatch,
+    app_main,
+) -> None:
+    """If only DETECTOR_TASKS_QUEUE_LIGHT is configured, startup should still
+    resolve tasks mode so the API does not attempt local CommonForms."""
+    monkeypatch.delenv("DETECTOR_MODE", raising=False)
+    monkeypatch.delenv("DETECTOR_TASKS_QUEUE", raising=False)
+    monkeypatch.setenv("DETECTOR_TASKS_QUEUE_LIGHT", "light-queue")
+
+    assert app_main._resolve_detection_mode() == "tasks"
+
+
+def test_resolve_detection_mode_local_falls_back_to_tasks_with_light_queue_only(
+    monkeypatch,
+    app_main,
+    mocker,
+) -> None:
+    """When local mode is requested but CommonForms is unavailable, the code
+    should fall back to tasks if either queue env variant is present."""
+    monkeypatch.setenv("DETECTOR_MODE", "local")
+    monkeypatch.delenv("DETECTOR_TASKS_QUEUE", raising=False)
+    monkeypatch.setenv("DETECTOR_TASKS_QUEUE_LIGHT", "light-queue")
+    mocker.patch.object(app_main, "_commonforms_available", return_value=False)
+
+    assert app_main._resolve_detection_mode() == "tasks"

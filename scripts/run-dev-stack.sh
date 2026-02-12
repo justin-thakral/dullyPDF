@@ -70,6 +70,18 @@ IMAGE_TAG="${DEV_STACK_BACKEND_IMAGE:-dullypdf-backend:devstack}"
 CONTAINER_NAME="${DEV_STACK_BACKEND_CONTAINER:-dullypdf-backend-devstack}"
 BACKEND_BIND="${DEV_STACK_BIND_ADDRESS:-127.0.0.1}"
 FRONTEND_ENV_MODE="${DEV_STACK_FRONTEND_ENV:-stack}"
+BACKEND_READY_TIMEOUT_SECONDS="${DEV_STACK_BACKEND_READY_TIMEOUT_SECONDS:-45}"
+BACKEND_READY_INTERVAL_SECONDS="${DEV_STACK_BACKEND_READY_INTERVAL_SECONDS:-1}"
+
+BACKEND_HEALTH_HOST="${DEV_STACK_HEALTH_HOST:-}"
+if [[ -z "${BACKEND_HEALTH_HOST}" ]]; then
+  if [[ "${BACKEND_BIND}" == "0.0.0.0" || "${BACKEND_BIND}" == "::" ]]; then
+    BACKEND_HEALTH_HOST="127.0.0.1"
+  else
+    BACKEND_HEALTH_HOST="${BACKEND_BIND}"
+  fi
+fi
+BACKEND_HEALTH_URL="http://${BACKEND_HEALTH_HOST}:${BACKEND_PORT}/api/health"
 
 cleanup() {
   if docker ps -a --format '{{.Names}}' | grep -Fxq "$CONTAINER_NAME"; then
@@ -138,6 +150,40 @@ docker run --rm -d \
   "${ENV_ARGS[@]}" \
   -v "${CREDS_FILE}:/var/secrets/firebase-admin.json:ro" \
   "$IMAGE_TAG" >/dev/null
+
+wait_for_backend_health() {
+  local deadline current_time
+  deadline=$((SECONDS + BACKEND_READY_TIMEOUT_SECONDS))
+  echo "Waiting for backend readiness at ${BACKEND_HEALTH_URL}..."
+
+  while true; do
+    if command -v curl >/dev/null 2>&1; then
+      if curl --silent --show-error --fail --max-time 2 "${BACKEND_HEALTH_URL}" >/dev/null 2>&1; then
+        echo "Backend is ready."
+        return 0
+      fi
+    elif command -v wget >/dev/null 2>&1; then
+      if wget -q -T 2 -O /dev/null "${BACKEND_HEALTH_URL}" >/dev/null 2>&1; then
+        echo "Backend is ready."
+        return 0
+      fi
+    else
+      echo "Missing curl/wget; cannot check backend health endpoint." >&2
+      return 1
+    fi
+
+    current_time=${SECONDS}
+    if (( current_time >= deadline )); then
+      echo "Backend did not become ready within ${BACKEND_READY_TIMEOUT_SECONDS}s." >&2
+      echo "Last backend logs:" >&2
+      docker logs --tail 120 "${CONTAINER_NAME}" >&2 || true
+      return 1
+    fi
+    sleep "${BACKEND_READY_INTERVAL_SECONDS}"
+  done
+}
+
+wait_for_backend_health
 
 echo "Backend (dev stack) running at http://localhost:${BACKEND_PORT}"
 echo "Frontend starting at http://localhost:${FRONTEND_PORT}"

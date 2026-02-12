@@ -3,7 +3,7 @@
 
 from typing import Any, Dict, Optional
 
-from ..fieldDetecting.rename_pipeline.combinedSrc.config import get_logger
+from backend.logging_config import get_logger
 from .firebase_service import get_firestore_client
 from ..time_utils import now_iso
 

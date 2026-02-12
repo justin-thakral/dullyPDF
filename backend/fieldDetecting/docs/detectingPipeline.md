@@ -13,7 +13,7 @@ lives in `legacy/fieldDetecting/` and is not part of production.
 - **Model weights**: The learned parameters of the ML model. Think of them as the
   "trained brain" of the detector.
 - **Inference**: Running the model to produce predictions (field boxes + confidence).
-- **Detector service**: A separate FastAPI service (`backend/detector_main.py`) that
+- **Detector service**: A separate FastAPI service (`backend/detection/detector_app.py`) that
   runs the model. It is separate from the main API so it can scale and isolate heavy
   ML compute.
 - **Session**: A tracking ID for a detection request. It stores metadata + results
@@ -50,7 +50,7 @@ If no GCS URI is provided, CommonForms falls back to downloading from HuggingFac
 There are two different "start" events:
 
 1) **Service start (container boot)**
-   - The FastAPI app boots (`uvicorn backend.detector_main:app ...`).
+   - The FastAPI app boots (`uvicorn backend.detection.detector_app:app ...`).
    - `/health` returns `{"status":"ok"}` once it is ready.
    - It does **not** run detection yet.
 
@@ -110,7 +110,7 @@ This matches production behavior.
 1) Run the detector service (locally or Cloud Run):
 
 ```bash
-uvicorn backend.detector_main:app --host 0.0.0.0 --port 8000
+uvicorn backend.detection.detector_app:app --host 0.0.0.0 --port 8000
 ```
 
 2) Configure Cloud Tasks + detector env vars:

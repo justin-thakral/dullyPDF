@@ -46,21 +46,21 @@ def _dummy_schema_record(schema_id: str = "schema_1"):
 
 def test_zero_credits_does_not_fall_back_to_base() -> None:
     # Proves the original bug: using `data.get(field) or BASE` refills credits when stored=0.
-    from backend.firebaseDB import app_database
+    from backend.firebaseDB import user_database
 
-    data = {app_database.OPENAI_CREDITS_FIELD: 0}
-    old_behavior = data.get(app_database.OPENAI_CREDITS_FIELD) or app_database.BASE_OPENAI_CREDITS
-    assert old_behavior == app_database.BASE_OPENAI_CREDITS
+    data = {user_database.OPENAI_CREDITS_FIELD: 0}
+    old_behavior = data.get(user_database.OPENAI_CREDITS_FIELD) or user_database.BASE_OPENAI_CREDITS
+    assert old_behavior == user_database.BASE_OPENAI_CREDITS
 
-    fixed_behavior = app_database._resolve_openai_credits_remaining(data)
+    fixed_behavior = user_database._resolve_openai_credits_remaining(data)
     assert fixed_behavior == 0
 
 
 def test_missing_field_falls_back_to_base() -> None:
-    from backend.firebaseDB import app_database
+    from backend.firebaseDB import user_database
 
     data = {}
-    assert app_database._resolve_openai_credits_remaining(data) == app_database.BASE_OPENAI_CREDITS
+    assert user_database._resolve_openai_credits_remaining(data) == user_database.BASE_OPENAI_CREDITS
 
 
 def test_rename_charges_one_credit_without_schema(
@@ -193,11 +193,11 @@ def test_resolve_openai_credits_remaining_non_numeric_value_falls_back_to_base()
     """When the stored value for openai_credits_remaining is a non-numeric
     string (e.g. 'not-a-number'), int() raises ValueError and the function
     should fall back to BASE_OPENAI_CREDITS."""
-    from backend.firebaseDB import app_database
+    from backend.firebaseDB import user_database
 
-    data = {app_database.OPENAI_CREDITS_FIELD: "not-a-number"}
-    result = app_database._resolve_openai_credits_remaining(data)
-    assert result == app_database.BASE_OPENAI_CREDITS
+    data = {user_database.OPENAI_CREDITS_FIELD: "not-a-number"}
+    result = user_database._resolve_openai_credits_remaining(data)
+    assert result == user_database.BASE_OPENAI_CREDITS
 
 
 def test_resolve_openai_credits_remaining_negative_value_preserved() -> None:
@@ -205,8 +205,8 @@ def test_resolve_openai_credits_remaining_negative_value_preserved() -> None:
     succeeds and the function should return the negative value as-is rather
     than falling back to the default. This tests that negative credits are
     not masked by the fallback logic."""
-    from backend.firebaseDB import app_database
+    from backend.firebaseDB import user_database
 
-    data = {app_database.OPENAI_CREDITS_FIELD: -5}
-    result = app_database._resolve_openai_credits_remaining(data)
+    data = {user_database.OPENAI_CREDITS_FIELD: -5}
+    result = user_database._resolve_openai_credits_remaining(data)
     assert result == -5

@@ -7,7 +7,7 @@ import os
 import re
 from typing import Tuple
 
-from ..fieldDetecting.rename_pipeline.combinedSrc.config import get_logger
+from backend.logging_config import get_logger
 from .firebase_service import get_storage_bucket
 
 

@@ -17,7 +17,7 @@ function normalizeCheckboxToken(raw: string): string {
 export function coerceCheckboxBoolean(value: unknown): boolean | null {
   if (value === null || value === undefined) return null;
   if (typeof value === 'boolean') return value;
-  if (typeof value === 'number') return value !== 0;
+  if (typeof value === 'number') return Number.isFinite(value) ? value !== 0 : null;
   if (typeof value === 'string') {
     const norm = value.trim().toLowerCase();
     if (['true', '1', 'yes', 'y', 'on', 'checked', 't'].includes(norm)) return true;
@@ -37,7 +37,7 @@ export function coerceCheckboxPresence(value: unknown): boolean | null {
     if (PRESENCE_FALSE_TOKENS.has(normalized)) return false;
     return true;
   }
-  if (typeof value === 'number') return value !== 0;
+  if (typeof value === 'number') return Number.isFinite(value) ? value !== 0 : null;
   if (Array.isArray(value)) return value.length > 0;
   return true;
 }

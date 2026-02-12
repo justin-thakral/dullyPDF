@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "start": "npm run dev",
+    "test": "npm run test:backend && npm run test:frontend",
     "start:fast": "npm run kill-old && node scripts/wsl_warn.js && npm run dev",
     "dev": "concurrently \"npm run backend:dev\" \"npm run frontend:dev\"",
     "dev:stack": "bash scripts/run-dev-stack.sh",
@@ -17,10 +18,12 @@
     "backend:dev": "bash scripts/run-backend-dev.sh",
     "backend:prod": "bash scripts/run-backend-prod.sh",
     "clean": "python3 clean.py",
+    "demo:generate-name-maps": "backend/.venv/bin/python scripts/demo/generate_demo_name_maps.py",
     "deploy": "npm run deploy:backend && npm run deploy:frontend",
     "deploy:backend": "bash scripts/deploy-backend.sh",
     "deploy:frontend": "bash scripts/deploy-frontend.sh",
-    "test:backend": "backend/.venv/bin/python -m pytest backend/test/unit/ --cov=backend --cov-config=.coveragerc --cov-report=term-missing -q"
+    "test:backend": "backend/.venv/bin/python -m pytest backend/test/unit/ --cov=backend --cov-config=.coveragerc --cov-report=term-missing -q",
+    "test:frontend": "cd frontend && npm run test"
   },
   "devDependencies": {
     "@playwright/test": "^1.57.0",

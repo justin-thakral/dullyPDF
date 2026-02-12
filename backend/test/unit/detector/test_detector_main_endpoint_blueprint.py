@@ -1,4 +1,4 @@
-"""Route-level unit tests for `/internal/detect` in `backend/detector_main.py`."""
+"""Route-level unit tests for `/internal/detect` in `backend/detection/detector_app.py`."""
 
 from __future__ import annotations
 
@@ -9,13 +9,13 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
-import backend.detector_main as dm
-from backend.detection_status import (
+import backend.detection.detector_app as dm
+from backend.detection.status import (
     DETECTION_STATUS_COMPLETE,
     DETECTION_STATUS_FAILED,
     DETECTION_STATUS_RUNNING,
 )
-from backend.pdf_validation import PdfValidationError
+from backend.detection.pdf_validation import PdfValidationError
 
 
 @pytest.fixture(autouse=True)

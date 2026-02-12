@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from backend.firebaseDB.firebase_service import RequestUser
 import backend.main as main
+import backend.api.schemas.models as schema_models
 import backend.api.middleware.security as security_middleware
 import backend.api.routes.ai as ai_routes
 import backend.api.routes.detection as detection_routes
@@ -20,6 +21,8 @@ import backend.api.routes.sessions as sessions_routes
 import backend.services.app_config as app_config_service
 import backend.services.auth_service as auth_service
 import backend.services.contact_service as contact_service
+import backend.services.email_service as email_service
+import backend.services.recaptcha_service as recaptcha_service
 import backend.services.detection_service as detection_service
 import backend.services.limits_service as limits_service
 import backend.services.mapping_service as mapping_service
@@ -98,6 +101,7 @@ class _ModuleProxy:
 def app_main():
     modules = [
         main,
+        schema_models,
         security_middleware,
         ai_routes,
         detection_routes,
@@ -111,6 +115,8 @@ def app_main():
         app_config_service,
         auth_service,
         contact_service,
+        email_service,
+        recaptcha_service,
         detection_service,
         limits_service,
         mapping_service,

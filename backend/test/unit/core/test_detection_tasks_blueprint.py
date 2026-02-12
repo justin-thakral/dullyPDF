@@ -7,7 +7,7 @@ import types
 
 import pytest
 
-from backend import detection_tasks
+from backend.detection import tasks as detection_tasks
 
 
 @pytest.fixture(autouse=True)

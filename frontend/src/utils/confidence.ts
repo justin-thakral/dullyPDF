@@ -17,7 +17,7 @@ export function parseConfidence(raw: unknown): number | undefined {
   if (raw === null || raw === undefined) return undefined;
   const value = typeof raw === 'number' ? raw : Number(String(raw).trim());
   if (Number.isNaN(value)) return undefined;
-  if (value > 1) {
+  if (value >= 2) {
     return clamp01(value / 100);
   }
   return clamp01(value);
@@ -63,4 +63,21 @@ export function nameConfidenceTierForField(field: PdfField): ConfidenceTier | nu
   const confidence = nameConfidenceForField(field);
   if (confidence === undefined) return null;
   return confidenceTierForConfidence(confidence);
+}
+
+/**
+ * Estimate confidence for a rename mapping based on string similarity.
+ */
+export function deriveMappingConfidence(originalName: string, nextName: string): number {
+  const normalise = (value: string) =>
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
+  const left = normalise(originalName);
+  const right = normalise(nextName);
+  if (!left || !right) return 0.7;
+  if (left === right) return 0.95;
+  if (left.includes(right) || right.includes(left)) return 0.85;
+  return 0.7;
 }

@@ -7,6 +7,12 @@ export default defineConfig(({ mode }) => {
   const apiTarget = (env.VITE_API_URL || 'http://localhost:8000').replace(/\/+$/, '');
   return {
     plugins: [react()],
+    test: {
+      environment: 'jsdom',
+      setupFiles: './test/setup.ts',
+      clearMocks: true,
+      restoreMocks: true,
+    },
     server: {
       proxy: {
         '/api': {

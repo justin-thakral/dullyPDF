@@ -5,7 +5,7 @@ import io
 import pytest
 from pypdf import PdfWriter
 
-import backend.pdf_validation as pdf_validation
+import backend.detection.pdf_validation as pdf_validation
 
 
 def _make_pdf_bytes(*, encrypt_password: str | None = None) -> bytes:
@@ -73,8 +73,8 @@ def test_preflight_allows_encrypted_pdf_passthrough_when_allow_encrypted_true(
     reader = mocker.Mock()
     reader.is_encrypted = True
     reader.pages = [object(), object()]
-    load_reader = mocker.patch("backend.pdf_validation._load_reader", return_value=reader)
-    decrypt = mocker.patch("backend.pdf_validation._decrypt_with_empty_password", return_value=True)
+    load_reader = mocker.patch("backend.detection.pdf_validation._load_reader", return_value=reader)
+    decrypt = mocker.patch("backend.detection.pdf_validation._decrypt_with_empty_password", return_value=True)
 
     result = pdf_validation.preflight_pdf_bytes(b"encrypted", allow_encrypted=True)
 
@@ -112,7 +112,7 @@ def test_preflight_maps_page_count_failures_to_readable_error(mocker) -> None:
         def pages(self):
             raise RuntimeError("cannot enumerate pages")
 
-    mocker.patch("backend.pdf_validation._load_reader", return_value=_BrokenReader())
+    mocker.patch("backend.detection.pdf_validation._load_reader", return_value=_BrokenReader())
 
     with pytest.raises(pdf_validation.PdfValidationError, match="Unable to read PDF pages"):
         pdf_validation.preflight_pdf_bytes(b"fake-pdf")
@@ -138,7 +138,7 @@ def test_rewrite_decrypted_pdf_ignores_add_metadata_failure(mocker) -> None:
 
     fake_reader = mocker.Mock()
     fake_reader.metadata = {"/Title": "Sample"}
-    mocker.patch("backend.pdf_validation.PdfWriter", return_value=_Writer())
+    mocker.patch("backend.detection.pdf_validation.PdfWriter", return_value=_Writer())
 
     rewritten = pdf_validation._rewrite_decrypted_pdf(fake_reader)
 

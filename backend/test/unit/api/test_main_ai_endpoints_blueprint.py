@@ -236,6 +236,68 @@ def test_rename_endpoint_preserves_openai_error_when_refund_fails(
     refund_mock.assert_called_once()
 
 
+def test_rename_endpoint_refunds_credits_when_request_logging_fails(
+    app_main,
+    base_user,
+    mocker,
+    auth_headers,
+) -> None:
+    _patch_auth(mocker, app_main, base_user)
+    mocker.patch.object(app_main, "_get_session_entry", return_value=_session_entry())
+    mocker.patch.object(app_main, "check_rate_limit", return_value=True)
+    mocker.patch.object(app_main, "consume_openai_credits", return_value=(8, True))
+    refund_mock = mocker.patch.object(app_main, "refund_openai_credits", return_value=9)
+    mocker.patch.object(app_main, "record_openai_rename_request", side_effect=RuntimeError("request log down"))
+    run_mock = mocker.patch.object(app_main, "run_openai_rename_on_pdf")
+
+    from fastapi.testclient import TestClient
+
+    local_client = TestClient(app_main.app, raise_server_exceptions=False)
+    response = local_client.post(
+        "/api/renames/ai",
+        json={"sessionId": "sess-1", "templateFields": [_template_field_payload()]},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 500
+    run_mock.assert_not_called()
+    refund_mock.assert_called_once_with(base_user.app_user_id, credits=1, role=base_user.role)
+
+
+def test_mapping_endpoint_refunds_credits_when_request_logging_fails(
+    app_main,
+    base_user,
+    mocker,
+    auth_headers,
+) -> None:
+    _patch_auth(mocker, app_main, base_user)
+    mocker.patch.object(app_main, "get_schema", return_value=_schema_record())
+    mocker.patch.object(
+        app_main,
+        "build_allowlist_payload",
+        return_value={"schemaFields": [{"name": "first_name"}], "templateTags": [{"tag": "A1"}]},
+    )
+    mocker.patch.object(app_main, "check_rate_limit", return_value=True)
+    mocker.patch.object(app_main, "_get_session_entry", return_value={"session": "entry"})
+    mocker.patch.object(app_main, "consume_openai_credits", return_value=(9, True))
+    refund_mock = mocker.patch.object(app_main, "refund_openai_credits", return_value=10)
+    mocker.patch.object(app_main, "record_openai_request", side_effect=RuntimeError("request log down"))
+    openai_mock = mocker.patch.object(app_main, "call_openai_schema_mapping_chunked")
+
+    from fastapi.testclient import TestClient
+
+    local_client = TestClient(app_main.app, raise_server_exceptions=False)
+    response = local_client.post(
+        "/api/schema-mappings/ai",
+        json={"schemaId": "schema_1", "templateFields": [_template_field_payload()], "sessionId": "sess-1"},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 500
+    openai_mock.assert_not_called()
+    refund_mock.assert_called_once_with(base_user.app_user_id, credits=1, role=base_user.role)
+
+
 def test_mapping_endpoint_validation_rate_limit_and_template_ownership(
     client,
     app_main,
@@ -505,7 +567,7 @@ def test_mapping_endpoint_skips_update_when_no_session_id(
     mocker,
     auth_headers,
 ) -> None:
-    from backend.firebaseDB.app_database import TemplateRecord
+    from backend.firebaseDB.template_database import TemplateRecord
 
     _patch_auth(mocker, app_main, base_user)
     mocker.patch.object(app_main, "get_schema", return_value=_schema_record())
@@ -548,3 +610,67 @@ def test_mapping_endpoint_skips_update_when_no_session_id(
     assert response.status_code == 200
     # Session update should NOT have been called.
     update_mock.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Edge-case: AI rate-limit env vars should reject negative numeric values
+# ---------------------------------------------------------------------------
+# The endpoints parse env vars with int(...), but negative values are unsafe
+# for throttling. They should fall back to secure defaults.
+def test_ai_endpoints_rate_limit_env_negative_values_fallback_to_safe_defaults(
+    client,
+    app_main,
+    base_user,
+    mocker,
+    auth_headers,
+    monkeypatch,
+) -> None:
+    _patch_auth(mocker, app_main, base_user)
+    mocker.patch.object(app_main, "_get_session_entry", return_value=_session_entry())
+    check_rate_limit_mock = mocker.patch.object(app_main, "check_rate_limit", return_value=True)
+    mocker.patch.object(app_main, "consume_openai_credits", return_value=(9, True))
+    mocker.patch.object(app_main, "record_openai_rename_request", return_value=None)
+    mocker.patch.object(
+        app_main,
+        "run_openai_rename_on_pdf",
+        return_value=({"checkboxRules": []}, [{"name": "renamed"}]),
+    )
+    mocker.patch.object(app_main, "_update_session_entry", return_value=None)
+    mocker.patch.object(app_main, "get_schema", return_value=_schema_record())
+    mocker.patch.object(
+        app_main,
+        "build_allowlist_payload",
+        return_value={"schemaFields": [{"name": "first_name"}], "templateTags": [{"tag": "A1"}]},
+    )
+    mocker.patch.object(app_main, "record_openai_request", return_value=None)
+    mocker.patch.object(app_main, "call_openai_schema_mapping_chunked", return_value={"raw": True})
+    mocker.patch.object(
+        app_main,
+        "_build_schema_mapping_payload",
+        return_value={"mappings": [], "checkboxRules": [], "checkboxHints": []},
+    )
+
+    monkeypatch.setenv("OPENAI_RENAME_RATE_LIMIT_WINDOW_SECONDS", "-1")
+    monkeypatch.setenv("OPENAI_RENAME_RATE_LIMIT_PER_USER", "-2")
+    monkeypatch.setenv("OPENAI_SCHEMA_RATE_LIMIT_WINDOW_SECONDS", "-3")
+    monkeypatch.setenv("OPENAI_SCHEMA_RATE_LIMIT_PER_USER", "-4")
+
+    rename_response = client.post(
+        "/api/renames/ai",
+        json={"sessionId": "sess-1", "templateFields": [_template_field_payload()]},
+        headers=auth_headers,
+    )
+    assert rename_response.status_code == 200
+    rename_call = check_rate_limit_mock.call_args_list[-1].kwargs
+    assert rename_call["window_seconds"] == 60
+    assert rename_call["limit"] == 6
+
+    map_response = client.post(
+        "/api/schema-mappings/ai",
+        json={"schemaId": "schema_1", "templateFields": [_template_field_payload()], "sessionId": "sess-1"},
+        headers=auth_headers,
+    )
+    assert map_response.status_code == 200
+    mapping_call = check_rate_limit_mock.call_args_list[-1].kwargs
+    assert mapping_call["window_seconds"] == 60
+    assert mapping_call["limit"] == 10

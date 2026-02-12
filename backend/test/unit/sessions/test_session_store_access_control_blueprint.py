@@ -9,6 +9,8 @@ from fastapi import HTTPException
 
 from backend.firebaseDB.firebase_service import RequestUser
 from backend.sessions import session_store as store
+from backend.sessions import l1_cache
+from backend.sessions import l2_persistence
 
 
 def _user(app_user_id: str = "user-1") -> RequestUser:
@@ -18,10 +20,10 @@ def _user(app_user_id: str = "user-1") -> RequestUser:
 @pytest.fixture(autouse=True)
 def _reset_l1_cache() -> None:
     store._API_SESSION_CACHE.clear()
-    store._LAST_SESSION_SWEEP = 0.0
+    l1_cache._LAST_SESSION_SWEEP = 0.0
     yield
     store._API_SESSION_CACHE.clear()
-    store._LAST_SESSION_SWEEP = 0.0
+    l1_cache._LAST_SESSION_SWEEP = 0.0
 
 
 def test_require_owner_denies_when_user_id_missing() -> None:
@@ -72,8 +74,8 @@ def test_get_session_entry_raises_for_cached_owner_mismatch(mocker, monkeypatch)
         "last_access": 100.0,
     }
     mocker.patch.object(store, "_hydrate_from_l2", return_value={"user_id": "user-1"})
-    monkeypatch.setattr(store, "_SESSION_SWEEP_INTERVAL_SECONDS", 0)
-    monkeypatch.setattr(store, "_SESSION_TTL_SECONDS", -1)
+    monkeypatch.setattr(l1_cache, "_SESSION_SWEEP_INTERVAL_SECONDS", 0)
+    monkeypatch.setattr(l1_cache, "_SESSION_TTL_SECONDS", -1)
 
     with pytest.raises(HTTPException) as excinfo:
         store.get_session_entry("sess-1", _user("user-1"))
@@ -112,8 +114,8 @@ def test_get_session_entry_cached_hit_updates_last_access_and_touches_l2(mocker,
     store._API_SESSION_CACHE[session_id] = entry
     ensure = mocker.patch.object(store, "_ensure_l2_data")
     touch_l2 = mocker.patch.object(store, "_touch_l2_session")
-    monkeypatch.setattr(store, "_SESSION_SWEEP_INTERVAL_SECONDS", 0)
-    monkeypatch.setattr(store, "_SESSION_TTL_SECONDS", -1)
+    monkeypatch.setattr(l1_cache, "_SESSION_SWEEP_INTERVAL_SECONDS", 0)
+    monkeypatch.setattr(l1_cache, "_SESSION_TTL_SECONDS", -1)
     monkeypatch.setattr(store, "_session_now", lambda: 200.0)
 
     result = store.get_session_entry(session_id, _user("user-1"))
@@ -129,8 +131,8 @@ def test_get_session_entry_cached_hit_raises_when_required_data_still_missing(mo
     store._API_SESSION_CACHE[session_id] = {"user_id": "user-1", "fields": [], "result": {}, "last_access": 10.0}
     mocker.patch.object(store, "_ensure_l2_data")
     touch_l2 = mocker.patch.object(store, "_touch_l2_session")
-    monkeypatch.setattr(store, "_SESSION_SWEEP_INTERVAL_SECONDS", 0)
-    monkeypatch.setattr(store, "_SESSION_TTL_SECONDS", -1)
+    monkeypatch.setattr(l1_cache, "_SESSION_SWEEP_INTERVAL_SECONDS", 0)
+    monkeypatch.setattr(l1_cache, "_SESSION_TTL_SECONDS", -1)
     monkeypatch.setattr(store, "_session_now", lambda: 200.0)
 
     with pytest.raises(HTTPException) as excinfo:
@@ -146,8 +148,8 @@ def test_get_session_entry_hydrates_from_l2_when_not_cached(mocker, monkeypatch)
     mocker.patch.object(store, "_hydrate_from_l2", return_value=hydrated)
     store_l1 = mocker.patch.object(store, "_store_l1_entry")
     touch_l2 = mocker.patch.object(store, "_touch_l2_session")
-    monkeypatch.setattr(store, "_SESSION_SWEEP_INTERVAL_SECONDS", 0)
-    monkeypatch.setattr(store, "_SESSION_TTL_SECONDS", -1)
+    monkeypatch.setattr(l1_cache, "_SESSION_SWEEP_INTERVAL_SECONDS", 0)
+    monkeypatch.setattr(l1_cache, "_SESSION_TTL_SECONDS", -1)
     times = iter([50.0, 60.0])
     monkeypatch.setattr(store, "_session_now", lambda: next(times))
 
@@ -178,9 +180,9 @@ def test_get_session_entry_if_present_returns_none_when_required_data_missing(mo
         "result": {},
         "last_access": 100.0,
     }
-    hydrate = mocker.patch.object(store, "_hydrate_from_l2", return_value=None)
-    monkeypatch.setattr(store, "_SESSION_SWEEP_INTERVAL_SECONDS", 0)
-    monkeypatch.setattr(store, "_SESSION_TTL_SECONDS", -1)
+    hydrate = mocker.patch.object(l2_persistence, "_hydrate_from_l2", return_value=None)
+    monkeypatch.setattr(l1_cache, "_SESSION_SWEEP_INTERVAL_SECONDS", 0)
+    monkeypatch.setattr(l1_cache, "_SESSION_TTL_SECONDS", -1)
 
     result = store.get_session_entry_if_present(session_id, _user("user-1"))
 
@@ -222,8 +224,8 @@ def test_get_session_entry_if_present_cached_hit_updates_last_access_and_touches
     store._API_SESSION_CACHE[session_id] = entry
     ensure = mocker.patch.object(store, "_ensure_l2_data")
     touch_l2 = mocker.patch.object(store, "_touch_l2_session")
-    monkeypatch.setattr(store, "_SESSION_SWEEP_INTERVAL_SECONDS", 0)
-    monkeypatch.setattr(store, "_SESSION_TTL_SECONDS", -1)
+    monkeypatch.setattr(l1_cache, "_SESSION_SWEEP_INTERVAL_SECONDS", 0)
+    monkeypatch.setattr(l1_cache, "_SESSION_TTL_SECONDS", -1)
     monkeypatch.setattr(store, "_session_now", lambda: 400.0)
 
     result = store.get_session_entry_if_present(session_id, _user("user-1"))
@@ -239,8 +241,8 @@ def test_get_session_entry_if_present_hydrates_from_l2_when_not_cached(mocker, m
     mocker.patch.object(store, "_hydrate_from_l2", return_value=hydrated)
     store_l1 = mocker.patch.object(store, "_store_l1_entry")
     touch_l2 = mocker.patch.object(store, "_touch_l2_session")
-    monkeypatch.setattr(store, "_SESSION_SWEEP_INTERVAL_SECONDS", 0)
-    monkeypatch.setattr(store, "_SESSION_TTL_SECONDS", -1)
+    monkeypatch.setattr(l1_cache, "_SESSION_SWEEP_INTERVAL_SECONDS", 0)
+    monkeypatch.setattr(l1_cache, "_SESSION_TTL_SECONDS", -1)
     times = iter([70.0, 80.0])
     monkeypatch.setattr(store, "_session_now", lambda: next(times))
 

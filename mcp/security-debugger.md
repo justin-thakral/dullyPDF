@@ -42,8 +42,8 @@ Run this end-to-end to validate guardrails.
 4. Attach a CSV/Excel/TXT schema source and confirm no row data is uploaded.
 5. Trigger OpenAI rename and mapping separately, then together, to validate:
    - Auth required.
-   - Credits decrement per page (base role).
-   - Combined rename + map is billed once per page in the same session.
+   - Credits decrement per OpenAI action for base role users.
+   - Combined rename + map consumes 2 credits total (rename 1 + map 1).
 6. Attempt to submit a PDF with filled form values and confirm the client blocks or the server rejects (attestation required).
 
 Expected signals:
@@ -82,7 +82,7 @@ Confirm DLP and payload enforcement:
 
 Reference implementation:
 - `backend/ai/schema_mapping.py` (`build_allowlist_payload`, `validate_dlp_payload`)
-- `backend/main.py` (OpenAI endpoints and attestation checks)
+- `backend/api/routes/ai.py` (OpenAI rename/mapping auth, rate-limit, and credit checks)
 
 ## Logging and audit checks
 
@@ -90,7 +90,7 @@ Verify that logs and stored records contain only minimal metadata:
 
 - OpenAI request logs store request id, user id, schema id, template id, session id, and timestamp only.
 - No CSV rows or field values are persisted.
-- Use `backend/firebaseDB/app_database.py` and `backend/firebaseDB/schema_database.py` as references.
+- Use `backend/firebaseDB/schema_database.py` and `backend/firebaseDB/detection_database.py` as references.
 
 ## Evidence capture
 

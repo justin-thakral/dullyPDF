@@ -2,8 +2,7 @@
  * Top navigation bar with zoom, user info, and data source actions.
  */
 import { useEffect, useRef, useState } from 'react';
-
-export type DataSourceKind = 'csv' | 'excel' | 'json' | 'txt' | 'none';
+import type { DataSourceKind } from '../../types';
 
 type HeaderBarProps = {
   pageCount: number;

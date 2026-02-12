@@ -49,9 +49,7 @@ export function loadRecaptcha(siteKey: string): Promise<void> {
   recaptchaLoadPromise = new Promise((resolve, reject) => {
     const existingScript = document.querySelector<HTMLScriptElement>('script[data-recaptcha="enterprise"]');
     if (existingScript) {
-      existingScript.addEventListener('load', () => resolve(), { once: true });
-      existingScript.addEventListener('error', () => reject(new Error('Failed to load reCAPTCHA')), { once: true });
-      return;
+      existingScript.remove();
     }
 
     const script = document.createElement('script');
@@ -62,6 +60,14 @@ export function loadRecaptcha(siteKey: string): Promise<void> {
     script.onload = () => resolve();
     script.onerror = () => reject(new Error('Failed to load reCAPTCHA'));
     document.head.appendChild(script);
+  });
+
+  recaptchaLoadPromise = recaptchaLoadPromise.catch((error) => {
+    if (loadedSiteKey === siteKey) {
+      recaptchaLoadPromise = null;
+      loadedSiteKey = null;
+    }
+    throw error;
   });
 
   return recaptchaLoadPromise;

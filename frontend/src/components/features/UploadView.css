@@ -1,0 +1,246 @@
+/* Upload layout */
+.upload-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+  max-width: 1200px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.pipeline-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(2px);
+}
+
+.pipeline-modal__card {
+  width: min(520px, 100%);
+  background: #ffffff;
+  border-radius: 18px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.25);
+  padding: 1.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.4rem;
+}
+
+.pipeline-modal__header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.pipeline-modal__title {
+  margin: 0;
+  font-size: 1.25rem;
+  color: #0f172a;
+  font-weight: 600;
+}
+
+.pipeline-modal__subtitle {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #64748b;
+  word-break: break-all;
+}
+
+.pipeline-modal__section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.pipeline-modal__section-title {
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.pipeline-modal__choice {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.95rem;
+  color: #334155;
+}
+
+.pipeline-modal__choice input {
+  accent-color: #2563eb;
+}
+
+.pipeline-modal__schema-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.pipeline-modal__source-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.pipeline-modal__status {
+  font-size: 0.85rem;
+  color: #475569;
+}
+
+.pipeline-modal__status--center {
+  text-align: center;
+}
+
+.pipeline-modal__hint {
+  font-size: 0.85rem;
+  color: #b45309;
+}
+
+.pipeline-modal__notice {
+  font-size: 0.85rem;
+  color: #475569;
+}
+
+.pipeline-modal__alert {
+  margin-top: 0.75rem;
+}
+
+.pipeline-modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.upload-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2rem;
+  padding: 1.25rem 1.5rem;
+  border-radius: var(--radius-lg);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  background: var(--surface-1);
+  box-shadow: var(--shadow-soft);
+}
+
+.upload-options__group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  min-width: 220px;
+}
+
+.upload-options__title {
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.upload-options__choice {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.95rem;
+  color: #334155;
+}
+
+.upload-options__choice input {
+  accent-color: #2563eb;
+}
+
+.upload-options__hint {
+  font-size: 0.85rem;
+  color: #b45309;
+}
+
+.upload-primary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(260px, 1fr));
+  gap: 1.5rem;
+}
+
+.saved-forms-section {
+  background: var(--surface-1);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: var(--radius-lg);
+  padding: 1.75rem;
+  box-shadow: var(--shadow-soft);
+}
+
+.saved-forms-title {
+  margin: 0 0 1rem;
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.upload-alert {
+  margin-top: 1rem;
+}
+
+@media (min-width: 1280px) {
+  .upload-layout {
+    max-width: 1320px;
+    gap: 2.25rem;
+  }
+
+  .upload-primary-grid {
+    gap: 1.65rem;
+  }
+}
+
+@media (min-width: 1440px) {
+  .upload-layout {
+    max-width: 1480px;
+    gap: 2.5rem;
+  }
+
+  .upload-options {
+    padding: 1.5rem 1.75rem;
+  }
+
+  .saved-forms-section {
+    padding: 2rem;
+  }
+
+  .saved-forms-title {
+    font-size: 1.6rem;
+  }
+}
+
+@media (min-width: 1600px) {
+  .upload-layout {
+    max-width: 1620px;
+  }
+
+  .upload-options {
+    padding: 1.75rem 2rem;
+  }
+
+  .upload-primary-grid {
+    gap: 1.8rem;
+  }
+}
+
+@media (min-width: 1920px) {
+  .upload-layout {
+    max-width: 1760px;
+  }
+}
+
+@media (max-width: 768px) {
+  .upload-primary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .saved-forms-section {
+    padding: 1.25rem;
+  }
+}

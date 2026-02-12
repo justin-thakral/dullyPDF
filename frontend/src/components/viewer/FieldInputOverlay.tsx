@@ -31,7 +31,7 @@ function coerceToString(value: PdfField['value']): string {
  */
 function coerceToCheckbox(value: PdfField['value']): boolean {
   if (typeof value === 'boolean') return value;
-  if (typeof value === 'number') return value !== 0;
+  if (typeof value === 'number') return Number.isFinite(value) && value !== 0;
   if (typeof value === 'string') {
     const norm = value.trim().toLowerCase();
     return (

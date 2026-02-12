@@ -1,0 +1,215 @@
+.field-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+
+.field-box {
+  position: absolute;
+  border-radius: 6px;
+  border: 1px solid rgba(59, 130, 246, 0.6);
+  background: rgba(59, 130, 246, 0.08);
+  box-shadow: 0 6px 12px rgba(15, 23, 42, 0.12);
+  pointer-events: auto;
+  cursor: move;
+  transition: box-shadow 0.2s ease, transform 0.2s ease, border-color 0.2s ease;
+  touch-action: none;
+}
+
+.field-box:hover {
+  transform: translateY(-1px);
+}
+
+.field-box--text {
+  border-radius: 2px;
+  border-color: rgba(59, 130, 246, 0.75);
+  background: rgba(59, 130, 246, 0.07);
+}
+
+.field-box--date {
+  border-radius: 2px;
+  border-color: rgba(14, 165, 233, 0.75);
+  background: rgba(14, 165, 233, 0.08);
+}
+
+.field-box--signature {
+  border-radius: 3px;
+  border-color: rgba(15, 23, 42, 0.55);
+  background: rgba(15, 23, 42, 0.05);
+}
+
+.field-box--checkbox {
+  border-radius: 3px;
+  border-color: rgba(34, 197, 94, 0.8);
+  background: rgba(34, 197, 94, 0.12);
+}
+
+.field-box--conf-medium {
+  outline: 2px solid rgba(245, 158, 11, 0.92);
+  outline-offset: 1px;
+}
+
+.field-box--conf-low {
+  outline: 2px solid rgba(239, 68, 68, 0.92);
+  outline-offset: 1px;
+}
+
+.field-box--active {
+  border-color: rgba(59, 130, 246, 0.9);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25), 0 12px 22px rgba(15, 23, 42, 0.2);
+}
+
+.field-input-box {
+  position: absolute;
+  border-radius: 6px;
+  border: 1px solid rgba(15, 23, 42, 0.22);
+  background: rgba(255, 255, 255, 0.18);
+  padding: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+}
+
+.field-input-box--text {
+  border-radius: 2px;
+  border-color: rgba(59, 130, 246, 0.55);
+}
+
+.field-input-box--date {
+  border-radius: 2px;
+  border-color: rgba(14, 165, 233, 0.55);
+}
+
+.field-input-box--signature {
+  border-radius: 3px;
+  border-color: rgba(15, 23, 42, 0.26);
+}
+
+.field-input-box--checkbox {
+  border-radius: 3px;
+  border-color: rgba(34, 197, 94, 0.6);
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.field-input-box--conf-medium {
+  outline: 2px solid rgba(245, 158, 11, 0.92);
+  outline-offset: 1px;
+}
+
+.field-input-box--conf-low {
+  outline: 2px solid rgba(239, 68, 68, 0.92);
+  outline-offset: 1px;
+}
+
+.field-input-box--active {
+  border-color: rgba(59, 130, 246, 0.85);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2), 0 10px 18px rgba(15, 23, 42, 0.18);
+}
+
+.field-input {
+  width: 100%;
+  height: 100%;
+  border-radius: 4px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(255, 255, 255, 0.75);
+  color: rgba(15, 23, 42, 0.92);
+  font-size: var(--field-font-size, 10px);
+  padding: 0.05rem 0.25rem;
+  outline: none;
+}
+
+.field-input:focus {
+  border-color: rgba(59, 130, 246, 0.75);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.22);
+}
+
+.field-input--checkbox {
+  width: 18px;
+  height: 18px;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+  margin: 0;
+  accent-color: rgba(34, 197, 94, 0.95);
+}
+
+
+.field-label {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  max-width: calc(100% - 10px);
+  padding: 0.08rem 0.32rem;
+  border-radius: 5px;
+  background: rgba(15, 23, 42, 0.7);
+  color: #f8fafc;
+  font-size: 0.34rem;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+}
+
+.field-label--conf-medium {
+  color: #fbbf24;
+}
+
+.field-label--conf-low {
+  color: #f87171;
+}
+
+.field-handle {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-radius: 5px;
+  background: #0f172a;
+  border: 2px solid #ffffff;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.field-handle--br {
+  right: -5px;
+  bottom: -5px;
+  cursor: nwse-resize;
+}
+
+.field-handle--left {
+  left: -5px;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  cursor: ew-resize;
+}
+
+.field-handle--right {
+  right: -5px;
+  top: 50%;
+  transform: translate(50%, -50%);
+  cursor: ew-resize;
+}
+
+.field-handle--top {
+  top: -5px;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  cursor: ns-resize;
+}
+
+.field-handle--bottom {
+  bottom: -5px;
+  left: 50%;
+  transform: translate(-50%, 50%);
+  cursor: ns-resize;
+}
+
+.field-box:hover .field-handle,
+.field-box--active .field-handle {
+  opacity: 1;
+}

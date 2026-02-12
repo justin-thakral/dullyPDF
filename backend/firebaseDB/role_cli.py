@@ -5,7 +5,7 @@ import argparse
 
 from firebase_admin import auth as firebase_auth
 
-from .app_database import (
+from .user_database import (
     RENAME_COUNT_FIELD,
     ROLE_BASE,
     ROLE_FIELD,

@@ -2,8 +2,9 @@ import io
 from pathlib import Path
 
 from fastapi import HTTPException
+import pytest
 
-from backend.pdf_validation import PdfValidationResult
+from backend.detection.pdf_validation import PdfValidationResult
 
 
 def _patch_auth(mocker, app_main, user) -> None:
@@ -152,6 +153,102 @@ def test_materialize_inject_fields_path_and_filename_sanitization(
     assert "\r" not in response.headers["content-disposition"]
 
 
+def test_materialize_inject_failure_cleans_temp_files_immediately(
+    app_main,
+    base_user,
+    mocker,
+    auth_headers,
+    tmp_path: Path,
+) -> None:
+    _patch_auth(mocker, app_main, base_user)
+    temp_pdf = tmp_path / "inject-fail.pdf"
+    temp_pdf.write_bytes(b"%PDF-1.4\nfake")
+    mocker.patch.object(app_main, "_write_upload_to_temp", return_value=temp_pdf)
+    mocker.patch.object(app_main.fitz, "open", return_value=_FakePdfDoc(page_count=1))
+    mocker.patch.object(app_main, "_resolve_fillable_max_pages", return_value=10)
+    mocker.patch.object(app_main, "inject_fields", side_effect=RuntimeError("inject failed"))
+    cleanup_mock = mocker.patch.object(app_main, "_cleanup_paths", return_value=None)
+
+    from fastapi.testclient import TestClient
+
+    local_client = TestClient(app_main.app, raise_server_exceptions=False)
+    response = local_client.post(
+        "/api/forms/materialize",
+        files={"pdf": ("x.pdf", b"%PDF-1.4\n", "application/pdf")},
+        data={"fields": '[{"name":"f","x":1,"y":2,"width":3,"height":4}]'},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 500
+    cleanup_mock.assert_called_once()
+
+
+def test_materialize_template_write_failure_cleans_temp_files_immediately(
+    app_main,
+    base_user,
+    mocker,
+    auth_headers,
+    tmp_path: Path,
+) -> None:
+    _patch_auth(mocker, app_main, base_user)
+    temp_pdf = tmp_path / "template-write-fail.pdf"
+    temp_pdf.write_bytes(b"%PDF-1.4\nfake")
+    mocker.patch.object(app_main, "_write_upload_to_temp", return_value=temp_pdf)
+    mocker.patch.object(app_main.fitz, "open", return_value=_FakePdfDoc(page_count=1))
+    mocker.patch.object(app_main, "_resolve_fillable_max_pages", return_value=10)
+    cleanup_mock = mocker.patch.object(app_main, "_cleanup_paths", return_value=None)
+    mocker.patch.object(Path, "write_text", side_effect=OSError("disk full"))
+
+    from fastapi.testclient import TestClient
+
+    local_client = TestClient(app_main.app, raise_server_exceptions=False)
+    response = local_client.post(
+        "/api/forms/materialize",
+        files={"pdf": ("x.pdf", b"%PDF-1.4\n", "application/pdf")},
+        data={"fields": '[{"name":"f","x":1,"y":2,"width":3,"height":4}]'},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 500
+    cleanup_mock.assert_called_once()
+
+
+def test_materialize_output_temp_create_failure_cleans_temp_files_immediately(
+    app_main,
+    base_user,
+    mocker,
+    auth_headers,
+    tmp_path: Path,
+) -> None:
+    _patch_auth(mocker, app_main, base_user)
+    temp_pdf = tmp_path / "output-create-fail.pdf"
+    temp_pdf.write_bytes(b"%PDF-1.4\nfake")
+    mocker.patch.object(app_main, "_write_upload_to_temp", return_value=temp_pdf)
+    mocker.patch.object(app_main.fitz, "open", return_value=_FakePdfDoc(page_count=1))
+    mocker.patch.object(app_main, "_resolve_fillable_max_pages", return_value=10)
+    cleanup_mock = mocker.patch.object(app_main, "_cleanup_paths", return_value=None)
+
+    first_fd, first_name = app_main.tempfile.mkstemp(suffix=".json", dir=str(tmp_path))
+    mocker.patch.object(
+        app_main.tempfile,
+        "mkstemp",
+        side_effect=[(first_fd, first_name), OSError("no space left on device")],
+    )
+
+    from fastapi.testclient import TestClient
+
+    local_client = TestClient(app_main.app, raise_server_exceptions=False)
+    response = local_client.post(
+        "/api/forms/materialize",
+        files={"pdf": ("x.pdf", b"%PDF-1.4\n", "application/pdf")},
+        data={"fields": '[{"name":"f","x":1,"y":2,"width":3,"height":4}]'},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 500
+    cleanup_mock.assert_called_once()
+
+
 def test_register_fillable_page_limit_and_success(client, app_main, base_user, mocker, auth_headers) -> None:
     _patch_auth(mocker, app_main, base_user)
     mocker.patch.object(app_main, "_legacy_endpoints_enabled", return_value=True)
@@ -232,6 +329,30 @@ def test_legacy_download_stream_headers_and_missing_pdf_path(
         return_value={"source_pdf": "saved.pdf", "pdf_bytes": None, "pdf_path": None},
     )
     response = client.get("/download/sess-1", headers=auth_headers)
+    assert response.status_code == 404
+    assert "Session PDF not found" in response.text
+
+
+def test_legacy_download_missing_storage_blob_returns_404(
+    app_main,
+    base_user,
+    mocker,
+    auth_headers,
+) -> None:
+    _patch_auth(mocker, app_main, base_user)
+    mocker.patch.object(app_main, "_legacy_endpoints_enabled", return_value=True)
+    mocker.patch.object(
+        app_main,
+        "_get_session_entry",
+        return_value={"source_pdf": "saved.pdf", "pdf_bytes": None, "pdf_path": "gs://forms/missing.pdf"},
+    )
+    mocker.patch.object(app_main, "stream_pdf", side_effect=FileNotFoundError("missing blob"))
+
+    from fastapi.testclient import TestClient
+
+    local_client = TestClient(app_main.app, raise_server_exceptions=False)
+    response = local_client.get("/download/sess-1", headers=auth_headers)
+
     assert response.status_code == 404
     assert "Session PDF not found" in response.text
 
