@@ -23,7 +23,12 @@ backend/.venv
 backend/.venv-*
 backend/.venv*
 backend/fieldDetecting/outputArtifacts
-backend/tests
+backend/test
+backend/test/*
+test
+test/*
+frontend/test
+frontend/test/*
 .pytest_cache
 **/.pytest_cache
 **/__pycache__
