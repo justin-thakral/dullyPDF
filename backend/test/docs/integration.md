@@ -7,7 +7,7 @@ and module-to-module behavior across complete endpoint flows.
 
 Integration tests should cover:
 
-- FastAPI endpoints (`backend.main.app`, `backend.detector_main.app`)
+- FastAPI endpoints (`backend.api.app.app` / `backend.main.app`, `backend.detection.detector_app.app`)
 - request/response schemas and status codes
 - role/auth/rate-limit enforcement
 - session lifecycle and pipeline transitions
@@ -43,7 +43,7 @@ backend/.venv/bin/pytest backend/test/integration --cov=backend --cov-config=.co
 - auth/user:
   - `backend.services.auth_service.verify_token`
   - `backend.services.auth_service.require_user`
-  - `backend.firebaseDB.app_database.ensure_user`
+  - `backend.firebaseDB.user_database.ensure_user`
 - session/storage:
   - `backend.sessions.session_store.get_session_entry`
   - `backend.sessions.session_store.update_session_entry`
@@ -53,7 +53,7 @@ backend/.venv/bin/pytest backend/test/integration --cov=backend --cov-config=.co
   - `backend.ai.schema_mapping.call_openai_schema_mapping_chunked`
 - detection queue:
   - `backend.services.detection_service.enqueue_detection_job`
-  - `backend.detection_tasks.enqueue_detection_task`
+  - `backend.detection.tasks.enqueue_detection_task`
 
 ## Test Priorities for This Project
 

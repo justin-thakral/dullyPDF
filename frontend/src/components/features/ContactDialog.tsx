@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ApiService, type ContactPayload } from '../../api';
+import { ApiService, type ContactPayload } from '../../services/api';
 import { ApiError } from '../../services/apiConfig';
 import {
   disableRecaptchaBadge,

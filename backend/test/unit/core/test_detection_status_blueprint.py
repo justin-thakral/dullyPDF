@@ -1,6 +1,6 @@
 """Unit tests for backend.detection_status constants."""
 
-import backend.detection_status as status
+import backend.detection.status as status
 
 
 def test_detection_status_constants_are_stable() -> None:

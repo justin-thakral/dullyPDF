@@ -1,7 +1,7 @@
 # CommonForms (by [jbarrow](https://github.com/jbarrow/commonforms)) Pipeline (Main)
 
 This is the **primary** field-detection pipeline used by the detector service
-(`backend/detector_main.py`). The main API queues detection jobs and the detector
+(`backend/detection/detector_app.py`). The main API queues detection jobs and the detector
 executes CommonForms (by [jbarrow](https://github.com/jbarrow/commonforms)) ML inference to return field geometry plus confidence metadata.
 
 Legacy note:
@@ -37,7 +37,7 @@ If CommonForms (by [jbarrow](https://github.com/jbarrow/commonforms)) detects a 
 
 ## Entry points
 
-- Detector service: `backend/detector_main.py` -> `detect_commonforms_fields` in
+- Detector service: `backend/detection/detector_app.py` -> `detect_commonforms_fields` in
   `backend/fieldDetecting/commonforms/commonForm.py`.
 - Main API: `POST /detect-fields` queues a job, `GET /detect-fields/{sessionId}` returns results.
 - Container build: `Dockerfile.detector` (CPU-only PyTorch + CommonForms (by [jbarrow](https://github.com/jbarrow/commonforms))).

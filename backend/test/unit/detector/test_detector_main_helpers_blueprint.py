@@ -1,12 +1,12 @@
-"""Unit tests for helper logic in `backend/detector_main.py`."""
+"""Unit tests for helper logic in `backend/detection/detector_app.py`."""
 
 from __future__ import annotations
 
 import pytest
 from fastapi import HTTPException
 
-import backend.detector_main as dm
-from backend.detection_status import DETECTION_STATUS_FAILED
+import backend.detection.detector_app as dm
+from backend.detection.status import DETECTION_STATUS_FAILED
 
 
 @pytest.fixture(autouse=True)

@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 import os
 from typing import Any, Dict, List, Optional
 
-from ..fieldDetecting.rename_pipeline.combinedSrc.config import get_logger
+from backend.logging_config import get_logger
 from .firebase_service import get_firestore_client
 from .log_utils import log_expires_at, now_iso
 

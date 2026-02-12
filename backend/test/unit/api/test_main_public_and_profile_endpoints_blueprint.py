@@ -1,7 +1,7 @@
 from fastapi import HTTPException
 from starlette import status
 
-from backend.firebaseDB.app_database import UserProfileRecord
+from backend.firebaseDB.user_database import UserProfileRecord
 
 
 def _contact_payload(**overrides) -> dict:

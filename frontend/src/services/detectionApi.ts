@@ -142,7 +142,7 @@ function sleep(durationMs: number): Promise<void> {
 
   async function touchDetectionSession(sessionId: string): Promise<void> {
     try {
-      await apiFetch('POST', `/api/sessions/${encodeURIComponent(sessionId)}/touch`);
+      await apiFetch('POST', `${getDetectionApiBase()}/api/sessions/${encodeURIComponent(sessionId)}/touch`);
     } catch {
       // Best-effort; detection polling should continue even if touch fails.
     }

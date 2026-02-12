@@ -114,7 +114,7 @@ export function FieldInspectorPanel({
                   min={1}
                   value={selected.page}
                   onWheel={(event) => event.currentTarget.blur()}
-                  onChange={(event) => onUpdateField(selected.id, { page: Number(event.target.value) || 1 })}
+                  onChange={(event) => onUpdateField(selected.id, { page: Math.max(1, Math.round(Number(event.target.value) || 1)) })}
                 />
               </div>
 

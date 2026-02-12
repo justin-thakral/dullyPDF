@@ -53,17 +53,24 @@ function parseConfidenceTag(raw?: string): number | undefined {
   const lower = raw.toLowerCase();
   const idx = lower.indexOf(CONFIDENCE_TAG_PREFIX);
   if (idx !== -1) {
-    const value = raw.slice(idx + CONFIDENCE_TAG_PREFIX.length).split(/[;\\s]/)[0];
-    return parseConfidence(value);
+    const tagged = raw.slice(idx);
+    const taggedMatch = tagged.match(/dullypdf:confidence=\s*([0-9]*\.?[0-9]+)/i);
+    if (taggedMatch) {
+      return parseConfidence(taggedMatch[1]);
+    }
+    return undefined;
   }
-  const match = raw.match(/confidence\\s*[:=]\\s*([0-9.]+)/i);
+  const match = raw.match(/confidence\s*[:=]\s*([0-9.]+)/i);
   if (match) return parseConfidence(match[1]);
   return undefined;
 }
 
 function isConfidenceTag(raw?: string): boolean {
   if (!raw) return false;
-  return raw.toLowerCase().includes(CONFIDENCE_TAG_PREFIX);
+  const lower = raw.toLowerCase();
+  if (lower.includes(CONFIDENCE_TAG_PREFIX)) return true;
+  // Also detect generic confidence-only labels like "confidence: 72" or "Confidence= 0.72"
+  return /^\s*confidence\s*[:=]\s*[0-9.]+\s*$/.test(lower);
 }
 
 function extractFieldConfidence(annotation: PdfJsAnnotation): number | undefined {
@@ -189,7 +196,9 @@ export async function extractFieldsFromPdf(doc: PDFDocumentProxy): Promise<PdfFi
 
       const altText = annotation.alternativeText?.trim();
       const safeAltText = altText && !isConfidenceTag(altText) ? altText : '';
-      const rawName = (annotation.fieldName || safeAltText || annotation.title || '').trim();
+      const titleText = annotation.title?.trim();
+      const safeTitle = titleText && !isConfidenceTag(titleText) ? titleText : '';
+      const rawName = (annotation.fieldName || safeAltText || safeTitle || '').trim();
       const baseName = rawName || `field_${pageNum}_${fieldIndex}`;
       const name = ensureUniqueFieldName(baseName, existingNames);
       const type = mapAnnotationType(annotation);

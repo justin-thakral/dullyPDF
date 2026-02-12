@@ -2,7 +2,8 @@
 
 import pytest
 
-from backend.firebaseDB import app_database as adb
+from backend.firebaseDB import user_database as adb
+from backend.firebaseDB import template_database as tdb
 from backend.test.unit.firebase._fakes import FakeFirestoreClient
 
 
@@ -21,8 +22,8 @@ def test_ensure_user_raises_for_missing_uid() -> None:
 
 def test_ensure_user_creates_new_user_with_defaults(mocker) -> None:
     client = FakeFirestoreClient()
-    mocker.patch("backend.firebaseDB.app_database.get_firestore_client", return_value=client)
-    mocker.patch("backend.firebaseDB.app_database.now_iso", return_value="ts-created")
+    mocker.patch("backend.firebaseDB.user_database.get_firestore_client", return_value=client)
+    mocker.patch("backend.firebaseDB.user_database.now_iso", return_value="ts-created")
 
     request_user = adb.ensure_user({"uid": "u-1", "email": "user@example.com", "name": "User"})
 
@@ -53,8 +54,8 @@ def test_ensure_user_updates_existing_doc_and_backfills_missing_defaults(mocker)
             "created_at": "old-created",
         }
     )
-    mocker.patch("backend.firebaseDB.app_database.get_firestore_client", return_value=client)
-    mocker.patch("backend.firebaseDB.app_database.now_iso", return_value="ts-updated")
+    mocker.patch("backend.firebaseDB.user_database.get_firestore_client", return_value=client)
+    mocker.patch("backend.firebaseDB.user_database.now_iso", return_value="ts-updated")
 
     request_user = adb.ensure_user({"uid": "u-1", "email": "new@example.com", "displayName": "New Name"})
 
@@ -74,7 +75,7 @@ def test_ensure_user_updates_existing_doc_and_backfills_missing_defaults(mocker)
 
 def test_list_templates_returns_only_owned_templates_sorted_desc(mocker) -> None:
     client = FakeFirestoreClient()
-    collection = client.collection(adb.TEMPLATES_COLLECTION)
+    collection = client.collection(tdb.TEMPLATES_COLLECTION)
     collection.document("t-old").seed(
         {
             "user_id": "user-1",
@@ -105,9 +106,9 @@ def test_list_templates_returns_only_owned_templates_sorted_desc(mocker) -> None
             "updated_at": "2024-03-01T00:00:00+00:00",
         }
     )
-    mocker.patch("backend.firebaseDB.app_database.get_firestore_client", return_value=client)
+    mocker.patch("backend.firebaseDB.template_database.get_firestore_client", return_value=client)
 
-    records = adb.list_templates("user-1")
+    records = tdb.list_templates("user-1")
 
     assert [record.id for record in records] == ["t-new", "t-old"]
     assert [record.name for record in records] == ["New", "Old"]
@@ -115,7 +116,7 @@ def test_list_templates_returns_only_owned_templates_sorted_desc(mocker) -> None
 
 def test_get_template_enforces_ownership(mocker) -> None:
     client = FakeFirestoreClient()
-    collection = client.collection(adb.TEMPLATES_COLLECTION)
+    collection = client.collection(tdb.TEMPLATES_COLLECTION)
     collection.document("t-1").seed(
         {
             "user_id": "owner-1",
@@ -126,28 +127,28 @@ def test_get_template_enforces_ownership(mocker) -> None:
             "updated_at": "2024-01-01T00:00:00+00:00",
         }
     )
-    mocker.patch("backend.firebaseDB.app_database.get_firestore_client", return_value=client)
+    mocker.patch("backend.firebaseDB.template_database.get_firestore_client", return_value=client)
 
-    assert adb.get_template("t-1", "owner-1") is not None
-    assert adb.get_template("t-1", "other-user") is None
-    assert adb.get_template("", "owner-1") is None
-    assert adb.get_template("missing", "owner-1") is None
+    assert tdb.get_template("t-1", "owner-1") is not None
+    assert tdb.get_template("t-1", "other-user") is None
+    assert tdb.get_template("", "owner-1") is None
+    assert tdb.get_template("missing", "owner-1") is None
 
 
 def test_create_template_validates_required_fields() -> None:
     with pytest.raises(ValueError, match="user_id is required"):
-        adb.create_template("", "gs://forms/a.pdf", "gs://templates/a.json")
+        tdb.create_template("", "gs://forms/a.pdf", "gs://templates/a.json")
 
     with pytest.raises(ValueError, match="pdf_path and template_path are required"):
-        adb.create_template("user-1", "", "gs://templates/a.json")
+        tdb.create_template("user-1", "", "gs://templates/a.json")
 
 
 def test_create_template_persists_payload_and_returns_record(mocker) -> None:
     client = FakeFirestoreClient()
-    mocker.patch("backend.firebaseDB.app_database.get_firestore_client", return_value=client)
-    mocker.patch("backend.firebaseDB.app_database.now_iso", return_value="ts-created")
+    mocker.patch("backend.firebaseDB.template_database.get_firestore_client", return_value=client)
+    mocker.patch("backend.firebaseDB.template_database.now_iso", return_value="ts-created")
 
-    record = adb.create_template(
+    record = tdb.create_template(
         "user-1",
         "gs://forms/a.pdf",
         "gs://templates/a.json",
@@ -156,7 +157,7 @@ def test_create_template_persists_payload_and_returns_record(mocker) -> None:
 
     assert record.id == "auto_0"
     assert record.name == "Template A"
-    stored = client.collection(adb.TEMPLATES_COLLECTION).document("auto_0").get().to_dict()
+    stored = client.collection(tdb.TEMPLATES_COLLECTION).document("auto_0").get().to_dict()
     assert stored == {
         "user_id": "user-1",
         "pdf_bucket_path": "gs://forms/a.pdf",
@@ -169,7 +170,7 @@ def test_create_template_persists_payload_and_returns_record(mocker) -> None:
 
 def test_update_template_returns_none_for_missing_or_unowned_docs(mocker) -> None:
     client = FakeFirestoreClient()
-    collection = client.collection(adb.TEMPLATES_COLLECTION)
+    collection = client.collection(tdb.TEMPLATES_COLLECTION)
     collection.document("owned").seed(
         {
             "user_id": "owner-1",
@@ -180,15 +181,15 @@ def test_update_template_returns_none_for_missing_or_unowned_docs(mocker) -> Non
             "updated_at": "2024-01-01T00:00:00+00:00",
         }
     )
-    mocker.patch("backend.firebaseDB.app_database.get_firestore_client", return_value=client)
+    mocker.patch("backend.firebaseDB.template_database.get_firestore_client", return_value=client)
 
-    assert adb.update_template("missing", "owner-1", pdf_path="x") is None
-    assert adb.update_template("owned", "other-user", pdf_path="x") is None
+    assert tdb.update_template("missing", "owner-1", pdf_path="x") is None
+    assert tdb.update_template("owned", "other-user", pdf_path="x") is None
 
 
 def test_update_template_merges_selected_fields_for_owner(mocker) -> None:
     client = FakeFirestoreClient()
-    doc = client.collection(adb.TEMPLATES_COLLECTION).document("t-1").seed(
+    doc = client.collection(tdb.TEMPLATES_COLLECTION).document("t-1").seed(
         {
             "user_id": "owner-1",
             "pdf_bucket_path": "gs://forms/a.pdf",
@@ -198,10 +199,10 @@ def test_update_template_merges_selected_fields_for_owner(mocker) -> None:
             "updated_at": "2024-01-01T00:00:00+00:00",
         }
     )
-    mocker.patch("backend.firebaseDB.app_database.get_firestore_client", return_value=client)
-    mocker.patch("backend.firebaseDB.app_database.now_iso", return_value="ts-updated")
+    mocker.patch("backend.firebaseDB.template_database.get_firestore_client", return_value=client)
+    mocker.patch("backend.firebaseDB.template_database.now_iso", return_value="ts-updated")
 
-    record = adb.update_template(
+    record = tdb.update_template(
         "t-1",
         "owner-1",
         pdf_path="gs://forms/b.pdf",
@@ -215,13 +216,13 @@ def test_update_template_merges_selected_fields_for_owner(mocker) -> None:
 
 
 def test_update_template_returns_none_when_required_identifiers_missing() -> None:
-    assert adb.update_template("", "owner-1", pdf_path="x") is None
-    assert adb.update_template("template-1", "", pdf_path="x") is None
+    assert tdb.update_template("", "owner-1", pdf_path="x") is None
+    assert tdb.update_template("template-1", "", pdf_path="x") is None
 
 
 def test_update_template_updates_template_path_when_provided(mocker) -> None:
     client = FakeFirestoreClient()
-    doc = client.collection(adb.TEMPLATES_COLLECTION).document("t-1").seed(
+    doc = client.collection(tdb.TEMPLATES_COLLECTION).document("t-1").seed(
         {
             "user_id": "owner-1",
             "pdf_bucket_path": "gs://forms/a.pdf",
@@ -231,10 +232,10 @@ def test_update_template_updates_template_path_when_provided(mocker) -> None:
             "updated_at": "2024-01-01T00:00:00+00:00",
         }
     )
-    mocker.patch("backend.firebaseDB.app_database.get_firestore_client", return_value=client)
-    mocker.patch("backend.firebaseDB.app_database.now_iso", return_value="ts-updated")
+    mocker.patch("backend.firebaseDB.template_database.get_firestore_client", return_value=client)
+    mocker.patch("backend.firebaseDB.template_database.now_iso", return_value="ts-updated")
 
-    record = adb.update_template(
+    record = tdb.update_template(
         "t-1",
         "owner-1",
         template_path="gs://templates/b.json",
@@ -247,37 +248,37 @@ def test_update_template_updates_template_path_when_provided(mocker) -> None:
 
 def test_delete_template_enforces_ownership_and_deletes_for_owner(mocker) -> None:
     client = FakeFirestoreClient()
-    owned_doc = client.collection(adb.TEMPLATES_COLLECTION).document("owned").seed(
+    owned_doc = client.collection(tdb.TEMPLATES_COLLECTION).document("owned").seed(
         {
             "user_id": "owner-1",
             "pdf_bucket_path": "gs://forms/a.pdf",
             "template_bucket_path": "gs://templates/a.json",
         }
     )
-    client.collection(adb.TEMPLATES_COLLECTION).document("foreign").seed(
+    client.collection(tdb.TEMPLATES_COLLECTION).document("foreign").seed(
         {
             "user_id": "owner-2",
             "pdf_bucket_path": "gs://forms/a.pdf",
             "template_bucket_path": "gs://templates/a.json",
         }
     )
-    mocker.patch("backend.firebaseDB.app_database.get_firestore_client", return_value=client)
+    mocker.patch("backend.firebaseDB.template_database.get_firestore_client", return_value=client)
 
-    assert adb.delete_template("missing", "owner-1") is False
-    assert adb.delete_template("foreign", "owner-1") is False
-    assert adb.delete_template("owned", "owner-1") is True
+    assert tdb.delete_template("missing", "owner-1") is False
+    assert tdb.delete_template("foreign", "owner-1") is False
+    assert tdb.delete_template("owned", "owner-1") is True
     assert owned_doc.delete_calls == 1
 
 
 def test_delete_template_returns_false_when_identifiers_missing() -> None:
-    assert adb.delete_template("", "owner-1") is False
-    assert adb.delete_template("template-1", "") is False
+    assert tdb.delete_template("", "owner-1") is False
+    assert tdb.delete_template("template-1", "") is False
 
 
 def test_set_user_role_validates_uid_and_writes_normalized_role(mocker) -> None:
     client = FakeFirestoreClient()
-    mocker.patch("backend.firebaseDB.app_database.get_firestore_client", return_value=client)
-    mocker.patch("backend.firebaseDB.app_database.now_iso", return_value="ts-updated")
+    mocker.patch("backend.firebaseDB.user_database.get_firestore_client", return_value=client)
+    mocker.patch("backend.firebaseDB.user_database.now_iso", return_value="ts-updated")
 
     with pytest.raises(ValueError, match="Missing firebase uid"):
         adb.set_user_role("", adb.ROLE_GOD)
@@ -293,8 +294,8 @@ def test_set_user_role_validates_uid_and_writes_normalized_role(mocker) -> None:
 
 
 def test_list_templates_returns_empty_for_missing_user_id(mocker) -> None:
-    get_client = mocker.patch("backend.firebaseDB.app_database.get_firestore_client")
-    assert adb.list_templates("") == []
+    get_client = mocker.patch("backend.firebaseDB.template_database.get_firestore_client")
+    assert tdb.list_templates("") == []
     get_client.assert_not_called()
 
 
@@ -305,8 +306,8 @@ def test_list_templates_returns_empty_for_missing_user_id(mocker) -> None:
 # fall through the `or` chain and resolve the uid from the "user_id" key.
 def test_ensure_user_resolves_uid_from_user_id_key(mocker) -> None:
     client = FakeFirestoreClient()
-    mocker.patch("backend.firebaseDB.app_database.get_firestore_client", return_value=client)
-    mocker.patch("backend.firebaseDB.app_database.now_iso", return_value="ts-created")
+    mocker.patch("backend.firebaseDB.user_database.get_firestore_client", return_value=client)
+    mocker.patch("backend.firebaseDB.user_database.now_iso", return_value="ts-created")
 
     # No "uid" key present, but "user_id" is provided
     request_user = adb.ensure_user({"user_id": "u-from-user-id", "email": "a@test.com"})
@@ -323,8 +324,8 @@ def test_ensure_user_resolves_uid_from_user_id_key(mocker) -> None:
 # When neither "uid" nor "user_id" is present, the code falls back to "sub".
 def test_ensure_user_resolves_uid_from_sub_key(mocker) -> None:
     client = FakeFirestoreClient()
-    mocker.patch("backend.firebaseDB.app_database.get_firestore_client", return_value=client)
-    mocker.patch("backend.firebaseDB.app_database.now_iso", return_value="ts-created")
+    mocker.patch("backend.firebaseDB.user_database.get_firestore_client", return_value=client)
+    mocker.patch("backend.firebaseDB.user_database.now_iso", return_value="ts-created")
 
     request_user = adb.ensure_user({"sub": "u-from-sub", "email": "b@test.com"})
 
@@ -354,8 +355,8 @@ def test_ensure_user_skips_update_when_no_fields_change(mocker) -> None:
             "updated_at": "old-updated",
         }
     )
-    mocker.patch("backend.firebaseDB.app_database.get_firestore_client", return_value=client)
-    mocker.patch("backend.firebaseDB.app_database.now_iso", return_value="ts-new")
+    mocker.patch("backend.firebaseDB.user_database.get_firestore_client", return_value=client)
+    mocker.patch("backend.firebaseDB.user_database.now_iso", return_value="ts-new")
 
     request_user = adb.ensure_user({
         "uid": "u-1",

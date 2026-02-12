@@ -1,14 +1,15 @@
 import io
 
 from fastapi import HTTPException
+from fastapi.testclient import TestClient
 import pytest
 
-from backend.detection_status import (
+from backend.detection.status import (
     DETECTION_STATUS_COMPLETE,
     DETECTION_STATUS_FAILED,
     DETECTION_STATUS_QUEUED,
 )
-from backend.pdf_validation import PdfValidationResult
+from backend.detection.pdf_validation import PdfValidationResult
 
 
 def _patch_detect_auth(mocker, app_main, user):
@@ -146,6 +147,82 @@ def test_detect_fields_tasks_mode_enqueue_path(client, app_main, base_user, mock
     )
     assert response.status_code == 200
     assert response.json()["status"] == DETECTION_STATUS_QUEUED
+
+
+def test_detect_fields_rate_limit_env_fallback_defaults_on_invalid_values(
+    client,
+    app_main,
+    base_user,
+    mocker,
+    auth_headers,
+    monkeypatch,
+) -> None:
+    _patch_detect_auth(mocker, app_main, base_user)
+    check_rate_limit_mock = mocker.patch.object(app_main, "check_rate_limit", return_value=True)
+    mocker.patch.object(app_main, "_read_upload_bytes", return_value=b"%PDF-1.4\n")
+    mocker.patch.object(
+        app_main,
+        "_validate_pdf_for_detection",
+        return_value=PdfValidationResult(pdf_bytes=b"%PDF-1.4\n", page_count=1, was_decrypted=False),
+    )
+    mocker.patch.object(app_main, "_resolve_detect_max_pages", return_value=10)
+    mocker.patch.object(app_main, "_resolve_detection_mode", return_value="tasks")
+    mocker.patch.object(
+        app_main,
+        "_enqueue_detection_job",
+        return_value={"sessionId": "sess-q", "status": DETECTION_STATUS_QUEUED, "pipeline": "commonforms"},
+    )
+    monkeypatch.setenv("SANDBOX_DETECT_RATE_LIMIT_WINDOW_SECONDS", "not-a-number")
+    monkeypatch.setenv("SANDBOX_DETECT_RATE_LIMIT_PER_USER", "also-bad")
+
+    response = client.post(
+        "/detect-fields",
+        files={"file": ("x.pdf", b"%PDF-1.4\n", "application/pdf")},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    assert check_rate_limit_mock.called
+    assert check_rate_limit_mock.call_args.kwargs["window_seconds"] == 30
+    assert check_rate_limit_mock.call_args.kwargs["limit"] == 6
+
+
+def test_detect_fields_rate_limit_env_negative_values_fallback_to_safe_defaults(
+    client,
+    app_main,
+    base_user,
+    mocker,
+    auth_headers,
+    monkeypatch,
+) -> None:
+    _patch_detect_auth(mocker, app_main, base_user)
+    check_rate_limit_mock = mocker.patch.object(app_main, "check_rate_limit", return_value=True)
+    mocker.patch.object(app_main, "_read_upload_bytes", return_value=b"%PDF-1.4\n")
+    mocker.patch.object(
+        app_main,
+        "_validate_pdf_for_detection",
+        return_value=PdfValidationResult(pdf_bytes=b"%PDF-1.4\n", page_count=1, was_decrypted=False),
+    )
+    mocker.patch.object(app_main, "_resolve_detect_max_pages", return_value=10)
+    mocker.patch.object(app_main, "_resolve_detection_mode", return_value="tasks")
+    mocker.patch.object(
+        app_main,
+        "_enqueue_detection_job",
+        return_value={"sessionId": "sess-q", "status": DETECTION_STATUS_QUEUED, "pipeline": "commonforms"},
+    )
+    monkeypatch.setenv("SANDBOX_DETECT_RATE_LIMIT_WINDOW_SECONDS", "-30")
+    monkeypatch.setenv("SANDBOX_DETECT_RATE_LIMIT_PER_USER", "-1")
+
+    response = client.post(
+        "/detect-fields",
+        files={"file": ("x.pdf", b"%PDF-1.4\n", "application/pdf")},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    assert check_rate_limit_mock.called
+    assert check_rate_limit_mock.call_args.kwargs["window_seconds"] == 30
+    assert check_rate_limit_mock.call_args.kwargs["limit"] == 6
 
 
 def test_enqueue_detection_job_failure_marks_session_failed(app_main, base_user, mocker) -> None:
@@ -338,6 +415,60 @@ def test_get_detection_status_infers_missing_status_and_skips_download_when_not_
     assert "fields" not in queued.json()
     assert "result" not in queued.json()
     assert download_mock.call_count == 1
+
+
+def test_get_detection_status_denies_ownerless_session(
+    client,
+    app_main,
+    base_user,
+    mocker,
+    auth_headers,
+) -> None:
+    _patch_detect_auth(mocker, app_main, base_user)
+    mocker.patch.object(app_main, "_has_admin_override", return_value=False)
+    mocker.patch.object(
+        app_main,
+        "get_session_metadata",
+        return_value={
+            "user_id": None,
+            "detection_status": DETECTION_STATUS_QUEUED,
+        },
+    )
+
+    response = client.get("/detect-fields/sess-ownerless", headers=auth_headers)
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Session access denied"
+
+
+# ---------------------------------------------------------------------------
+# Edge-case: detection status should return 404 when complete-session artifacts
+# are missing from storage rather than bubbling an internal 500.
+# ---------------------------------------------------------------------------
+def test_get_detection_status_missing_artifacts_returns_404(
+    app_main,
+    base_user,
+    mocker,
+    auth_headers,
+) -> None:
+    _patch_detect_auth(mocker, app_main, base_user)
+    mocker.patch.object(app_main, "_has_admin_override", return_value=False)
+    mocker.patch.object(
+        app_main,
+        "get_session_metadata",
+        return_value={
+            "user_id": base_user.app_user_id,
+            "detection_status": DETECTION_STATUS_COMPLETE,
+            "fields_path": "gs://bucket/missing-fields.json",
+            "result_path": "gs://bucket/missing-result.json",
+        },
+    )
+    mocker.patch.object(app_main, "download_session_json", side_effect=FileNotFoundError("missing blob"))
+
+    local_client = TestClient(app_main.app, raise_server_exceptions=False)
+    response = local_client.get("/detect-fields/sess-missing-artifacts", headers=auth_headers)
+
+    assert response.status_code == 404
+    assert "Session data not found" in response.text
 
 
 # ---------------------------------------------------------------------------

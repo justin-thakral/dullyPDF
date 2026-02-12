@@ -7,7 +7,7 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
-from ..fieldDetecting.rename_pipeline.combinedSrc.config import get_logger
+from backend.logging_config import get_logger
 from ..fieldDetecting.rename_pipeline.combinedSrc.extract_labels import extract_labels
 from ..fieldDetecting.rename_pipeline.combinedSrc.rename_resolver import run_openai_rename_pipeline
 from ..fieldDetecting.rename_pipeline.combinedSrc.render_pdf import render_pdf_to_images

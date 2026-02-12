@@ -36,4 +36,4 @@ RUN adduser --disabled-password --gecos "" appuser \
 USER appuser
 ENV HOME=/home/appuser
 
-CMD ["sh", "-c", "uvicorn backend.detector_main:app --host 0.0.0.0 --port ${PORT}"]
+CMD ["sh", "-c", "uvicorn backend.detection.detector_app:app --host 0.0.0.0 --port ${PORT}"]

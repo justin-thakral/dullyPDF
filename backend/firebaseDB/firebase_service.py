@@ -10,7 +10,7 @@ import jwt
 from firebase_admin import auth as firebase_auth
 from firebase_admin import credentials, firestore, initialize_app, storage
 
-from ..fieldDetecting.rename_pipeline.combinedSrc.config import DEBUG_MODE, get_logger
+from backend.logging_config import DEBUG_MODE, get_logger
 
 
 logger = get_logger(__name__)

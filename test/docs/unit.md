@@ -1,18 +1,50 @@
-# Unit Testing Guide (Backend)
+# Unit Testing Guide (Backend + Frontend)
 
-Canonical docs live in `backend/test/docs/unit.md`.
-This mirror exists to satisfy the requested `test/docs` location.
+Canonical unit-testing docs:
 
-Use this command to run backend unit tests:
+- Backend: `backend/test/docs/unit.md`
+- Frontend: `frontend/test/docs/unit.md`
+
+This file is a top-level index for the requested `test/docs` location.
+
+## Backend Overview
+
+- Scope: deterministic backend logic in isolation (helpers, validation, env-driven behavior, small orchestrators).
+- Location: `backend/test/unit/`
+- Naming: `test_*.py` grouped by area (`api/`, `firebase/`, `sessions/`, `fieldDetecting/`, etc.)
+- Run:
 
 ```bash
 backend/.venv/bin/pytest backend/test/unit
 ```
 
-Failing tests are allowed only as short-term debugging signals. If a test failure is caused by product code (not a bad test), report:
+Quick backend pass (unit + integration):
 
-- failing test id(s)
-- brief issue summary
+```bash
+backend/.venv/bin/pytest backend/test/unit backend/test/integration
+```
+
+For full backend conventions, mocking notes, and bug-report requirements, read `backend/test/docs/unit.md`.
+
+## Frontend Overview
+
+- Scope: utility logic, service adapters, and component interaction behavior in isolation.
+- Location: `frontend/test/unit/`
+- Naming: executable tests use `.test.ts` / `.test.tsx` and area-based grouping.
+- Stack: Vitest + React Testing Library.
+- Run:
+
+```bash
+cd frontend && npm run test
+```
+
+For frontend-specific guidance (browser API mocking, async UI testing), read `frontend/test/docs/unit.md`.
+
+## Failing Tests Policy
+
+Failing tests are acceptable only as short-term debugging signals. If product behavior is wrong, report:
+
+- failing test ids
 - expected vs actual behavior
 
-Then write a detailed bug report in `test/bugs/` named `YYYY-MM-DD_<area>_<short-slug>.md`.
+Then write a bug report in `test/bugs/` as `YYYY-MM-DD_<area>_<short-slug>.md`.

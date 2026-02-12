@@ -104,7 +104,7 @@ export function FieldListPanel({
   const handlePageInput = (event: ChangeEvent<HTMLInputElement>) => {
     const raw = Number(event.target.value);
     if (Number.isNaN(raw)) return;
-    onPageChange(clampPage(raw, pageCount));
+    onPageChange(clampPage(Math.round(raw), pageCount));
   };
 
   const handlePrev = () => onPageChange(clampPage(currentPage - 1, pageCount));

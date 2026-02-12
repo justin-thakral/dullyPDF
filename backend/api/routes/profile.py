@@ -6,7 +6,7 @@ from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Header
 
-from backend.firebaseDB.app_database import ROLE_GOD, get_user_profile, normalize_role
+from backend.firebaseDB.user_database import ROLE_GOD, get_user_profile, normalize_role
 from backend.services.auth_service import require_user
 from backend.services.limits_service import resolve_role_limits
 

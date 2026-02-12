@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse
 import fitz
 import uuid
 
-from backend.detection_status import DETECTION_STATUS_COMPLETE
+from backend.detection.status import DETECTION_STATUS_COMPLETE
 from backend.fieldDetecting.rename_pipeline.combinedSrc.form_filler import inject_fields
 from backend.sessions.session_store import store_session_entry as _store_session_entry
 from backend.time_utils import now_iso
@@ -103,17 +103,19 @@ async def materialize_form(
     template_fd, template_name = tempfile.mkstemp(suffix=".json")
     os.close(template_fd)
     template_path = Path(template_name)
-    template_path.write_text(json.dumps(template), encoding="utf-8")
-    output_fd, output_name = tempfile.mkstemp(suffix=".pdf")
-    os.close(output_fd)
-    output_path = Path(output_name)
+    cleanup_targets = [temp_path, template_path]
 
     try:
+        output_fd, output_name = tempfile.mkstemp(suffix=".pdf")
+        os.close(output_fd)
+        output_path = Path(output_name)
+        cleanup_targets.append(output_path)
+        template_path.write_text(json.dumps(template), encoding="utf-8")
         inject_fields(temp_path, template_path, output_path)
     except Exception as exc:
+        cleanup_paths(cleanup_targets)
         raise HTTPException(status_code=500, detail="Failed to generate fillable PDF") from exc
-    finally:
-        background_tasks.add_task(cleanup_paths, [temp_path, template_path, output_path])
+    background_tasks.add_task(cleanup_paths, cleanup_targets)
 
     stem = os.path.splitext(filename)[0] or "form"
     output_name = safe_pdf_download_filename(f"{stem}-fillable", "form")

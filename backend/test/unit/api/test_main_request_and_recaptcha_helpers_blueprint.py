@@ -1,4 +1,5 @@
 import base64
+import math
 
 import pytest
 from fastapi import HTTPException
@@ -85,6 +86,18 @@ def test_recaptcha_hostname_allowed(app_main) -> None:
     assert app_main._recaptcha_hostname_allowed("api.trusted.com", allowed) is True
     assert app_main._recaptcha_hostname_allowed("trusted.com", allowed) is False
     assert app_main._recaptcha_hostname_allowed("", allowed) is False
+
+
+def test_rate_limit_resolvers_reject_negative_env_values(app_main, monkeypatch) -> None:
+    monkeypatch.setenv("CONTACT_RATE_LIMIT_WINDOW_SECONDS", "-1")
+    monkeypatch.setenv("CONTACT_RATE_LIMIT_PER_IP", "-5")
+    monkeypatch.setenv("CONTACT_RATE_LIMIT_GLOBAL", "-9")
+    monkeypatch.setenv("SIGNUP_RATE_LIMIT_WINDOW_SECONDS", "-2")
+    monkeypatch.setenv("SIGNUP_RATE_LIMIT_PER_IP", "-6")
+    monkeypatch.setenv("SIGNUP_RATE_LIMIT_GLOBAL", "-10")
+
+    assert app_main._resolve_contact_rate_limits() == (600, 6, 0)
+    assert app_main._resolve_signup_rate_limits() == (600, 8, 0)
 
 
 @pytest.mark.anyio
@@ -283,3 +296,41 @@ def test_is_public_ip_with_ipv6_addresses(app_main) -> None:
 
     # IPv6 unspecified (::) is not public.
     assert app_main._is_public_ip("::") is False
+
+
+# ---------------------------------------------------------------------------
+# Edge-case: non-finite RECAPTCHA_MIN_SCORE should not disable score checks
+# ---------------------------------------------------------------------------
+# float("nan") and float("inf") parse successfully, but they do not represent
+# usable score thresholds. The resolver should clamp/fallback to the default
+# score instead of returning non-finite values.
+@pytest.mark.parametrize("raw_value", ["nan", "NaN", "inf", "-inf"])
+def test_resolve_recaptcha_min_score_rejects_non_finite_env_values(
+    app_main,
+    monkeypatch,
+    raw_value: str,
+) -> None:
+    monkeypatch.setenv("RECAPTCHA_MIN_SCORE", raw_value)
+
+    value = app_main._resolve_recaptcha_min_score()
+
+    assert math.isfinite(value)
+    assert value == 0.5
+
+
+# ---------------------------------------------------------------------------
+# Edge-case: out-of-range RECAPTCHA_MIN_SCORE should not weaken validation
+# ---------------------------------------------------------------------------
+# reCAPTCHA risk scores are defined in the [0, 1] range. Out-of-range values
+# indicate misconfiguration and should fall back to the secure default.
+@pytest.mark.parametrize("raw_value", ["-0.1", "1.5"])
+def test_resolve_recaptcha_min_score_rejects_out_of_range_values(
+    app_main,
+    monkeypatch,
+    raw_value: str,
+) -> None:
+    monkeypatch.setenv("RECAPTCHA_MIN_SCORE", raw_value)
+
+    value = app_main._resolve_recaptcha_min_score()
+
+    assert value == 0.5

@@ -9,14 +9,16 @@ from fastapi import APIRouter, HTTPException, Request
 from backend.api.schemas import ContactRequest, RecaptchaAssessmentRequest
 from backend.security.rate_limit import check_rate_limit
 from backend.services.contact_service import (
-    recaptcha_required_for_signup,
     resolve_client_ip,
     resolve_contact_body,
     resolve_contact_rate_limits,
     resolve_contact_subject,
     resolve_signup_rate_limits,
+)
+from backend.services.email_service import send_contact_email
+from backend.services.recaptcha_service import (
+    recaptcha_required_for_signup,
     resolve_signup_recaptcha_action,
-    send_contact_email,
     verify_contact_recaptcha,
     verify_recaptcha_token,
 )

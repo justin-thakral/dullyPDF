@@ -9,7 +9,7 @@ from fastapi import HTTPException
 from firebase_admin import auth as firebase_auth
 
 from backend.fieldDetecting.rename_pipeline.debug_flags import debug_enabled, get_debug_password
-from backend.firebaseDB.app_database import ensure_user
+from backend.firebaseDB.user_database import ensure_user
 from backend.firebaseDB.firebase_service import RequestUser, verify_id_token
 
 from .app_config import is_prod

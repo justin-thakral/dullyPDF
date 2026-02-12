@@ -8,14 +8,14 @@ from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, File, Form, Header, HTTPException, Request, UploadFile
 
-from backend.detection_status import (
+from backend.detection.status import (
     DETECTION_STATUS_COMPLETE,
     DETECTION_STATUS_FAILED,
     DETECTION_STATUS_QUEUED,
     DETECTION_STATUS_RUNNING,
 )
-from backend.fieldDetecting.rename_pipeline.combinedSrc.config import get_logger
-from backend.firebaseDB.app_database import ensure_user
+from backend.logging_config import get_logger
+from backend.firebaseDB.user_database import ensure_user
 from backend.firebaseDB.firebase_service import RequestUser
 from backend.firebaseDB.session_database import get_session_metadata
 from backend.firebaseDB.storage_service import download_session_json
@@ -38,6 +38,17 @@ from backend.firebaseDB.detection_database import record_detection_request, upda
 
 logger = get_logger(__name__)
 router = APIRouter()
+
+
+def _is_storage_not_found_error(exc: Exception) -> bool:
+    if isinstance(exc, FileNotFoundError):
+        return True
+    status_code = getattr(exc, "status_code", None)
+    if status_code is None:
+        status_code = getattr(exc, "code", None)
+    if status_code == 404:
+        return True
+    return exc.__class__.__name__.lower() == "notfound"
 
 
 @router.post("/detect-fields")
@@ -71,9 +82,13 @@ async def detect_fields(
             window_seconds = int(os.getenv("SANDBOX_DETECT_RATE_LIMIT_WINDOW_SECONDS", "30"))
         except ValueError:
             window_seconds = 30
+        if window_seconds <= 0:
+            window_seconds = 30
         try:
             user_rate = int(os.getenv("SANDBOX_DETECT_RATE_LIMIT_PER_USER", "6"))
         except ValueError:
+            user_rate = 6
+        if user_rate <= 0:
             user_rate = 6
         if not check_rate_limit(
             f"detect:user:{user.app_user_id}",
@@ -234,9 +249,19 @@ async def get_detection_status(
 
     fields_path = metadata.get("fields_path")
     result_path = metadata.get("result_path")
-    fields = download_session_json(fields_path) if fields_path else []
+    try:
+        fields = download_session_json(fields_path) if fields_path else []
+    except Exception as exc:
+        if _is_storage_not_found_error(exc):
+            raise HTTPException(status_code=404, detail="Session data not found") from exc
+        raise HTTPException(status_code=500, detail="Failed to load session data") from exc
     response["fields"] = fields
     response["fieldCount"] = len(fields)
     if result_path:
-        response["result"] = download_session_json(result_path) or {}
+        try:
+            response["result"] = download_session_json(result_path) or {}
+        except Exception as exc:
+            if _is_storage_not_found_error(exc):
+                raise HTTPException(status_code=404, detail="Session data not found") from exc
+            raise HTTPException(status_code=500, detail="Failed to load session data") from exc
     return response

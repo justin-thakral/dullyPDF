@@ -9,7 +9,7 @@ from typing import Dict, Optional
 from fastapi import HTTPException
 
 from backend.env_utils import env_truthy as _env_truthy, env_value as _env_value
-from backend.fieldDetecting.rename_pipeline.combinedSrc.config import get_logger
+from backend.logging_config import get_logger
 from backend.fieldDetecting.rename_pipeline.debug_flags import debug_enabled
 
 _DEFAULT_CORS_ORIGINS = [
@@ -58,33 +58,33 @@ def commonforms_available() -> bool:
 
 
 def resolve_detection_mode() -> str:
+    tasks_configured = bool(
+        _env_value("DETECTOR_TASKS_QUEUE") or _env_value("DETECTOR_TASKS_QUEUE_LIGHT")
+    )
     raw = _env_value("DETECTOR_MODE").lower()
     if raw:
-        if raw == "local" and not commonforms_available() and _env_value("DETECTOR_TASKS_QUEUE"):
+        if raw == "local" and not commonforms_available() and tasks_configured:
             logger.warning("DETECTOR_MODE=local but CommonForms is missing; falling back to tasks.")
             return "tasks"
         return raw
-    if _env_value("DETECTOR_TASKS_QUEUE"):
+    if tasks_configured:
         return "tasks"
     return "local"
 
 
 def _recaptcha_required_for_contact() -> bool:
-    raw = _env_value("CONTACT_REQUIRE_RECAPTCHA")
-    if raw:
-        return _env_truthy("CONTACT_REQUIRE_RECAPTCHA")
-    return True
+    from backend.services.recaptcha_service import recaptcha_required_for_contact
+    return recaptcha_required_for_contact()
 
 
 def _recaptcha_required_for_signup() -> bool:
-    raw = _env_value("SIGNUP_REQUIRE_RECAPTCHA")
-    if raw:
-        return _env_truthy("SIGNUP_REQUIRE_RECAPTCHA")
-    return True
+    from backend.services.recaptcha_service import recaptcha_required_for_signup
+    return recaptcha_required_for_signup()
 
 
 def _recaptcha_required_any() -> bool:
-    return _recaptcha_required_for_contact() or _recaptcha_required_for_signup()
+    from backend.services.recaptcha_service import recaptcha_required_any
+    return recaptcha_required_any()
 
 
 def require_prod_env() -> None:

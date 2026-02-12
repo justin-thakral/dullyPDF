@@ -11,8 +11,8 @@ from fastapi import APIRouter, File, Form, Header, HTTPException, Request, Uploa
 from fastapi.responses import StreamingResponse
 
 from backend.api.schemas import SavedFormSessionRequest
-from backend.detection_status import DETECTION_STATUS_COMPLETE
-from backend.firebaseDB.app_database import (
+from backend.detection.status import DETECTION_STATUS_COMPLETE
+from backend.firebaseDB.template_database import (
     create_template,
     delete_template,
     get_template,
@@ -47,6 +47,25 @@ from backend.services.pdf_service import (
 )
 
 router = APIRouter()
+
+
+def _is_storage_not_found_error(exc: Exception) -> bool:
+    if isinstance(exc, FileNotFoundError):
+        return True
+    status_code = getattr(exc, "status_code", None)
+    if status_code is None:
+        status_code = getattr(exc, "code", None)
+    if status_code == 404:
+        return True
+    return exc.__class__.__name__.lower() == "notfound"
+
+
+def _cleanup_uploaded_paths(paths: List[str]) -> None:
+    for path in paths:
+        try:
+            delete_pdf(path)
+        except Exception:
+            pass
 
 
 @router.get("/api/saved-forms")
@@ -103,7 +122,14 @@ async def download_saved_form(
     if not template.pdf_bucket_path or not is_gcs_path(template.pdf_bucket_path):
         raise HTTPException(status_code=404, detail="Form PDF not found in storage")
 
-    stream = stream_pdf(template.pdf_bucket_path)
+    try:
+        stream = stream_pdf(template.pdf_bucket_path)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        if _is_storage_not_found_error(exc):
+            raise HTTPException(status_code=404, detail="Form PDF not found in storage") from exc
+        raise HTTPException(status_code=500, detail="Failed to load saved form PDF") from exc
     filename = safe_pdf_download_filename(template.name or template.pdf_bucket_path or "form", "form")
     headers = {"Content-Disposition": f'inline; filename="{filename}"'}
     headers.update(resolve_stream_cors_headers(request.headers.get("origin")))
@@ -133,6 +159,8 @@ async def create_saved_form_session(
     try:
         pdf_bytes = download_pdf_bytes(template.pdf_bucket_path)
     except Exception as exc:
+        if _is_storage_not_found_error(exc):
+            raise HTTPException(status_code=404, detail="Form PDF not found in storage") from exc
         raise HTTPException(status_code=500, detail="Failed to load saved form PDF") from exc
     page_count = get_pdf_page_count(pdf_bytes)
 
@@ -263,57 +291,52 @@ async def save_form(
             template_bucket_path = upload_template_pdf(str(temp_path), templates_object)
             uploaded_paths.append(template_bucket_path)
 
-        try:
-            if overwrite_template:
-                updated_template = update_template(
-                    overwrite_template.id,
-                    user.app_user_id,
-                    pdf_path=pdf_bucket_path,
-                    template_path=template_bucket_path,
-                    metadata=metadata,
-                )
-                if not updated_template:
-                    raise HTTPException(status_code=500, detail="Failed to update saved form")
-                if old_pdf_path and old_pdf_path != pdf_bucket_path and is_gcs_path(old_pdf_path):
-                    try:
-                        delete_pdf(old_pdf_path)
-                    except Exception:
-                        pass
-                if (
-                    old_template_path
-                    and old_template_path != template_bucket_path
-                    and old_template_path != old_pdf_path
-                    and is_gcs_path(old_template_path)
-                ):
-                    try:
-                        delete_pdf(old_template_path)
-                    except Exception:
-                        pass
-                return {
-                    "success": True,
-                    "id": updated_template.id,
-                    "name": updated_template.name or name,
-                }
-
-            template = create_template(
-                user_id=user.app_user_id,
+        if overwrite_template:
+            updated_template = update_template(
+                overwrite_template.id,
+                user.app_user_id,
                 pdf_path=pdf_bucket_path,
                 template_path=template_bucket_path,
                 metadata=metadata,
             )
-        except Exception:
-            for path in uploaded_paths:
+            if not updated_template:
+                raise HTTPException(status_code=500, detail="Failed to update saved form")
+            if old_pdf_path and old_pdf_path != pdf_bucket_path and is_gcs_path(old_pdf_path):
                 try:
-                    delete_pdf(path)
+                    delete_pdf(old_pdf_path)
                 except Exception:
                     pass
-            raise
+            if (
+                old_template_path
+                and old_template_path != template_bucket_path
+                and old_template_path != old_pdf_path
+                and is_gcs_path(old_template_path)
+            ):
+                try:
+                    delete_pdf(old_template_path)
+                except Exception:
+                    pass
+            return {
+                "success": True,
+                "id": updated_template.id,
+                "name": updated_template.name or name,
+            }
+
+        template = create_template(
+            user_id=user.app_user_id,
+            pdf_path=pdf_bucket_path,
+            template_path=template_bucket_path,
+            metadata=metadata,
+        )
 
         return {
             "success": True,
             "id": template.id,
             "name": template.name or name,
         }
+    except Exception:
+        _cleanup_uploaded_paths(uploaded_paths)
+        raise
     finally:
         if temp_path and temp_path.exists():
             try:
@@ -343,6 +366,8 @@ async def delete_saved_form(form_id: str, authorization: Optional[str] = Header(
         try:
             delete_pdf(bucket_path)
         except Exception as exc:
+            if _is_storage_not_found_error(exc):
+                continue
             raise HTTPException(status_code=500, detail="Failed to delete saved form") from exc
 
     removed = delete_template(form_id, user.app_user_id)

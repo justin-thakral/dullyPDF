@@ -1,0 +1,25 @@
+.grecaptcha-badge {
+  visibility: hidden;
+  z-index: 12050;
+  filter: none;
+}
+
+body.recaptcha-badge-visible .grecaptcha-badge {
+  visibility: visible;
+}
+
+@media (max-width: 720px) {
+  body.recaptcha-badge-visible .grecaptcha-badge {
+    bottom: 72px !important;
+    right: 12px !important;
+    transform: scale(0.9);
+    transform-origin: bottom right;
+  }
+
+  body.recaptcha-contact-open .grecaptcha-badge {
+    visibility: hidden;
+    bottom: auto !important;
+    right: auto !important;
+    transform: none;
+  }
+}

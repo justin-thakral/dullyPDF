@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import HTTPException, UploadFile
 import fitz
 
-from backend.pdf_validation import PdfValidationError, PdfValidationResult, preflight_pdf_bytes
+from backend.detection.pdf_validation import PdfValidationError, PdfValidationResult, preflight_pdf_bytes
 
 
 def sanitize_basename_segment(value: str, fallback: str) -> str:

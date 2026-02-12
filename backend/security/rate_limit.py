@@ -9,7 +9,7 @@ from typing import Deque, Dict
 
 from firebase_admin import firestore as firebase_firestore
 
-from ..fieldDetecting.rename_pipeline.combinedSrc.config import get_logger
+from backend.logging_config import get_logger
 from ..firebaseDB.firebase_service import get_firestore_client
 
 

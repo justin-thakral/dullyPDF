@@ -2,8 +2,7 @@
  * Search & Fill modal for populating fields from data sources.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { CheckboxHint, CheckboxRule, PdfField } from '../../types';
-import type { DataSourceKind } from '../layout/HeaderBar';
+import type { CheckboxHint, CheckboxRule, DataSourceKind, PdfField } from '../../types';
 import './SearchFillModal.css';
 import { normaliseDataKey } from '../../utils/dataSource';
 import { computeCheckboxMeta, type CheckboxMeta as CheckboxMetaType } from '../../utils/checkboxMeta';
@@ -70,7 +69,7 @@ function coerceValue(value: unknown): string | number | boolean | null {
   if (value === null || value === undefined) return null;
   if (typeof value === 'string') return value;
   if (typeof value === 'number' || typeof value === 'boolean') return value;
-  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value.toISOString().slice(0, 10);
   return String(value);
 }
 
@@ -80,9 +79,10 @@ function parseDateFromUnknown(value: unknown): Date | null {
     return Number.isNaN(value.getTime()) ? null : value;
   }
   if (typeof value === 'string') {
-    const match = value.match(/\d{4}-\d{2}-\d{2}/);
+    const match = value.match(/\d{4}[-/]\d{2}[-/]\d{2}/);
     if (!match) return null;
-    const parsed = new Date(`${match[0]}T00:00:00Z`);
+    const normalized = match[0].replace(/\//g, '-');
+    const parsed = new Date(`${normalized}T00:00:00Z`);
     return Number.isNaN(parsed.getTime()) ? null : parsed;
   }
   return null;
@@ -546,6 +546,7 @@ export default function SearchFillModal({
         applyHintedBooleanGroup(hint, value);
       }
 
+      const ruleAppliedGroups = new Set<string>();
       for (const checkboxRule of checkboxRules ?? []) {
         const ruleKeyRaw =
           (checkboxRule as { databaseField?: string }).databaseField ??
@@ -581,7 +582,7 @@ export default function SearchFillModal({
           } else if (!applied && operation === 'presence' && normalized) {
             applied = resolveCheckboxGroupValue(groupKey, true, checkboxRule.valueMap);
           }
-          if (applied) groupValueApplied.add(groupKey);
+          if (applied) ruleAppliedGroups.add(groupKey);
           continue;
         }
         if (operation === 'list') {
@@ -592,6 +593,7 @@ export default function SearchFillModal({
           applyGroupValue(groupKey, rawValue, checkboxRule.valueMap, false, 'enum');
         }
       }
+      for (const key of ruleAppliedGroups) groupValueApplied.add(key);
 
       for (const [groupKey, aliases] of Object.entries(CHECKBOX_ALIASES)) {
         if (explicitGroupKeys.has(normaliseDataKey(groupKey)) || groupValueApplied.has(normaliseDataKey(groupKey))) {
@@ -630,25 +632,6 @@ export default function SearchFillModal({
 
         if (normalizedRow.has(`responsible_party_${normalizedName}`)) {
           return normalizedRow.get(`responsible_party_${normalizedName}`);
-        }
-
-        if (normalizedName.endsWith('_date') || normalizedName.includes('date')) {
-          const value = normalizedRow.get(normalizedName);
-          if (value !== undefined) return value;
-        }
-
-        if (normalizedName.endsWith('_phone')) {
-          const value = normalizedRow.get(normalizedName);
-          if (value !== undefined) return value;
-        }
-
-        if (normalizedName.endsWith('_name')) {
-          const value = normalizedRow.get(normalizedName);
-          if (value !== undefined) return value;
-        }
-
-        if (normalizedRowKeys.includes(normalizedName)) {
-          return normalizedRow.get(normalizedName);
         }
 
         if (normalizedName.endsWith('_1')) {

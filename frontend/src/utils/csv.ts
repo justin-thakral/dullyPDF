@@ -74,6 +74,10 @@ export function parseCsv(text: string, options: ParseCsvOptions = {}): ParsedCsv
     pushRow();
   }
 
+  if (inQuotes) {
+    throw new Error('CSV contains an unclosed quoted field.');
+  }
+
   const [rawHeader, ...dataRows] = rows;
   const seenHeaders = new Set<string>();
   const headerRenames: HeaderRename[] = [];

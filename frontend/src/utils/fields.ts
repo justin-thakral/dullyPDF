@@ -79,3 +79,49 @@ export function makeId() {
 export function formatSize(rect: FieldRect) {
   return `${Math.round(rect.width)} x ${Math.round(rect.height)}`;
 }
+
+/**
+ * Convert raw filenames into a display-friendly saved form name.
+ */
+export function normaliseFormName(raw: string | null | undefined): string {
+  const trimmed = String(raw || '').trim();
+  if (!trimmed.length) return 'Saved form';
+  return trimmed.replace(/\.pdf$/i, '');
+}
+
+/**
+ * Normalize values so fillable PDFs receive consistent defaults.
+ */
+function normaliseFieldValueForMaterialize(field: PdfField): PdfField['value'] {
+  const value = field.value;
+  if (field.type === 'checkbox') {
+    if (value === null || value === undefined) return false;
+    if (typeof value === 'string' && value.trim().length === 0) return false;
+    return value;
+  }
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string' && value.trim().length === 0) return '';
+  return value;
+}
+
+/**
+ * Build the minimal template-field payload sent to the backend for session
+ * registration and OpenAI rename / mapping calls.
+ */
+export function buildTemplateFields(sourceFields: PdfField[]) {
+  return sourceFields.map((field) => ({
+    name: field.name, type: field.type, page: field.page, rect: field.rect,
+    groupKey: field.groupKey, optionKey: field.optionKey,
+    optionLabel: field.optionLabel, groupLabel: field.groupLabel,
+  }));
+}
+
+/**
+ * Apply value normalization across all fields before materialization.
+ */
+export function prepareFieldsForMaterialize(fields: PdfField[]): PdfField[] {
+  return fields.map((field) => {
+    const value = normaliseFieldValueForMaterialize(field);
+    return value === field.value ? field : { ...field, value };
+  });
+}

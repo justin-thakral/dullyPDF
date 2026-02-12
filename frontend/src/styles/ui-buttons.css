@@ -1,0 +1,62 @@
+.ui-button {
+  border-radius: 12px;
+  padding: 0.6rem 1rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+
+.ui-button--primary {
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  color: #f8fafc;
+  box-shadow: 0 10px 20px rgba(37, 99, 235, 0.35);
+}
+
+.ui-button--primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 16px 30px rgba(37, 99, 235, 0.45);
+}
+
+.ui-button--ghost {
+  background: var(--surface-1);
+  border: 1px solid rgba(148, 163, 184, 0.6);
+  color: var(--ink-900);
+  box-shadow: 0 10px 16px rgba(15, 23, 42, 0.08);
+}
+
+.ui-button--ghost:hover {
+  transform: translateY(-1px);
+  border-color: rgba(59, 130, 246, 0.6);
+  box-shadow: 0 16px 24px rgba(59, 130, 246, 0.2);
+}
+
+.ui-header .ui-button--ghost {
+  background: rgba(248, 250, 252, 0.95);
+  border-color: rgba(148, 163, 184, 0.45);
+  color: #0f172a;
+}
+
+.ui-header .ui-button--ghost:hover {
+  border-color: rgba(59, 130, 246, 0.6);
+  box-shadow: 0 14px 24px rgba(59, 130, 246, 0.22);
+}
+
+.ui-button--compact {
+  padding: 0.35rem 0.75rem;
+  font-size: 0.78rem;
+  border-radius: 10px;
+}
+
+.ui-button--danger {
+  background: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fca5a5;
+  box-shadow: 0 8px 18px rgba(248, 113, 113, 0.3);
+}
+
+.ui-button--danger:hover {
+  transform: translateY(-1px);
+}
+

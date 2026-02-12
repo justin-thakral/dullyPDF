@@ -101,7 +101,7 @@ export function getApiBaseUrl(): string {
   const env = import.meta.env;
   const raw = env?.VITE_API_URL || env?.VITE_SANDBOX_API_URL || env?.VITE_DETECTION_API_URL;
   const trimmed = typeof raw === 'string' ? raw.trim() : '';
-  const normalised = trimmed ? trimmed.replace(/\/$/, '') : DEFAULT_API_BASE;
+  const normalised = trimmed ? trimmed.replace(/\/+$/, '') : DEFAULT_API_BASE;
   cachedBase = normalised || DEFAULT_API_BASE;
   return cachedBase;
 }

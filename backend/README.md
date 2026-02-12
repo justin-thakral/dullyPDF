@@ -7,7 +7,7 @@ FastAPI service for PDF field detection, schema-only OpenAI mapping, and saved-f
 - `backend/api/schemas/`: request model definitions
 - `backend/services/`: shared business/helpers used by routes
 
-Detection is executed by the dedicated detector service (`backend/detector_main.py`) which runs CommonForms (by [jbarrow](https://github.com/jbarrow/commonforms)) under `backend/fieldDetecting/commonforms/`. The legacy OpenCV pipeline lives in `legacy/fieldDetecting/` and is not part of the main pipeline.
+Detection is executed by the dedicated detector service (`backend/detection/detector_app.py`) which runs CommonForms (by [jbarrow](https://github.com/jbarrow/commonforms)) under `backend/fieldDetecting/commonforms/`. The legacy OpenCV pipeline lives in `legacy/fieldDetecting/` and is not part of the main pipeline.
 
 ### Core flows
 
@@ -179,7 +179,7 @@ npm run dev:stack:stop
 Detector service entrypoint (for Cloud Run or local dev):
 
 ```
-uvicorn backend.detector_main:app --host 0.0.0.0 --port 8000
+uvicorn backend.detection.detector_app:app --host 0.0.0.0 --port 8000
 ```
 
 Docker images:

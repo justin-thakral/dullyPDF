@@ -10,14 +10,14 @@ from typing import Any, Dict, Optional
 
 from fastapi import HTTPException
 
-from backend.detection_status import (
+from backend.detection.status import (
     DETECTION_STATUS_COMPLETE,
     DETECTION_STATUS_FAILED,
     DETECTION_STATUS_QUEUED,
     DETECTION_STATUS_RUNNING,
 )
-from backend.detection_tasks import enqueue_detection_task, resolve_detector_profile, resolve_task_config
-from backend.fieldDetecting.rename_pipeline.combinedSrc.config import get_logger
+from backend.detection.tasks import enqueue_detection_task, resolve_detector_profile, resolve_task_config
+from backend.logging_config import get_logger
 from backend.firebaseDB.detection_database import record_detection_request, update_detection_request
 from backend.firebaseDB.firebase_service import RequestUser
 from backend.sessions.session_store import store_session_entry as _store_session_entry, update_session_entry as _update_session_entry

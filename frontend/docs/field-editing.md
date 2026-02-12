@@ -1,57 +1,50 @@
 # Field Editing Guide
 
-Field editing happens in two modes:
-- **Overlay mode** (Fields toggle): drag/resize boxes on the PDF.
-- **Input mode** (Info toggle): enter values aligned to each field.
+Field editing is centered around three coordinated areas: overlay (PDF), field list, and inspector.
 
-## Creating fields
+## Display modes and toggles
 
-Use the "Add" buttons in the Fields panel to create text, date, signature, or checkbox fields. New fields are centered on the current page with a sensible default size.
+- `Fields`: show/hide overlay boxes.
+- `Names`: show/hide overlay labels.
+- `Info`: show/hide input controls on the PDF for entering values.
+- `All`: list fields from all pages in the left panel.
+- `Clear`: clear current field values in the session.
 
-## Loading existing fields
+## Creating and selecting fields
 
-When a PDF contains AcroForm widgets, the editor automatically imports them on upload. Imported fields can be moved, resized, and renamed like any other field.
+- Use inspector "Add" buttons to create `text`, `date`, `signature`, and `checkbox` fields.
+- New fields are added to the current page.
+- Select fields from the overlay or the left field list.
+- Selecting a field in the list can jump pages when needed.
 
-## Selecting fields
+## Moving, resizing, and geometry
 
-- Click a field in the overlay to select it.
-- Click a field in the Fields list to focus it in the inspector.
-- The list can show **All** pages or just the current page.
+- Drag a field to move it.
+- Drag edge/corner handles to resize.
+- Geometry is clamped to page bounds with a minimum size.
+- Inspector geometry inputs edit `x`, `y`, `width`, and `height` directly.
+- Coordinates are PDF points measured from the page top-left.
 
-## Moving and resizing
+## Inspector editing
 
-- Drag a field box to move it.
-- Drag the bottom-right handle to resize it.
-- The overlay clamps fields to the page bounds.
-
-## Inspector inputs
-
-The inspector lets you edit:
-
-- Name
-- Type
-- Page assignment
-- X / Y position
-- Width / Height
-
-Coordinates are in PDF points and measured from the top-left of the page.
+- Rename fields and change type/page assignment.
+- Delete the selected field.
+- Undo/redo field edits (history depth: 10 snapshots).
 
 ## Confidence labels
 
-Detection and renaming confidence are shown in the list:
-- Field confidence comes from CommonForms (by [jbarrow](https://github.com/jbarrow/commonforms)) detection.
-- Name confidence comes from OpenAI rename or schema mapping.
+- The field list supports high/medium/low confidence filtering.
+- Detection confidence comes from CommonForms (by [jbarrow](https://github.com/jbarrow/commonforms)).
+- Name confidence comes from OpenAI rename and/or schema mapping output.
 
 ## OpenAI guardrails
 
-OpenAI rename and mapping require explicit confirmation before sending data to OpenAI.
-Rename sends PDF pages + overlay tags; mapping sends schema headers + field tags. When
-rename+map is selected, both are sent in one request. No row data or field values
-are sent. The UI warns users before sending PDF pages or schema headers.
+- Rename, Map, and Rename+Map require explicit confirmation dialogs.
+- The dialogs warn users before sending PDF/schema content to OpenAI.
+- Row data and field input values are not included in OpenAI rename/map requests.
 
-## Input mode
+## Keyboard shortcuts
 
-When **Info** is enabled:
-- Text/date fields render as aligned inputs.
-- Checkbox fields render as checkboxes.
-- Use **Clear** to reset all values on the current session.
+- `Ctrl/Cmd+Z`: undo
+- `Ctrl/Cmd+Shift+Z` or `Ctrl/Cmd+Y`: redo
+- `Ctrl/Cmd+X`: delete selected field

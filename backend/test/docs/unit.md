@@ -64,13 +64,13 @@ def test_branch(mocker):
 
 ## Important Backend-Specific Notes
 
-- `backend.main` still triggers app bootstrap on import (prod env checks run via `backend/api/app.py`). For unit tests, set `ENV=test` before import.
+- `backend.main` still triggers app bootstrap on import (prod env checks run via `backend.api.app`). For unit tests, set `ENV=test` before import.
 - Prefer patching route/service modules directly (`backend/api/routes/*`, `backend/services/*`) instead of relying only on `backend.main` re-exports.
 - Several modules cache global state; clear/reset between tests when needed:
-  - `backend.main` token caches
+  - `backend.firebaseDB.firebase_service` globals (`_firebase_app`, `_firebase_init_error`, `_firebase_project_id`)
   - `backend.security.rate_limit._RATE_LIMIT_BUCKETS`
   - `backend.sessions.session_store` L1 cache globals
-- `debug_flags.py` mutates `sys.argv` at import time. Use isolated imports/reloads for those tests.
+- `backend.fieldDetecting.rename_pipeline.debug_flags` mutates `sys.argv` at import time. Use isolated imports/reloads for those tests.
 
 ## Handling Failing Tests
 

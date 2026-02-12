@@ -31,6 +31,17 @@ export type HeaderRename = {
   renamed: string;
 };
 
+export function resolveIdentifierKey(candidate: unknown, columns: string[]): string | null {
+  if (!candidate || !columns.length) return null;
+  const raw = String(candidate || '').trim();
+  if (!raw) return null;
+  if (columns.includes(raw)) return raw;
+  const normalized = normaliseDataKey(raw);
+  if (!normalized) return null;
+  const match = columns.find((col) => normaliseDataKey(col) === normalized);
+  return match ?? null;
+}
+
 export function dedupeColumnsByNormalizedKey(
   columns: string[],
   rows: Array<Record<string, unknown>>,

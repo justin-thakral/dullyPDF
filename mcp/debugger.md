@@ -38,12 +38,12 @@ Run this end-to-end to validate the primary workflow.
 2. Upload the baseline PDF for detection.
 3. Wait for field detection to complete (fields list populates).
 4. Connect the baseline CSV from the Database menu.
-5. Click "Map DB" and wait for a success toast.
+5. Click "Map Schema" and wait for a success toast.
 6. Open "Search, Fill & Clear", search a known record (e.g., `MRN100001`), and fill.
 7. Confirm field inputs are populated and the overlay reflects values.
 
 Expected signals:
-- Network: `/detect-fields` and `/api/map-fields` return 200.
+- Network: `/detect-fields`, `/api/schemas`, and `/api/schema-mappings/ai` return 200.
 - UI: "Mapped" state appears and search results render.
 
 ## API checks (non-UI)
@@ -98,7 +98,7 @@ Use this template for every bug report:
 
 ## Classification
 - Type: <1|2|3>
- - Category: <ui-mutation|ui-issue|pipeline-flow|data|auth|other>
+- Category: <ui-mutation|ui-issue|pipeline-flow|data|auth|other>
 
 ## Context
 - Environment: dev/prod

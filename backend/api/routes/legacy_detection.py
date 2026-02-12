@@ -9,7 +9,7 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, File, Form, Header, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 
-from backend.detection_status import (
+from backend.detection.status import (
     DETECTION_STATUS_COMPLETE,
     DETECTION_STATUS_FAILED,
     DETECTION_STATUS_RUNNING,
@@ -35,6 +35,17 @@ from backend.services.pdf_service import (
 )
 
 router = APIRouter()
+
+
+def _is_storage_not_found_error(exc: Exception) -> bool:
+    if isinstance(exc, FileNotFoundError):
+        return True
+    status_code = getattr(exc, "status_code", None)
+    if status_code is None:
+        status_code = getattr(exc, "code", None)
+    if status_code == 404:
+        return True
+    return exc.__class__.__name__.lower() == "notfound"
 
 
 @router.post("/api/process-pdf")
@@ -240,5 +251,12 @@ async def download_session_pdf(
         pdf_path = entry.get("pdf_path")
         if not pdf_path:
             raise HTTPException(status_code=404, detail="Session PDF not found")
-        stream = stream_pdf(pdf_path)
+        try:
+            stream = stream_pdf(pdf_path)
+        except HTTPException:
+            raise
+        except Exception as exc:
+            if _is_storage_not_found_error(exc):
+                raise HTTPException(status_code=404, detail="Session PDF not found") from exc
+            raise HTTPException(status_code=500, detail="Failed to load session PDF") from exc
     return StreamingResponse(stream, media_type="application/pdf", headers=headers)

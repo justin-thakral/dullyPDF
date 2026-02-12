@@ -1,33 +1,37 @@
 # Overview
 
-The frontend is a React + TypeScript workspace for visualizing PDFs, editing detected field geometry, and running Search & Fill against local CSV/Excel/JSON data. It connects to the FastAPI backend for detection, OpenAI rename + schema-only mapping, and saved-form storage. CSV/Excel/JSON/TXT schema headers are uploaded, but CSV/Excel/JSON rows stay local (TXT is schema-only).
+The frontend is a React + TypeScript app for loading PDFs, editing fields, and filling records from local data sources. It connects to the FastAPI backend for detection, OpenAI rename/mapping, profile data, and saved forms.
 
-## What it does
+## Main workflow
 
-- Loads local PDFs via PDF.js and renders pages to canvas.
-- Imports existing AcroForm widgets when present.
-- Calls `/detect-fields` to enqueue CommonForms (by [jbarrow](https://github.com/jbarrow/commonforms)) detection and polls `/detect-fields/{sessionId}` for results.
-- Calls `/api/renames/ai` for OpenAI field rename (PDF page images + overlay tags; schema headers are included for rename+map).
-- Uses same-origin `/api/...` calls (via Firebase Hosting rewrites) for fast endpoints like profile, contact, and reCAPTCHA verification to avoid CORS preflights and reduce perceived cold-start delays.
-- Lets you drag, resize, rename, and retype fields.
-- Maps schema columns to PDF fields using OpenAI mapping of schema headers + template tags; the UI warns users before sending headers.
-- Consumes OpenAI credits per OpenAI action: Rename (1), Remap (1), Rename + Remap (2).
-- Runs Search & Fill to populate values from a selected local record.
-- Search & Fill applies checkbox values from explicit checkbox columns (including `i_`/`checkbox_` prefixes), group enums/lists, and AI checkbox rules when available.
-- Saves filled forms to your profile via the backend, including checkbox rules/hints for later Search & Fill.
-- When the saved forms limit is reached, surfaces a modal that lists saved forms and allows deletions to free space before saving again; overwriting a saved form replaces it in place.
-- Uses FirebaseUI for email/password + Google + GitHub login; password logins require email verification before access.
-- Shows a profile view with tier limits, credits, and saved forms.
-- Includes a homepage Demo flow that loads static demo PDFs/CSV and guides users through the pipeline steps.
+1. Load a PDF (detection upload, fillable upload, or saved form).
+2. Detect fields with CommonForms (by [jbarrow](https://github.com/jbarrow/commonforms)) via `/detect-fields`, or import embedded AcroForm widgets.
+3. Optionally run OpenAI rename and schema mapping.
+4. Edit fields in overlay/list/inspector panels.
+5. Run Search & Fill from CSV/Excel/JSON rows.
+6. Download a filled PDF or save it to the signed-in profile.
 
-## What it does not do
+## Data source behavior
 
-- No full PDF editing (only form fields/overlays).
-- No Search & Fill from TXT-only or schema-only JSON uploads (CSV/Excel/JSON rows are required).
-- No offline persistence; state is tied to the active session unless saved.
+- CSV/Excel/JSON imports parse schema headers and rows.
+- TXT imports are schema-only (headers/types, no rows).
+- Schema metadata can be persisted to `/api/schemas` for mapping.
+- OpenAI confirmations warn before sending PDF/schema content; row values and field values are not included in OpenAI rename/map requests.
 
-## Local fixtures
+## Auth and profile
 
-- Use `quickTestFiles/` for small, tracked demo inputs.
-- Use `samples/` for large, local-only datasets.
-- Demo assets served to the frontend live in `frontend/public/demo`.
+- Firebase auth supports email/password, Google, and GitHub.
+- Password users must verify email before editor access.
+- Profile view shows limits, credits, and saved forms.
+
+## Demo and fixtures
+
+- Demo assets are served from `frontend/public/demo`.
+- Small tracked fixtures live in `quickTestFiles/`; larger local datasets live in `samples/`.
+- Regenerate demo rename/remap name maps from the repo root with `npm run demo:generate-name-maps`.
+
+## Out of scope
+
+- Full PDF content editing beyond form fields/overlays.
+- Search & Fill from TXT uploads.
+- Offline persistence (state is session-scoped unless saved).

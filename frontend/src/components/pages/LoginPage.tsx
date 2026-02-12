@@ -9,7 +9,7 @@ import 'firebaseui/dist/firebaseui.css';
 import './LoginPage.css';
 import { firebaseAuth } from '../../services/firebaseClient';
 import { Auth } from '../../services/auth';
-import { ApiService } from '../../api';
+import { ApiService } from '../../services/api';
 import { ApiError } from '../../services/apiConfig';
 import {
   disableRecaptchaBadge,

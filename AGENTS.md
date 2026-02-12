@@ -68,3 +68,7 @@ Sometimes we have unused, unnecessary, or duplicated aspects of code. If you see
 ## Code Optimizing
 
 If you see multiple chunks of code that are following the same process, try to condense them by calling the same function or using another structured solution.
+
+Also, sometimes your changes may lead to a file being too large out of place etc. If you believe that your changes let to this, suggest a refactor that can keep the
+repo following good repo structure. Furthermore, if you see any existing implementations that should be refactored, including files in the wrong dir, splitting up dirs into multiple,
+files being too large, files out of place, files doing too many things, just output that and let me know like hey heres a suggested refactor. You shouldn't do these refactors just let me know.
