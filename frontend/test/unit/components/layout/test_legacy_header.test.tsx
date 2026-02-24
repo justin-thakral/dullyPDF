@@ -104,8 +104,19 @@ describe('LegacyHeader', () => {
   it('renders branding assets and legal navigation link', () => {
     render(<LegacyHeader {...createProps()} />);
 
+    const usageDocsLink = screen.getByRole('link', { name: 'Usage Docs' });
     const legalLink = screen.getByRole('link', { name: 'Privacy & Terms' });
+    expect(usageDocsLink.getAttribute('href')).toBe('/usage-docs');
     expect(legalLink.getAttribute('href')).toBe('/privacy');
+
+    const headerLinks = screen
+      .getAllByRole('link')
+      .filter((element) => element.className.includes('header-link-button'));
+    expect(headerLinks.map((element) => element.textContent?.trim())).toEqual([
+      'Usage Docs',
+      'Privacy & Terms',
+    ]);
+
     expect(screen.getByRole('img', { name: 'DullyPDF' })).toBeTruthy();
     expect(screen.getAllByText('DullyPDF').length).toBeGreaterThan(0);
   });

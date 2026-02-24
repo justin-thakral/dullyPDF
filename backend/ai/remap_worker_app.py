@@ -31,8 +31,8 @@ from backend.firebaseDB.openai_job_database import (
 )
 from backend.firebaseDB.schema_database import get_schema
 from backend.firebaseDB.template_database import get_template
-from backend.firebaseDB.user_database import refund_openai_credits
 from backend.logging_config import get_logger
+from backend.services.credit_refund_service import attempt_credit_refund
 from backend.services.mapping_service import build_schema_mapping_payload
 from backend.sessions.session_store import (
     get_session_entry as _get_session_entry,
@@ -86,6 +86,7 @@ class RemapJobRequest(BaseModel):
     userRole: Optional[str] = None
     credits: int = 0
     creditsCharged: bool = False
+    creditBreakdown: Optional[Dict[str, int]] = None
 
 
 def _parse_retry_count(raw: Optional[str]) -> int:
@@ -128,10 +129,15 @@ def _refund_credits(payload: RemapJobRequest) -> None:
     credits = int(payload.credits or 0)
     if credits <= 0:
         return
-    try:
-        refund_openai_credits(payload.userId, credits=credits, role=payload.userRole)
-    except Exception as exc:
-        logger.debug("Remap credit refund failed for %s: %s", payload.userId, exc)
+    attempt_credit_refund(
+        user_id=payload.userId,
+        role=payload.userRole,
+        credits=credits,
+        source="remap.worker",
+        request_id=payload.requestId,
+        job_id=payload.jobId,
+        credit_breakdown=payload.creditBreakdown,
+    )
 
 
 def _finish_failure(
@@ -317,20 +323,23 @@ async def run_remap_job(
         if session_entry and payload.sessionId:
             persist_rules = False
             persist_hints = False
+            persist_text_rules = False
             if isinstance(mapping_results, dict):
                 checkbox_rules = list(mapping_results.get("checkboxRules") or [])
-                if checkbox_rules:
-                    session_entry["checkboxRules"] = checkbox_rules
-                    persist_rules = True
+                session_entry["checkboxRules"] = checkbox_rules
+                persist_rules = True
                 checkbox_hints = list(mapping_results.get("checkboxHints") or [])
-                if checkbox_hints:
-                    session_entry["checkboxHints"] = checkbox_hints
-                    persist_hints = True
+                session_entry["checkboxHints"] = checkbox_hints
+                persist_hints = True
+                text_transform_rules = list(mapping_results.get("textTransformRules") or [])
+                session_entry["textTransformRules"] = text_transform_rules
+                persist_text_rules = True
             _update_session_entry(
                 payload.sessionId,
                 session_entry,
                 persist_checkbox_rules=persist_rules,
                 persist_checkbox_hints=persist_hints,
+                persist_text_transform_rules=persist_text_rules,
             )
 
         resolved_request_id = (

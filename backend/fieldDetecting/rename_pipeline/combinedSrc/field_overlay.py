@@ -11,6 +11,7 @@ from typing import Dict, Iterable, List, Optional, Tuple
 import cv2
 import numpy as np
 
+from .checkbox_label_hints import pick_best_checkbox_label
 from .config import get_logger
 from .coords import PageBox, pts_bbox_to_px_bbox
 
@@ -182,41 +183,52 @@ def _pick_checkbox_label(
 ) -> Optional[Dict]:
     """
     Pick the most likely label for a checkbox based on proximity and alignment.
+
+    Time complexity:
+    - O(L) for L candidate labels on the page.
     """
-    if not checkbox_rect or len(checkbox_rect) != 4:
-        return None
-    cb_x1, cb_y1, cb_x2, cb_y2 = [float(v) for v in checkbox_rect]
-    cb_h = max(1.0, cb_y2 - cb_y1)
-    cb_center_y = (cb_y1 + cb_y2) / 2.0
+    return pick_best_checkbox_label(checkbox_rect, labels)
 
-    best: Optional[Dict] = None
-    best_score: float | None = None
 
-    for label in labels or []:
-        bbox = label.get("bbox")
-        if not isinstance(bbox, list) or len(bbox) != 4:
-            continue
-        text = (label.get("text") or "").strip()
-        if not text:
-            continue
+def _fit_checkbox_tag(
+    label: str,
+    *,
+    box_w: int,
+    box_h: int,
+    preferred_scale: float,
+) -> tuple[str, float]:
+    """
+    Fit checkbox tag text inside checkbox bounds while preserving readability.
+    """
+    text = (label or "").strip()
+    if not text:
+        return "", 0.0
 
-        x1, y1, x2, y2 = [float(v) for v in bbox]
-        label_center_y = (y1 + y2) / 2.0
-        overlap = min(cb_y2, y2) - max(cb_y1, y1)
-        overlap_ratio = max(0.0, overlap) / cb_h
+    inner_w = max(1, int(round(max(1, box_w) * 0.84)))
+    inner_h = max(1, int(round(max(1, box_h) * 0.84)))
+    max_scale = max(0.28, min(4.0, float(preferred_scale)))
+    min_scale = 0.10
+    attempt = text
+    for _ in range(max(2, len(text) + 2)):
+        (base_w, base_h), base_baseline = cv2.getTextSize(attempt, _FONT, 1.0, 1)
+        if base_w <= 0 or base_h <= 0:
+            return "", 0.0
 
-        # Prefer labels to the right that align with the checkbox centerline.
-        right_bias = 0.0 if x1 >= (cb_x2 - cb_h * 0.5) else 40.0
-        alignment_penalty = abs(label_center_y - cb_center_y) / max(1.0, cb_h) * 8.0
-        overlap_bonus = -12.0 if overlap_ratio >= 0.25 else 0.0
+        scale_by_width = inner_w / max(1.0, base_w)
+        scale_by_height = inner_h / max(1.0, base_h + base_baseline)
+        fitted_scale = min(max_scale, scale_by_width, scale_by_height)
+        if fitted_scale >= min_scale:
+            return attempt, fitted_scale
 
-        dist = _rect_distance_pts([cb_x1, cb_y1, cb_x2, cb_y2], [x1, y1, x2, y2])
-        score = dist + right_bias + alignment_penalty + overlap_bonus
-        if best_score is None or score < best_score:
-            best_score = score
-            best = label
+        if len(attempt) <= 1:
+            break
+        if len(attempt) == 2:
+            attempt = attempt[:1]
+        else:
+            attempt = f"{attempt[:-2]}…"
 
-    return best
+    # Final fallback for extremely tiny boxes.
+    return attempt[:1], min_scale
 
 
 def _draw_checkbox_tag(
@@ -230,15 +242,26 @@ def _draw_checkbox_tag(
     x1, y1, x2, y2 = cb_px
     if x2 <= x1 or y2 <= y1 or not label:
         return
-    scale = max(0.6, min(3.0, float(tag_scale)))
-    (tw, th), _baseline = cv2.getTextSize(label, _FONT, scale, 1)
+
+    fitted_label, scale = _fit_checkbox_tag(
+        label,
+        box_w=(x2 - x1),
+        box_h=(y2 - y1),
+        preferred_scale=tag_scale,
+    )
+    if not fitted_label or scale <= 0.0:
+        return
+
+    (tw, th), _baseline = cv2.getTextSize(fitted_label, _FONT, scale, 1)
     tx = int(round(x1 + (x2 - x1 - tw) / 2))
     ty = int(round(y1 + (y2 - y1 + th) / 2))
+    tx = max(x1 + 1, min(tx, x2 - max(2, tw)))
+    ty = max(y1 + max(2, th), min(ty, y2 - 1))
     thickness = 2 if scale >= 1.2 else 1
     outline = 4 if scale >= 1.2 else 3
     _draw_text_with_outline(
         canvas,
-        label,
+        fitted_label,
         (tx, ty),
         font_scale=scale,
         color_bgr=color_bgr,
@@ -263,6 +286,16 @@ def draw_overlay(
 ) -> Optional[np.ndarray]:
     """
     Draw a visual QA overlay for one page that includes candidates and fields.
+
+    Code steps:
+    1) Resolve page/image geometry and select fields belonging to this page.
+    2) Optionally draw detector candidates (labels/lines/boxes/checkboxes).
+    3) Draw final fields with type-aware colors and compact tags.
+    4) Persist the overlay to disk and optionally return the rendered canvas.
+
+    Time complexity:
+    - Candidate label filtering can reach O(L * F) where L is labels and F is fields.
+    - Remaining draw passes are linear in candidate/field counts.
     """
     if image_bgr is None or image_bgr.size == 0:
         raise ValueError("draw_overlay received an empty image")
@@ -291,6 +324,7 @@ def draw_overlay(
     }
 
     page_num = int(page_candidates.get("page") or 1)
+    # Step 1: Keep only fields assigned to the current page to avoid cross-page noise.
     page_fields = [f for f in (fields or []) if int(f.get("page") or 1) == page_num]
     field_rects_pts = [
         [float(v) for v in f.get("rect") or []]
@@ -298,11 +332,13 @@ def draw_overlay(
         if isinstance(f.get("rect"), list) and len(f.get("rect")) == 4
     ]
 
+    # Step 2: Optionally draw candidate geometry used during rename prompt generation.
     if draw_candidates:
         labels = list(page_candidates.get("labels", []) or [])
         keep_label_indexes: set[int] = set()
 
         # Optionally limit label rendering to those near fields to reduce overlay noise.
+        # This nearest-distance pass is O(L * F) with labels-by-fields comparisons.
         if label_max_dist_pts is not None and field_rects_pts:
             max_dist = float(label_max_dist_pts)
             for idx, label in enumerate(labels):
@@ -409,6 +445,7 @@ def draw_overlay(
                 label=(cb.get("id") + suffix) if cb.get("id") else None,
             )
 
+    # Step 3: Draw the final field boxes and IDs that OpenAI consumes.
     if draw_fields:
         labels = list(page_candidates.get("labels", []) or [])
         for f in page_fields:
@@ -479,6 +516,7 @@ def draw_overlay(
             else:
                 _draw_centered_label(canvas, label=label_text, x1=x1, y1=y1, x2=x2, y2=y2)
 
+    # Step 4: Write overlay artifact for QA/debugging and optional model packaging.
     out_path.parent.mkdir(parents=True, exist_ok=True)
     ok = cv2.imwrite(str(out_path), canvas)
     if not ok:

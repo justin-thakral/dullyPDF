@@ -3,7 +3,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ComponentProps } from 'react';
 
-import type { CheckboxHint, CheckboxRule, PdfField } from '../../../../src/types';
+import type { CheckboxHint, CheckboxRule, PdfField, TextTransformRule } from '../../../../src/types';
 import SearchFillModal from '../../../../src/components/features/SearchFillModal';
 
 function makeField(overrides: Partial<PdfField> & Pick<PdfField, 'id' | 'name' | 'type' | 'page'>): PdfField {
@@ -209,6 +209,121 @@ describe('SearchFillModal', () => {
     expect(byId.get('age')?.value).toBe(34);
   });
 
+  it('applies concat text transform rules when direct values are missing', async () => {
+    const user = userEvent.setup();
+    const onFieldsChange = vi.fn();
+    const fields = [
+      makeField({ id: 'full-name', name: 'full_name', type: 'text', page: 1 }),
+    ];
+    const textTransformRules: TextTransformRule[] = [
+      {
+        targetField: 'full_name',
+        operation: 'concat',
+        sources: ['first_name', 'last_name'],
+        separator: ' ',
+        confidence: 0.92,
+      },
+    ];
+
+    const props = buildProps({
+      columns: ['mrn', 'first_name', 'last_name'],
+      rows: [{ mrn: '910', first_name: 'Ada', last_name: 'Lovelace' }],
+      fields,
+      textTransformRules,
+      onFieldsChange,
+    });
+    render(<SearchFillModal {...props} />);
+
+    await runSearch('910');
+    await user.click(screen.getByRole('button', { name: 'Fill PDF' }));
+
+    await waitFor(() => {
+      expect(onFieldsChange).toHaveBeenCalledTimes(1);
+    });
+    const nextFields = onFieldsChange.mock.calls[0][0] as PdfField[];
+    expect(nextFields[0]?.value).toBe('Ada Lovelace');
+  });
+
+  it('applies split_name_first_rest rules from full_name into first/last fields', async () => {
+    const user = userEvent.setup();
+    const onFieldsChange = vi.fn();
+    const fields = [
+      makeField({ id: 'first-name', name: 'first_name', type: 'text', page: 1 }),
+      makeField({ id: 'last-name', name: 'last_name', type: 'text', page: 1 }),
+    ];
+    const textTransformRules: TextTransformRule[] = [
+      {
+        targetField: 'first_name',
+        operation: 'split_name_first_rest',
+        sources: ['full_name'],
+        part: 'first',
+        confidence: 0.88,
+      },
+      {
+        targetField: 'last_name',
+        operation: 'split_name_first_rest',
+        sources: ['full_name'],
+        part: 'rest',
+        confidence: 0.88,
+      },
+    ];
+
+    const props = buildProps({
+      columns: ['mrn', 'full_name'],
+      rows: [{ mrn: '911', full_name: 'Mary Ann Smith' }],
+      fields,
+      textTransformRules,
+      onFieldsChange,
+    });
+    render(<SearchFillModal {...props} />);
+
+    await runSearch('911');
+    await user.click(screen.getByRole('button', { name: 'Fill PDF' }));
+
+    await waitFor(() => {
+      expect(onFieldsChange).toHaveBeenCalledTimes(1);
+    });
+    const nextFields = onFieldsChange.mock.calls[0][0] as PdfField[];
+    const byId = new Map(nextFields.map((field) => [field.id, field]));
+    expect(byId.get('first-name')?.value).toBe('Mary');
+    expect(byId.get('last-name')?.value).toBe('Ann Smith');
+  });
+
+  it('prefers direct row values over text transform rules for the same target field', async () => {
+    const user = userEvent.setup();
+    const onFieldsChange = vi.fn();
+    const fields = [
+      makeField({ id: 'first-name', name: 'first_name', type: 'text', page: 1 }),
+    ];
+    const textTransformRules: TextTransformRule[] = [
+      {
+        targetField: 'first_name',
+        operation: 'split_name_first_rest',
+        sources: ['full_name'],
+        part: 'first',
+        confidence: 0.95,
+      },
+    ];
+
+    const props = buildProps({
+      columns: ['mrn', 'first_name', 'full_name'],
+      rows: [{ mrn: '912', first_name: 'Direct', full_name: 'Derived Value' }],
+      fields,
+      textTransformRules,
+      onFieldsChange,
+    });
+    render(<SearchFillModal {...props} />);
+
+    await runSearch('912');
+    await user.click(screen.getByRole('button', { name: 'Fill PDF' }));
+
+    await waitFor(() => {
+      expect(onFieldsChange).toHaveBeenCalledTimes(1);
+    });
+    const nextFields = onFieldsChange.mock.calls[0][0] as PdfField[];
+    expect(nextFields[0]?.value).toBe('Direct');
+  });
+
   it('normalizes slash-delimited YYYY/MM/DD values for date fields', async () => {
     const user = userEvent.setup();
     const onFieldsChange = vi.fn();
@@ -393,6 +508,135 @@ describe('SearchFillModal', () => {
     expect(valueById.get('allergy_penicillin')).toBe(true);
     expect(valueById.get('allergy_shellfish')).toBe(true);
     expect(valueById.get('allergy_latex')).toBe(false);
+  });
+
+  it('applies checkbox rules before hints when both target the same group', async () => {
+    const user = userEvent.setup();
+    const onFieldsChange = vi.fn();
+    const fields = [
+      makeField({ id: 'consent_yes', name: 'consent_yes', type: 'checkbox', page: 1 }),
+      makeField({ id: 'consent_no', name: 'consent_no', type: 'checkbox', page: 1 }),
+    ];
+    const checkboxHints: CheckboxHint[] = [
+      {
+        databaseField: 'consent_status',
+        groupKey: 'consent',
+        directBooleanPossible: true,
+      },
+    ];
+    const checkboxRules: CheckboxRule[] = [
+      {
+        databaseField: 'consent_status',
+        groupKey: 'consent',
+        operation: 'enum',
+        valueMap: {
+          '0': 'yes',
+        },
+      },
+    ];
+
+    const props = buildProps({
+      columns: ['mrn', 'consent_status'],
+      rows: [{ mrn: '600', consent_status: '0' }],
+      fields,
+      checkboxHints,
+      checkboxRules,
+      onFieldsChange,
+    });
+    render(<SearchFillModal {...props} />);
+
+    await runSearch('600');
+    await user.click(screen.getByRole('button', { name: 'Fill PDF' }));
+
+    await waitFor(() => {
+      expect(onFieldsChange).toHaveBeenCalledTimes(1);
+    });
+    const nextFields = onFieldsChange.mock.calls[0][0] as PdfField[];
+    const valueById = new Map(nextFields.map((field) => [field.id, field.value]));
+
+    expect(valueById.get('consent_yes')).toBe(true);
+    expect(valueById.get('consent_no')).toBe(false);
+  });
+
+  it('applies checkbox rules when row values only exist under patient_ prefixed keys', async () => {
+    const user = userEvent.setup();
+    const onFieldsChange = vi.fn();
+    const fields = [
+      makeField({ id: 'smoker_yes', name: 'smoker_yes', type: 'checkbox', page: 1 }),
+      makeField({ id: 'smoker_no', name: 'smoker_no', type: 'checkbox', page: 1 }),
+    ];
+    const checkboxRules: CheckboxRule[] = [
+      {
+        databaseField: 'smoker_status',
+        groupKey: 'smoker',
+        operation: 'enum',
+        valueMap: {
+          current: 'yes',
+          never: 'no',
+        },
+      },
+    ];
+
+    const props = buildProps({
+      columns: ['mrn', 'patient_smoker_status'],
+      rows: [{ mrn: '601', patient_smoker_status: 'current' }],
+      fields,
+      checkboxRules,
+      onFieldsChange,
+    });
+    render(<SearchFillModal {...props} />);
+
+    await runSearch('601');
+    await user.click(screen.getByRole('button', { name: 'Fill PDF' }));
+
+    await waitFor(() => {
+      expect(onFieldsChange).toHaveBeenCalledTimes(1);
+    });
+    const nextFields = onFieldsChange.mock.calls[0][0] as PdfField[];
+    const valueById = new Map(nextFields.map((field) => [field.id, field.value]));
+
+    expect(valueById.get('smoker_yes')).toBe(true);
+    expect(valueById.get('smoker_no')).toBe(false);
+  });
+
+  it('normalizes compact enum values against spaced valueMap keys for checkbox rules', async () => {
+    const user = userEvent.setup();
+    const onFieldsChange = vi.fn();
+    const fields = [
+      makeField({ id: 'drug_yes', name: 'drug_use_yes', type: 'checkbox', page: 1 }),
+      makeField({ id: 'drug_no', name: 'drug_use_no', type: 'checkbox', page: 1 }),
+    ];
+    const checkboxRules: CheckboxRule[] = [
+      {
+        databaseField: 'drug_status',
+        groupKey: 'drug_use',
+        operation: 'enum',
+        valueMap: {
+          'no reported': 'no',
+        },
+      },
+    ];
+
+    const props = buildProps({
+      columns: ['mrn', 'drug_status'],
+      rows: [{ mrn: '602', drug_status: 'NoReported' }],
+      fields,
+      checkboxRules,
+      onFieldsChange,
+    });
+    render(<SearchFillModal {...props} />);
+
+    await runSearch('602');
+    await user.click(screen.getByRole('button', { name: 'Fill PDF' }));
+
+    await waitFor(() => {
+      expect(onFieldsChange).toHaveBeenCalledTimes(1);
+    });
+    const nextFields = onFieldsChange.mock.calls[0][0] as PdfField[];
+    const valueById = new Map(nextFields.map((field) => [field.id, field.value]));
+
+    expect(valueById.get('drug_yes')).toBe(false);
+    expect(valueById.get('drug_no')).toBe(true);
   });
 
   it('does not crash when a row value is an invalid Date object', async () => {

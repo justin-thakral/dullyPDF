@@ -161,6 +161,7 @@ def test_merge_schema_mapping_response_merges_lists_filters_invalid_and_preserve
     aggregate = {
         "mappings": [],
         "templateRules": [],
+        "textTransformRules": [],
         "checkboxRules": [],
         "checkboxHints": [],
         "notes": [],
@@ -172,6 +173,7 @@ def test_merge_schema_mapping_response_merges_lists_filters_invalid_and_preserve
         {
             "mappings": [{"schemaField": "a"}, "bad"],
             "template_rules": [{"rule": 1}, None],
+            "text_transform_rules": [{"targetField": "A1", "operation": "copy", "sources": ["first_name"]}, None],
             "checkbox_rules": [{"groupKey": "g"}, 123],
             "checkbox_hints": [{"databaseField": "d"}, "skip"],
             "patientIdentifierField": "new_id",
@@ -185,6 +187,7 @@ def test_merge_schema_mapping_response_merges_lists_filters_invalid_and_preserve
 
     assert aggregate["mappings"] == [{"schemaField": "a"}, {"schemaField": "b"}]
     assert aggregate["templateRules"] == [{"rule": 1}]
+    assert aggregate["textTransformRules"] == [{"targetField": "A1", "operation": "copy", "sources": ["first_name"]}]
     assert aggregate["checkboxRules"] == [{"groupKey": "g"}]
     assert aggregate["checkboxHints"] == [{"databaseField": "d"}]
     assert aggregate["identifierKey"] == "existing_id"
@@ -192,9 +195,23 @@ def test_merge_schema_mapping_response_merges_lists_filters_invalid_and_preserve
 
 
 def test_merge_schema_mapping_response_ignores_non_dict_input() -> None:
-    aggregate = {"mappings": [], "templateRules": [], "checkboxRules": [], "checkboxHints": [], "notes": []}
+    aggregate = {
+        "mappings": [],
+        "templateRules": [],
+        "textTransformRules": [],
+        "checkboxRules": [],
+        "checkboxHints": [],
+        "notes": [],
+    }
     schema_mapping._merge_schema_mapping_response(aggregate, "not-a-dict")  # type: ignore[arg-type]
-    assert aggregate == {"mappings": [], "templateRules": [], "checkboxRules": [], "checkboxHints": [], "notes": []}
+    assert aggregate == {
+        "mappings": [],
+        "templateRules": [],
+        "textTransformRules": [],
+        "checkboxRules": [],
+        "checkboxHints": [],
+        "notes": [],
+    }
 
 
 def test_parse_json_extracts_embedded_object() -> None:
@@ -233,6 +250,10 @@ def test_call_openai_schema_mapping_uses_json_response_format_and_parses_wrapped
     assert len(client.chat.completions.calls) == 1
     first_call = client.chat.completions.calls[0]
     assert first_call["response_format"] == {"type": "json_object"}
+    system_content = first_call["messages"][0]["content"]
+    user_content = first_call["messages"][1]["content"]
+    assert "textTransformRules" in system_content
+    assert "textTransformRules.operation" in user_content
 
 
 def test_call_openai_schema_mapping_retries_without_response_format_when_rejected(
@@ -307,6 +328,7 @@ def test_call_openai_schema_mapping_chunked_merges_chunk_responses(mocker) -> No
             {
                 "mappings": [{"schemaField": "second"}],
                 "templateRules": [{"templateTag": "B"}],
+                "textTransformRules": [{"targetField": "B", "operation": "copy", "sources": ["first_name"]}],
                 "checkboxRules": [{"groupKey": "group"}],
                 "checkboxHints": [{"databaseField": "first"}],
                 "notes": "chunk-2",
@@ -320,6 +342,7 @@ def test_call_openai_schema_mapping_chunked_merges_chunk_responses(mocker) -> No
     assert call_mapping.call_count == 2
     assert result["mappings"] == [{"schemaField": "first"}, {"schemaField": "second"}]
     assert result["templateRules"] == [{"templateTag": "B"}]
+    assert result["textTransformRules"] == [{"targetField": "B", "operation": "copy", "sources": ["first_name"]}]
     assert result["checkboxRules"] == [{"groupKey": "group"}]
     assert result["checkboxHints"] == [{"databaseField": "first"}]
     assert result["notes"] == "chunk-1; chunk-2"

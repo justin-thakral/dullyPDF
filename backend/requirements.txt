@@ -14,3 +14,4 @@ google-cloud-storage==3.9.0
 google-cloud-tasks==2.21.0
 protobuf==5.29.6
 PyJWT==2.10.1
+stripe==13.2.0

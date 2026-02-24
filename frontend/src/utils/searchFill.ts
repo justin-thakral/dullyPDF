@@ -1,11 +1,40 @@
 import { normaliseDataKey } from './dataSource';
 
+const BOOLEAN_TRUE_TOKENS = new Set([
+  'true',
+  '1',
+  'yes',
+  'y',
+  'on',
+  'checked',
+  't',
+  'x',
+  'selected',
+]);
+const BOOLEAN_FALSE_TOKENS = new Set([
+  'false',
+  '0',
+  'no',
+  'n',
+  'off',
+  'unchecked',
+  'f',
+  'unselected',
+]);
 const AMBIGUOUS_BOOLEAN_TOKENS = new Set(['yn', 'yesno', 'truefalse', 'tf', '01', '10']);
 const PRESENCE_FALSE_TOKENS = new Set([
   'na',
   'none',
   'unknown',
   'unsure',
+  'nil',
+  'null',
+  'empty',
+  'blank',
+  'absent',
+  'notpresent',
+  'noneknown',
+  'nonereported',
   'notapplicable',
   'notavailable',
 ]);
@@ -19,9 +48,10 @@ export function coerceCheckboxBoolean(value: unknown): boolean | null {
   if (typeof value === 'boolean') return value;
   if (typeof value === 'number') return Number.isFinite(value) ? value !== 0 : null;
   if (typeof value === 'string') {
-    const norm = value.trim().toLowerCase();
-    if (['true', '1', 'yes', 'y', 'on', 'checked', 't'].includes(norm)) return true;
-    if (['false', '0', 'no', 'n', 'off', 'unchecked', 'f'].includes(norm)) return false;
+    const normalized = normalizeCheckboxToken(value);
+    if (!normalized || AMBIGUOUS_BOOLEAN_TOKENS.has(normalized)) return null;
+    if (BOOLEAN_TRUE_TOKENS.has(normalized)) return true;
+    if (BOOLEAN_FALSE_TOKENS.has(normalized)) return false;
   }
   return null;
 }
@@ -69,7 +99,12 @@ export function normalizeCheckboxValueMap(
     const normalizedKey = normaliseDataKey(key);
     if (!normalizedKey) continue;
     const normalizedValue = normaliseDataKey(String(mappedValue ?? ''));
-    normalized[normalizedKey] = normalizedValue || String(mappedValue ?? '');
+    const resolvedValue = normalizedValue || String(mappedValue ?? '');
+    normalized[normalizedKey] = resolvedValue;
+    const compactKey = normalizedKey.replace(/_/g, '');
+    if (compactKey && !(compactKey in normalized)) {
+      normalized[compactKey] = resolvedValue;
+    }
   }
   return normalized;
 }

@@ -139,6 +139,37 @@ def require_prod_env() -> None:
         missing.append("GMAIL_CLIENT_SECRET")
     if not _env_value("GMAIL_REFRESH_TOKEN"):
         missing.append("GMAIL_REFRESH_TOKEN")
+    stripe_secret_key = _env_value("STRIPE_SECRET_KEY")
+    if not stripe_secret_key:
+        missing.append("STRIPE_SECRET_KEY")
+    stripe_webhook_secret = _env_value("STRIPE_WEBHOOK_SECRET")
+    if not stripe_webhook_secret:
+        missing.append("STRIPE_WEBHOOK_SECRET")
+    if not _env_value("STRIPE_PRICE_PRO_MONTHLY"):
+        missing.append("STRIPE_PRICE_PRO_MONTHLY")
+    if not _env_value("STRIPE_PRICE_PRO_YEARLY"):
+        missing.append("STRIPE_PRICE_PRO_YEARLY")
+    if not _env_value("STRIPE_PRICE_REFILL_500"):
+        missing.append("STRIPE_PRICE_REFILL_500")
+    checkout_success_url = _env_value("STRIPE_CHECKOUT_SUCCESS_URL")
+    if not checkout_success_url:
+        missing.append("STRIPE_CHECKOUT_SUCCESS_URL")
+    elif not checkout_success_url.lower().startswith("https://"):
+        missing.append("STRIPE_CHECKOUT_SUCCESS_URL (must use https)")
+    checkout_cancel_url = _env_value("STRIPE_CHECKOUT_CANCEL_URL")
+    if not checkout_cancel_url:
+        missing.append("STRIPE_CHECKOUT_CANCEL_URL")
+    elif not checkout_cancel_url.lower().startswith("https://"):
+        missing.append("STRIPE_CHECKOUT_CANCEL_URL (must use https)")
+    stripe_processed_cap_raw = _env_value("STRIPE_MAX_PROCESSED_EVENTS").strip()
+    if stripe_processed_cap_raw:
+        try:
+            stripe_processed_cap = int(stripe_processed_cap_raw)
+        except ValueError:
+            missing.append("STRIPE_MAX_PROCESSED_EVENTS (must be an integer; use 0 for unbounded dedupe history)")
+        else:
+            if stripe_processed_cap > 0:
+                missing.append("STRIPE_MAX_PROCESSED_EVENTS (must be 0 in prod to preserve webhook idempotency)")
     if _recaptcha_required_any():
         if not _env_value("RECAPTCHA_SITE_KEY"):
             missing.append("RECAPTCHA_SITE_KEY")

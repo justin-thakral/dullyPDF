@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react';
 import type { User } from 'firebase/auth';
+import { loadPdfFromFile } from '../utils/pdf';
 
 export interface UsePipelineModalDeps {
   verifiedUser: User | null;
@@ -42,14 +43,48 @@ export function usePipelineModal(deps: UsePipelineModalDeps) {
     const wantsMap = uploadWantsMap;
     if (wantsRename || wantsMap) {
       if (!deps.verifiedUser) { setPipelineError('Sign in to use OpenAI actions.'); return; }
-      const requiredCredits = wantsRename && wantsMap ? 2 : 1;
       const profile = await deps.loadUserProfile();
       if (!profile) { setPipelineError('Unable to check OpenAI credits. Try signing out and signing in again.'); return; }
       const role = String(profile.role || '').toLowerCase();
       if (role !== 'god') {
-        const remaining = typeof profile.creditsRemaining === 'number' ? profile.creditsRemaining : 0;
+        const operation = wantsRename && wantsMap ? 'rename_remap' : (wantsRename ? 'rename' : 'remap');
+        const pricing = profile.creditPricing ?? {
+          pageBucketSize: 5,
+          renameBaseCost: 1,
+          remapBaseCost: 1,
+          renameRemapBaseCost: 2,
+        };
+        const baseCost = operation === 'rename_remap'
+          ? pricing.renameRemapBaseCost
+          : (operation === 'rename' ? pricing.renameBaseCost : pricing.remapBaseCost);
+        let requiredCredits = baseCost;
+        try {
+          const pdfDoc = await loadPdfFromFile(pendingDetectFile);
+          const pageCount = Math.max(1, Number(pdfDoc.numPages) || 1);
+          const bucketSize = Math.max(1, Number(pricing.pageBucketSize) || 1);
+          const bucketCount = Math.ceil(pageCount / bucketSize);
+          requiredCredits = Math.max(1, baseCost * bucketCount);
+          void pdfDoc.destroy().catch(() => {});
+        } catch {
+          // If local page counting fails, continue with the single-bucket estimate
+          // and rely on server-side pricing enforcement as a final guard.
+          requiredCredits = Math.max(1, baseCost);
+        }
+        const remaining = typeof profile.availableCredits === 'number'
+          ? profile.availableCredits
+          : (typeof profile.creditsRemaining === 'number' ? profile.creditsRemaining : 0);
         if (remaining < requiredCredits) {
-          setPipelineError(`OpenAI credits exhausted. Remaining=${remaining}, required=${requiredCredits}. Uncheck OpenAI actions to run field detection without AI.`);
+          if (role === 'pro') {
+            setPipelineError(
+              `OpenAI credits exhausted. Remaining=${remaining}, required=${requiredCredits}. ` +
+              'Purchase a 500-credit refill from your profile to continue.',
+            );
+          } else {
+            setPipelineError(
+              `OpenAI credits exhausted. Remaining=${remaining}, required=${requiredCredits}. ` +
+              'Upgrade to Pro from your profile to continue.',
+            );
+          }
           return;
         }
       }

@@ -11,6 +11,9 @@ const entrypointMocks = vi.hoisted(() => {
     })),
     App: vi.fn(() => <div data-testid="app-view">App shell</div>),
     LegalPage: vi.fn(({ kind }: { kind: string }) => <div data-testid={`legal-${kind}`}>Legal {kind}</div>),
+    UsageDocsPage: vi.fn(({ pageKey, unknownSlug }: { pageKey: string; unknownSlug?: string | null }) => (
+      <div data-testid={`usage-docs-${pageKey}`}>Usage docs {pageKey} {unknownSlug ?? ''}</div>
+    )),
   };
 });
 
@@ -24,6 +27,10 @@ vi.mock('../../../src/App', () => ({
 
 vi.mock('../../../src/components/pages/LegalPage', () => ({
   default: entrypointMocks.LegalPage,
+}));
+
+vi.mock('../../../src/components/pages/UsageDocsPage', () => ({
+  default: entrypointMocks.UsageDocsPage,
 }));
 
 const importEntrypoint = async (pathname: string) => {
@@ -45,6 +52,7 @@ describe('main entrypoint', () => {
     entrypointMocks.createRoot.mockClear();
     entrypointMocks.App.mockClear();
     entrypointMocks.LegalPage.mockClear();
+    entrypointMocks.UsageDocsPage.mockClear();
   });
 
   afterEach(() => {
@@ -62,6 +70,7 @@ describe('main entrypoint', () => {
     expect(screen.getByTestId('app-view')).toBeTruthy();
     expect(screen.queryByTestId('legal-privacy')).toBeNull();
     expect(screen.queryByTestId('legal-terms')).toBeNull();
+    expect(screen.queryByTestId('usage-docs-index')).toBeNull();
   });
 
   it.each([
@@ -77,6 +86,23 @@ describe('main entrypoint', () => {
     renderCapturedTree();
 
     expect(screen.getByTestId(`legal-${kind}`)).toBeTruthy();
+    expect(screen.queryByTestId('app-view')).toBeNull();
+  });
+
+  it.each([
+    ['/usage-docs', 'index'],
+    ['/usage-docs/getting-started', 'getting-started'],
+    ['/usage-docs/editor-workflow', 'editor-workflow'],
+    ['/docs/search-fill', 'search-fill'],
+    ['/usage-docs/not-a-real-page', 'index'],
+  ])('renders UsageDocs pageKey=%s route=%s', async (pathname, pageKey) => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response('', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await importEntrypoint(pathname);
+    renderCapturedTree();
+
+    expect(screen.getByTestId(`usage-docs-${pageKey}`)).toBeTruthy();
     expect(screen.queryByTestId('app-view')).toBeNull();
   });
 

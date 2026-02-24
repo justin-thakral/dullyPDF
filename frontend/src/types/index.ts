@@ -73,6 +73,32 @@ export type CheckboxHint = {
   directBooleanPossible?: boolean;
 };
 
+export type TextTransformRuleOperation =
+  | 'copy'
+  | 'concat'
+  | 'split_name_first_rest'
+  | 'split_delimiter';
+
+export type TextTransformRule = {
+  targetField: string;
+  operation: TextTransformRuleOperation;
+  sources: string[];
+  separator?: string;
+  delimiter?: string;
+  part?: 'first' | 'rest' | 'last';
+  index?: number;
+  confidence?: number;
+  requiresReview?: boolean;
+  reasoning?: string;
+};
+
+export type FillRules = {
+  version?: number;
+  checkboxRules?: CheckboxRule[];
+  checkboxHints?: CheckboxHint[];
+  textTransformRules?: TextTransformRule[];
+};
+
 // Cached page dimensions for rendering and clamping.
 export type PageSize = {
   width: number;

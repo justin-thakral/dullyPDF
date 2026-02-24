@@ -41,6 +41,7 @@ def store_session_entry(
     persist_fields: bool = True,
     persist_result: bool = True,
     persist_checkbox_hints: bool = False,
+    persist_text_transform_rules: bool = False,
     persist_l1: bool = True,
 ) -> None:
     """Store a new session in L2 and optionally cache it in L1."""
@@ -51,6 +52,7 @@ def store_session_entry(
         persist_fields=persist_fields,
         persist_result=persist_result,
         persist_checkbox_hints=persist_checkbox_hints,
+        persist_text_transform_rules=persist_text_transform_rules,
         include_created_at=True,
     )
     if persist_l1:
@@ -67,6 +69,7 @@ def update_session_entry(
     persist_renames: bool = False,
     persist_checkbox_rules: bool = False,
     persist_checkbox_hints: bool = False,
+    persist_text_transform_rules: bool = False,
 ) -> None:
     """Persist session updates to L2.
     """
@@ -79,6 +82,7 @@ def update_session_entry(
         persist_renames=persist_renames,
         persist_checkbox_rules=persist_checkbox_rules,
         persist_checkbox_hints=persist_checkbox_hints,
+        persist_text_transform_rules=persist_text_transform_rules,
         include_created_at=False,
     )
 
@@ -93,6 +97,7 @@ def get_session_entry(
     include_renames: bool = True,
     include_checkbox_rules: bool = True,
     include_checkbox_hints: bool = False,
+    include_text_transform_rules: bool = False,
     force_l2: bool = False,
 ) -> SessionEntry:
     """Return a session entry, loading from L2 when needed.
@@ -106,6 +111,7 @@ def get_session_entry(
             include_renames=include_renames,
             include_checkbox_rules=include_checkbox_rules,
             include_checkbox_hints=include_checkbox_hints,
+            include_text_transform_rules=include_text_transform_rules,
         )
         if not entry:
             raise HTTPException(status_code=404, detail="Session not found")
@@ -133,6 +139,7 @@ def get_session_entry(
             include_renames=include_renames,
             include_checkbox_rules=include_checkbox_rules,
             include_checkbox_hints=include_checkbox_hints,
+            include_text_transform_rules=include_text_transform_rules,
         )
         _require_owner(entry, user)
         if _missing_required_data(
@@ -143,6 +150,7 @@ def get_session_entry(
             include_renames=include_renames,
             include_checkbox_rules=include_checkbox_rules,
             include_checkbox_hints=include_checkbox_hints,
+            include_text_transform_rules=include_text_transform_rules,
         ):
             raise HTTPException(status_code=404, detail="Session data not found")
         _touch_l2_session(session_id, entry, now)
@@ -156,6 +164,7 @@ def get_session_entry(
         include_renames=include_renames,
         include_checkbox_rules=include_checkbox_rules,
         include_checkbox_hints=include_checkbox_hints,
+        include_text_transform_rules=include_text_transform_rules,
     )
     if not entry:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -175,6 +184,7 @@ def get_session_entry_if_present(
     include_renames: bool = True,
     include_checkbox_rules: bool = True,
     include_checkbox_hints: bool = False,
+    include_text_transform_rules: bool = False,
     force_l2: bool = False,
 ) -> Optional[SessionEntry]:
     """Return a session entry when it exists and is owned by the caller.
@@ -190,6 +200,7 @@ def get_session_entry_if_present(
             include_renames=include_renames,
             include_checkbox_rules=include_checkbox_rules,
             include_checkbox_hints=include_checkbox_hints,
+            include_text_transform_rules=include_text_transform_rules,
         )
         if not entry:
             return None
@@ -217,6 +228,7 @@ def get_session_entry_if_present(
             include_renames=include_renames,
             include_checkbox_rules=include_checkbox_rules,
             include_checkbox_hints=include_checkbox_hints,
+            include_text_transform_rules=include_text_transform_rules,
         )
         _require_owner(entry, user)
         if _missing_required_data(
@@ -227,6 +239,7 @@ def get_session_entry_if_present(
             include_renames=include_renames,
             include_checkbox_rules=include_checkbox_rules,
             include_checkbox_hints=include_checkbox_hints,
+            include_text_transform_rules=include_text_transform_rules,
         ):
             return None
         _touch_l2_session(session_id, entry, now)
@@ -240,6 +253,7 @@ def get_session_entry_if_present(
         include_renames=include_renames,
         include_checkbox_rules=include_checkbox_rules,
         include_checkbox_hints=include_checkbox_hints,
+        include_text_transform_rules=include_text_transform_rules,
     )
     if not entry:
         return None

@@ -16,6 +16,24 @@ const authMocks = vi.hoisted(() => ({
 const apiServiceMocks = vi.hoisted(() => ({
   getSavedForms: vi.fn().mockResolvedValue([]),
   getProfile: vi.fn().mockResolvedValue(null),
+  createBillingCheckoutSession: vi.fn(),
+  reconcileBillingCheckoutFulfillment: vi.fn().mockResolvedValue({
+    success: true,
+    dryRun: false,
+    scope: 'self',
+    auditedEventCount: 0,
+    candidateEventCount: 0,
+    pendingReconciliationCount: 0,
+    reconciledCount: 0,
+    alreadyProcessedCount: 0,
+    processingCount: 0,
+    retryableCount: 0,
+    failedCount: 0,
+    invalidCount: 0,
+    skippedForUserCount: 0,
+    events: [],
+  }),
+  cancelBillingSubscription: vi.fn(),
   createTemplateSession: vi.fn().mockResolvedValue({ success: true, sessionId: 'session-1', fieldCount: 1 }),
   materializeFormPdf: vi.fn().mockResolvedValue(new Blob(['pdf'], { type: 'application/pdf' })),
   saveFormToProfile: vi.fn().mockResolvedValue({ success: true, id: 'saved-1' }),
@@ -114,7 +132,31 @@ vi.mock('../../../src/components/pages/LoginPage', () => ({
 }));
 
 vi.mock('../../../src/components/pages/ProfilePage', () => ({
-  default: () => <div data-testid="profile-page">Profile</div>,
+  default: (props: any) => (
+    <div data-testid="profile-page">
+      <div data-testid="billing-kind">{props.billingCheckoutInProgressKind ?? 'idle'}</div>
+      <div data-testid="billing-cancel">{String(Boolean(props.billingCancelInProgress))}</div>
+      <button
+        data-testid="profile-start-monthly"
+        type="button"
+        onClick={() => props.onStartBillingCheckout?.('pro_monthly')}
+        disabled={!props.onStartBillingCheckout}
+      >
+        Start monthly
+      </button>
+      <button
+        data-testid="profile-cancel-subscription"
+        type="button"
+        onClick={() => props.onCancelBillingSubscription?.()}
+        disabled={!props.onCancelBillingSubscription}
+      >
+        Cancel subscription
+      </button>
+      <button data-testid="profile-close" type="button" onClick={() => props.onClose?.()}>
+        Close profile
+      </button>
+    </div>
+  ),
 }));
 
 vi.mock('../../../src/components/pages/VerifyEmailPage', () => ({
@@ -126,7 +168,18 @@ vi.mock('../../../src/components/layout/HeaderBar', () => ({
 }));
 
 vi.mock('../../../src/components/layout/LegacyHeader', () => ({
-  default: () => <div data-testid="legacy-header">Legacy Header</div>,
+  default: (props: any) => (
+    <div data-testid="legacy-header">
+      <button
+        data-testid="open-profile"
+        type="button"
+        onClick={() => props.onOpenProfile?.()}
+        disabled={!props.onOpenProfile}
+      >
+        Open profile
+      </button>
+    </div>
+  ),
 }));
 
 vi.mock('../../../src/components/features/SearchFillModal', () => ({
@@ -212,8 +265,15 @@ const settleAuthAsSignedOut = async () => {
   });
 };
 
+const settleAuthAsSignedIn = async () => {
+  await act(async () => {
+    await appState.authStateCallback?.(makeAuthUser());
+  });
+};
+
 describe('App', () => {
   beforeEach(() => {
+    window.history.replaceState({}, '', '/');
     window.scrollTo = vi.fn();
     appState.authStateCallback = null;
     authMocks.onAuthStateChanged.mockClear();
@@ -272,6 +332,214 @@ describe('App', () => {
     await waitFor(() => {
       expect(authMocks.onAuthStateChanged).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it('runs checkout flow from profile and surfaces checkout errors gracefully', async () => {
+    apiServiceMocks.getProfile.mockResolvedValue({
+      email: 'qa@example.com',
+      role: 'base',
+      creditsRemaining: 10,
+      availableCredits: 10,
+      monthlyCreditsRemaining: 0,
+      refillCreditsRemaining: 0,
+      refillCreditsLocked: false,
+      creditPricing: {
+        pageBucketSize: 5,
+        renameBaseCost: 1,
+        remapBaseCost: 1,
+        renameRemapBaseCost: 2,
+      },
+      billing: {
+        enabled: true,
+        plans: {
+          pro_monthly: {
+            kind: 'pro_monthly',
+            mode: 'subscription',
+            priceId: 'price_monthly',
+            label: 'Pro Monthly',
+            currency: 'usd',
+            unitAmount: 1000,
+            interval: 'month',
+            refillCredits: null,
+          },
+        },
+      },
+      limits: { detectMaxPages: 10, fillableMaxPages: 20, savedFormsMax: 5 },
+    });
+    let rejectCheckout: ((reason?: unknown) => void) | null = null;
+    const checkoutPromise = new Promise((_resolve, reject) => {
+      rejectCheckout = reject;
+    });
+    apiServiceMocks.createBillingCheckoutSession.mockReturnValue(checkoutPromise);
+    const App = await importApp();
+    render(<App />);
+
+    await settleAuthAsSignedIn();
+    fireEvent.click(await screen.findByTestId('open-profile'));
+    expect(await screen.findByTestId('profile-page')).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId('profile-start-monthly'));
+    await waitFor(() => {
+      expect(apiServiceMocks.createBillingCheckoutSession).toHaveBeenCalledWith('pro_monthly');
+    });
+    expect(screen.getByTestId('billing-kind').textContent).toBe('pro_monthly');
+
+    await act(async () => {
+      rejectCheckout?.(new Error('checkout down'));
+    });
+    const checkoutAlert = await screen.findByRole('alert');
+    expect(checkoutAlert.textContent || '').toContain('checkout down');
+    await waitFor(() => {
+      expect(screen.getByTestId('billing-kind').textContent).toBe('idle');
+    });
+  });
+
+  it('keeps cancel state active until profile refresh resolves', async () => {
+    const profilePayload = {
+      email: 'qa@example.com',
+      role: 'pro',
+      creditsRemaining: 10,
+      availableCredits: 10,
+      monthlyCreditsRemaining: 10,
+      refillCreditsRemaining: 0,
+      refillCreditsLocked: false,
+      creditPricing: {
+        pageBucketSize: 5,
+        renameBaseCost: 1,
+        remapBaseCost: 1,
+        renameRemapBaseCost: 2,
+      },
+      billing: {
+        enabled: true,
+        hasSubscription: true,
+        plans: {
+          pro_monthly: {
+            kind: 'pro_monthly',
+            mode: 'subscription',
+            priceId: 'price_monthly',
+            label: 'Pro Monthly',
+            currency: 'usd',
+            unitAmount: 1000,
+            interval: 'month',
+            refillCredits: null,
+          },
+        },
+      },
+      limits: { detectMaxPages: 10, fillableMaxPages: 20, savedFormsMax: 5 },
+    };
+
+    let profileCallCount = 0;
+    let resolveRefresh: ((value: typeof profilePayload) => void) | null = null;
+    const refreshPromise = new Promise<typeof profilePayload>((resolve) => {
+      resolveRefresh = resolve;
+    });
+    apiServiceMocks.getProfile.mockImplementation(() => {
+      profileCallCount += 1;
+      if (profileCallCount === 1) {
+        return Promise.resolve(profilePayload);
+      }
+      return refreshPromise;
+    });
+    apiServiceMocks.cancelBillingSubscription.mockResolvedValue({
+      success: true,
+      subscriptionId: 'sub_123',
+      status: 'active',
+      cancelAtPeriodEnd: false,
+    });
+
+    const App = await importApp();
+    render(<App />);
+
+    await settleAuthAsSignedIn();
+    fireEvent.click(await screen.findByTestId('open-profile'));
+    expect(await screen.findByTestId('profile-page')).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId('profile-cancel-subscription'));
+    await waitFor(() => {
+      expect(apiServiceMocks.cancelBillingSubscription).toHaveBeenCalledTimes(1);
+    });
+    expect(screen.getByTestId('billing-cancel').textContent).toBe('true');
+
+    await act(async () => {
+      resolveRefresh?.(profilePayload);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('billing-cancel').textContent).toBe('false');
+    });
+  });
+
+  it('shows already-cancelled info when cancellation is already scheduled', async () => {
+    const profilePayload = {
+      email: 'qa@example.com',
+      role: 'pro',
+      creditsRemaining: 10,
+      availableCredits: 10,
+      monthlyCreditsRemaining: 10,
+      refillCreditsRemaining: 0,
+      refillCreditsLocked: false,
+      creditPricing: {
+        pageBucketSize: 5,
+        renameBaseCost: 1,
+        remapBaseCost: 1,
+        renameRemapBaseCost: 2,
+      },
+      billing: {
+        enabled: true,
+        hasSubscription: true,
+        subscriptionStatus: 'active',
+        cancelAtPeriodEnd: true,
+        cancelAt: 1775000000,
+        currentPeriodEnd: 1775000000,
+        plans: {
+          pro_monthly: {
+            kind: 'pro_monthly',
+            mode: 'subscription',
+            priceId: 'price_monthly',
+            label: 'Pro Monthly',
+            currency: 'usd',
+            unitAmount: 1000,
+            interval: 'month',
+            refillCredits: null,
+          },
+        },
+      },
+      limits: { detectMaxPages: 10, fillableMaxPages: 20, savedFormsMax: 5 },
+    };
+    apiServiceMocks.getProfile.mockResolvedValue(profilePayload);
+    apiServiceMocks.cancelBillingSubscription.mockResolvedValue({
+      success: true,
+      subscriptionId: 'sub_123',
+      status: 'active',
+      cancelAtPeriodEnd: true,
+      alreadyCanceled: true,
+    });
+
+    const App = await importApp();
+    render(<App />);
+
+    await settleAuthAsSignedIn();
+    fireEvent.click(await screen.findByTestId('open-profile'));
+    expect(await screen.findByTestId('profile-page')).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId('profile-cancel-subscription'));
+
+    await waitFor(() => {
+      expect(apiServiceMocks.cancelBillingSubscription).not.toHaveBeenCalled();
+    });
+    expect((await screen.findByRole('alert')).textContent || '').toContain(
+      'Subscription is already cancelled for period end.',
+    );
+  });
+
+  it('shows checkout cancel banner from billing query param and clears it from URL', async () => {
+    window.history.replaceState({}, '', '/?billing=cancel');
+    const App = await importApp();
+    render(<App />);
+
+    await settleAuthAsSignedOut();
+    expect((await screen.findByRole('alert')).textContent || '').toContain('Checkout was canceled.');
+    expect(window.location.search.includes('billing=')).toBe(false);
   });
 
   it('gates save action for signed-out users after loading a fillable PDF', async () => {

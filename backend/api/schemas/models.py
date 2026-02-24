@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -195,3 +195,43 @@ class RecaptchaAssessmentRequest(BaseModel):
             trimmed = value.strip()
             return trimmed if trimmed else None
         return value
+
+
+BillingCheckoutKind = Literal["pro_monthly", "pro_yearly", "refill_500"]
+
+
+class BillingCheckoutRequest(BaseModel):
+    """Create a Stripe Checkout session for a supported billing action."""
+
+    kind: BillingCheckoutKind = Field(..., min_length=1, max_length=32)
+    attempt_id: Optional[str] = Field(default=None, alias="attemptId", max_length=120)
+
+    model_config = {"extra": "ignore"}
+
+    @field_validator("kind", mode="before")
+    @classmethod
+    def _normalize_kind(cls, value: Any) -> str:
+        if value is None:
+            raise ValueError("Checkout kind is required")
+        resolved = str(value).strip().lower()
+        if resolved not in {"pro_monthly", "pro_yearly", "refill_500"}:
+            raise ValueError("Unsupported checkout kind")
+        return resolved
+
+    @field_validator("attempt_id", mode="before")
+    @classmethod
+    def _normalize_attempt_id(cls, value: Any) -> Optional[str]:
+        if value is None:
+            return None
+        resolved = str(value).strip()
+        return resolved or None
+
+
+class BillingReconcileRequest(BaseModel):
+    """Audit and optionally recover recent Stripe checkout fulfillment."""
+
+    lookback_hours: int = Field(default=72, alias="lookbackHours", ge=1, le=720)
+    max_events: int = Field(default=100, alias="maxEvents", ge=1, le=500)
+    dry_run: bool = Field(default=False, alias="dryRun")
+
+    model_config = {"extra": "ignore"}

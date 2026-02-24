@@ -63,6 +63,7 @@ backend/.venv/bin/pytest backend/test/integration --cov=backend --cov-config=.co
 4. Materialize PDF flow
 5. Public contact + reCAPTCHA routes
 6. Detector service retry/finalization behavior
+7. Billing webhook signature validation + lifecycle dispatch (`/api/billing/webhook`)
 
 ## Definition of Done for a Completed Integration File
 

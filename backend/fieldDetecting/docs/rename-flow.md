@@ -35,7 +35,11 @@ Outputs:
   - Normalized `name` (snake_case, checkbox prefix `i_`)
   - Checkbox grouping hints (`groupKey`, `optionKey`, `groupLabel`, `optionLabel`) when available
   - `mappingConfidence` when a rename matches a schema header name
-- Optional checkbox rules for Search & Fill when schema headers are provided (`checkboxRules`).
+- Optional fill-time rules when schema headers are provided:
+  - `checkboxRules`
+  - `checkboxHints`
+  - `textTransformRules` (deterministic text split/join/copy operations)
+  - `fillRules` envelope (`version`, `checkboxRules`, `checkboxHints`, `textTransformRules`)
 
 API response note:
 - `POST /detect-fields` queues detection and returns a `sessionId`.
@@ -45,6 +49,7 @@ API response note:
 - `GET /api/renames/ai/{jobId}` returns queued/running/failed/complete status for async rename jobs.
 - `POST /api/schema-mappings/ai` can return `status=queued` + `jobId` in task mode.
 - `GET /api/schema-mappings/ai/{jobId}` returns queued/running/failed/complete status for async remap jobs.
+- Mapping responses include `mappings` plus deterministic rule payloads (`checkboxRules`, `checkboxHints`, `textTransformRules`, `fillRules`) used by Search & Fill.
 - The original name is preserved in `originalName` so the UI can reconcile edits.
 - Template overlay `rect` values may be sent as `{x,y,width,height}` or `[x1,y1,x2,y2]` (originTop points). The backend normalizes to a consistent numeric shape before use: schema mapping allowlists use `{x,y,width,height}`, while rename geometry uses `[x1,y1,x2,y2]`.
 
@@ -57,16 +62,68 @@ When schema headers are provided, the response includes a trailing JSON block:
 Files:
 - `backend/fieldDetecting/rename_pipeline/combinedSrc/field_overlay.py`: renders the overlay image with field IDs centered inside field boxes and centered on checkbox squares.
 - `backend/fieldDetecting/rename_pipeline/combinedSrc/rename_resolver.py`: calls OpenAI and applies renames to fields.
+- `backend/fieldDetecting/rename_pipeline/combinedSrc/prompt_builder.py`: prompt assembly, prompt-noise compaction, and schema shortlist selection.
+- `backend/fieldDetecting/rename_pipeline/combinedSrc/payload_budgeter.py`: payload size estimation plus image fallback ladder (clean/prev tightening, prev-drop, overlay downscale).
 - `backend/fieldDetecting/rename_pipeline/combinedSrc/openai_utils.py`: retries the Responses API when a model rejects `temperature`.
 - `backend/ai/rename_pipeline.py`: orchestration used by `/api/renames/ai` (render + labels + rename).
 
-## Confidence gating
+Overlay readability note:
+- Checkbox tags are fit adaptively per checkbox box size, not a fixed text scale.
+- For tiny checkbox boxes, renderer truncates/downsized text to keep tag text inside bounds.
+- Checkbox label scoring is shared between overlay debug behavior and rename hint generation.
 
-- `renameConfidence` measures how confident the model is in the proposed name.
-- `isItAfieldConfidence` measures how confident the model is that the overlay item is a real field.
-- Fields with `isItAfieldConfidence < SANDBOX_RENAME_MIN_FIELD_CONF` are kept and
-  `renameConfidence` is set to 0, but suggested names are still applied (best-guess). The
-  response still records them in `dropped` for visibility.
+## Confidence model and gating
+
+The rename flow carries multiple confidence values with different purposes.
+
+### 1) `isItAfieldConfidence` (fieldness confidence)
+
+- Source: model output line `|| ... | isItAfieldConfidence`.
+- Meaning: confidence that a candidate is a real fillable field (not decorative content).
+- Runtime role:
+  - Always written to each renamed field as `isItAfieldConfidence`.
+  - Compared against `SANDBOX_RENAME_MIN_FIELD_CONF` (default `0.30`).
+  - If below threshold, the field is added to `dropped` and `renameConfidence` is forced to `0`.
+
+Important:
+- Fields below threshold are not removed from the returned field list. They remain editable in UI.
+
+### 2) `renameConfidence` (name confidence)
+
+- Source: model output line `|| ... | renameConfidence | ...`.
+- Meaning: confidence that the suggested field name is correct.
+- Runtime role:
+  - Stored per field as `renameConfidence`.
+  - Forced to `0` when `isItAfieldConfidence < SANDBOX_RENAME_MIN_FIELD_CONF`.
+
+### 3) `mappingConfidence` (schema-alignment confidence in combined mode)
+
+- Produced only when schema headers are included in rename (`/api/renames/ai` with `schemaId`).
+- Current behavior:
+  - If normalized renamed field name matches a schema field exactly, `mappingConfidence` is set to that field's `renameConfidence`.
+  - Otherwise `mappingConfidence` is `null`.
+
+### 4) CommonForms category thresholds (green/yellow/red)
+
+When category recalculation is enabled (`adjust_field_confidence=True` path), category is derived from `isItAfieldConfidence` using:
+
+- green: `>= COMMONFORMS_CONFIDENCE_GREEN` (default `0.80`)
+- yellow: `>= COMMONFORMS_CONFIDENCE_YELLOW` and `< green` (default `0.65..0.79`)
+- red: `< COMMONFORMS_CONFIDENCE_YELLOW` (default `<0.65`)
+
+Notes:
+- API rename currently keeps returning confidence numbers regardless of category refresh.
+- Frontend filtering is confidence-number driven and does not require backend `category`.
+
+### 5) Frontend confidence tiers (high/medium/low)
+
+Frontend UI (`frontend/src/utils/confidence.ts`) uses:
+
+- high: `>= 0.80`
+- medium: `>= 0.65 and < 0.80`
+- low: `< 0.65`
+
+Field list confidence filtering uses `fieldConfidence` first (mapped from `isItAfieldConfidence` when present), then falls back to naming confidence when needed.
 
 ## Overlay naming and mapping
 
@@ -97,6 +154,15 @@ Each field in the prompt includes metadata derived from candidate context:
 
 These values steer the model away from paragraph text, long rules, or decorative boxes.
 
+Prompt hygiene:
+- `SANDBOX_RENAME_PROMPT_HYGIENE` (default on) removes only exact duplicate bullet lines and repeated blank lines.
+- This reduces noise while preserving unique instructions.
+
+Schema list policy:
+- If schema size is `<= SANDBOX_RENAME_DB_PROMPT_FULL_THRESHOLD` (default `1000`), all fields are included in the rename prompt.
+- If schema size is above threshold, prompt includes a ranked shortlist of likely matches (`SANDBOX_RENAME_DB_PROMPT_SHORTLIST_LIMIT`, default `450`) based on token overlap with page overlay IDs and checkbox option hints.
+- If prompt text still exceeds `SANDBOX_RENAME_PAGE_PROMPT_CHAR_BUDGET`, shortlist can be reduced again using `SANDBOX_RENAME_DB_PROMPT_BUDGET_SHORTLIST_LIMIT`.
+
 ## Checkbox label hints
 
 Checkboxes are too small to host long IDs plus label context, so a best-effort label hint is
@@ -116,6 +182,27 @@ legible. A page is considered dense when:
 - The minimum distance between field centers <= `SANDBOX_RENAME_DENSE_MIN_CENTER_DIST`.
 
 Dense pages use `SANDBOX_RENAME_DENSE_MAX_DIM` and `SANDBOX_RENAME_DENSE_FORMAT`.
+
+## Image payload profiles and budgets
+
+Rename uses separate image profiles for model input:
+
+- Clean page image profile (`SANDBOX_RENAME_CLEAN_*`) for lower-cost visual context.
+- Overlay image profile (`SANDBOX_RENAME_OVERLAY_*`) for tag fidelity.
+
+Default intent:
+- Clean image is sent with lower detail (`low`) unless overridden.
+- Overlay image is sent with high detail (`high`) so short IDs remain readable.
+
+Per-page preflight budgets:
+- Prompt budget: `SANDBOX_RENAME_PAGE_PROMPT_CHAR_BUDGET`
+- Image budget: `SANDBOX_RENAME_PAGE_IMAGE_BYTE_BUDGET`
+
+Fallback ladder when above budget:
+1. Tighten clean image settings (`SANDBOX_RENAME_BUDGET_CLEAN_*`) and force clean/prev detail to low.
+2. Drop previous-page crop context.
+3. Reduce overlay max dimension down toward `SANDBOX_RENAME_OVERLAY_MIN_DIM`.
+4. If still above budget, continue with best-effort payload and log a warning.
 
 ## Previous-page context
 
@@ -198,11 +285,27 @@ Common rename settings (all optional):
 - `SANDBOX_RENAME_MIN_FIELD_CONF`: drop threshold for `isItAfieldConfidence`
 - `SANDBOX_RENAME_OVERLAY_QUALITY`: overlay image quality (default 92, 96 for commonforms)
 - `SANDBOX_RENAME_OVERLAY_MAX_DIM`: max dimension for overlay scaling (default 6000)
-- `SANDBOX_RENAME_OVERLAY_FORMAT`: `png` or `jpeg`
+- `SANDBOX_RENAME_OVERLAY_FORMAT`: `png`, `jpg`, or `webp`
+- `SANDBOX_RENAME_OVERLAY_DETAIL`: OpenAI image detail for overlay (`high`, `low`, `auto`)
+- `SANDBOX_RENAME_OVERLAY_MIN_DIM`: minimum overlay max-dim during budget fallback
+- `SANDBOX_RENAME_CLEAN_QUALITY`: clean image quality
+- `SANDBOX_RENAME_CLEAN_MAX_DIM`: clean image max dimension
+- `SANDBOX_RENAME_CLEAN_FORMAT`: `png`, `jpg`, or `webp`
+- `SANDBOX_RENAME_CLEAN_DETAIL`: OpenAI image detail for clean image (`low` default)
+- `SANDBOX_RENAME_PREV_PAGE_DETAIL`: OpenAI image detail for previous-page crop
 - `SANDBOX_RENAME_DENSE_FIELD_COUNT`: dense page threshold
 - `SANDBOX_RENAME_DENSE_MIN_CENTER_DIST`: dense page spacing threshold
 - `SANDBOX_RENAME_DENSE_MAX_DIM`: max dimension for dense pages
 - `SANDBOX_RENAME_DENSE_FORMAT`: format override for dense pages
+- `SANDBOX_RENAME_PAGE_PROMPT_CHAR_BUDGET`: per-page prompt character budget
+- `SANDBOX_RENAME_PAGE_IMAGE_BYTE_BUDGET`: per-page image payload budget
+- `SANDBOX_RENAME_BUDGET_CLEAN_MAX_DIM`: tightened clean max dim during fallback
+- `SANDBOX_RENAME_BUDGET_CLEAN_QUALITY`: tightened clean quality during fallback
+- `SANDBOX_RENAME_BUDGET_CLEAN_FORMAT`: tightened clean format during fallback
+- `SANDBOX_RENAME_DB_PROMPT_FULL_THRESHOLD`: schema count threshold for full inclusion (default `1000`)
+- `SANDBOX_RENAME_DB_PROMPT_SHORTLIST_LIMIT`: schema shortlist size when threshold is exceeded
+- `SANDBOX_RENAME_DB_PROMPT_BUDGET_SHORTLIST_LIMIT`: reduced shortlist size when prompt budget is still exceeded
+- `SANDBOX_RENAME_PROMPT_HYGIENE`: toggle duplicate-bullet prompt cleanup
 - `SANDBOX_RENAME_PREV_PAGE_FRACTION`: previous-page crop height fraction
 - `SANDBOX_RENAME_PREV_PAGE_TOP_FRACTION`: top-of-page trigger threshold
 - `OPENAI_REQUEST_TIMEOUT_SECONDS`: OpenAI SDK per-request timeout (default 75)

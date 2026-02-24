@@ -2,7 +2,13 @@
  * Search & Fill modal for populating fields from data sources.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { CheckboxHint, CheckboxRule, DataSourceKind, PdfField } from '../../types';
+import type {
+  CheckboxHint,
+  CheckboxRule,
+  DataSourceKind,
+  PdfField,
+  TextTransformRule,
+} from '../../types';
 import './SearchFillModal.css';
 import { normaliseDataKey } from '../../utils/dataSource';
 import { computeCheckboxMeta, type CheckboxMeta as CheckboxMetaType } from '../../utils/checkboxMeta';
@@ -29,6 +35,7 @@ type SearchFillModalProps = {
   fields: PdfField[];
   checkboxRules?: CheckboxRule[];
   checkboxHints?: CheckboxHint[];
+  textTransformRules?: TextTransformRule[];
   onFieldsChange: (next: PdfField[]) => void;
   onClearFields: () => void;
   onAfterFill: () => void;
@@ -64,6 +71,10 @@ const CHECKBOX_ALIASES: Record<string, string[]> = {
 
 const CHECKBOX_TRUE_ALIASES = ['yes', 'true', 'y', 't', 'on', 'checked', '1'];
 const CHECKBOX_FALSE_ALIASES = ['no', 'false', 'n', 'f', 'off', 'unchecked', '0'];
+
+function compactCheckboxToken(raw: string): string {
+  return normaliseDataKey(raw).replace(/_/g, '');
+}
 
 function coerceValue(value: unknown): string | number | boolean | null {
   if (value === null || value === undefined) return null;
@@ -180,6 +191,7 @@ export default function SearchFillModal({
   fields,
   checkboxRules,
   checkboxHints,
+  textTransformRules,
   onFieldsChange,
   onClearFields,
   onAfterFill,
@@ -345,21 +357,31 @@ export default function SearchFillModal({
       ): string | null => {
         const normalized = normaliseDataKey(String(rawValue ?? ''));
         if (!normalized) return null;
+        const compact = compactCheckboxToken(normalized);
         if (valueMap) {
           const normalizedMap = normalizeValueMap(valueMap);
           const rawString = String(rawValue ?? '');
+          const trimmedRaw = rawString.trim();
+          const normalizedTrimmed = normaliseDataKey(trimmedRaw);
+          const compactTrimmed = compactCheckboxToken(trimmedRaw);
           const mapped =
             normalizedMap?.[normalized] ??
+            normalizedMap?.[compact] ??
+            normalizedMap?.[normalizedTrimmed] ??
+            normalizedMap?.[compactTrimmed] ??
             valueMap[rawString] ??
-            valueMap[rawString.trim()] ??
-            valueMap[normalized];
+            valueMap[trimmedRaw] ??
+            valueMap[normalized] ??
+            valueMap[normalizedTrimmed];
           if (mapped !== undefined && mapped !== null && String(mapped).trim() !== '') {
             return normaliseDataKey(String(mapped));
           }
         }
         if (group.options.has(normalized)) return normalized;
         for (const [optionKey, aliases] of group.optionAliases.entries()) {
-          if (aliases.has(normalized)) return optionKey;
+          for (const alias of aliases) {
+            if (alias === normalized || compactCheckboxToken(alias) === compact) return optionKey;
+          }
         }
         return null;
       };
@@ -477,6 +499,10 @@ export default function SearchFillModal({
               groupValueApplied.add(normalizedGroup);
               return;
             }
+            if (resolveCheckboxGroupValue(normalizedGroup, entry, valueMap)) {
+              groupValueApplied.add(normalizedGroup);
+              return;
+            }
           }
           return;
         }
@@ -485,6 +511,9 @@ export default function SearchFillModal({
           if (pickCheckboxValue(normalizedGroup, entry, valueMap)) {
             applied = true;
           }
+        }
+        if (!applied && entries.length === 1) {
+          applied = resolveCheckboxGroupValue(normalizedGroup, entries[0], valueMap);
         }
         if (applied) groupValueApplied.add(normalizedGroup);
       };
@@ -504,6 +533,110 @@ export default function SearchFillModal({
           groupValueApplied.add(normalizedGroup);
         }
         return applied;
+      };
+
+      const getRowValueForKey = (key: string): unknown => {
+        const normalizedKey = normaliseDataKey(key);
+        if (!normalizedKey) return undefined;
+        const candidates = new Set<string>([
+          normalizedKey,
+          `patient_${normalizedKey}`,
+          `responsible_party_${normalizedKey}`,
+        ]);
+        if (normalizedKey.startsWith('patient_')) {
+          candidates.add(normalizedKey.slice('patient_'.length));
+        }
+        if (normalizedKey.startsWith('responsible_party_')) {
+          candidates.add(normalizedKey.slice('responsible_party_'.length));
+        }
+        for (const candidate of candidates) {
+          if (!candidate) continue;
+          if (normalizedRow.has(candidate)) return normalizedRow.get(candidate);
+        }
+        return undefined;
+      };
+
+      const textTransformRulesByTarget = new Map<string, TextTransformRule[]>();
+      for (const rawRule of textTransformRules ?? []) {
+        if (!rawRule) continue;
+        const target = normaliseDataKey(rawRule.targetField || '');
+        if (!target) continue;
+        const existing = textTransformRulesByTarget.get(target);
+        if (existing) {
+          existing.push(rawRule);
+        } else {
+          textTransformRulesByTarget.set(target, [rawRule]);
+        }
+      }
+      for (const rules of textTransformRulesByTarget.values()) {
+        rules.sort((left, right) => {
+          const leftConfidence = typeof left.confidence === 'number' ? left.confidence : 0.0;
+          const rightConfidence = typeof right.confidence === 'number' ? right.confidence : 0.0;
+          return rightConfidence - leftConfidence;
+        });
+      }
+
+      const resolveTransformRuleValue = (rule: TextTransformRule): unknown => {
+        const operation = rule.operation || 'copy';
+        const sources = Array.isArray(rule.sources) ? rule.sources : [];
+        if (!sources.length) return undefined;
+        const sourceValues = sources.map((source) => getRowValueForKey(source));
+        const sourceAsStrings = sourceValues.map((value) =>
+          value === null || value === undefined ? '' : String(value).trim(),
+        );
+
+        if (operation === 'copy') {
+          return sourceValues[0];
+        }
+
+        if (operation === 'concat') {
+          const separator = rule.separator ?? ' ';
+          const parts = sourceAsStrings.filter((value) => value.length > 0);
+          if (!parts.length) return undefined;
+          return parts.join(separator);
+        }
+
+        if (operation === 'split_name_first_rest') {
+          const source = sourceAsStrings[0];
+          if (!source) return undefined;
+          const tokens = source.split(/\s+/).filter(Boolean);
+          if (!tokens.length) return undefined;
+          if (rule.part === 'first') return tokens[0];
+          const rest = tokens.slice(1).join(' ');
+          return rest || tokens[0];
+        }
+
+        if (operation === 'split_delimiter') {
+          const source = sourceAsStrings[0];
+          if (!source) return undefined;
+          const delimiter = rule.delimiter || rule.separator;
+          if (!delimiter) return undefined;
+          const entries = source.split(delimiter).map((entry) => entry.trim());
+          if (!entries.length) return undefined;
+          if (typeof rule.index === 'number') {
+            return entries[rule.index];
+          }
+          if (rule.part === 'first') return entries[0];
+          if (rule.part === 'last') return entries[entries.length - 1];
+          if (rule.part === 'rest') {
+            const rest = entries.slice(1).join(' ').trim();
+            return rest || entries[0];
+          }
+        }
+
+        return undefined;
+      };
+
+      const resolveTextTransformValue = (normalizedTarget: string): unknown => {
+        const rules = textTransformRulesByTarget.get(normalizedTarget);
+        if (!rules?.length) return undefined;
+        for (const rule of rules) {
+          const value = resolveTransformRuleValue(rule);
+          if (value === undefined || value === null) continue;
+          if (typeof value === 'string' && !value.trim()) continue;
+          return value;
+        }
+        return undefined;
       };
 
       for (const [key, value] of normalizedRow) {
@@ -540,12 +673,6 @@ export default function SearchFillModal({
         applyGroupValue(key, value);
       }
 
-      for (const [key, value] of normalizedRow) {
-        const hint = checkboxHintsByField.get(key);
-        if (!hint) continue;
-        applyHintedBooleanGroup(hint, value);
-      }
-
       const ruleAppliedGroups = new Set<string>();
       for (const checkboxRule of checkboxRules ?? []) {
         const ruleKeyRaw =
@@ -554,11 +681,11 @@ export default function SearchFillModal({
           '';
         const ruleKey = normaliseDataKey(ruleKeyRaw);
         if (!ruleKey) continue;
-        if (!normalizedRow.has(ruleKey)) continue;
+        const rawValue = getRowValueForKey(ruleKey);
+        if (rawValue === undefined) continue;
         const groupKey = normaliseDataKey(checkboxRule.groupKey);
         if (!groupKey) continue;
         if (explicitGroupKeys.has(groupKey) || groupValueApplied.has(groupKey)) continue;
-        const rawValue = normalizedRow.get(ruleKey);
         const operation = checkboxRule.operation || 'yes_no';
         const legacyTruthy = (checkboxRule as { truthyValue?: string }).truthyValue;
         const legacyFalsey = (checkboxRule as { falseyValue?: string }).falseyValue;
@@ -594,6 +721,12 @@ export default function SearchFillModal({
         }
       }
       for (const key of ruleAppliedGroups) groupValueApplied.add(key);
+
+      for (const [key, hint] of checkboxHintsByField.entries()) {
+        const rowValue = getRowValueForKey(key);
+        if (rowValue === undefined) continue;
+        applyHintedBooleanGroup(hint, rowValue);
+      }
 
       for (const [groupKey, aliases] of Object.entries(CHECKBOX_ALIASES)) {
         if (explicitGroupKeys.has(normaliseDataKey(groupKey)) || groupValueApplied.has(normaliseDataKey(groupKey))) {
@@ -632,6 +765,11 @@ export default function SearchFillModal({
 
         if (normalizedRow.has(`responsible_party_${normalizedName}`)) {
           return normalizedRow.get(`responsible_party_${normalizedName}`);
+        }
+
+        const textTransformValue = resolveTextTransformValue(normalizedName);
+        if (textTransformValue !== undefined) {
+          return textTransformValue;
         }
 
         if (normalizedName.endsWith('_1')) {
@@ -738,6 +876,7 @@ export default function SearchFillModal({
       onClose,
       onError,
       onFieldsChange,
+      textTransformRules,
     ],
   );
 

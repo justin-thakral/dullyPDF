@@ -1,25 +1,42 @@
-"""API router modules."""
+"""API router exports.
 
-from .ai import router as ai_router
-from .detection import router as detection_router
-from .forms import router as forms_router
-from .health import router as health_router
-from .legacy_detection import router as legacy_detection_router
-from .profile import router as profile_router
-from .public import router as public_router
-from .saved_forms import router as saved_forms_router
-from .schemas import router as schemas_router
-from .sessions import router as sessions_router
+This module intentionally avoids eager imports of all route modules.
+Coverage source discovery can import packages multiple times in one process;
+lazy exports keep package import side-effect free and load each router on demand.
+"""
 
-__all__ = [
-    "ai_router",
-    "detection_router",
-    "forms_router",
-    "health_router",
-    "legacy_detection_router",
-    "profile_router",
-    "public_router",
-    "saved_forms_router",
-    "schemas_router",
-    "sessions_router",
-]
+from __future__ import annotations
+
+from importlib import import_module
+from typing import Any
+
+
+_ROUTER_MODULES = {
+    "billing_router": ".billing",
+    "ai_router": ".ai",
+    "detection_router": ".detection",
+    "forms_router": ".forms",
+    "health_router": ".health",
+    "legacy_detection_router": ".legacy_detection",
+    "profile_router": ".profile",
+    "public_router": ".public",
+    "saved_forms_router": ".saved_forms",
+    "schemas_router": ".schemas",
+    "sessions_router": ".sessions",
+}
+
+__all__ = list(_ROUTER_MODULES.keys())
+
+
+def __getattr__(name: str) -> Any:
+    module_path = _ROUTER_MODULES.get(name)
+    if module_path is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    module = import_module(module_path, __name__)
+    router = getattr(module, "router")
+    globals()[name] = router
+    return router
+
+
+def __dir__() -> list[str]:
+    return sorted(set(globals().keys()) | set(__all__))

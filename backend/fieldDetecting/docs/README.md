@@ -3,7 +3,8 @@
 Main pipeline (CommonForms by [jbarrow](https://github.com/jbarrow/commonforms)):
 - `backend/fieldDetecting/docs/commonforms.md` - detector flow, outputs, and tuning.
 - `backend/fieldDetecting/docs/detectingPipeline.md` - plain-language guide to using the ML detector.
-- `backend/fieldDetecting/docs/rename-flow.md` - overlay + OpenAI rename mechanics.
+- `backend/fieldDetecting/docs/rename-flow.md` - overlay + OpenAI rename mechanics, confidence fields, and tier thresholds.
+- `backend/fieldDetecting/docs/checkBoxRules.md` - checkbox rule generation, normalization, precedence, and persistence behavior.
 - `backend/fieldDetecting/docs/security.md` - auth, admin tokens, and production hardening.
 - `backend/fieldDetecting/docs/session-cache-l1-l2.md` - L1/L2 session cache design guide.
 - `config/detector.*.env.example` - detector service env references.

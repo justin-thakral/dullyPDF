@@ -20,7 +20,14 @@ npm install
 npm run dev
 ```
 
-This starts the FastAPI backend and Vite frontend together. You can also run them separately with `npm run backend:dev` and `npm run frontend:dev`.
+This starts the FastAPI backend and Vite frontend together, and also starts Stripe CLI webhook forwarding to the local billing webhook when `STRIPE_SECRET_KEY` is configured.
+
+Notes for Stripe local billing:
+- `npm run dev` injects the Stripe CLI session `whsec_...` into the backend process for that run.
+- Checkout health enforcement is forced off for local CLI forwarding (`STRIPE_ENFORCE_WEBHOOK_HEALTH=false`) because Stripe CLI forwarding does not create a dashboard webhook endpoint.
+- Set `STRIPE_DEV_LISTEN_ENABLED=false` to skip automatic Stripe forwarding.
+
+You can still run frontend/backend separately with `npm run backend:dev` and `npm run frontend:dev`.
 
 Open the UI at `http://localhost:5173`.
 

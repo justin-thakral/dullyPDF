@@ -107,9 +107,17 @@
 .header-right {
   display: flex;
   align-items: center;
-  gap: 1rem;
+  gap: 0.75rem;
   justify-content: flex-end;
   margin-left: auto;
+  min-width: 0;
+}
+
+.header-link-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
 }
 
 .header-link-button {
@@ -320,6 +328,10 @@
   .header-description {
     font-size: 0.82rem;
   }
+
+  .header-link-group {
+    justify-content: flex-end;
+  }
 }
 
 @media (max-width: 768px) {
@@ -332,5 +344,12 @@
   .header-right {
     width: 100%;
     justify-content: space-between;
+    flex-wrap: wrap;
+    row-gap: 0.55rem;
+  }
+
+  .header-link-group {
+    width: 100%;
+    justify-content: flex-start;
   }
 }

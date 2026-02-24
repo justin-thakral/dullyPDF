@@ -98,6 +98,7 @@ def test_run_openai_rename_on_pdf_orchestrates_pipeline_calls_in_order(mocker) -
         output_dir: Path,
         confidence_profile: str,
         database_fields,
+        openai_max_retries,
     ):
         call_order.append("resolve")
         assert pages == rendered_pages
@@ -106,6 +107,7 @@ def test_run_openai_rename_on_pdf_orchestrates_pipeline_calls_in_order(mocker) -
         assert output_dir.name == "overlays"
         assert confidence_profile == "commonforms"
         assert database_fields == ["first_name", "last_name"]
+        assert openai_max_retries is None
         return rename_report, renamed_fields
 
     mocker.patch("backend.ai.rename_pipeline.render_pdf_to_images", side_effect=_render)

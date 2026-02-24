@@ -85,9 +85,14 @@ const LegacyHeader: React.FC<LegacyHeaderProps> = ({
         </div>
 
         <div className="header-right">
-          <a className="header-link-button" href="/privacy">
-            Privacy &amp; Terms
-          </a>
+          <div className="header-link-group">
+            <a className="header-link-button" href="/usage-docs">
+              Usage Docs
+            </a>
+            <a className="header-link-button" href="/privacy">
+              Privacy &amp; Terms
+            </a>
+          </div>
           {userEmail ? (
             <div className="header-account">
               {onOpenProfile ? (

@@ -10,6 +10,13 @@ The frontend is a React + TypeScript app for loading PDFs, editing fields, and f
 4. Edit fields in overlay/list/inspector panels.
 5. Run Search & Fill from CSV/Excel/JSON rows.
 6. Download a filled PDF or save it to the signed-in profile.
+7. Persist and replay deterministic fill rules (`fillRules`) including text split/join transforms.
+
+## Public usage docs
+
+- End-user documentation is available at `/usage-docs/*` (with `/docs/*` aliases).
+- The docs include dedicated pages for detection, rename/mapping, editor workflow, Search & Fill, and troubleshooting.
+- Route handling lives in `frontend/src/main.tsx` alongside legal page route handling.
 
 ## Data source behavior
 
@@ -22,7 +29,7 @@ The frontend is a React + TypeScript app for loading PDFs, editing fields, and f
 
 - Firebase auth supports email/password, Google, and GitHub.
 - Password users must verify email before editor access.
-- Profile view shows limits, credits, and saved forms.
+- Profile view shows limits, credits, Stripe billing/subscription status, and saved forms.
 
 ## Demo and fixtures
 

@@ -43,6 +43,57 @@ def test_saved_forms_list_and_get_not_found(client, app_main, base_user, mocker,
     assert "Form not found" in response.text
 
 
+def test_saved_form_get_includes_fill_rule_metadata(client, app_main, base_user, mocker, auth_headers) -> None:
+    _patch_auth(mocker, app_main, base_user)
+    mocker.patch.object(
+        app_main,
+        "get_template",
+        return_value=_template_record(
+            template_id="tpl-1",
+            metadata={
+                "checkboxRules": [{"databaseField": "consent", "groupKey": "consent_group"}],
+                "checkboxHints": [{"databaseField": "consent", "groupKey": "consent_group"}],
+                "textTransformRules": [{"targetField": "full_name", "operation": "copy", "sources": ["first_name"]}],
+            },
+        ),
+    )
+
+    response = client.get("/api/saved-forms/tpl-1", headers=auth_headers)
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["checkboxRules"] == [{"databaseField": "consent", "groupKey": "consent_group"}]
+    assert payload["checkboxHints"] == [{"databaseField": "consent", "groupKey": "consent_group"}]
+    assert payload["textTransformRules"] == [{"targetField": "full_name", "operation": "copy", "sources": ["first_name"]}]
+    assert payload["fillRules"]["textTransformRules"] == payload["textTransformRules"]
+
+
+def test_saved_form_get_uses_legacy_template_rules_as_text_transform_rules(
+    client,
+    app_main,
+    base_user,
+    mocker,
+    auth_headers,
+) -> None:
+    _patch_auth(mocker, app_main, base_user)
+    mocker.patch.object(
+        app_main,
+        "get_template",
+        return_value=_template_record(
+            template_id="tpl-legacy",
+            metadata={
+                "checkboxRules": [{"databaseField": "consent", "groupKey": "consent_group"}],
+                "templateRules": [{"targetField": "full_name", "operation": "copy", "sources": ["first_name"]}],
+            },
+        ),
+    )
+
+    response = client.get("/api/saved-forms/tpl-legacy", headers=auth_headers)
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["textTransformRules"] == [{"targetField": "full_name", "operation": "copy", "sources": ["first_name"]}]
+    assert payload["fillRules"]["textTransformRules"] == payload["textTransformRules"]
+
+
 def test_saved_form_download_requires_gcs_path(client, app_main, base_user, mocker, auth_headers) -> None:
     _patch_auth(mocker, app_main, base_user)
     mocker.patch.object(app_main, "get_template", return_value=_template_record(pdf_path="/tmp/local.pdf"))
@@ -206,7 +257,7 @@ def test_save_form_overwrite_updates_existing_form(client, app_main, base_user, 
     assert delete_mock.call_count == 2
 
 
-def test_save_form_merges_checkbox_metadata_and_cleans_up_on_db_failure(
+def test_save_form_merges_fill_rule_metadata_and_cleans_up_on_db_failure(
     client,
     app_main,
     base_user,
@@ -230,6 +281,7 @@ def test_save_form_merges_checkbox_metadata_and_cleans_up_on_db_failure(
         return_value={
             "checkboxRules": [{"databaseField": "consent", "groupKey": "consent_group"}],
             "checkboxHints": [{"databaseField": "consent", "groupKey": "consent_group"}],
+            "textTransformRules": [{"targetField": "full_name", "operation": "copy", "sources": ["first_name"]}],
         },
     )
     create_mock = mocker.patch.object(app_main, "create_template", side_effect=RuntimeError("db write failed"))
@@ -248,7 +300,61 @@ def test_save_form_merges_checkbox_metadata_and_cleans_up_on_db_failure(
     assert metadata["originalSessionId"] == "sess-1"
     assert metadata["checkboxRules"] == [{"databaseField": "consent", "groupKey": "consent_group"}]
     assert metadata["checkboxHints"] == [{"databaseField": "consent", "groupKey": "consent_group"}]
+    assert metadata["textTransformRules"] == [{"targetField": "full_name", "operation": "copy", "sources": ["first_name"]}]
+    assert metadata["fillRules"]["textTransformRules"] == metadata["textTransformRules"]
     assert delete_mock.call_count == 2
+
+
+def test_save_form_uses_explicit_empty_fill_rule_payloads_instead_of_session_fallback(
+    client,
+    app_main,
+    base_user,
+    mocker,
+    auth_headers,
+    tmp_path: Path,
+) -> None:
+    temp_pdf = tmp_path / "upload-empty-checkboxes.pdf"
+    temp_pdf.write_bytes(b"%PDF-1.4\n")
+    _patch_auth(mocker, app_main, base_user)
+    mocker.patch.object(app_main, "_write_upload_to_temp", return_value=temp_pdf)
+    mocker.patch.object(
+        app_main,
+        "_validate_pdf_for_detection",
+        return_value=PdfValidationResult(pdf_bytes=b"%PDF-1.4\n", page_count=1, was_decrypted=False),
+    )
+    mocker.patch.object(app_main, "_resolve_fillable_max_pages", return_value=10)
+    mocker.patch.object(app_main, "_resolve_saved_forms_limit", return_value=10)
+    mocker.patch.object(app_main, "list_templates", return_value=[])
+    mocker.patch.object(app_main, "upload_form_pdf", return_value="gs://forms/new.pdf")
+    mocker.patch.object(app_main, "upload_template_pdf", return_value="gs://templates/new.pdf")
+    mocker.patch.object(
+        app_main,
+        "_get_session_entry_if_present",
+        return_value={
+            "checkboxRules": [{"databaseField": "legacy", "groupKey": "legacy_group"}],
+            "checkboxHints": [{"databaseField": "legacy", "groupKey": "legacy_group"}],
+            "textTransformRules": [{"targetField": "legacy", "operation": "copy", "sources": ["legacy"]}],
+        },
+    )
+    create_mock = mocker.patch.object(app_main, "create_template", return_value=_template_record(template_id="created"))
+
+    response = client.post(
+        "/api/saved-forms",
+        files={"pdf": ("x.pdf", b"%PDF-1.4\n", "application/pdf")},
+        data={
+            "name": "Name",
+            "sessionId": "sess-1",
+            "checkboxRules": "[]",
+            "checkboxHints": "[]",
+            "textTransformRules": "[]",
+        },
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    metadata = create_mock.call_args.kwargs["metadata"]
+    assert metadata["checkboxRules"] == []
+    assert metadata["checkboxHints"] == []
+    assert metadata["textTransformRules"] == []
 
 
 def test_save_form_cleans_uploaded_form_blob_when_template_upload_fails(

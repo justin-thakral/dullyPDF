@@ -20,6 +20,18 @@ def dummy_session_entry() -> dict:
 
 
 @pytest.fixture
+def dummy_ten_page_session_entry() -> dict:
+    return {
+        "pdf_bytes": b"%PDF-1.4\n%fake\n",
+        "fields": [],
+        "source_pdf": "test.pdf",
+        "result": {},
+        "page_count": 10,
+        "user_id": "user_1",
+    }
+
+
+@pytest.fixture
 def dummy_template_field() -> dict:
     return {
         "name": "A1",
@@ -182,6 +194,90 @@ def test_schema_mapping_charges_one_credit(
 
     consume_mock.assert_called()
     assert consume_mock.call_args.kwargs.get("credits") == 1
+
+
+def test_rename_with_schema_charges_four_credits_for_ten_pages(
+    mocker,
+    dummy_ten_page_session_entry: dict,
+    dummy_template_field: dict,
+) -> None:
+    from backend.main import app
+
+    consume_mock = mocker.patch("backend.api.routes.ai.consume_openai_credits", return_value=(6, True))
+    mocker.patch("backend.api.middleware.security.verify_token", return_value={"uid": "user_1", "email": "e", "name": "d"})
+    mocker.patch(
+        "backend.api.routes.ai.ensure_user",
+        return_value=mocker.Mock(app_user_id="user_1", role="base", email="e", display_name="d"),
+    )
+    mocker.patch("backend.api.routes.ai._get_session_entry", return_value=dummy_ten_page_session_entry)
+    mocker.patch("backend.api.routes.ai.check_rate_limit", return_value=True)
+    mocker.patch("backend.api.routes.ai.get_schema", return_value=_dummy_schema_record(schema_id="schema_1"))
+    mocker.patch("backend.api.routes.ai.record_openai_rename_request", return_value=None)
+    mocker.patch(
+        "backend.api.routes.ai.run_openai_rename_on_pdf",
+        return_value=({}, [{"name": "first_name", "originalName": "A1"}]),
+    )
+    mocker.patch("backend.api.routes.ai._update_session_entry", return_value=None)
+
+    client = TestClient(app)
+    resp = client.post(
+        "/api/renames/ai",
+        json={
+            "sessionId": "sess_1",
+            "schemaId": "schema_1",
+            "templateFields": [dummy_template_field],
+        },
+        headers={"Authorization": "Bearer test"},
+    )
+    assert resp.status_code == 200, resp.text
+
+    consume_mock.assert_called()
+    assert consume_mock.call_args.kwargs.get("credits") == 4
+
+
+def test_schema_mapping_charges_two_credits_for_ten_pages(
+    mocker,
+    dummy_ten_page_session_entry: dict,
+) -> None:
+    from backend.main import app
+
+    consume_mock = mocker.patch("backend.api.routes.ai.consume_openai_credits", return_value=(8, True))
+    mocker.patch("backend.api.middleware.security.verify_token", return_value={"uid": "user_1", "email": "e", "name": "d"})
+    mocker.patch(
+        "backend.api.routes.ai.ensure_user",
+        return_value=mocker.Mock(app_user_id="user_1", role="base", email="e", display_name="d"),
+    )
+    mocker.patch("backend.api.routes.ai._get_session_entry", return_value=dummy_ten_page_session_entry)
+    mocker.patch("backend.api.routes.ai.check_rate_limit", return_value=True)
+    mocker.patch("backend.api.routes.ai.get_schema", return_value=_dummy_schema_record(schema_id="schema_1"))
+    mocker.patch("backend.api.routes.ai.record_openai_request", return_value=None)
+    mocker.patch(
+        "backend.api.routes.ai.call_openai_schema_mapping_chunked",
+        return_value={"mappings": [], "checkboxRules": [], "checkboxHints": [], "notes": ""},
+    )
+    mocker.patch("backend.api.routes.ai._update_session_entry", return_value=None)
+
+    client = TestClient(app)
+    resp = client.post(
+        "/api/schema-mappings/ai",
+        json={
+            "schemaId": "schema_1",
+            "templateFields": [
+                {
+                    "name": "A1",
+                    "type": "text",
+                    "page": 1,
+                    "rect": {"x": 10, "y": 10, "width": 100, "height": 20},
+                }
+            ],
+            "sessionId": "sess_1",
+        },
+        headers={"Authorization": "Bearer test"},
+    )
+    assert resp.status_code == 200, resp.text
+
+    consume_mock.assert_called()
+    assert consume_mock.call_args.kwargs.get("credits") == 2
 
 
 # ---------------------------------------------------------------------------

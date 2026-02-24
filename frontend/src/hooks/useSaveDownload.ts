@@ -1,7 +1,15 @@
 import { useCallback, useState } from 'react';
 import type { PDFDocumentProxy } from 'pdfjs-dist/types/src/display/api';
 import type { User } from 'firebase/auth';
-import type { BannerNotice, CheckboxHint, CheckboxRule, ConfirmDialogOptions, PdfField, PromptDialogOptions } from '../types';
+import type {
+  BannerNotice,
+  CheckboxHint,
+  CheckboxRule,
+  ConfirmDialogOptions,
+  PdfField,
+  PromptDialogOptions,
+  TextTransformRule,
+} from '../types';
 import { normaliseFormName, prepareFieldsForMaterialize } from '../utils/fields';
 import { debugLog } from '../utils/debug';
 import { ApiError } from '../services/apiConfig';
@@ -14,6 +22,7 @@ export interface UseSaveDownloadDeps {
   fields: PdfField[];
   checkboxRules: CheckboxRule[];
   checkboxHints: CheckboxHint[];
+  textTransformRules: TextTransformRule[];
   mappingSessionId: string | null;
   activeSavedFormId: string | null;
   activeSavedFormName: string | null;
@@ -53,11 +62,9 @@ export function useSaveDownload(deps: UseSaveDownloadDeps) {
         }
         const fieldsForSave = prepareFieldsForMaterialize(deps.fields);
         const generatedBlob = await ApiService.materializeFormPdf(blob, fieldsForSave);
-        const rulesForSave = deps.checkboxRules.length ? deps.checkboxRules : undefined;
-        const hintsForSave = deps.checkboxHints.length ? deps.checkboxHints : undefined;
         const payload = await ApiService.saveFormToProfile(
           generatedBlob, saveName, deps.mappingSessionId || undefined,
-          overwriteFormId || undefined, rulesForSave, hintsForSave,
+          overwriteFormId || undefined, deps.checkboxRules, deps.checkboxHints, deps.textTransformRules,
         );
         deps.setActiveSavedFormId(payload?.id || null);
         deps.setActiveSavedFormName(payload?.name || saveName);

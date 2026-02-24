@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from backend.api.middleware.security import enforce_security_guards
 from backend.api.routes import (
     ai_router,
+    billing_router,
     detection_router,
     forms_router,
     health_router,
@@ -43,6 +44,7 @@ def create_app() -> FastAPI:
 
     app.include_router(health_router)
     app.include_router(public_router)
+    app.include_router(billing_router)
     app.include_router(profile_router)
     app.include_router(legacy_detection_router)
     app.include_router(detection_router)

@@ -27,8 +27,8 @@ from backend.firebaseDB.openai_job_database import (
     update_openai_job,
 )
 from backend.firebaseDB.schema_database import get_schema
-from backend.firebaseDB.user_database import refund_openai_credits
 from backend.logging_config import get_logger
+from backend.services.credit_refund_service import attempt_credit_refund
 from backend.services.mapping_service import template_fields_to_rename_fields
 from backend.services.pdf_service import get_pdf_page_count
 from backend.sessions.session_store import (
@@ -83,6 +83,7 @@ class RenameJobRequest(BaseModel):
     userRole: Optional[str] = None
     credits: int = 0
     creditsCharged: bool = False
+    creditBreakdown: Optional[Dict[str, int]] = None
 
 
 def _parse_retry_count(raw: Optional[str]) -> int:
@@ -126,10 +127,15 @@ def _refund_credits(payload: RenameJobRequest) -> None:
     credits = int(payload.credits or 0)
     if credits <= 0:
         return
-    try:
-        refund_openai_credits(payload.userId, credits=credits, role=payload.userRole)
-    except Exception as exc:
-        logger.debug("Rename credit refund failed for %s: %s", payload.userId, exc)
+    attempt_credit_refund(
+        user_id=payload.userId,
+        role=payload.userRole,
+        credits=credits,
+        source="rename.worker",
+        request_id=payload.requestId,
+        job_id=payload.jobId,
+        credit_breakdown=payload.creditBreakdown,
+    )
 
 
 def _finish_failure(
@@ -321,6 +327,8 @@ async def run_rename_job(
         entry["fields"] = renamed_fields
         entry["renames"] = rename_report
         entry["checkboxRules"] = checkbox_rules
+        entry["checkboxHints"] = []
+        entry["textTransformRules"] = []
         entry["page_count"] = page_count
         _update_session_entry(
             payload.sessionId,
@@ -328,6 +336,8 @@ async def run_rename_job(
             persist_fields=True,
             persist_renames=True,
             persist_checkbox_rules=True,
+            persist_checkbox_hints=True,
+            persist_text_transform_rules=True,
         )
 
         resolved_request_id = (

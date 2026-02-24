@@ -46,6 +46,7 @@ import { useDetection } from './hooks/useDetection';
 import { usePipelineModal } from './hooks/usePipelineModal';
 import { useSaveDownload } from './hooks/useSaveDownload';
 import { useDemo } from './hooks/useDemo';
+import { ApiService, type BillingCheckoutKind } from './services/api';
 
 /**
  * Main application component that coordinates auth, detection, and editing.
@@ -65,6 +66,7 @@ function App() {
     setHasMappedSchema: (_v: boolean) => {},
     setCheckboxRules: (_v: any[]) => {},
     setCheckboxHints: (_v: any[]) => {},
+    setTextTransformRules: (_v: any[]) => {},
     setOpenAiError: (_v: string | null) => {},
   });
   const openAiSettersForDataSource = useRef({
@@ -118,6 +120,8 @@ function App() {
   const [sourceFileName, setSourceFileName] = useState<string | null>(null);
   const [sourceFileIsDemo, setSourceFileIsDemo] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [billingCheckoutInProgressKind, setBillingCheckoutInProgressKind] = useState<BillingCheckoutKind | null>(null);
+  const [billingCancelInProgress, setBillingCancelInProgress] = useState(false);
 
   const pdfState = useMemo(() => ({
     setPdfDoc, setPageSizes, setPageCount, setCurrentPage, setScale, setPendingPageJump,
@@ -162,6 +166,7 @@ function App() {
     setHasMappedSchema: (v) => openAiBridge.current.setHasMappedSchema(v),
     setCheckboxRules: (v) => openAiBridge.current.setCheckboxRules(v),
     setCheckboxHints: (v) => openAiBridge.current.setCheckboxHints(v),
+    setTextTransformRules: (v) => openAiBridge.current.setTextTransformRules(v),
     setOpenAiError: (v) => openAiBridge.current.setOpenAiError(v),
     // Session keep-alive deps
     pdfDoc,
@@ -202,6 +207,7 @@ function App() {
     setHasMappedSchema: openAi.setHasMappedSchema,
     setCheckboxRules: openAi.setCheckboxRules,
     setCheckboxHints: openAi.setCheckboxHints,
+    setTextTransformRules: openAi.setTextTransformRules,
     setOpenAiError: openAi.setOpenAiError,
   };
   openAiSettersForDataSource.current = {
@@ -312,6 +318,131 @@ function App() {
     demo.setDemoSearchPreset(null);
   }, [clearWorkspace, demo]);
 
+  const refreshProfileAfterBillingAction = useCallback(
+    async (options?: { attempts?: number; retryDelayMs?: number }) => {
+      const attempts = Math.max(1, options?.attempts ?? 3);
+      const retryDelayMs = Math.max(0, options?.retryDelayMs ?? 1200);
+      for (let attempt = 0; attempt < attempts; attempt += 1) {
+        const profile = await auth.loadUserProfile();
+        if (profile) return profile;
+        if (attempt < attempts - 1 && retryDelayMs > 0) {
+          await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+        }
+      }
+      return null;
+    },
+    [auth.loadUserProfile],
+  );
+
+  const handleStartBillingCheckout = useCallback(
+    async (kind: BillingCheckoutKind) => {
+      if (billingCancelInProgress) return;
+      if (!auth.userProfile?.billing?.enabled) {
+        dialog.setBannerNotice({
+          tone: 'error',
+          message: 'Stripe billing is currently unavailable.',
+          autoDismissMs: 8000,
+        });
+        return;
+      }
+      setBillingCheckoutInProgressKind(kind);
+      try {
+        const payload = await ApiService.createBillingCheckoutSession(kind);
+        const checkoutUrl = payload?.checkoutUrl;
+        if (!checkoutUrl) {
+          throw new Error('Stripe checkout URL is missing.');
+        }
+        window.location.assign(checkoutUrl);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to start checkout.';
+        dialog.setBannerNotice({ tone: 'error', message, autoDismissMs: 8000 });
+      } finally {
+        setBillingCheckoutInProgressKind(null);
+      }
+    },
+    [auth.userProfile?.billing?.enabled, billingCancelInProgress, dialog.setBannerNotice],
+  );
+
+  const handleCancelBillingSubscription = useCallback(async () => {
+    if (billingCheckoutInProgressKind !== null) return;
+    if (!auth.userProfile?.billing?.enabled) {
+      dialog.setBannerNotice({
+        tone: 'error',
+        message: 'Stripe billing is currently unavailable.',
+        autoDismissMs: 8000,
+      });
+      return;
+    }
+    if (!auth.userProfile?.billing?.hasSubscription) {
+      dialog.setBannerNotice({
+        tone: 'info',
+        message: 'No active subscription is linked to this profile yet.',
+        autoDismissMs: 7000,
+      });
+      return;
+    }
+    if (auth.userProfile?.billing?.cancelAtPeriodEnd === true) {
+      dialog.setBannerNotice({
+        tone: 'info',
+        message: 'Subscription is already cancelled for period end.',
+        autoDismissMs: 7000,
+      });
+      return;
+    }
+    setBillingCancelInProgress(true);
+    try {
+      const payload = await ApiService.cancelBillingSubscription();
+      const alreadyCanceled = Boolean(payload?.alreadyCanceled);
+      const cancelAtPeriodEnd = Boolean(payload?.cancelAtPeriodEnd);
+      const stateSyncDeferred = Boolean(payload?.stateSyncDeferred);
+      const refreshedProfile = await refreshProfileAfterBillingAction({
+        attempts: 2,
+        retryDelayMs: 1200,
+      });
+      if (alreadyCanceled) {
+        dialog.setBannerNotice({
+          tone: 'info',
+          message: 'Subscription is already cancelled for period end.',
+          autoDismissMs: 7000,
+        });
+      } else if (stateSyncDeferred) {
+        dialog.setBannerNotice({
+          tone: 'info',
+          message: cancelAtPeriodEnd
+            ? 'Stripe cancellation is scheduled, but profile sync is delayed. Refresh in a moment to confirm local role and billing status.'
+            : 'Stripe cancellation succeeded, but profile sync is delayed. Refresh in a moment to confirm local role and billing status.',
+          autoDismissMs: 9000,
+        });
+      } else if (!refreshedProfile) {
+        dialog.setBannerNotice({
+          tone: 'error',
+          message: 'Stripe accepted the cancellation, but profile refresh failed. Reopen Profile in a moment to confirm subscription status.',
+          autoDismissMs: 9000,
+        });
+      } else {
+        dialog.setBannerNotice({
+          tone: 'success',
+          message: cancelAtPeriodEnd
+            ? 'Subscription cancellation is scheduled for period end. Pro access remains active until then.'
+            : 'Subscription canceled.',
+          autoDismissMs: 8000,
+        });
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to cancel subscription.';
+      dialog.setBannerNotice({ tone: 'error', message, autoDismissMs: 8000 });
+    } finally {
+      setBillingCancelInProgress(false);
+    }
+  }, [
+    auth.userProfile?.billing?.enabled,
+    auth.userProfile?.billing?.cancelAtPeriodEnd,
+    auth.userProfile?.billing?.hasSubscription,
+    billingCheckoutInProgressKind,
+    dialog.setBannerNotice,
+    refreshProfileAfterBillingAction,
+  ]);
+
   // ── Save & Download ────────────────────────────────────────────────
   const saveDownload = useSaveDownload({
     pdfDoc,
@@ -320,6 +451,7 @@ function App() {
     fields: fieldHistory.fields,
     checkboxRules: openAi.checkboxRules,
     checkboxHints: openAi.checkboxHints,
+    textTransformRules: openAi.textTransformRules,
     mappingSessionId: detection.mappingSessionId,
     activeSavedFormId: savedForms.activeSavedFormId,
     activeSavedFormName: savedForms.activeSavedFormName,
@@ -449,6 +581,66 @@ function App() {
   }, [dataSource.schemaError, dialog, openAi.openAiError]);
 
   useEffect(() => {
+    if (!auth.authReady) return;
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    const billingState = (url.searchParams.get('billing') || '').toLowerCase();
+    if (!billingState) return;
+    if (billingState === 'success') {
+      dialog.setBannerNotice({
+        tone: 'info',
+        message: 'Checkout completed. Syncing your profile credits…',
+        autoDismissMs: 8000,
+      });
+      void (async () => {
+        let reconciledCount = 0;
+        let reconcileFailed = false;
+        try {
+          const reconciliation = await ApiService.reconcileBillingCheckoutFulfillment({
+            lookbackHours: 72,
+            maxEvents: 150,
+            dryRun: false,
+          });
+          reconciledCount = typeof reconciliation?.reconciledCount === 'number' ? reconciliation.reconciledCount : 0;
+        } catch (error) {
+          reconcileFailed = true;
+          debugLog('Billing checkout reconciliation failed', error);
+        }
+        const refreshedProfile = await refreshProfileAfterBillingAction({
+          attempts: 3,
+          retryDelayMs: 1200,
+        });
+        if (refreshedProfile) {
+          const message = reconciledCount > 0
+            ? `Checkout completed. Recovered ${reconciledCount} missed billing event${reconciledCount === 1 ? '' : 's'} and refreshed your profile.`
+            : (reconcileFailed
+              ? 'Checkout completed and your profile has been refreshed. Automatic billing reconciliation is temporarily unavailable.'
+              : 'Checkout completed and your profile has been refreshed.');
+          dialog.setBannerNotice({
+            tone: 'success',
+            message,
+            autoDismissMs: 8000,
+          });
+        } else {
+          dialog.setBannerNotice({
+            tone: 'error',
+            message: 'Checkout completed, but profile refresh failed. Reopen Profile in a moment to verify credits and subscription status.',
+            autoDismissMs: 9000,
+          });
+        }
+      })();
+    } else if (billingState === 'cancel') {
+      dialog.setBannerNotice({
+        tone: 'info',
+        message: 'Checkout was canceled.',
+        autoDismissMs: 6000,
+      });
+    }
+    url.searchParams.delete('billing');
+    window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+  }, [auth.authReady, dialog.setBannerNotice, refreshProfileAfterBillingAction]);
+
+  useEffect(() => {
     if (!dialog.bannerNotice?.autoDismissMs) return undefined;
     const timer = setTimeout(() => dialog.setBannerNotice(null), dialog.bannerNotice.autoDismissMs);
     return () => clearTimeout(timer);
@@ -490,9 +682,22 @@ function App() {
   const { isProcessing, processingMode, processingDetail } = detection;
   const { verifiedUser, userEmail, requiresEmailVerification, authReady, showLogin, showProfile, profileLimits, authUser, profileLoading, userProfile } = auth;
   const { bannerNotice, dialogRequest } = dialog;
-  const { openAiError, renameInProgress, hasRenamedFields, mappingInProgress, mapSchemaInProgress, hasMappedSchema, checkboxRules, checkboxHints, canRename, canMapSchema, canRenameAndMap } = openAi;
+  const {
+    openAiError,
+    renameInProgress,
+    hasRenamedFields,
+    mappingInProgress,
+    mapSchemaInProgress,
+    hasMappedSchema,
+    checkboxRules,
+    checkboxHints,
+    textTransformRules,
+    canRename,
+    canMapSchema,
+    canRenameAndMap,
+  } = openAi;
   const { schemaError, dataSourceKind, dataSourceLabel, schemaUploadInProgress, dataColumns, dataRows, identifierKey, canSearchFill } = dataSource;
-  const { savedForms: savedFormsList, deletingFormId, showSavedFormsLimitDialog } = savedForms;
+  const { savedForms: savedFormsList, savedFormsLoading, deletingFormId, showSavedFormsLimitDialog } = savedForms;
   const { fields } = fieldHistory;
   const { showFields, showFieldNames, showFieldInfo, confidenceFilter, selectedFieldId, visibleFields, hasFieldValues } = fieldState;
 
@@ -578,11 +783,30 @@ function App() {
       <>
         {shouldShowBannerAlert && bannerAlert ? <Alert tone={bannerAlert.tone} variant="banner" message={bannerAlert.message} onDismiss={handleDismissBanner} /> : null}
         {savedFormsLimitDialog}{dialogContent}
-        <ProfilePage email={userProfile?.email ?? verifiedUser.email} role={userProfile?.role ?? 'basic'}
-          creditsRemaining={userProfile?.creditsRemaining ?? 0} isLoading={profileLoading}
-          limits={profileLimits} savedForms={savedFormsList}
+        <ProfilePage email={userProfile?.email ?? verifiedUser.email} role={userProfile?.role ?? 'base'}
+          creditsRemaining={userProfile?.creditsRemaining ?? 0}
+          monthlyCreditsRemaining={userProfile?.monthlyCreditsRemaining ?? 0}
+          refillCreditsRemaining={userProfile?.refillCreditsRemaining ?? 0}
+          availableCredits={userProfile?.availableCredits ?? userProfile?.creditsRemaining ?? 0}
+          refillCreditsLocked={Boolean(userProfile?.refillCreditsLocked)}
+          billingEnabled={typeof userProfile?.billing?.enabled === 'boolean' ? userProfile.billing.enabled : null}
+          billingHasSubscription={userProfile?.billing?.hasSubscription === true}
+          billingSubscriptionStatus={userProfile?.billing?.subscriptionStatus ?? null}
+          billingCancelAtPeriodEnd={userProfile?.billing?.cancelAtPeriodEnd ?? null}
+          billingCancelAt={userProfile?.billing?.cancelAt ?? null}
+          billingCurrentPeriodEnd={userProfile?.billing?.currentPeriodEnd ?? null}
+          billingPlans={userProfile?.billing?.plans}
+          profileError={auth.profileLoadError}
+          creditPricing={userProfile?.creditPricing}
+          isLoading={profileLoading}
+          limits={profileLimits} savedForms={savedFormsList} savedFormsLoading={savedFormsLoading}
           onSelectSavedForm={handleSelectSavedFormFromProfile} onDeleteSavedForm={savedForms.handleDeleteSavedForm}
-          deletingFormId={deletingFormId} onClose={auth.handleCloseProfile} onSignOut={handleSignOut} />
+          deletingFormId={deletingFormId}
+          billingCheckoutInProgressKind={billingCheckoutInProgressKind}
+          billingCancelInProgress={billingCancelInProgress}
+          onStartBillingCheckout={userProfile?.billing?.enabled === true ? handleStartBillingCheckout : undefined}
+          onCancelBillingSubscription={userProfile?.billing?.enabled === true ? handleCancelBillingSubscription : undefined}
+          onClose={auth.handleCloseProfile} onSignOut={handleSignOut} />
       </>
     );
   }
@@ -609,7 +833,8 @@ function App() {
               pendingDetectFile={pipeline.pendingDetectFile} uploadWantsRename={pipeline.uploadWantsRename}
               uploadWantsMap={pipeline.uploadWantsMap} schemaUploadInProgress={schemaUploadInProgress}
               dataSourceLabel={dataSourceLabel} pipelineError={pipeline.pipelineError}
-              verifiedUser={!!verifiedUser} savedForms={savedFormsList} deletingFormId={deletingFormId}
+              verifiedUser={!!verifiedUser} savedForms={savedFormsList} savedFormsLoading={savedFormsLoading}
+              deletingFormId={deletingFormId}
               onSetUploadWantsRename={pipeline.setUploadWantsRename} onSetUploadWantsMap={pipeline.setUploadWantsMap}
               onSetPipelineError={pipeline.setPipelineError} onSetLoadError={setLoadError}
               onChooseDataSource={dataSource.handleChooseDataSource}
@@ -696,6 +921,7 @@ function App() {
           dataSourceLabel={dataSourceLabel} columns={dataColumns}
           identifierKey={identifierKey} rows={dataRows} fields={fields}
           checkboxRules={checkboxRules} checkboxHints={checkboxHints}
+          textTransformRules={textTransformRules}
           onFieldsChange={fieldState.handleFieldsChange} onClearFields={fieldState.handleClearFieldValues}
           onAfterFill={() => {
             fieldState.setShowFieldInfo(true); fieldState.setShowFieldNames(false);

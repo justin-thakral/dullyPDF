@@ -8,6 +8,7 @@ import type {
   FieldNameUpdate,
   NameQueue,
   PdfField,
+  TextTransformRule,
 } from '../types';
 import { deriveMappingConfidence, parseConfidence } from '../utils/confidence';
 import { normaliseDataKey } from '../utils/dataSource';
@@ -18,6 +19,7 @@ import { resolveIdentifierKey } from '../utils/dataSource';
 import { buildTemplateFields } from '../utils/fields';
 import { debugLog } from '../utils/debug';
 import { ApiService } from '../services/api';
+import { ApiError } from '../services/apiConfig';
 import { fetchDetectionStatus } from '../services/detectionApi';
 import type { PendingAutoActions } from '../types';
 
@@ -52,6 +54,20 @@ export function useOpenAiPipeline(deps: UseOpenAiPipelineDeps) {
   const [openAiError, setOpenAiError] = useState<string | null>(null);
   const [checkboxRules, setCheckboxRules] = useState<CheckboxRule[]>([]);
   const [checkboxHints, setCheckboxHints] = useState<CheckboxHint[]>([]);
+  const [textTransformRules, setTextTransformRules] = useState<TextTransformRule[]>([]);
+
+  const resolveCreditExhaustionMessage = useCallback(async (): Promise<string> => {
+    try {
+      const profile = await deps.loadUserProfile();
+      const role = String(profile?.role || '').toLowerCase();
+      if (role === 'pro') {
+        return 'OpenAI credits exhausted. Buy a 500-credit refill from your profile to continue.';
+      }
+      return 'OpenAI credits exhausted. Upgrade to Pro from your profile to continue.';
+    } catch {
+      return 'OpenAI credits exhausted. Check your profile to continue.';
+    }
+  }, [deps]);
 
   const clearPendingAutoActions = useCallback(() => {
     deps.pendingAutoActionsRef.current = null;
@@ -91,14 +107,32 @@ export function useOpenAiPipeline(deps: UseOpenAiPipelineDeps) {
         debugLog('Applied AI mappings', { total: updates.size });
       }
 
-      const rules = Array.isArray(mappingResults.checkboxRules)
-        ? (mappingResults.checkboxRules as CheckboxRule[])
-        : [];
+      const fillRules = mappingResults.fillRules && typeof mappingResults.fillRules === 'object'
+        ? mappingResults.fillRules
+        : null;
+
+      const rules = Array.isArray(fillRules?.checkboxRules)
+        ? (fillRules.checkboxRules as CheckboxRule[])
+        : Array.isArray(mappingResults.checkboxRules)
+          ? (mappingResults.checkboxRules as CheckboxRule[])
+          : [];
       setCheckboxRules(rules);
-      const hints = Array.isArray(mappingResults.checkboxHints)
-        ? (mappingResults.checkboxHints as CheckboxHint[])
-        : [];
+      const hints = Array.isArray(fillRules?.checkboxHints)
+        ? (fillRules.checkboxHints as CheckboxHint[])
+        : Array.isArray(mappingResults.checkboxHints)
+          ? (mappingResults.checkboxHints as CheckboxHint[])
+          : [];
       setCheckboxHints(hints);
+      const textRules = Array.isArray(fillRules?.textTransformRules)
+        ? (fillRules.textTransformRules as TextTransformRule[])
+        : Array.isArray((fillRules as Record<string, unknown> | null)?.templateRules)
+          ? ((fillRules as Record<string, unknown>).templateRules as TextTransformRule[])
+        : Array.isArray(mappingResults.textTransformRules)
+          ? (mappingResults.textTransformRules as TextTransformRule[])
+          : Array.isArray((mappingResults as Record<string, unknown> | null)?.templateRules)
+            ? ((mappingResults as Record<string, unknown>).templateRules as TextTransformRule[])
+          : [];
+      setTextTransformRules(textRules);
       const resolvedIdentifier = resolveIdentifierKey(
         mappingResults.identifierKey || mappingResults.identifier_key,
         deps.dataColumns,
@@ -198,13 +232,16 @@ export function useOpenAiPipeline(deps: UseOpenAiPipelineDeps) {
         void deps.loadUserProfile();
         return true;
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'Schema mapping failed.';
+        let message = error instanceof Error ? error.message : 'Schema mapping failed.';
+        if (error instanceof ApiError && error.status === 402) {
+          message = await resolveCreditExhaustionMessage();
+        }
         setOpenAiError(message);
         debugLog('Schema mapping failed', message);
         return false;
       }
     },
-    [applyMappingResults, clearPendingAutoActions, deps],
+    [applyMappingResults, clearPendingAutoActions, deps, resolveCreditExhaustionMessage],
   );
 
   const handleMappingSuccess = useCallback(() => {
@@ -296,7 +333,10 @@ export function useOpenAiPipeline(deps: UseOpenAiPipelineDeps) {
         const updated = applyRenameResults(result.fields);
         if (!updated || updated.length === 0) throw new Error('OpenAI rename returned no fields.');
         setCheckboxRules(Array.isArray(result.checkboxRules) ? result.checkboxRules : []);
-        if (!hasSchemaForMap) setCheckboxHints([]);
+        // Rename responses currently include rules but not hints; clear hints unless
+        // a future backend version explicitly returns them.
+        setCheckboxHints(Array.isArray((result as { checkboxHints?: CheckboxHint[] }).checkboxHints) ? (result as { checkboxHints?: CheckboxHint[] }).checkboxHints ?? [] : []);
+        setTextTransformRules([]);
         if (!hasSchemaForMap) {
           deps.setBannerNotice({
             tone: 'info',
@@ -308,7 +348,10 @@ export function useOpenAiPipeline(deps: UseOpenAiPipelineDeps) {
         void deps.loadUserProfile();
         return updated;
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'OpenAI rename failed.';
+        let message = error instanceof Error ? error.message : 'OpenAI rename failed.';
+        if (error instanceof ApiError && error.status === 402) {
+          message = await resolveCreditExhaustionMessage();
+        }
         setOpenAiError(message);
         debugLog('OpenAI rename failed', message);
         return null;
@@ -318,7 +361,7 @@ export function useOpenAiPipeline(deps: UseOpenAiPipelineDeps) {
         if (hasSchemaForMap) setMapSchemaInProgress(false);
       }
     },
-    [applyRenameResults, clearPendingAutoActions, deps],
+    [applyRenameResults, clearPendingAutoActions, deps, resolveCreditExhaustionMessage],
   );
 
   const confirmRemap = useCallback(async () => {
@@ -405,6 +448,7 @@ export function useOpenAiPipeline(deps: UseOpenAiPipelineDeps) {
     setHasMappedSchema(false);
     setCheckboxRules([]);
     setCheckboxHints([]);
+    setTextTransformRules([]);
     setRenameInProgress(false);
     setHasRenamedFields(false);
     setOpenAiError(null);
@@ -419,6 +463,7 @@ export function useOpenAiPipeline(deps: UseOpenAiPipelineDeps) {
     openAiError, setOpenAiError,
     checkboxRules, setCheckboxRules,
     checkboxHints, setCheckboxHints,
+    textTransformRules, setTextTransformRules,
     clearPendingAutoActions,
     applyMappingResults,
     applyRenameResults,

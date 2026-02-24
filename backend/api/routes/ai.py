@@ -9,6 +9,12 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Header, HTTPException, Request
 
+from backend.ai.credit_pricing import (
+    OPENAI_CREDIT_OPERATION_REMAP,
+    OPENAI_CREDIT_OPERATION_RENAME,
+    OPENAI_CREDIT_OPERATION_RENAME_REMAP,
+    compute_credit_pricing,
+)
 from backend.ai.rename_pipeline import run_openai_rename_on_pdf
 from backend.ai.openai_usage import build_openai_usage_summary
 from backend.ai.schema_mapping import (
@@ -41,7 +47,6 @@ from backend.firebaseDB.user_database import (
     consume_openai_credits,
     ensure_user,
     normalize_role,
-    refund_openai_credits,
 )
 from backend.firebaseDB.template_database import get_template
 from backend.firebaseDB.schema_database import (
@@ -59,11 +64,14 @@ from backend.services.app_config import (
     resolve_openai_rename_mode,
 )
 from backend.services.auth_service import require_user
+from backend.services.credit_refund_service import attempt_credit_refund
+from backend.logging_config import get_logger
 from backend.services.mapping_service import build_schema_mapping_payload, template_fields_to_rename_fields
 from backend.services.pdf_service import get_pdf_page_count
 from backend.time_utils import now_iso
 
 router = APIRouter()
+logger = get_logger(__name__)
 
 
 def _resolve_user_from_request(request: Request, authorization: Optional[str]):
@@ -87,17 +95,98 @@ def _safe_positive_int_env(name: str, default: int) -> int:
     return value if value > 0 else default
 
 
-def _refund_credits_if_charged(*, user_id: str, role: str, credits: int, charged: bool) -> None:
+def _normalize_credit_breakdown(raw: Any) -> Dict[str, int]:
+    payload = raw if isinstance(raw, dict) else {}
+    normalized: Dict[str, int] = {}
+    for key in ("base", "monthly", "refill"):
+        try:
+            value = int(payload.get(key, 0))
+        except (TypeError, ValueError):
+            value = 0
+        normalized[key] = value if value > 0 else 0
+    return normalized
+
+
+def _coerce_consume_result(raw: Any) -> tuple[int, bool, Dict[str, int]]:
+    def _to_int(value: Any, default: int = 0) -> int:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return default
+
+    if isinstance(raw, tuple):
+        if len(raw) >= 3:
+            remaining = _to_int(raw[0], 0)
+            allowed = bool(raw[1])
+            return remaining, allowed, _normalize_credit_breakdown(raw[2])
+        if len(raw) >= 2:
+            remaining = _to_int(raw[0], 0)
+            allowed = bool(raw[1])
+            return remaining, allowed, {"base": 0, "monthly": 0, "refill": 0}
+    raise RuntimeError("Invalid consume_openai_credits result")
+
+
+def _refund_credits_if_charged(
+    *,
+    user_id: str,
+    role: str,
+    credits: int,
+    charged: bool,
+    source: str,
+    request_id: Optional[str] = None,
+    job_id: Optional[str] = None,
+    credit_breakdown: Optional[Dict[str, int]] = None,
+) -> None:
     if not charged:
         return
-    try:
-        refund_openai_credits(user_id, credits=credits, role=role)
-    except Exception:
-        pass
+    success = attempt_credit_refund(
+        user_id=user_id,
+        role=role,
+        credits=credits,
+        source=source,
+        request_id=request_id,
+        job_id=job_id,
+        credit_breakdown=credit_breakdown,
+    )
+    if not success:
+        logger.error(
+            "Credit refund did not complete immediately (source=%s, user_id=%s, request_id=%s, job_id=%s).",
+            source,
+            user_id,
+            request_id or "",
+            job_id or "",
+        )
 
 
 def _task_mode_enabled(mode: str) -> bool:
     return (mode or "").strip().lower() == "tasks"
+
+
+def _coerce_positive_int(value: Any) -> Optional[int]:
+    try:
+        resolved = int(value)
+    except (TypeError, ValueError):
+        return None
+    return resolved if resolved > 0 else None
+
+
+def _resolve_template_metadata_page_count(template: Any) -> Optional[int]:
+    metadata = getattr(template, "metadata", None)
+    if not isinstance(metadata, dict):
+        return None
+
+    for key in ("page_count", "pageCount", "pdf_page_count", "pdfPageCount", "num_pages", "numPages"):
+        page_count = _coerce_positive_int(metadata.get(key))
+        if page_count is not None:
+            return page_count
+
+    nested_pdf = metadata.get("pdf")
+    if isinstance(nested_pdf, dict):
+        for key in ("page_count", "pageCount", "num_pages", "numPages", "pages"):
+            page_count = _coerce_positive_int(nested_pdf.get(key))
+            if page_count is not None:
+                return page_count
+    return None
 
 
 def _serialize_template_fields(payload_fields) -> Optional[List[Dict[str, Any]]]:
@@ -164,12 +253,23 @@ async def rename_fields_ai(
     if not check_rate_limit(f"rename:user:{user.app_user_id}", limit=user_rate, window_seconds=window_seconds):
         raise HTTPException(status_code=429, detail="Rate limit exceeded for user")
 
-    credits_required = 2 if schema_id else 1
-    page_count = entry.get("page_count") or get_pdf_page_count(pdf_bytes)
-    remaining, allowed = consume_openai_credits(
-        user.app_user_id,
-        credits=credits_required,
-        role=user.role,
+    page_count = _coerce_positive_int(entry.get("page_count"))
+    if page_count is None:
+        page_count = _coerce_positive_int(get_pdf_page_count(pdf_bytes))
+    if page_count is None:
+        raise HTTPException(status_code=400, detail="Unable to determine document page count for credit pricing")
+
+    credit_operation = OPENAI_CREDIT_OPERATION_RENAME_REMAP if schema_id else OPENAI_CREDIT_OPERATION_RENAME
+    credit_pricing = compute_credit_pricing(credit_operation, page_count=page_count)
+    credits_required = credit_pricing.total_credits
+
+    remaining, allowed, credit_breakdown = _coerce_consume_result(
+        consume_openai_credits(
+            user.app_user_id,
+            credits=credits_required,
+            role=user.role,
+            include_breakdown=True,
+        )
     )
     if not allowed:
         raise HTTPException(
@@ -192,6 +292,9 @@ async def rename_fields_ai(
             role=user.role,
             credits=credits_required,
             charged=credits_charged,
+            source="rename.request_log",
+            request_id=request_id,
+            credit_breakdown=credit_breakdown,
         )
         status_code = getattr(exc, "status_code", None) or 500
         raise HTTPException(status_code=status_code, detail=str(exc)) from exc
@@ -216,7 +319,9 @@ async def rename_fields_ai(
                 page_count=page_count,
                 template_field_count=len(rename_fields),
                 credits=credits_required,
+                credit_pricing=credit_pricing.to_dict(),
                 credits_charged=credits_charged,
+                credit_breakdown=credit_breakdown,
                 user_role=user.role,
             )
             task_name = enqueue_openai_rename_task(
@@ -228,8 +333,11 @@ async def rename_fields_ai(
                     "templateFields": serialized_template_fields,
                     "userId": user.app_user_id,
                     "userRole": user.role,
+                    "pageCount": page_count,
                     "credits": credits_required,
+                    "creditPricing": credit_pricing.to_dict(),
                     "creditsCharged": credits_charged,
+                    "creditBreakdown": credit_breakdown,
                 },
                 profile=profile,
             )
@@ -240,6 +348,10 @@ async def rename_fields_ai(
                 role=user.role,
                 credits=credits_required,
                 charged=credits_charged,
+                source="rename.enqueue",
+                request_id=request_id,
+                job_id=request_id,
+                credit_breakdown=credit_breakdown,
             )
             update_openai_job(
                 job_id=request_id,
@@ -256,6 +368,8 @@ async def rename_fields_ai(
             "sessionId": payload.sessionId,
             "schemaId": schema_id,
             "status": OPENAI_JOB_STATUS_QUEUED,
+            "pageCount": page_count,
+            "creditPricing": credit_pricing.to_dict(),
             "timestamp": datetime.now(tz=timezone.utc).isoformat(),
         }
 
@@ -272,6 +386,9 @@ async def rename_fields_ai(
             role=user.role,
             credits=credits_required,
             charged=credits_charged,
+            source="rename.sync_openai",
+            request_id=request_id,
+            credit_breakdown=credit_breakdown,
         )
         status_code = getattr(exc, "status_code", None) or 500
         raise HTTPException(status_code=status_code, detail=str(exc)) from exc
@@ -280,6 +397,12 @@ async def rename_fields_ai(
     entry["fields"] = renamed_fields
     entry["renames"] = rename_report
     entry["checkboxRules"] = checkbox_rules
+    # Rename does not emit checkbox hints, so clear any previous hints to avoid stale
+    # Search & Fill behavior after reruns on the same session.
+    entry["checkboxHints"] = []
+    # Text transform rules are produced by schema mapping, not rename.
+    # Clear stale rules on rename reruns because field names may have changed.
+    entry["textTransformRules"] = []
     entry["page_count"] = page_count
     _update_session_entry(
         payload.sessionId,
@@ -287,6 +410,8 @@ async def rename_fields_ai(
         persist_fields=True,
         persist_renames=True,
         persist_checkbox_rules=True,
+        persist_checkbox_hints=True,
+        persist_text_transform_rules=True,
     )
 
     return {
@@ -297,6 +422,8 @@ async def rename_fields_ai(
         "renames": rename_report,
         "fields": renamed_fields,
         "checkboxRules": checkbox_rules,
+        "pageCount": page_count,
+        "creditPricing": credit_pricing.to_dict(),
         "timestamp": datetime.now(tz=timezone.utc).isoformat(),
     }
 
@@ -391,11 +518,25 @@ async def map_schema_ai(
             include_checkbox_rules=False,
         )
 
-    credits_required = 1
-    remaining, allowed = consume_openai_credits(
-        user.app_user_id,
-        credits=credits_required,
-        role=user.role,
+    page_count = _coerce_positive_int((session_entry or {}).get("page_count"))
+    if page_count is None:
+        page_count = _resolve_template_metadata_page_count(template)
+    if page_count is None:
+        raise HTTPException(status_code=400, detail="Unable to determine document page count for credit pricing")
+
+    credit_pricing = compute_credit_pricing(
+        OPENAI_CREDIT_OPERATION_REMAP,
+        page_count=page_count,
+    )
+    credits_required = credit_pricing.total_credits
+
+    remaining, allowed, credit_breakdown = _coerce_consume_result(
+        consume_openai_credits(
+            user.app_user_id,
+            credits=credits_required,
+            role=user.role,
+            include_breakdown=True,
+        )
     )
     if not allowed:
         raise HTTPException(
@@ -418,6 +559,9 @@ async def map_schema_ai(
             role=user.role,
             credits=credits_required,
             charged=credits_charged,
+            source="remap.request_log",
+            request_id=request_id,
+            credit_breakdown=credit_breakdown,
         )
         status_code = getattr(exc, "status_code", None) or 500
         raise HTTPException(status_code=status_code, detail=str(exc)) from exc
@@ -438,9 +582,12 @@ async def map_schema_ai(
                 profile=task_config.get("profile"),
                 queue=task_config.get("queue"),
                 service_url=task_config.get("service_url"),
+                page_count=page_count,
                 template_field_count=len(template_fields),
                 credits=credits_required,
+                credit_pricing=credit_pricing.to_dict(),
                 credits_charged=credits_charged,
+                credit_breakdown=credit_breakdown,
                 user_role=user.role,
             )
             task_name = enqueue_openai_remap_task(
@@ -453,8 +600,11 @@ async def map_schema_ai(
                     "sessionId": payload.sessionId,
                     "userId": user.app_user_id,
                     "userRole": user.role,
+                    "pageCount": page_count,
                     "credits": credits_required,
+                    "creditPricing": credit_pricing.to_dict(),
                     "creditsCharged": credits_charged,
+                    "creditBreakdown": credit_breakdown,
                 },
                 profile=profile,
             )
@@ -465,6 +615,10 @@ async def map_schema_ai(
                 role=user.role,
                 credits=credits_required,
                 charged=credits_charged,
+                source="remap.enqueue",
+                request_id=request_id,
+                job_id=request_id,
+                credit_breakdown=credit_breakdown,
             )
             update_openai_job(
                 job_id=request_id,
@@ -480,6 +634,8 @@ async def map_schema_ai(
             "jobId": request_id,
             "schemaId": schema.id,
             "status": OPENAI_JOB_STATUS_QUEUED,
+            "pageCount": page_count,
+            "creditPricing": credit_pricing.to_dict(),
             "timestamp": datetime.now(tz=timezone.utc).isoformat(),
         }
 
@@ -496,6 +652,9 @@ async def map_schema_ai(
             role=user.role,
             credits=credits_required,
             charged=credits_charged,
+            source="remap.sync_openai",
+            request_id=request_id,
+            credit_breakdown=credit_breakdown,
         )
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
@@ -504,6 +663,9 @@ async def map_schema_ai(
             role=user.role,
             credits=credits_required,
             charged=credits_charged,
+            source="remap.sync_openai",
+            request_id=request_id,
+            credit_breakdown=credit_breakdown,
         )
         status_code = getattr(exc, "status_code", None) or 500
         raise HTTPException(status_code=status_code, detail=str(exc)) from exc
@@ -516,26 +678,33 @@ async def map_schema_ai(
     if session_entry and payload.sessionId:
         persist_rules = False
         persist_hints = False
+        persist_text_rules = False
         if isinstance(mapping_results, dict):
+            # Persist explicit arrays (including empty arrays) so newer mapping results
+            # can clear stale checkbox behavior from prior runs.
             checkbox_rules = list(mapping_results.get("checkboxRules") or [])
-            if checkbox_rules:
-                session_entry["checkboxRules"] = checkbox_rules
-                persist_rules = True
+            session_entry["checkboxRules"] = checkbox_rules
+            persist_rules = True
             checkbox_hints = list(mapping_results.get("checkboxHints") or [])
-            if checkbox_hints:
-                session_entry["checkboxHints"] = checkbox_hints
-                persist_hints = True
+            session_entry["checkboxHints"] = checkbox_hints
+            persist_hints = True
+            text_transform_rules = list(mapping_results.get("textTransformRules") or [])
+            session_entry["textTransformRules"] = text_transform_rules
+            persist_text_rules = True
         _update_session_entry(
             payload.sessionId,
             session_entry,
             persist_checkbox_rules=persist_rules,
             persist_checkbox_hints=persist_hints,
+            persist_text_transform_rules=persist_text_rules,
         )
     return {
         "success": True,
         "requestId": request_id,
         "schemaId": schema.id,
         "mappingResults": mapping_results,
+        "pageCount": page_count,
+        "creditPricing": credit_pricing.to_dict(),
         "openaiUsage": openai_usage_summary,
         "openaiUsageEvents": openai_usage_events,
         "timestamp": datetime.now(tz=timezone.utc).isoformat(),

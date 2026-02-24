@@ -35,7 +35,7 @@ frontend/
 - `frontend/src/components/panels/FieldInspectorPanel.tsx`: Selected-field metadata/geometry editing, create/delete actions, undo/redo controls.
 - `frontend/src/components/features/SearchFillModal.tsx`: Record search and field fill logic.
 - `frontend/src/components/features/UploadView.tsx`: Upload + saved-form selection UI and OpenAI preflight modal entry.
-- `frontend/src/components/pages/*.tsx`: Homepage, auth pages, profile page, and legal pages.
+- `frontend/src/components/pages/*.tsx`: Homepage, auth pages, profile page, legal pages, and public usage docs pages (`/usage-docs/*`).
 - `frontend/src/config/appConstants.tsx`: Shared app-level constants (history limits, demo assets/steps, processing copy).
 - `frontend/src/utils/pdf.ts`: PDF.js loading, page size extraction, and AcroForm field extraction.
 - `frontend/src/styles/*.css` + `frontend/src/components/**/*.css`: Shared shell styles and component-scoped styles.

@@ -116,7 +116,7 @@ def test_rename_endpoint_refunds_credit_and_maps_custom_status_code(
     mocker.patch.object(app_main, "_get_session_entry", return_value=_session_entry())
     mocker.patch.object(app_main, "check_rate_limit", return_value=True)
     mocker.patch.object(app_main, "consume_openai_credits", return_value=(8, True))
-    refund_mock = mocker.patch.object(app_main, "refund_openai_credits", return_value=9)
+    refund_mock = mocker.patch.object(app_main, "attempt_credit_refund", return_value=True)
     mocker.patch.object(app_main, "record_openai_rename_request", return_value=None)
     mocker.patch.object(
         app_main,
@@ -160,6 +160,10 @@ def test_rename_endpoint_persists_renames_and_checkbox_rules(client, app_main, b
     assert update_mock.call_args.kwargs["persist_fields"] is True
     assert update_mock.call_args.kwargs["persist_renames"] is True
     assert update_mock.call_args.kwargs["persist_checkbox_rules"] is True
+    assert update_mock.call_args.kwargs["persist_checkbox_hints"] is True
+    assert update_mock.call_args.kwargs["persist_text_transform_rules"] is True
+    assert entry["checkboxHints"] == []
+    assert entry["textTransformRules"] == []
 
 
 def test_rename_endpoint_schema_allowlist_empty_rejects_before_credit_charge(
@@ -224,7 +228,7 @@ def test_rename_endpoint_preserves_openai_error_when_refund_fails(
         "run_openai_rename_on_pdf",
         side_effect=_OpenAiFailure("downstream failed", 422),
     )
-    refund_mock = mocker.patch.object(app_main, "refund_openai_credits", side_effect=RuntimeError("refund failed"))
+    refund_mock = mocker.patch.object(app_main, "attempt_credit_refund", return_value=False)
 
     response = client.post(
         "/api/renames/ai",
@@ -246,7 +250,7 @@ def test_rename_endpoint_refunds_credits_when_request_logging_fails(
     mocker.patch.object(app_main, "_get_session_entry", return_value=_session_entry())
     mocker.patch.object(app_main, "check_rate_limit", return_value=True)
     mocker.patch.object(app_main, "consume_openai_credits", return_value=(8, True))
-    refund_mock = mocker.patch.object(app_main, "refund_openai_credits", return_value=9)
+    refund_mock = mocker.patch.object(app_main, "attempt_credit_refund", return_value=True)
     mocker.patch.object(app_main, "record_openai_rename_request", side_effect=RuntimeError("request log down"))
     run_mock = mocker.patch.object(app_main, "run_openai_rename_on_pdf")
 
@@ -261,7 +265,13 @@ def test_rename_endpoint_refunds_credits_when_request_logging_fails(
 
     assert response.status_code == 500
     run_mock.assert_not_called()
-    refund_mock.assert_called_once_with(base_user.app_user_id, credits=1, role=base_user.role)
+    refund_mock.assert_called_once()
+    refund_kwargs = refund_mock.call_args.kwargs
+    assert refund_kwargs["user_id"] == base_user.app_user_id
+    assert refund_kwargs["role"] == base_user.role
+    assert refund_kwargs["credits"] == 1
+    assert refund_kwargs["source"] == "rename.request_log"
+    assert refund_kwargs["request_id"]
 
 
 def test_mapping_endpoint_refunds_credits_when_request_logging_fails(
@@ -278,9 +288,9 @@ def test_mapping_endpoint_refunds_credits_when_request_logging_fails(
         return_value={"schemaFields": [{"name": "first_name"}], "templateTags": [{"tag": "A1"}]},
     )
     mocker.patch.object(app_main, "check_rate_limit", return_value=True)
-    mocker.patch.object(app_main, "_get_session_entry", return_value={"session": "entry"})
+    mocker.patch.object(app_main, "_get_session_entry", return_value={"session": "entry", "page_count": 1})
     mocker.patch.object(app_main, "consume_openai_credits", return_value=(9, True))
-    refund_mock = mocker.patch.object(app_main, "refund_openai_credits", return_value=10)
+    refund_mock = mocker.patch.object(app_main, "attempt_credit_refund", return_value=True)
     mocker.patch.object(app_main, "record_openai_request", side_effect=RuntimeError("request log down"))
     openai_mock = mocker.patch.object(app_main, "call_openai_schema_mapping_chunked")
 
@@ -295,7 +305,13 @@ def test_mapping_endpoint_refunds_credits_when_request_logging_fails(
 
     assert response.status_code == 500
     openai_mock.assert_not_called()
-    refund_mock.assert_called_once_with(base_user.app_user_id, credits=1, role=base_user.role)
+    refund_mock.assert_called_once()
+    refund_kwargs = refund_mock.call_args.kwargs
+    assert refund_kwargs["user_id"] == base_user.app_user_id
+    assert refund_kwargs["role"] == base_user.role
+    assert refund_kwargs["credits"] == 1
+    assert refund_kwargs["source"] == "remap.request_log"
+    assert refund_kwargs["request_id"]
 
 
 def test_mapping_endpoint_validation_rate_limit_and_template_ownership(
@@ -380,7 +396,7 @@ def test_mapping_endpoint_credit_exhaustion_returns_402(
         return_value={"schemaFields": [{"name": "first_name"}], "templateTags": [{"tag": "A1"}]},
     )
     mocker.patch.object(app_main, "check_rate_limit", return_value=True)
-    mocker.patch.object(app_main, "_get_session_entry", return_value={"session": "entry"})
+    mocker.patch.object(app_main, "_get_session_entry", return_value={"session": "entry", "page_count": 1})
     mocker.patch.object(app_main, "consume_openai_credits", return_value=(0, False))
     openai_mock = mocker.patch.object(app_main, "call_openai_schema_mapping_chunked")
 
@@ -420,9 +436,9 @@ def test_mapping_endpoint_refund_failure_does_not_mask_original_error(
     mocker.patch.object(app_main, "check_rate_limit", return_value=True)
     mocker.patch.object(app_main, "consume_openai_credits", return_value=(9, True))
     mocker.patch.object(app_main, "record_openai_request", return_value=None)
-    mocker.patch.object(app_main, "_get_session_entry", return_value={"session": "entry"})
+    mocker.patch.object(app_main, "_get_session_entry", return_value={"session": "entry", "page_count": 1})
     mocker.patch.object(app_main, "call_openai_schema_mapping_chunked", side_effect=failure)
-    refund_mock = mocker.patch.object(app_main, "refund_openai_credits", side_effect=RuntimeError("refund failed"))
+    refund_mock = mocker.patch.object(app_main, "attempt_credit_refund", return_value=False)
 
     response = client.post(
         "/api/schema-mappings/ai",
@@ -455,9 +471,9 @@ def test_mapping_endpoint_credit_charge_refund_and_custom_status_code(
     )
     mocker.patch.object(app_main, "check_rate_limit", return_value=True)
     consume_mock = mocker.patch.object(app_main, "consume_openai_credits", return_value=(9, True))
-    refund_mock = mocker.patch.object(app_main, "refund_openai_credits", return_value=10)
+    refund_mock = mocker.patch.object(app_main, "attempt_credit_refund", return_value=True)
     mocker.patch.object(app_main, "record_openai_request", return_value=None)
-    mocker.patch.object(app_main, "_get_session_entry", return_value={"session": "entry"})
+    mocker.patch.object(app_main, "_get_session_entry", return_value={"session": "entry", "page_count": 1})
     mocker.patch.object(
         app_main,
         "call_openai_schema_mapping_chunked",
@@ -474,7 +490,7 @@ def test_mapping_endpoint_credit_charge_refund_and_custom_status_code(
     refund_mock.assert_called_once()
 
 
-def test_mapping_endpoint_persists_checkbox_rules_and_hints_and_passes_response_envelope(
+def test_mapping_endpoint_persists_checkbox_and_text_rules_and_passes_response_envelope(
     client,
     app_main,
     base_user,
@@ -491,12 +507,13 @@ def test_mapping_endpoint_persists_checkbox_rules_and_hints_and_passes_response_
     mocker.patch.object(app_main, "check_rate_limit", return_value=True)
     mocker.patch.object(app_main, "consume_openai_credits", return_value=(9, True))
     mocker.patch.object(app_main, "record_openai_request", return_value=None)
-    mocker.patch.object(app_main, "_get_session_entry", return_value={"session": "entry"})
+    mocker.patch.object(app_main, "_get_session_entry", return_value={"session": "entry", "page_count": 1})
     mocker.patch.object(app_main, "call_openai_schema_mapping_chunked", return_value={"raw": True})
     mapping_payload = {
         "mappings": [],
         "checkboxRules": [{"databaseField": "consent", "groupKey": "consent_group"}],
         "checkboxHints": [{"databaseField": "consent", "groupKey": "consent_group"}],
+        "textTransformRules": [{"targetField": "A1", "operation": "copy", "sources": ["first_name"]}],
     }
     mocker.patch.object(app_main, "_build_schema_mapping_payload", return_value=mapping_payload)
     update_mock = mocker.patch.object(app_main, "_update_session_entry", return_value=None)
@@ -512,6 +529,53 @@ def test_mapping_endpoint_persists_checkbox_rules_and_hints_and_passes_response_
     assert "requestId" in body
     assert update_mock.call_args.kwargs["persist_checkbox_rules"] is True
     assert update_mock.call_args.kwargs["persist_checkbox_hints"] is True
+    assert update_mock.call_args.kwargs["persist_text_transform_rules"] is True
+
+
+def test_mapping_endpoint_persists_empty_checkbox_and_text_rules_to_clear_stale_state(
+    client,
+    app_main,
+    base_user,
+    mocker,
+    auth_headers,
+) -> None:
+    _patch_auth(mocker, app_main, base_user)
+    mocker.patch.object(app_main, "get_schema", return_value=_schema_record())
+    mocker.patch.object(
+        app_main,
+        "build_allowlist_payload",
+        return_value={"schemaFields": [{"name": "first_name"}], "templateTags": [{"tag": "A1"}]},
+    )
+    mocker.patch.object(app_main, "check_rate_limit", return_value=True)
+    mocker.patch.object(app_main, "consume_openai_credits", return_value=(9, True))
+    mocker.patch.object(app_main, "record_openai_request", return_value=None)
+    session_entry = {
+        "checkboxRules": [{"databaseField": "legacy", "groupKey": "legacy_group"}],
+        "checkboxHints": [{"databaseField": "legacy", "groupKey": "legacy_group"}],
+        "textTransformRules": [{"targetField": "legacy", "operation": "copy", "sources": ["legacy"]}],
+        "page_count": 1,
+    }
+    mocker.patch.object(app_main, "_get_session_entry", return_value=session_entry)
+    mocker.patch.object(app_main, "call_openai_schema_mapping_chunked", return_value={"raw": True})
+    mocker.patch.object(
+        app_main,
+        "_build_schema_mapping_payload",
+        return_value={"mappings": [], "checkboxRules": [], "checkboxHints": [], "textTransformRules": []},
+    )
+    update_mock = mocker.patch.object(app_main, "_update_session_entry", return_value=None)
+
+    response = client.post(
+        "/api/schema-mappings/ai",
+        json={"schemaId": "schema_1", "templateFields": [_template_field_payload()], "sessionId": "sess-1"},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    assert session_entry["checkboxRules"] == []
+    assert session_entry["checkboxHints"] == []
+    assert session_entry["textTransformRules"] == []
+    assert update_mock.call_args.kwargs["persist_checkbox_rules"] is True
+    assert update_mock.call_args.kwargs["persist_checkbox_hints"] is True
+    assert update_mock.call_args.kwargs["persist_text_transform_rules"] is True
 
 
 # ---------------------------------------------------------------------------
@@ -578,7 +642,7 @@ def test_mapping_endpoint_skips_update_when_no_session_id(
             id="tpl-1",
             pdf_bucket_path="gs://forms/tpl.pdf",
             template_bucket_path="gs://templates/tpl.pdf",
-            metadata={},
+            metadata={"page_count": 1},
             created_at=None,
             updated_at=None,
             name="Template",
@@ -732,7 +796,7 @@ def test_mapping_endpoint_tasks_mode_enqueues_job(
         return_value={"schemaFields": [{"name": "first_name"}], "templateTags": [{"tag": "A1"}]},
     )
     mocker.patch.object(app_main, "check_rate_limit", return_value=True)
-    mocker.patch.object(app_main, "_get_session_entry", return_value={"session": "entry"})
+    mocker.patch.object(app_main, "_get_session_entry", return_value={"session": "entry", "page_count": 1})
     mocker.patch.object(app_main, "consume_openai_credits", return_value=(9, True))
     mocker.patch.object(app_main, "record_openai_request", return_value=None)
     mocker.patch.object(app_main, "resolve_openai_remap_mode", return_value="tasks")
@@ -802,3 +866,303 @@ def test_openai_job_status_endpoints_enforce_ownership_and_return_result(
     )
     denied_response = client.get("/api/schema-mappings/ai/job-2", headers=auth_headers)
     assert denied_response.status_code == 403
+
+
+def test_rename_plus_remap_twelve_pages_charges_six_credits_and_returns_pricing(
+    client,
+    app_main,
+    base_user,
+    mocker,
+    auth_headers,
+) -> None:
+    _patch_auth(mocker, app_main, base_user)
+    entry = _session_entry()
+    entry["page_count"] = 12
+    mocker.patch.object(app_main, "_get_session_entry", return_value=entry)
+    mocker.patch.object(app_main, "check_rate_limit", return_value=True)
+    consume_mock = mocker.patch.object(app_main, "consume_openai_credits", return_value=(90, True))
+    mocker.patch.object(app_main, "get_schema", return_value=_schema_record())
+    mocker.patch.object(app_main, "record_openai_rename_request", return_value=None)
+    mocker.patch.object(
+        app_main,
+        "run_openai_rename_on_pdf",
+        return_value=({"checkboxRules": []}, [{"name": "first_name"}]),
+    )
+    mocker.patch.object(app_main, "_update_session_entry", return_value=None)
+
+    response = client.post(
+        "/api/renames/ai",
+        json={"sessionId": "sess-1", "schemaId": "schema_1", "templateFields": [_template_field_payload()]},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    assert consume_mock.call_args.kwargs["credits"] == 6
+    body = response.json()
+    assert body["pageCount"] == 12
+    assert body["creditPricing"]["totalCredits"] == 6
+    assert body["creditPricing"]["bucketCount"] == 3
+    assert body["creditPricing"]["baseCost"] == 2
+
+
+def test_rename_twelve_pages_charges_three_credits_and_returns_pricing(
+    client,
+    app_main,
+    base_user,
+    mocker,
+    auth_headers,
+) -> None:
+    _patch_auth(mocker, app_main, base_user)
+    entry = _session_entry()
+    entry["page_count"] = 12
+    mocker.patch.object(app_main, "_get_session_entry", return_value=entry)
+    mocker.patch.object(app_main, "check_rate_limit", return_value=True)
+    consume_mock = mocker.patch.object(app_main, "consume_openai_credits", return_value=(97, True))
+    mocker.patch.object(app_main, "record_openai_rename_request", return_value=None)
+    mocker.patch.object(
+        app_main,
+        "run_openai_rename_on_pdf",
+        return_value=({"checkboxRules": []}, [{"name": "first_name"}]),
+    )
+    mocker.patch.object(app_main, "_update_session_entry", return_value=None)
+
+    response = client.post(
+        "/api/renames/ai",
+        json={"sessionId": "sess-1", "templateFields": [_template_field_payload()]},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    assert consume_mock.call_args.kwargs["credits"] == 3
+    body = response.json()
+    assert body["pageCount"] == 12
+    assert body["creditPricing"]["totalCredits"] == 3
+    assert body["creditPricing"]["bucketCount"] == 3
+    assert body["creditPricing"]["baseCost"] == 1
+
+
+def test_mapping_twelve_pages_charges_three_credits_and_returns_pricing(
+    client,
+    app_main,
+    base_user,
+    mocker,
+    auth_headers,
+) -> None:
+    _patch_auth(mocker, app_main, base_user)
+    mocker.patch.object(app_main, "get_schema", return_value=_schema_record())
+    mocker.patch.object(
+        app_main,
+        "build_allowlist_payload",
+        return_value={"schemaFields": [{"name": "first_name"}], "templateTags": [{"tag": "A1"}]},
+    )
+    mocker.patch.object(app_main, "_get_session_entry", return_value={"session": "entry", "page_count": 12})
+    mocker.patch.object(app_main, "check_rate_limit", return_value=True)
+    consume_mock = mocker.patch.object(app_main, "consume_openai_credits", return_value=(97, True))
+    mocker.patch.object(app_main, "record_openai_request", return_value=None)
+    mocker.patch.object(app_main, "call_openai_schema_mapping_chunked", return_value={"raw": True})
+    mocker.patch.object(app_main, "_build_schema_mapping_payload", return_value={"mappings": []})
+    mocker.patch.object(app_main, "_update_session_entry", return_value=None)
+
+    response = client.post(
+        "/api/schema-mappings/ai",
+        json={"schemaId": "schema_1", "templateFields": [_template_field_payload()], "sessionId": "sess-1"},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    assert consume_mock.call_args.kwargs["credits"] == 3
+    body = response.json()
+    assert body["pageCount"] == 12
+    assert body["creditPricing"]["totalCredits"] == 3
+    assert body["creditPricing"]["bucketCount"] == 3
+    assert body["creditPricing"]["baseCost"] == 1
+
+
+def test_rename_plus_remap_insufficient_credits_rejected_before_work_starts(
+    client,
+    app_main,
+    base_user,
+    mocker,
+    auth_headers,
+) -> None:
+    _patch_auth(mocker, app_main, base_user)
+    entry = _session_entry()
+    entry["page_count"] = 12
+    mocker.patch.object(app_main, "_get_session_entry", return_value=entry)
+    mocker.patch.object(app_main, "check_rate_limit", return_value=True)
+    mocker.patch.object(app_main, "get_schema", return_value=_schema_record())
+    mocker.patch.object(app_main, "consume_openai_credits", return_value=(4, False))
+    request_log_mock = mocker.patch.object(app_main, "record_openai_rename_request", return_value=None)
+    run_mock = mocker.patch.object(app_main, "run_openai_rename_on_pdf")
+
+    response = client.post(
+        "/api/renames/ai",
+        json={"sessionId": "sess-1", "schemaId": "schema_1", "templateFields": [_template_field_payload()]},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 402
+    assert "OpenAI credits exhausted (remaining=4, required=6)" in response.text
+    request_log_mock.assert_not_called()
+    run_mock.assert_not_called()
+
+
+def test_mapping_page_count_falls_back_to_template_metadata_for_credit_pricing(
+    client,
+    app_main,
+    base_user,
+    mocker,
+    auth_headers,
+) -> None:
+    from backend.firebaseDB.template_database import TemplateRecord
+
+    _patch_auth(mocker, app_main, base_user)
+    mocker.patch.object(app_main, "get_schema", return_value=_schema_record())
+    mocker.patch.object(
+        app_main,
+        "get_template",
+        return_value=TemplateRecord(
+            id="tpl-1",
+            pdf_bucket_path="gs://forms/tpl.pdf",
+            template_bucket_path="gs://templates/tpl.pdf",
+            metadata={"page_count": 12},
+            created_at=None,
+            updated_at=None,
+            name="Template",
+        ),
+    )
+    mocker.patch.object(
+        app_main,
+        "build_allowlist_payload",
+        return_value={"schemaFields": [{"name": "first_name"}], "templateTags": [{"tag": "A1"}]},
+    )
+    get_session_mock = mocker.patch.object(app_main, "_get_session_entry")
+    mocker.patch.object(app_main, "check_rate_limit", return_value=True)
+    consume_mock = mocker.patch.object(app_main, "consume_openai_credits", return_value=(97, True))
+    mocker.patch.object(app_main, "record_openai_request", return_value=None)
+    mocker.patch.object(app_main, "call_openai_schema_mapping_chunked", return_value={"raw": True})
+    mocker.patch.object(app_main, "_build_schema_mapping_payload", return_value={"mappings": []})
+    update_mock = mocker.patch.object(app_main, "_update_session_entry", return_value=None)
+
+    response = client.post(
+        "/api/schema-mappings/ai",
+        json={"schemaId": "schema_1", "templateId": "tpl-1", "templateFields": [_template_field_payload()]},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    assert consume_mock.call_args.kwargs["credits"] == 3
+    body = response.json()
+    assert body["pageCount"] == 12
+    assert body["creditPricing"]["totalCredits"] == 3
+    get_session_mock.assert_not_called()
+    update_mock.assert_not_called()
+
+
+def test_mapping_rejects_when_page_count_missing_for_credit_pricing(
+    client,
+    app_main,
+    base_user,
+    mocker,
+    auth_headers,
+) -> None:
+    _patch_auth(mocker, app_main, base_user)
+    mocker.patch.object(app_main, "get_schema", return_value=_schema_record())
+    mocker.patch.object(
+        app_main,
+        "build_allowlist_payload",
+        return_value={"schemaFields": [{"name": "first_name"}], "templateTags": [{"tag": "A1"}]},
+    )
+    mocker.patch.object(app_main, "_get_session_entry", return_value={"session": "entry"})
+    mocker.patch.object(app_main, "check_rate_limit", return_value=True)
+    consume_mock = mocker.patch.object(app_main, "consume_openai_credits", return_value=(9, True))
+    request_log_mock = mocker.patch.object(app_main, "record_openai_request", return_value=None)
+
+    response = client.post(
+        "/api/schema-mappings/ai",
+        json={"schemaId": "schema_1", "templateFields": [_template_field_payload()], "sessionId": "sess-1"},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 400
+    assert "Unable to determine document page count for credit pricing" in response.text
+    consume_mock.assert_not_called()
+    request_log_mock.assert_not_called()
+
+
+def test_rename_uses_pdf_page_count_fallback_when_session_page_count_missing(
+    client,
+    app_main,
+    base_user,
+    mocker,
+    auth_headers,
+) -> None:
+    _patch_auth(mocker, app_main, base_user)
+    entry = _session_entry()
+    entry["page_count"] = None
+    mocker.patch.object(app_main, "_get_session_entry", return_value=entry)
+    get_pdf_count_mock = mocker.patch.object(app_main, "get_pdf_page_count", return_value=12)
+    mocker.patch.object(app_main, "check_rate_limit", return_value=True)
+    consume_mock = mocker.patch.object(app_main, "consume_openai_credits", return_value=(90, True))
+    mocker.patch.object(app_main, "get_schema", return_value=_schema_record())
+    mocker.patch.object(app_main, "record_openai_rename_request", return_value=None)
+    mocker.patch.object(
+        app_main,
+        "run_openai_rename_on_pdf",
+        return_value=({"checkboxRules": []}, [{"name": "first_name"}]),
+    )
+    mocker.patch.object(app_main, "_update_session_entry", return_value=None)
+
+    response = client.post(
+        "/api/renames/ai",
+        json={"sessionId": "sess-1", "schemaId": "schema_1", "templateFields": [_template_field_payload()]},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    get_pdf_count_mock.assert_called_once()
+    assert consume_mock.call_args.kwargs["credits"] == 6
+
+
+def test_rename_task_mode_uses_bucketed_credit_costs_for_twelve_pages(
+    client,
+    app_main,
+    base_user,
+    mocker,
+    auth_headers,
+) -> None:
+    _patch_auth(mocker, app_main, base_user)
+    entry = _session_entry()
+    entry["page_count"] = 12
+    mocker.patch.object(app_main, "_get_session_entry", return_value=entry)
+    mocker.patch.object(app_main, "check_rate_limit", return_value=True)
+    mocker.patch.object(app_main, "consume_openai_credits", return_value=(90, True))
+    mocker.patch.object(app_main, "get_schema", return_value=_schema_record())
+    mocker.patch.object(app_main, "record_openai_rename_request", return_value=None)
+    mocker.patch.object(app_main, "resolve_openai_rename_mode", return_value="tasks")
+    mocker.patch.object(app_main, "resolve_openai_rename_profile", return_value="light")
+    mocker.patch.object(
+        app_main,
+        "resolve_openai_task_config",
+        return_value={"profile": "light", "queue": "openai-rename-light", "service_url": "https://rename"},
+    )
+    create_job_mock = mocker.patch.object(app_main, "create_openai_job", return_value=None)
+    enqueue_mock = mocker.patch.object(app_main, "enqueue_openai_rename_task", return_value="tasks/rename-12")
+    mocker.patch.object(app_main, "update_openai_job", return_value=None)
+    inline_openai_mock = mocker.patch.object(app_main, "run_openai_rename_on_pdf")
+
+    response = client.post(
+        "/api/renames/ai",
+        json={"sessionId": "sess-1", "schemaId": "schema_1", "templateFields": [_template_field_payload()]},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    create_kwargs = create_job_mock.call_args.kwargs
+    assert create_kwargs["credits"] == 6
+    assert create_kwargs["credit_pricing"]["totalCredits"] == 6
+    enqueue_payload = enqueue_mock.call_args.args[0]
+    assert enqueue_payload["credits"] == 6
+    assert enqueue_payload["pageCount"] == 12
+    assert enqueue_payload["creditPricing"]["totalCredits"] == 6
+    inline_openai_mock.assert_not_called()

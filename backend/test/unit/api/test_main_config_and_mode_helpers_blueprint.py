@@ -61,6 +61,7 @@ def test_require_prod_env_reports_missing_keys(app_main, mocker) -> None:
     message = str(ctx.value)
     assert "Missing required prod env vars" in message
     assert "SANDBOX_CORS_ORIGINS" in message
+    assert "STRIPE_SECRET_KEY" in message
     assert "DETECTOR_TASKS_SERVICE_ACCOUNT" in message
 
 
@@ -76,6 +77,13 @@ def test_require_prod_env_rejects_wildcard_cors(monkeypatch, app_main, mocker) -
         "GMAIL_CLIENT_ID": "cid",
         "GMAIL_CLIENT_SECRET": "secret",
         "GMAIL_REFRESH_TOKEN": "refresh",
+        "STRIPE_SECRET_KEY": "sk_live_abc",
+        "STRIPE_WEBHOOK_SECRET": "whsec_abc",
+        "STRIPE_PRICE_PRO_MONTHLY": "price_monthly",
+        "STRIPE_PRICE_PRO_YEARLY": "price_yearly",
+        "STRIPE_PRICE_REFILL_500": "price_refill",
+        "STRIPE_CHECKOUT_SUCCESS_URL": "https://dullypdf.com/account?billing=success",
+        "STRIPE_CHECKOUT_CANCEL_URL": "https://dullypdf.com/account?billing=cancel",
         "RECAPTCHA_SITE_KEY": "site",
         "RECAPTCHA_PROJECT_ID": "proj",
         "DETECTOR_TASKS_PROJECT": "proj",
@@ -106,6 +114,13 @@ def test_require_prod_env_accepts_complete_matrix(app_main, mocker) -> None:
         "GMAIL_CLIENT_ID": "cid",
         "GMAIL_CLIENT_SECRET": "secret",
         "GMAIL_REFRESH_TOKEN": "refresh",
+        "STRIPE_SECRET_KEY": "sk_live_abc",
+        "STRIPE_WEBHOOK_SECRET": "whsec_abc",
+        "STRIPE_PRICE_PRO_MONTHLY": "price_monthly",
+        "STRIPE_PRICE_PRO_YEARLY": "price_yearly",
+        "STRIPE_PRICE_REFILL_500": "price_refill",
+        "STRIPE_CHECKOUT_SUCCESS_URL": "https://dullypdf.com/account?billing=success",
+        "STRIPE_CHECKOUT_CANCEL_URL": "https://dullypdf.com/account?billing=cancel",
         "RECAPTCHA_SITE_KEY": "site",
         "RECAPTCHA_PROJECT_ID": "proj",
         "DETECTOR_TASKS_PROJECT": "proj",
@@ -120,6 +135,83 @@ def test_require_prod_env_accepts_complete_matrix(app_main, mocker) -> None:
     mocker.patch.object(app_main, "_env_truthy", return_value=True)
     mocker.patch.object(app_main, "_env_value", side_effect=lambda key: values.get(key, ""))
     app_main._require_prod_env()
+
+
+def test_require_prod_env_rejects_non_https_checkout_urls(app_main, mocker) -> None:
+    values = {
+        "SANDBOX_CORS_ORIGINS": "https://app.example.com",
+        "FIREBASE_PROJECT_ID": "proj",
+        "FIREBASE_CREDENTIALS": "x",
+        "FORMS_BUCKET": "forms",
+        "TEMPLATES_BUCKET": "templates",
+        "CONTACT_TO_EMAIL": "to@example.com",
+        "CONTACT_FROM_EMAIL": "from@example.com",
+        "GMAIL_CLIENT_ID": "cid",
+        "GMAIL_CLIENT_SECRET": "secret",
+        "GMAIL_REFRESH_TOKEN": "refresh",
+        "STRIPE_SECRET_KEY": "sk_live_abc",
+        "STRIPE_WEBHOOK_SECRET": "whsec_abc",
+        "STRIPE_PRICE_PRO_MONTHLY": "price_monthly",
+        "STRIPE_PRICE_PRO_YEARLY": "price_yearly",
+        "STRIPE_PRICE_REFILL_500": "price_refill",
+        "STRIPE_CHECKOUT_SUCCESS_URL": "http://dullypdf.com/account?billing=success",
+        "STRIPE_CHECKOUT_CANCEL_URL": "http://dullypdf.com/account?billing=cancel",
+        "RECAPTCHA_SITE_KEY": "site",
+        "RECAPTCHA_PROJECT_ID": "proj",
+        "DETECTOR_TASKS_PROJECT": "proj",
+        "DETECTOR_TASKS_LOCATION": "us-central1",
+        "DETECTOR_TASKS_QUEUE": "queue",
+        "DETECTOR_SERVICE_URL": "https://detector",
+        "DETECTOR_TASKS_SERVICE_ACCOUNT": "sa@example.com",
+    }
+    mocker.patch.object(app_main, "_is_prod", return_value=True)
+    mocker.patch.object(app_main, "_recaptcha_required_any", return_value=True)
+    mocker.patch.object(app_main, "_resolve_detection_mode", return_value="tasks")
+    mocker.patch.object(app_main, "_env_truthy", return_value=True)
+    mocker.patch.object(app_main, "_env_value", side_effect=lambda key: values.get(key, ""))
+    with pytest.raises(RuntimeError) as ctx:
+        app_main._require_prod_env()
+    message = str(ctx.value)
+    assert "STRIPE_CHECKOUT_SUCCESS_URL (must use https)" in message
+    assert "STRIPE_CHECKOUT_CANCEL_URL (must use https)" in message
+
+
+def test_require_prod_env_rejects_positive_stripe_processed_event_cap(app_main, mocker) -> None:
+    values = {
+        "SANDBOX_CORS_ORIGINS": "https://app.example.com",
+        "FIREBASE_PROJECT_ID": "proj",
+        "FIREBASE_CREDENTIALS": "x",
+        "FORMS_BUCKET": "forms",
+        "TEMPLATES_BUCKET": "templates",
+        "CONTACT_TO_EMAIL": "to@example.com",
+        "CONTACT_FROM_EMAIL": "from@example.com",
+        "GMAIL_CLIENT_ID": "cid",
+        "GMAIL_CLIENT_SECRET": "secret",
+        "GMAIL_REFRESH_TOKEN": "refresh",
+        "STRIPE_SECRET_KEY": "sk_live_abc",
+        "STRIPE_WEBHOOK_SECRET": "whsec_abc",
+        "STRIPE_PRICE_PRO_MONTHLY": "price_monthly",
+        "STRIPE_PRICE_PRO_YEARLY": "price_yearly",
+        "STRIPE_PRICE_REFILL_500": "price_refill",
+        "STRIPE_CHECKOUT_SUCCESS_URL": "https://dullypdf.com/account?billing=success",
+        "STRIPE_CHECKOUT_CANCEL_URL": "https://dullypdf.com/account?billing=cancel",
+        "STRIPE_MAX_PROCESSED_EVENTS": "10",
+        "RECAPTCHA_SITE_KEY": "site",
+        "RECAPTCHA_PROJECT_ID": "proj",
+        "DETECTOR_TASKS_PROJECT": "proj",
+        "DETECTOR_TASKS_LOCATION": "us-central1",
+        "DETECTOR_TASKS_QUEUE": "queue",
+        "DETECTOR_SERVICE_URL": "https://detector",
+        "DETECTOR_TASKS_SERVICE_ACCOUNT": "sa@example.com",
+    }
+    mocker.patch.object(app_main, "_is_prod", return_value=True)
+    mocker.patch.object(app_main, "_recaptcha_required_any", return_value=True)
+    mocker.patch.object(app_main, "_resolve_detection_mode", return_value="tasks")
+    mocker.patch.object(app_main, "_env_truthy", return_value=True)
+    mocker.patch.object(app_main, "_env_value", side_effect=lambda key: values.get(key, ""))
+    with pytest.raises(RuntimeError) as ctx:
+        app_main._require_prod_env()
+    assert "STRIPE_MAX_PROCESSED_EVENTS (must be 0 in prod to preserve webhook idempotency)" in str(ctx.value)
 
 
 def test_resolve_cors_origins_wildcard_debug_gating(monkeypatch, app_main, mocker) -> None:

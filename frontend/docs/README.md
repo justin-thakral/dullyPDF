@@ -7,3 +7,4 @@
 - `api-routing.md` - Same-origin `/api/*` calls vs direct backend calls.
 - `field-editing.md` - Overlay, inspector, and fill behavior.
 - `styling.md` - Tokens, stylesheet modules, and typography rules.
+- `usage-docs.md` - Public `/usage-docs/*` information architecture and page layout notes.

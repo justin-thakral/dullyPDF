@@ -7,7 +7,8 @@ schema-only OpenAI mapping via separate endpoints. The legacy OpenCV sandbox pip
 Docs:
 - `backend/fieldDetecting/docs/README.md`
 - `backend/fieldDetecting/docs/commonforms.md`
-- `backend/fieldDetecting/docs/rename-flow.md`
+- `backend/fieldDetecting/docs/rename-flow.md` (rename mechanics + confidence semantics)
+- `backend/fieldDetecting/docs/checkBoxRules.md` (checkbox rule generation and Search & Fill precedence)
 - `backend/fieldDetecting/docs/security.md`
 
 ### Pipeline summary

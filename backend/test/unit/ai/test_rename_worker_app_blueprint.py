@@ -78,14 +78,22 @@ def test_rename_worker_refunds_credits_on_terminal_failure(mocker) -> None:
     )
     mocker.patch.object(rename_worker, "update_openai_job", return_value=None)
     mocker.patch.object(rename_worker, "_get_session_entry", return_value={"pdf_bytes": None})
-    refund_mock = mocker.patch.object(rename_worker, "refund_openai_credits", return_value=10)
+    refund_mock = mocker.patch.object(rename_worker, "attempt_credit_refund", return_value=True)
 
     response = client.post("/internal/rename", json=_payload())
 
     assert response.status_code == 200
     assert response.json()["status"] == "failed"
     assert "Session PDF not found" in response.json()["error"]
-    refund_mock.assert_called_once_with("user-1", credits=1, role="base")
+    refund_mock.assert_called_once_with(
+        user_id="user-1",
+        role="base",
+        credits=1,
+        source="rename.worker",
+        request_id="job-1",
+        job_id="job-1",
+        credit_breakdown=None,
+    )
 
 
 def test_rename_worker_treats_insufficient_quota_as_terminal_failure(mocker) -> None:
@@ -114,11 +122,19 @@ def test_rename_worker_treats_insufficient_quota_as_terminal_failure(mocker) -> 
         },
     )
     mocker.patch.object(rename_worker, "run_openai_rename_on_pdf", side_effect=_QuotaError("quota"))
-    refund_mock = mocker.patch.object(rename_worker, "refund_openai_credits", return_value=10)
+    refund_mock = mocker.patch.object(rename_worker, "attempt_credit_refund", return_value=True)
 
     response = client.post("/internal/rename", json=_payload())
 
     assert response.status_code == 200
     assert response.json()["status"] == "failed"
     assert "insufficient_quota" in response.json()["error"]
-    refund_mock.assert_called_once_with("user-1", credits=1, role="base")
+    refund_mock.assert_called_once_with(
+        user_id="user-1",
+        role="base",
+        credits=1,
+        source="rename.worker",
+        request_id="job-1",
+        job_id="job-1",
+        credit_breakdown=None,
+    )

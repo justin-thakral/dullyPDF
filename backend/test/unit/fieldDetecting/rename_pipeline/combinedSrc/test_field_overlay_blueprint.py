@@ -71,6 +71,21 @@ def test_fit_text_in_box_handles_tiny_regions() -> None:
     assert scale > 0
 
 
+def test_fit_checkbox_tag_keeps_text_inside_checkbox_bounds() -> None:
+    label, scale = field_overlay._fit_checkbox_tag(
+        "patient_checkbox_identifier",
+        box_w=10,
+        box_h=10,
+        preferred_scale=1.6,
+    )
+
+    assert label
+    assert scale > 0
+    (tw, th), baseline = field_overlay.cv2.getTextSize(label, field_overlay._FONT, scale, 1)
+    assert tw <= int(round(10 * 0.84)) + 1
+    assert (th + baseline) <= int(round(10 * 0.84)) + 1
+
+
 def test_draw_overlay_writes_image_for_normal_and_off_page_inputs(tmp_path: Path) -> None:
     image = np.zeros((100, 100, 3), dtype=np.uint8)
     out_path = tmp_path / "overlay.png"

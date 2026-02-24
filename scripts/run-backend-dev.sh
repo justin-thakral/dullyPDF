@@ -3,6 +3,8 @@ set -euo pipefail
 
 ENV_FILE="${1:-env/backend.dev.env}"
 EXAMPLE="config/backend.dev.env.example"
+OVERRIDE_STRIPE_WEBHOOK_SECRET="${STRIPE_WEBHOOK_SECRET:-}"
+OVERRIDE_STRIPE_ENFORCE_WEBHOOK_HEALTH="${STRIPE_ENFORCE_WEBHOOK_HEALTH:-}"
 if [[ ! -f "$ENV_FILE" ]]; then
   if [[ -f "$EXAMPLE" ]]; then
     mkdir -p "env"
@@ -17,6 +19,13 @@ fi
 set -a
 source "$ENV_FILE"
 set +a
+
+if [[ -n "$OVERRIDE_STRIPE_WEBHOOK_SECRET" ]]; then
+  export STRIPE_WEBHOOK_SECRET="$OVERRIDE_STRIPE_WEBHOOK_SECRET"
+fi
+if [[ -n "$OVERRIDE_STRIPE_ENFORCE_WEBHOOK_HEALTH" ]]; then
+  export STRIPE_ENFORCE_WEBHOOK_HEALTH="$OVERRIDE_STRIPE_ENFORCE_WEBHOOK_HEALTH"
+fi
 
 if [[ -f "mcp/.env.local" ]]; then
   set -a

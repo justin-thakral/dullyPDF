@@ -27,6 +27,7 @@ import cv2
 
 from backend.ai.openai_client import create_openai_client
 from backend.ai.openai_usage import build_openai_usage_summary
+from .checkbox_label_hints import normalize_checkbox_hint_text, pick_best_checkbox_label
 from .concurrency import resolve_workers, run_threaded_map
 from .config import LOG_OPENAI_RESPONSE, get_logger
 from .field_overlay import draw_overlay
@@ -34,6 +35,20 @@ from .openai_utils import (
     extract_response_text,
     extract_response_usage,
     responses_create_with_temperature_fallback,
+)
+from .payload_budgeter import (
+    budget_page_payload as _budget_page_payload_impl,
+    estimate_data_url_bytes as _estimate_data_url_bytes_impl,
+    estimate_page_payload as _estimate_page_payload_impl,
+    normalize_image_detail as _normalize_image_detail_impl,
+    normalize_image_format as _normalize_image_format_impl,
+)
+from .prompt_builder import (
+    build_prompt as _build_prompt_impl,
+    compact_prompt_noise as _compact_prompt_noise_impl,
+    label_context as _label_context_impl,
+    prompt_hygiene_enabled as _prompt_hygiene_enabled_impl,
+    select_database_prompt_fields as _select_database_prompt_fields_impl,
 )
 from .vision_utils import image_bgr_to_data_url
 
@@ -210,6 +225,71 @@ def _commonforms_category(confidence: float) -> str:
     return "red"
 
 
+def _normalize_image_format(value: str, *, default: str) -> str:
+    return _normalize_image_format_impl(value, default=default)
+
+
+def _normalize_image_detail(value: str, *, default: str) -> str:
+    return _normalize_image_detail_impl(value, default=default)
+
+
+def _encode_model_image(
+    image_bgr: "cv2.Mat",
+    *,
+    max_dim: int,
+    format: str,
+    quality: int,
+) -> str:
+    model_image = _downscale_for_model(image_bgr, max_dim=max_dim)
+    return image_bgr_to_data_url(model_image, format=format, quality=quality)
+
+
+def _estimate_data_url_bytes(data_url: str | None) -> int:
+    return _estimate_data_url_bytes_impl(data_url)
+
+
+def _estimate_page_payload(
+    *,
+    system_message: str,
+    user_message: str,
+    clean_page_url: str | None,
+    overlay_url: str | None,
+    prev_page_url: str | None,
+) -> Dict[str, int]:
+    return _estimate_page_payload_impl(
+        system_message=system_message,
+        user_message=user_message,
+        clean_page_url=clean_page_url,
+        overlay_url=overlay_url,
+        prev_page_url=prev_page_url,
+    )
+
+
+def _prompt_hygiene_enabled() -> bool:
+    return _prompt_hygiene_enabled_impl()
+
+
+def _compact_prompt_noise(text: str) -> str:
+    return _compact_prompt_noise_impl(text)
+
+
+def _select_database_prompt_fields(
+    database_fields: List[str] | None,
+    *,
+    overlay_fields: List[Dict[str, Any]],
+    page_candidates: Dict[str, Any] | None = None,
+    full_threshold: int,
+    shortlist_limit: int,
+) -> Tuple[List[str], int, bool]:
+    return _select_database_prompt_fields_impl(
+        database_fields,
+        overlay_fields=overlay_fields,
+        page_candidates=page_candidates,
+        full_threshold=full_threshold,
+        shortlist_limit=shortlist_limit,
+    )
+
+
 def _field_sort_key(field: Dict[str, Any]) -> Tuple[int, float, float, str]:
     """
     Stable ordering for renames: page -> y -> x -> name.
@@ -219,19 +299,6 @@ def _field_sort_key(field: Dict[str, Any]) -> Tuple[int, float, float, str]:
     y1 = float(rect[1]) if len(rect) == 4 else 0.0
     x1 = float(rect[0]) if len(rect) == 4 else 0.0
     return (page, y1, x1, str(field.get("name") or ""))
-
-
-def _rects_intersect(a: List[float], b: List[float]) -> bool:
-    return not (a[2] <= b[0] or a[0] >= b[2] or a[3] <= b[1] or a[1] >= b[3])
-
-
-def _rect_distance(a: List[float], b: List[float]) -> float:
-    """
-    Distance between two rectangles in points (0 when overlapping).
-    """
-    dx = max(b[0] - a[2], a[0] - b[2], 0.0)
-    dy = max(b[1] - a[3], a[1] - b[3], 0.0)
-    return math.hypot(dx, dy)
 
 
 def _min_center_distance(rects: List[List[float]], *, early_stop: float | None = None) -> float | None:
@@ -268,24 +335,7 @@ def _label_context(
     rect: List[float],
     label_bboxes: List[List[float]],
 ) -> Tuple[float | None, bool]:
-    """
-    Return (min_distance_to_label, overlaps_label).
-    """
-    if not rect or len(rect) != 4 or not label_bboxes:
-        return None, False
-    min_dist = None
-    overlaps = False
-    for lb in label_bboxes:
-        if len(lb) != 4:
-            continue
-        if _rects_intersect(rect, lb):
-            overlaps = True
-            min_dist = 0.0
-            break
-        dist = _rect_distance(rect, lb)
-        if min_dist is None or dist < min_dist:
-            min_dist = dist
-    return min_dist, overlaps
+    return _label_context_impl(rect, label_bboxes)
 
 
 def _build_overlay_fields(
@@ -351,35 +401,9 @@ def _attach_checkbox_label_hints(
         if not isinstance(rect, list) or len(rect) != 4:
             continue
 
-        cb_x1, cb_y1, cb_x2, cb_y2 = [float(v) for v in rect]
-        cb_h = max(1.0, cb_y2 - cb_y1)
-        cb_center_y = (cb_y1 + cb_y2) / 2.0
-
-        # Score candidate labels by distance, alignment, and right-side bias.
-        best = None
-        best_score = None
-        for label in labels:
-            bbox = label["bbox"]
-            x1, y1, x2, y2 = [float(v) for v in bbox]
-            label_center_y = (y1 + y2) / 2.0
-
-            overlap = min(cb_y2, y2) - max(cb_y1, y1)
-            overlap_ratio = max(0.0, overlap) / cb_h
-            # Prefer labels to the right of a checkbox, near its vertical centerline.
-            right_bias = 0.0 if x1 >= (cb_x2 - cb_h * 0.5) else 40.0
-            alignment_penalty = abs(label_center_y - cb_center_y) / max(1.0, cb_h) * 8.0
-            overlap_bonus = -12.0 if overlap_ratio >= 0.25 else 0.0
-            dist = _rect_distance([cb_x1, cb_y1, cb_x2, cb_y2], [x1, y1, x2, y2])
-            score = dist + right_bias + alignment_penalty + overlap_bonus
-            if best_score is None or score < best_score:
-                best_score = score
-                best = label
-
+        best = pick_best_checkbox_label([float(v) for v in rect], labels)
         if best:
-            hint_text = str(best.get("text") or "").strip()
-            hint_text = re.sub(r"[\r\n\t]+", " ", hint_text).strip().replace('"', "'")
-            if len(hint_text) > 48:
-                hint_text = hint_text[:47] + "…"
+            hint_text = normalize_checkbox_hint_text(str(best.get("text") or ""), max_chars=48)
             field["labelHintText"] = hint_text
             field["labelHintBbox"] = best.get("bbox")
 
@@ -393,198 +417,21 @@ def _build_prompt(
     page_candidates: Dict[str, Any],
     confidence_profile: str = "sandbox",
     database_fields: List[str] | None = None,
+    database_total_fields: int | None = None,
+    database_fields_truncated: bool = False,
 ) -> Tuple[str, str]:
-    """
-    Build the system/user prompt text for the rename pass.
-    """
-    system_message = (
-        "You are a PDF form renaming assistant. You will receive:\n"
-        "1) The original PDF page image (no overlays).\n"
-        "2) The same page image with an overlay of field IDs.\n"
-        "Each detected field is drawn as a box and tagged with a short 3-character ID "
-        "(base32, e.g., k7m):\n"
-        "- Text/date/signature fields: the ID is printed centered *inside* the field box.\n"
-        "- Checkbox fields: the ID is centered on the checkbox square (no callout box).\n"
-        "- If present, a third image shows the bottom of the previous page (no overlays). "
-        "It is context only—do NOT label or rename fields from that image.\n"
-        "- Use the previous-page image only to recognize labels that belong to the prior page.\n"
-        "Use that ID as originalFieldName. Do NOT invent IDs.\n"
-        "Candidates with isItAfieldConfidence below 0.30 are treated as not-a-field, but you must "
-        "still output a line for them and provide a best-guess standardized suggestedRename. "
-        "Do NOT repeat the originalFieldName as suggestedRename.\n\n"
-        "Output format (one line per field, no extra text):\n"
-        "|| originalFieldName | suggestedRename | renameConfidence | isItAfieldConfidence\n"
-        "Example format only (do not reuse names):\n"
-        "|| k7m | patient_name | 0.92 | 0.98\n\n"
-        "Rules:\n"
-        "- Output exactly one line for every originalFieldName provided, in the same order.\n"
-        "- Only use originalFieldName values from the provided list.\n"
-        "- IDs are random (not sequential); do not assume ordering beyond the provided list.\n"
-        "- Use snake_case for suggestedRename.\n"
-        "- Never output the overlay ID (originalFieldName) as suggestedRename.\n"
-        "- Checkbox names should start with 'i_'.\n"
-        "- Confidence values must be between 0 and 1 (not percent).\n"
-        "- If the item is not a real field, set isItAfieldConfidence < 0.30.\n"
-        "- If isItAfieldConfidence < 0.30, set renameConfidence to 0 but still provide a best-guess suggestedRename.\n\n"
-        "Swap avoidance:\n"
-        "- Do not swap IDs between neighboring fields. The ID inside each box is authoritative.\n"
-        "- If a tight cluster makes the label ambiguous, still provide your best-guess suggestedRename "
-        "and set renameConfidence to 0.0.\n"
-        "- Do not shift label associations downward because of labels from the previous page.\n\n"
-        "Row alignment (CRITICAL, highest priority):\n"
-        "- For text fields, the correct label is directly to the left on the same horizontal line.\n"
-        "- Never assign a label below/above a field if a same-row label exists for the neighboring field.\n"
-        "- Before final output, perform a global shift check: if most fields look shifted by one "
-        "row/column (up/down/left/right), correct the shift so each field aligns to its same-row label.\n"
-        "- If the topmost field has no same-row label and the next label aligns with the next field, "
-        "mark the topmost field as not-a-field (isItAfieldConfidence < 0.30) instead of shifting all names.\n"
-        "- If any row is ambiguous, still provide your best-guess suggestedRename and set renameConfidence = 0.0.\n"
-        "- Never cascade a one-row mistake across the page; alignment beats ordering every time.\n"
-        "- In extreme misalignment cases, you may lower isItAfieldConfidence to medium/low even if the "
-        "detector was confident; reserve < 0.30 for clear non-fields.\n\n"
-        "Missing-field rule:\n"
-        "- If matching labels would require shifting every field down/up by one to make room for "
-        "a suspected missing field, treat that suspected field as not-a-field "
-        "(isItAfieldConfidence < 0.30) and keep the original per-box alignments. "
-        "Still output a best-guess suggestedRename with renameConfidence = 0.\n\n"
-        "Common field naming:\n"
-        "- Address line 1 (street/mailing address/line 1): use street_address.\n"
-        "- Address line 2 (apt/unit/suite/line 2): use address_line_2.\n"
-        "- City: city. State/province: state. Zip/postal: postal_code or zip.\n"
-        "- Group prefixes for non-checkbox fields:\n"
-        "  - Patient demographics/contact/address: prefix with patient_.\n"
-        "  - Employer sections: prefix with employer_.\n"
-        "  - Emergency contact: emergency_contact_. Guardian/guarantor/responsible party: guardian_/guarantor_/responsible_party_.\n"
-        "  - Spouse/partner: spouse_ or spouse_partner_. Providers/facility: attending_provider_/ordering_provider_/referring_provider_/facility_.\n"
-        "- Normalize any synonym groups to these canonical prefixes:\n"
-        "  - Use patient_ (not client_, pt_, member_, subscriber_).\n"
-        "  - Use employer_ (not workplace_, job_).\n"
-        "  - Use emergency_contact_ (not emergency_, contact_).\n"
-        "- Checkbox names must start with i_.\n"
-        "- Checkbox options must use i_<groupKey>_<optionKey> (e.g., i_marital_status_single).\n"
-        "- groupKey is the shared base for a question (marital_status, sex, patient_issues).\n"
-        "- optionKey is the option label text (single, married, female, anemia).\n"
-        "- If option_hint is provided in the field list, use it as the option label.\n"
-        "- Preserve logical connectors in optionKey (e.g., loose_teeth_or_broken_fillings, bleeding_gums_and_swelling).\n"
-        "- Yes/No pairs should be named i_<groupKey>_yes and i_<groupKey>_no.\n"
-        "- Single boolean checkboxes with no explicit options should be named i_<groupKey>.\n\n"
-        "Search & Fill schema (CRITICAL):\n"
-        "- Search & Fill parses checkbox groups from i_<groupKey>_<optionKey> names.\n"
-        "- groupKey should be a stable, database-like base (dental_problem, medical_history, marital_status).\n"
-        "- optionKey should be a short, normalized suffix that matches the option label meaning.\n"
-        "- If database fields are provided, match optionKey to the DB suffix after groupKey_ whenever possible.\n"
-        "- For non-checkbox fields, keep the group prefix in the name (patient_, employer_, emergency_contact_, responsible_party_).\n"
-        "- Normalize group wording conceptually (e.g., client vs patient, workplace vs employer).\n"
-        "- Prefer a repeatable <group>_<field> pattern when naming (e.g., patient_name, employer_address).\n"
-        "- If database fields are provided, prefer exact database field names for suggestedRename.\n"
-        "- Avoid overly generic names; choose the most specific label available.\n\n"
-        "Database alignment (if database fields are provided):\n"
-        "- Prefer suggestedRename values that match database field names when the label meaning is the same.\n"
-        "- Do not force a database field name if it conflicts with the visible label.\n\n"
-        "- If a database field exists that clearly matches the label, use it exactly (avoid inventing new synonyms).\n"
-        "- For repeated lines or list entries, use a stable base name with numeric suffixes that matches the database list when possible.\n\n"
-        "Confidence tiers:\n"
-        "- Green (>= 0.80) = confident.\n"
-        "- Yellow (0.65–0.79) = double-check alignment and labels.\n"
-        "- Red (< 0.65) = uncertain; avoid renaming unless the label is obvious.\n"
-        "- If CommonForms thresholds are provided below, use those values instead.\n\n"
-        "Field-ness rules:\n"
-        "- Real fields have an empty box/underline or a checkbox aligned with nearby option text.\n"
-        "- Use the per-field metadata (label_dist, overlaps_label, w_ratio, h_ratio) as hints.\n"
-        "- Reject boxes sitting in paragraph text, headers/footers, logos, or decorative shapes.\n"
-        "- If a field is drawn in the middle of a paragraph and there is no visible underline "
-        "or checkbox tied to it, mark it as not-a-field (isItAfieldConfidence < 0.30).\n"
-        "- Reject isolated boxes in whitespace with no prompt label.\n"
-        "- For text fields: if label_dist >= 60 and overlaps_label=0, treat it as not-a-field "
-        "unless it is clearly inside a repeating table grid.\n"
-        "- For long rules: if w_ratio >= 0.80 and h_ratio <= 0.02, treat as a page break "
-        "or separator (not a field).\n"
-        "- If a field is in the middle of empty whitespace with no nearby label or prompt text, set "
-        "isItAfieldConfidence < 0.30 (treat as not-a-field).\n"
-        "- Reject page-break lines or section separators that look like long rules; set "
-        "isItAfieldConfidence < 0.30 for those.\n"
-        "- Reject any checkbox drawn on top of paragraph text or embedded between paragraphs; set "
-        "isItAfieldConfidence < 0.30.\n"
-        "- For checkboxes: require option text on the same row/column or clear grid alignment with "
-        "other checkboxes; a lone square is not-a-field.\n"
-        "- Double-checkbox problem: sometimes two checkbox boxes overlap the same option label. "
-        "If two boxes overlap or are nearly identical, keep the best one and set the duplicate "
-        "isItAfieldConfidence < 0.30.\n"
-        "- Reject legend markers, bullets, table headers, or column labels that are not fillable."
+    return _build_prompt_impl(
+        page_idx,
+        overlay_fields,
+        page_candidates=page_candidates,
+        confidence_profile=confidence_profile,
+        database_fields=database_fields,
+        database_total_fields=database_total_fields,
+        database_fields_truncated=database_fields_truncated,
+        checkbox_rules_start=CHECKBOX_RULES_START,
+        checkbox_rules_end=CHECKBOX_RULES_END,
+        commonforms_thresholds=_commonforms_thresholds(),
     )
-    if confidence_profile == "commonforms":
-        high, medium = _commonforms_thresholds()
-        system_message += (
-            "\n\nCommonForms confidence guidance:\n"
-            "- You may adjust isItAfieldConfidence to reflect detection quality; it replaces field confidence.\n"
-            f"- Green >= {high:.2f}, yellow between {medium:.2f} and {high:.2f}, red < {medium:.2f}.\n"
-            "- If isItAfieldConfidence < 0.30, set renameConfidence to 0."
-        )
-
-    label_bboxes = [
-        lb.get("bbox")
-        for lb in (page_candidates.get("labels") or [])
-        if isinstance(lb.get("bbox"), list) and len(lb.get("bbox")) == 4
-    ]
-    page_width = float(page_candidates.get("pageWidth") or 0.0)
-    page_height = float(page_candidates.get("pageHeight") or 0.0)
-
-    # Build per-field metadata so the model can reason about label proximity and sizing.
-    field_lines = []
-    for field in overlay_fields:
-        rect = field.get("rect") or []
-        label_dist, overlaps_label = _label_context(rect, label_bboxes)
-        if page_width > 0.0 and rect and len(rect) == 4:
-            width_ratio = max(0.0, (float(rect[2]) - float(rect[0])) / page_width)
-        else:
-            width_ratio = 0.0
-        if page_height > 0.0 and rect and len(rect) == 4:
-            height_ratio = max(0.0, (float(rect[3]) - float(rect[1])) / page_height)
-        else:
-            height_ratio = 0.0
-        label_dist_str = "na" if label_dist is None else f"{int(round(label_dist))}"
-        overlaps_str = "1" if overlaps_label else "0"
-        option_hint = ""
-        if str(field.get("type") or "").lower() == "checkbox":
-            hint = str(field.get("labelHintText") or "").strip()
-            if hint:
-                option_hint = f', option_hint="{hint}"'
-        field_lines.append(
-            f"{field.get('name')}\t(type={field.get('type')}, label_dist={label_dist_str}, "
-            f"overlaps_label={overlaps_str}, w_ratio={width_ratio:.2f}, h_ratio={height_ratio:.2f}{option_hint})"
-        )
-    field_block = "\n".join(field_lines)
-
-    user_message = (
-        f"Page {page_idx} field IDs (originalFieldName list). Return one output line per entry in the same order.\n"
-        "BEGIN_FIELD_LIST\n"
-        f"{field_block}\n"
-        "END_FIELD_LIST\n"
-    )
-    if database_fields:
-        unique_fields = [str(field).strip() for field in database_fields if str(field).strip()]
-        if unique_fields:
-            db_block = "\n".join(f"- {field}" for field in unique_fields[:400])
-            user_message = (
-                f"{user_message}\nDATABASE_FIELDS (context only; do not invent fields):\n{db_block}\n"
-                "If a database field clearly matches a label, use that exact name.\n"
-            )
-            system_message += (
-                "\n\nCheckbox rules output (for database fields):\n"
-                "- After ALL rename lines, output a JSON array of checkbox rules.\n"
-                f"- Use the exact block:\n{CHECKBOX_RULES_START}\n[{{...}}]\n{CHECKBOX_RULES_END}\n"
-                "- Each rule must include databaseField, groupKey, operation.\n"
-                "- operation must be one of: yes_no, enum, list, presence.\n"
-                "- Optional keys: trueOption, falseOption, valueMap, confidence, reasoning.\n"
-                "- groupKey must match the checkbox group (without the i_ prefix).\n"
-                "- Only include rules when a schema field clearly represents the checkbox group.\n"
-                "- If no rules apply, output an empty array.\n"
-            )
-            user_message = (
-                f"{user_message}\nAfter the rename lines, output the checkbox rules JSON block."
-            )
-    user_message = f"{user_message}\nReturn the rename output lines now."
-    return system_message, user_message
 
 
 def _parse_openai_lines(
@@ -739,6 +586,7 @@ def run_openai_rename_pipeline(
     The overlay includes candidate geometry plus field names so the model can align
     each label with its on-page context. Output is parsed from line-based responses.
     """
+    # Step 1: Fast exit when there is nothing to rename.
     if not fields:
         return {
             "generatedAt": datetime.now(tz=timezone.utc).isoformat(),
@@ -747,13 +595,20 @@ def run_openai_rename_pipeline(
             "dropped": [],
         }, []
 
+    # Step 2: Ensure OpenAI credentials are present before doing any heavy work.
     if not os.getenv("OPENAI_API_KEY"):
         raise RuntimeError("OPENAI_API_KEY not set; cannot run OpenAI rename.")
 
+    # Step 3: Resolve run-time tuning knobs for image quality, density handling, and thresholds.
     output_dir.mkdir(parents=True, exist_ok=True)
     overlay_quality_default = 92
     overlay_max_dim_default = 6000
     overlay_format_default = "png"
+    overlay_detail_default = "high"
+    clean_quality_default = 82
+    clean_max_dim_default = 3000
+    clean_format_default = "jpg"
+    clean_detail_default = "low"
     label_max_dist_default: float | None = None
 
     if confidence_profile == "commonforms":
@@ -762,19 +617,57 @@ def run_openai_rename_pipeline(
         overlay_quality_default = 96
         overlay_max_dim_default = 7000
         overlay_format_default = "png"
+        clean_quality_default = 84
+        clean_max_dim_default = 3200
         label_max_dist_default = 140.0
 
     overlay_quality = int(os.getenv("SANDBOX_RENAME_OVERLAY_QUALITY", str(overlay_quality_default)))
     overlay_max_dim = int(os.getenv("SANDBOX_RENAME_OVERLAY_MAX_DIM", str(overlay_max_dim_default)))
-    overlay_format = (os.getenv("SANDBOX_RENAME_OVERLAY_FORMAT", overlay_format_default) or "").strip().lower()
-    if not overlay_format:
-        overlay_format = overlay_format_default
+    overlay_format = _normalize_image_format(
+        os.getenv("SANDBOX_RENAME_OVERLAY_FORMAT", overlay_format_default),
+        default=overlay_format_default,
+    )
+    overlay_detail = _normalize_image_detail(
+        os.getenv("SANDBOX_RENAME_OVERLAY_DETAIL", overlay_detail_default),
+        default=overlay_detail_default,
+    )
+    clean_quality = int(os.getenv("SANDBOX_RENAME_CLEAN_QUALITY", str(clean_quality_default)))
+    clean_max_dim = int(os.getenv("SANDBOX_RENAME_CLEAN_MAX_DIM", str(clean_max_dim_default)))
+    clean_format = _normalize_image_format(
+        os.getenv("SANDBOX_RENAME_CLEAN_FORMAT", clean_format_default),
+        default=clean_format_default,
+    )
+    clean_detail = _normalize_image_detail(
+        os.getenv("SANDBOX_RENAME_CLEAN_DETAIL", clean_detail_default),
+        default=clean_detail_default,
+    )
+    prev_detail = _normalize_image_detail(
+        os.getenv("SANDBOX_RENAME_PREV_PAGE_DETAIL", "low"),
+        default="low",
+    )
     dense_field_count = int(os.getenv("SANDBOX_RENAME_DENSE_FIELD_COUNT", "20"))
     dense_min_center_dist = float(os.getenv("SANDBOX_RENAME_DENSE_MIN_CENTER_DIST", "45"))
     dense_max_dim = int(os.getenv("SANDBOX_RENAME_DENSE_MAX_DIM", "7000"))
-    dense_format = (os.getenv("SANDBOX_RENAME_DENSE_FORMAT", "png") or "").strip().lower()
+    dense_format = _normalize_image_format(
+        os.getenv("SANDBOX_RENAME_DENSE_FORMAT", overlay_format),
+        default=overlay_format,
+    )
+    overlay_min_dim = int(os.getenv("SANDBOX_RENAME_OVERLAY_MIN_DIM", "3600"))
     prev_page_fraction = float(os.getenv("SANDBOX_RENAME_PREV_PAGE_FRACTION", "0.2"))
     prev_page_top_fraction = float(os.getenv("SANDBOX_RENAME_PREV_PAGE_TOP_FRACTION", "0.15"))
+    db_prompt_full_threshold = int(os.getenv("SANDBOX_RENAME_DB_PROMPT_FULL_THRESHOLD", "1000"))
+    db_prompt_shortlist_limit = int(os.getenv("SANDBOX_RENAME_DB_PROMPT_SHORTLIST_LIMIT", "450"))
+    db_prompt_budget_shortlist_limit = int(
+        os.getenv("SANDBOX_RENAME_DB_PROMPT_BUDGET_SHORTLIST_LIMIT", "250")
+    )
+    page_prompt_char_budget = int(os.getenv("SANDBOX_RENAME_PAGE_PROMPT_CHAR_BUDGET", "18000"))
+    page_image_byte_budget = int(os.getenv("SANDBOX_RENAME_PAGE_IMAGE_BYTE_BUDGET", "5200000"))
+    budget_clean_max_dim = int(os.getenv("SANDBOX_RENAME_BUDGET_CLEAN_MAX_DIM", "2400"))
+    budget_clean_quality = int(os.getenv("SANDBOX_RENAME_BUDGET_CLEAN_QUALITY", "76"))
+    budget_clean_format = _normalize_image_format(
+        os.getenv("SANDBOX_RENAME_BUDGET_CLEAN_FORMAT", "jpg"),
+        default="jpg",
+    )
 
     raw_label_max = (os.getenv("SANDBOX_RENAME_LABEL_MAX_DIST") or "").strip()
     label_max_dist_pts: float | None
@@ -789,7 +682,7 @@ def run_openai_rename_pipeline(
     max_workers = resolve_workers("openai", default=6, use_global=False)
     min_field_conf = float(os.getenv("SANDBOX_RENAME_MIN_FIELD_CONF", "0.3"))
 
-    # Group fields and candidates by page to keep overlays/prompt context local.
+    # Step 4: Index fields/candidates by page so each OpenAI call has localized context.
     fields_by_page: Dict[int, List[Tuple[int, Dict[str, Any]]]] = {}
     for idx, field in enumerate(fields):
         page = int(field.get("page") or 1)
@@ -807,6 +700,7 @@ def run_openai_rename_pipeline(
 
     rendered_by_page = {int(p.get("page_index") or 0): p for p in rendered_pages}
 
+    # Step 5: Build per-page OpenAI payload inputs (overlay IDs, prompt text, and page images).
     for page in rendered_pages:
         page_idx = int(page.get("page_index") or 1)
         page_fields = fields_by_page.get(page_idx, [])
@@ -817,6 +711,7 @@ def run_openai_rename_pipeline(
         page_candidates = candidates_by_page.get(page_idx)
         if page_candidates is None:
             continue
+        # Attach optional checkbox label hints so naming can use visible option text.
         overlay_fields = _attach_checkbox_label_hints(overlay_fields, page_candidates=page_candidates)
         for overlay_field in overlay_fields:
             if str(overlay_field.get("type") or "").lower() != "checkbox":
@@ -841,11 +736,12 @@ def run_openai_rename_pipeline(
         )
         page_overlay_max_dim = overlay_max_dim
         page_overlay_format = overlay_format
+        page_overlay_quality = overlay_quality
         if dense_page:
             page_overlay_max_dim = max(overlay_max_dim, dense_max_dim)
-            if dense_format:
-                page_overlay_format = dense_format
+            page_overlay_format = dense_format
 
+        # Render the visual overlay (field IDs drawn on top of the page).
         overlay_path = output_dir / f"page_{page_idx}.png"
         overlay = draw_overlay(
             page.get("image"),
@@ -862,19 +758,59 @@ def run_openai_rename_pipeline(
         if overlay is None:
             raise RuntimeError(f"Failed to render overlay image: {overlay_path}")
 
-        clean_page_for_model = _downscale_for_model(page.get("image"), max_dim=page_overlay_max_dim)
-        clean_page_url = image_bgr_to_data_url(
-            clean_page_for_model,
-            format=page_overlay_format,
-            quality=overlay_quality,
+        page_db_fields: List[str] | None = None
+        page_db_total = 0
+        page_db_truncated = False
+        if database_fields:
+            page_db_fields, page_db_total, page_db_truncated = _select_database_prompt_fields(
+                database_fields,
+                overlay_fields=overlay_fields,
+                page_candidates=page_candidates,
+                full_threshold=db_prompt_full_threshold,
+                shortlist_limit=db_prompt_shortlist_limit,
+            )
+
+        # Build the system/user text prompt for this page.
+        system_message, user_message = _build_prompt(
+            page_idx,
+            overlay_fields,
+            page_candidates=page_candidates,
+            confidence_profile=confidence_profile,
+            database_fields=page_db_fields,
+            database_total_fields=page_db_total,
+            database_fields_truncated=page_db_truncated,
         )
-        overlay_for_model = _downscale_for_model(overlay, max_dim=page_overlay_max_dim)
-        overlay_url = image_bgr_to_data_url(
-            overlay_for_model,
-            format=page_overlay_format,
-            quality=overlay_quality,
+        prompt_metrics = _estimate_page_payload(
+            system_message=system_message,
+            user_message=user_message,
+            clean_page_url=None,
+            overlay_url=None,
+            prev_page_url=None,
         )
-        prev_page_url = None
+        if (
+            prompt_metrics["prompt_chars"] > page_prompt_char_budget
+            and page_db_total > db_prompt_full_threshold
+            and page_db_fields
+            and len(page_db_fields) > db_prompt_budget_shortlist_limit
+        ):
+            page_db_fields, page_db_total, page_db_truncated = _select_database_prompt_fields(
+                database_fields,
+                overlay_fields=overlay_fields,
+                page_candidates=page_candidates,
+                full_threshold=0,
+                shortlist_limit=db_prompt_budget_shortlist_limit,
+            )
+            system_message, user_message = _build_prompt(
+                page_idx,
+                overlay_fields,
+                page_candidates=page_candidates,
+                confidence_profile=confidence_profile,
+                database_fields=page_db_fields,
+                database_total_fields=page_db_total,
+                database_fields_truncated=page_db_truncated,
+            )
+
+        prev_crop = None
         if page_idx > 1 and prev_page_fraction > 0:
             prev_page = rendered_by_page.get(page_idx - 1)
             if prev_page:
@@ -890,41 +826,75 @@ def run_openai_rename_pipeline(
                         prev_page.get("image"),
                         fraction=prev_page_fraction,
                     )
-                    prev_crop = _downscale_for_model(prev_crop, max_dim=page_overlay_max_dim)
-                    prev_page_url = image_bgr_to_data_url(
-                        prev_crop,
-                        format=page_overlay_format,
-                        quality=overlay_quality,
-                    )
-        system_message, user_message = _build_prompt(
-            page_idx,
-            overlay_fields,
-            page_candidates=page_candidates,
-            confidence_profile=confidence_profile,
-            database_fields=database_fields,
+        payload_context = _budget_page_payload_impl(
+            page_idx=page_idx,
+            page_image=page.get("image"),
+            overlay_image=overlay,
+            prev_crop_image=prev_crop,
+            system_message=system_message,
+            user_message=user_message,
+            clean_profile={
+                "max_dim": clean_max_dim,
+                "quality": clean_quality,
+                "format": clean_format,
+                "detail": clean_detail,
+            },
+            overlay_profile={
+                "max_dim": page_overlay_max_dim,
+                "quality": page_overlay_quality,
+                "format": page_overlay_format,
+                "detail": overlay_detail,
+            },
+            prev_detail=prev_detail,
+            page_prompt_char_budget=page_prompt_char_budget,
+            page_image_byte_budget=page_image_byte_budget,
+            overlay_min_dim=overlay_min_dim,
+            budget_clean_profile={
+                "max_dim": budget_clean_max_dim,
+                "quality": budget_clean_quality,
+                "format": budget_clean_format,
+            },
+            encode_model_image=_encode_model_image,
+            logger=logger,
         )
 
         page_contexts[page_idx] = {
             "overlay_map": overlay_map,
             "system_message": system_message,
             "user_message": user_message,
-            "clean_page_url": clean_page_url,
-            "overlay_url": overlay_url,
-            "prev_page_url": prev_page_url,
+            "clean_page_url": payload_context["clean_page_url"],
+            "clean_detail": payload_context["clean_detail"],
+            "overlay_url": payload_context["overlay_url"],
+            "overlay_detail": payload_context["overlay_detail"],
+            "prev_page_url": payload_context["prev_page_url"],
+            "prev_detail": payload_context["prev_detail"],
         }
         tasks.append({"page_idx": page_idx})
 
     def _run_page(task: Dict[str, Any]) -> Dict[str, Any]:
+        # Step 6: Execute one page-level OpenAI request and parse both rename lines + checkbox JSON rules.
         page_idx = task["page_idx"]
         context = page_contexts[page_idx]
         user_content = [
             {"type": "input_text", "text": context["user_message"]},
-            {"type": "input_image", "image_url": context["clean_page_url"], "detail": "high"},
-            {"type": "input_image", "image_url": context["overlay_url"], "detail": "high"},
+            {
+                "type": "input_image",
+                "image_url": context["clean_page_url"],
+                "detail": context.get("clean_detail") or "low",
+            },
+            {
+                "type": "input_image",
+                "image_url": context["overlay_url"],
+                "detail": context.get("overlay_detail") or "high",
+            },
         ]
         if context.get("prev_page_url"):
             user_content.append(
-                {"type": "input_image", "image_url": context["prev_page_url"], "detail": "low"}
+                {
+                    "type": "input_image",
+                    "image_url": context["prev_page_url"],
+                    "detail": context.get("prev_detail") or "low",
+                }
             )
 
         # Responses API expects structured content blocks for text and images.
@@ -969,6 +939,7 @@ def run_openai_rename_pipeline(
             "usage": response_usage,
         }
 
+    # Step 7: Run page calls in parallel and collect raw model outputs.
     if tasks:
         results = run_threaded_map(
             tasks,
@@ -979,6 +950,7 @@ def run_openai_rename_pipeline(
     else:
         results = []
 
+    # Step 8: Flatten usage and checkbox-rule outputs across pages.
     raw_checkbox_rules: List[Dict[str, Any]] = []
     usage_by_page: List[Dict[str, Any]] = []
     for result in results:
@@ -996,7 +968,8 @@ def run_openai_rename_pipeline(
                 }
             )
 
-    # Keep the highest-confidence entry per field index (multiple pages can reference a field).
+    # Step 9: Keep the best rename suggestion per original field index.
+    # (Multiple pages can reference a field in edge cases.)
     entries_by_index: Dict[int, Dict[str, Any]] = {}
     for result in results:
         for entry in result["entries"]:
@@ -1008,6 +981,7 @@ def run_openai_rename_pipeline(
     renamed_fields: List[Dict[str, Any]] = []
     dropped: List[str] = []
 
+    # Step 10: Apply model output onto baseline fields (or fall back to original names).
     for idx, field in enumerate(fields):
         entry = entries_by_index.get(idx)
         baseline_conf = float(field.get("confidence") or 0.6)
@@ -1034,6 +1008,7 @@ def run_openai_rename_pipeline(
         updated["name"] = _normalize_name(suggested, str(updated.get("type") or "text").lower())
         renamed_fields.append(updated)
 
+    # Step 11: Enforce unique final names and derive checkbox group/option metadata.
     _dedupe_field_names(renamed_fields)
     checkbox_prefix_counts: Dict[str, int] = {}
     checkbox_bases: Dict[int, Tuple[str, List[str], str | None]] = {}
@@ -1089,6 +1064,7 @@ def run_openai_rename_pipeline(
         if group_key:
             field["groupLabel"] = _humanize_group_label(group_key) or None
 
+    # Step 12: Build schema lookup for mapping confidence and checkbox-rule validation.
     allowed_schema_map: Dict[str, str] = {}
     if database_fields:
         for field_name in database_fields:
@@ -1110,6 +1086,7 @@ def run_openai_rename_pipeline(
         else:
             field["mappingConfidence"] = None
 
+    # Step 13: Normalize + dedupe model-emitted checkbox rules against allowed schema/group keys.
     checkbox_rules: List[Dict[str, Any]] = []
     if raw_checkbox_rules and allowed_schema_map and allowed_group_keys:
         deduped: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
@@ -1138,6 +1115,7 @@ def run_openai_rename_pipeline(
                 deduped[key] = normalized
         checkbox_rules = list(deduped.values())
 
+    # Step 14: Build API-facing rename report rows and usage summary.
     renames_report: List[Dict[str, Any]] = []
     for field in renamed_fields:
         renames_report.append(
@@ -1154,6 +1132,7 @@ def run_openai_rename_pipeline(
         )
 
     usage_summary = build_openai_usage_summary(usage_by_page, model=model)
+    # Step 15: Return both the compact report and the fully updated field payload.
     return (
         {
             "generatedAt": datetime.now(tz=timezone.utc).isoformat(),

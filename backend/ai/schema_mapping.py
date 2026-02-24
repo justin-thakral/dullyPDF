@@ -221,7 +221,7 @@ def call_openai_schema_mapping(
     system_prompt = (
         "You map database schema fields to PDF template overlay tags. "
         "You only see schema field names/types and template tags. "
-        "Return JSON with keys: mappings, templateRules, checkboxRules, checkboxHints, "
+        "Return JSON with keys: mappings, templateRules, textTransformRules, checkboxRules, checkboxHints, "
         "identifierKey, notes. Each mapping must include schemaField, templateTag, "
         "confidence (0..1), reasoning. "
         "checkboxHints should identify when a database field can be used as a direct boolean "
@@ -234,6 +234,11 @@ def call_openai_schema_mapping(
         "- Only reference schemaField values that appear in schemaFields.\n"
         "- Only reference templateTag values that appear in templateTags.\n"
         "- Avoid inventing data; prefer leaving unmapped if unsure.\n"
+        "- textTransformRules are deterministic fill-time transforms for text fields.\n"
+        "- Allowed textTransformRules.operation: copy, concat, split_name_first_rest, split_delimiter.\n"
+        "- textTransformRules entries should use keys: targetField, operation, sources, "
+        "optional separator/delimiter/part/index, confidence, requiresReview, reasoning.\n"
+        "- If split is ambiguous, set requiresReview=true and lower confidence.\n"
         "- checkboxRules should map one schemaField to one template groupKey when possible.\n"
         "- checkboxHints should be a list of objects with: databaseField, groupKey, "
         "directBooleanPossible (true/false), and optional operation (yes_no|enum|list|presence).\n"
@@ -291,6 +296,12 @@ def _merge_schema_mapping_response(
     if isinstance(template_rules, list):
         aggregate.setdefault("templateRules", []).extend([entry for entry in template_rules if isinstance(entry, dict)])
 
+    text_transform_rules = response.get("textTransformRules") or response.get("text_transform_rules")
+    if isinstance(text_transform_rules, list):
+        aggregate.setdefault("textTransformRules", []).extend(
+            [entry for entry in text_transform_rules if isinstance(entry, dict)]
+        )
+
     checkbox_rules = response.get("checkboxRules") or response.get("checkbox_rules")
     if isinstance(checkbox_rules, list):
         aggregate.setdefault("checkboxRules", []).extend([entry for entry in checkbox_rules if isinstance(entry, dict)])
@@ -343,6 +354,7 @@ def call_openai_schema_mapping_chunked(
     aggregate: Dict[str, Any] = {
         "mappings": [],
         "templateRules": [],
+        "textTransformRules": [],
         "checkboxRules": [],
         "checkboxHints": [],
         "notes": [],

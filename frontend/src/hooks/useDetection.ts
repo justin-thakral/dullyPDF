@@ -1,7 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { User } from 'firebase/auth';
 import type { PDFDocumentProxy } from 'pdfjs-dist/types/src/display/api';
-import type { BannerNotice, CheckboxHint, CheckboxRule, PageSize, PdfField, PendingAutoActions, ProcessingMode } from '../types';
+import type {
+  BannerNotice,
+  CheckboxHint,
+  CheckboxRule,
+  PageSize,
+  PdfField,
+  PendingAutoActions,
+  ProcessingMode,
+  TextTransformRule,
+} from '../types';
 import {
   DETECTION_RUNNING_STANDARD_CPU_MESSAGE,
   DETECTION_WAITING_STANDARD_CPU_MESSAGE,
@@ -48,6 +57,7 @@ export interface UseDetectionDeps {
   setHasMappedSchema: (value: boolean) => void;
   setCheckboxRules: (rules: CheckboxRule[]) => void;
   setCheckboxHints: (hints: CheckboxHint[]) => void;
+  setTextTransformRules: (rules: TextTransformRule[]) => void;
   setSchemaError: (value: string | null) => void;
   setOpenAiError: (value: string | null) => void;
   setSourceFile: (file: File | null) => void;
@@ -132,6 +142,7 @@ export function useDetection(deps: UseDetectionDeps) {
           deps.setHasMappedSchema(false);
           deps.setCheckboxRules([]);
           deps.setCheckboxHints([]);
+          deps.setTextTransformRules([]);
           setDetectSessionId(sessionId);
           setMappingSessionId(sessionId);
           const pendingAutoActions = pendingAutoActionsRef.current;
@@ -257,6 +268,7 @@ export function useDetection(deps: UseDetectionDeps) {
       deps.setHasMappedSchema(false);
       deps.setCheckboxRules([]);
       deps.setCheckboxHints([]);
+      deps.setTextTransformRules([]);
       deps.setSchemaError(null);
       deps.setOpenAiError(null);
       deps.setSourceFile(file);
@@ -373,14 +385,31 @@ export function useDetection(deps: UseDetectionDeps) {
         if (!commitPdfLoad(doc, sizes, [], loadToken, pdfState)) return;
         deps.setActiveSavedFormId(formId);
         deps.setActiveSavedFormName(savedMeta?.name || null);
-        const savedCheckboxRules = Array.isArray(savedMeta?.checkboxRules)
+        const savedFillRules = savedMeta?.fillRules && typeof savedMeta.fillRules === 'object'
+          ? savedMeta.fillRules
+          : null;
+        const savedCheckboxRules = Array.isArray(savedFillRules?.checkboxRules)
+          ? (savedFillRules.checkboxRules as CheckboxRule[])
+          : Array.isArray(savedMeta?.checkboxRules)
           ? (savedMeta.checkboxRules as CheckboxRule[])
           : [];
-        const savedCheckboxHints = Array.isArray(savedMeta?.checkboxHints)
+        const savedCheckboxHints = Array.isArray(savedFillRules?.checkboxHints)
+          ? (savedFillRules.checkboxHints as CheckboxHint[])
+          : Array.isArray(savedMeta?.checkboxHints)
           ? (savedMeta.checkboxHints as CheckboxHint[])
+          : [];
+        const savedTextTransformRules = Array.isArray(savedFillRules?.textTransformRules)
+          ? (savedFillRules.textTransformRules as TextTransformRule[])
+          : Array.isArray((savedFillRules as Record<string, unknown> | null)?.templateRules)
+          ? ((savedFillRules as Record<string, unknown>).templateRules as TextTransformRule[])
+          : Array.isArray(savedMeta?.textTransformRules)
+          ? (savedMeta.textTransformRules as TextTransformRule[])
+          : Array.isArray((savedMeta as Record<string, unknown> | null)?.templateRules)
+          ? ((savedMeta as Record<string, unknown>).templateRules as TextTransformRule[])
           : [];
         deps.setCheckboxRules(savedCheckboxRules);
         deps.setCheckboxHints(savedCheckboxHints);
+        deps.setTextTransformRules(savedTextTransformRules);
 
         void (async () => {
           const existingFields = await existingFieldsPromise;
@@ -450,6 +479,7 @@ export function useDetection(deps: UseDetectionDeps) {
       deps.setHasMappedSchema(false);
       deps.setCheckboxRules([]);
       deps.setCheckboxHints([]);
+      deps.setTextTransformRules([]);
       deps.setSchemaError(null);
       deps.setOpenAiError(null);
       deps.setSourceFile(file);

@@ -126,7 +126,10 @@ Repo hygiene:
 - **Logging**: ensure schema metadata and request metadata are the only stored OpenAI metadata.
 - **Retention**: OpenAI + detection logs expire via `SANDBOX_OPENAI_LOG_TTL_SECONDS` and Firestore TTL on
   `openai_requests.expires_at`, `openai_rename_requests.expires_at`, `detection_requests.expires_at`.
-- **Credits**: base users start with 10 lifetime OpenAI credits; credits are consumed per OpenAI action: Rename (1), Remap (1), Rename + Remap (2). Credits are refunded when an OpenAI request fails before producing a response.
+- **Credits**: base users start with 10 lifetime OpenAI credits. Credits are billed by page bucket using server-side page counts:
+  `total_credits = operation_base_cost * ceil(page_count / OPENAI_CREDITS_PAGE_BUCKET_SIZE)`.
+  Default base costs: Rename `1`, Remap `1`, Rename+Remap `2`; default bucket size is `5`.
+  Credits are refunded when an OpenAI request fails before producing a response.
 - **Secret access**: restrict `roles/secretmanager.secretAccessor` to only the backend runtime SA.
 - **Keyless prod**: prefer ADC/Workload Identity in production to avoid JSON keys entirely
   (`FIREBASE_USE_ADC=true` on Cloud Run).
@@ -307,6 +310,8 @@ Schema mapping limits and quotas:
 - `SANDBOX_RATE_LIMIT_BACKEND` (default `firestore`)
 - `SANDBOX_RATE_LIMIT_COLLECTION` (default `rate_limits`)
 - `BASE_OPENAI_CREDITS` (default 10)
+- `OPENAI_CREDITS_PAGE_BUCKET_SIZE` (default 5)
+- `OPENAI_CREDITS_REMAP_BASE_COST` (default 1)
 
 Schema mapping behavior:
 - When the payload exceeds `OPENAI_SCHEMA_MAX_PAYLOAD_BYTES`, the backend splits template tags into smaller chunks and merges the results.
@@ -316,6 +321,9 @@ OpenAI rename limits and quotas:
 - `OPENAI_RENAME_RATE_LIMIT_WINDOW_SECONDS`, `OPENAI_RENAME_RATE_LIMIT_PER_USER`
 - `SANDBOX_RATE_LIMIT_BACKEND` (default `firestore`)
 - `BASE_OPENAI_CREDITS` (default 10)
+- `OPENAI_CREDITS_PAGE_BUCKET_SIZE` (default 5)
+- `OPENAI_CREDITS_RENAME_BASE_COST` (default 1)
+- `OPENAI_CREDITS_RENAME_REMAP_BASE_COST` (default 2)
 
 Operational note:
 - Enable Firestore TTL on `${SANDBOX_RATE_LIMIT_COLLECTION}.expires_at` to auto-expire counters.

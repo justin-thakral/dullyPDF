@@ -41,6 +41,104 @@ Long-lived editor sessions should call `POST /api/sessions/{sessionId}/touch` ro
 once per minute to refresh `last_access_at` and `expires_at`, so scheduled cleanup does
 not delete active sessions.
 
+## Cloud Run failure model: why L2 is required
+
+Cloud Run instances are ephemeral and do not share memory. L1 cache entries only exist
+inside one process. If that process is scaled down, restarted, or traffic shifts to a new
+instance, its L1 memory is gone.
+
+```mermaid
+flowchart LR
+  U[User request with sessionId] --> LB[Cloud Run router]
+  LB --> I1[Instance A L1 cache]
+  LB --> I2[Instance B L1 cache]
+
+  subgraph L1["Per-instance L1 memory"]
+    I1
+    I2
+  end
+
+  I1 -- L1 miss or stale --> L2[(L2 shared store)]
+  I2 -- L1 miss or stale --> L2
+  L2 --> FS[(Firestore session_cache metadata)]
+  L2 --> GCS[(GCS session artifacts)]
+
+  I1 -. scaled down/restart .-> X1[(L1 data lost)]
+  I2 -. new instance starts cold .-> X2[(Empty L1)]
+
+  FS --> I1
+  GCS --> I1
+  FS --> I2
+  GCS --> I2
+```
+
+Failure-path summary:
+- Without L2, rename/remap/download after a scale event would fail when routed to a
+  different instance.
+- With L2, any instance can hydrate the session and continue processing.
+- After hydration, the instance repopulates its local L1 for hot subsequent requests.
+
+## Data structures and storage layout used in practice
+
+### L1 in-process structure
+
+- Type: `OrderedDict[str, SessionEntry]`
+- Key: `sessionId`
+- Value: session payload dictionary (`SessionEntry`)
+- Synchronization: single process lock (`threading.Lock`)
+- Eviction policy: TTL sweeps + LRU trim by max entries
+
+Conceptual layout:
+
+```
+_API_SESSION_CACHE: OrderedDict[str, SessionEntry]
+LRU -> MRU
+
+"sess-101" -> {
+  user_id: "user_a",
+  pdf_bytes: <bytes>,
+  fields: [...],
+  result: {...},
+  renames: {...},
+  checkboxRules: [...],
+  page_count: 3,
+  created_at: <monotonic>,
+  last_access: <monotonic>,
+  _l2_touch_at: <monotonic>,
+}
+```
+
+### L2 metadata structure (Firestore)
+
+- Collection: `session_cache`
+- Document ID: `sessionId`
+- Stores ownership, status, timestamps, and artifact pointers
+
+Common fields:
+- `user_id`, `source_pdf`, `page_count`, `version`
+- `detection_status`, `detection_error`, detector timing/task fields
+- `created_at`, `last_access_at`, `expires_at`, `updated_at`
+- `pdf_path`, `fields_path`, `result_path`, `renames_path`,
+  `checkbox_rules_path`, `checkbox_hints_path`, `text_transform_rules_path`
+
+### L2 artifact structure (GCS)
+
+Object prefixes:
+- `sessions/<session_id>/source.pdf`
+- `sessions/<session_id>/fields.json`
+- `sessions/<session_id>/result.json`
+- `sessions/<session_id>/renames.json`
+- `sessions/<session_id>/checkbox-rules.json`
+- `sessions/<session_id>/checkbox-hints.json`
+- `sessions/<session_id>/text-transform-rules.json`
+
+Bucket resolution for session artifacts:
+- `SANDBOX_SESSION_BUCKET` (preferred)
+- fallback: `SESSION_BUCKET`
+- fallback: `FORMS_BUCKET`
+
+This split keeps Firestore docs small while storing large payloads in object storage.
+
 ## What Lives in L1 (In-Process Cache)
 
 L1 is optimized for speed and should contain everything needed to satisfy a request
@@ -55,7 +153,7 @@ L1 fields:
 - `user_id`: owner of the session (from Firebase auth).
 - `renames`: OpenAI rename report.
 - `checkboxRules`: rename checkbox hints.
-- `page_count`: page count derived from the source PDF (routing/limits; not used for OpenAI credits).
+- `page_count`: page count derived from the source PDF (routing/limits; used for OpenAI credit pricing buckets).
 - `created_at`, `last_access`: for TTL sweeps and LRU.
 - `detection_status`, `detection_error`: detector job status metadata (when present).
 

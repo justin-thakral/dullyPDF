@@ -19,6 +19,7 @@ export function useAuth(deps: {
   const [showProfile, setShowProfile] = useState(false);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
+  const [profileLoadError, setProfileLoadError] = useState<string | null>(null);
   const authUserRef = useRef<User | null>(null);
   const depsRef = useRef(deps);
 
@@ -50,10 +51,15 @@ export function useAuth(deps: {
     try {
       const profile = await ApiService.getProfile();
       setUserProfile(profile);
+      setProfileLoadError(null);
       return profile;
     } catch (error) {
       debugLog('Failed to load profile', error);
-      setUserProfile(null);
+      const message =
+        error instanceof Error && error.message.trim()
+          ? error.message
+          : 'Failed to refresh profile details.';
+      setProfileLoadError(message);
       return null;
     } finally {
       setProfileLoading(false);
@@ -65,11 +71,13 @@ export function useAuth(deps: {
       authUserRef.current = null;
       setAuthUser(user);
       setAuthSignInProvider(null);
+      setProfileLoadError(null);
 
       if (!user) {
         depsRef.current.clearSavedFormsRetry();
         depsRef.current.clearSavedForms();
         setUserProfile(null);
+        setProfileLoadError(null);
         setShowProfile(false);
         return;
       }
@@ -86,6 +94,7 @@ export function useAuth(deps: {
           depsRef.current.clearSavedFormsRetry();
           depsRef.current.clearSavedForms();
           setUserProfile(null);
+          setProfileLoadError(null);
           setShowProfile(false);
           return;
         }
@@ -156,6 +165,7 @@ export function useAuth(deps: {
     setShowProfile,
     userProfile,
     profileLoading,
+    profileLoadError,
     authUserRef,
     requiresEmailVerification,
     verifiedUser,

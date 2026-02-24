@@ -18,8 +18,10 @@ describe('searchFill helpers', () => {
       expect(coerceCheckboxBoolean(-2)).toBe(true);
       expect(coerceCheckboxBoolean(' yes ')).toBe(true);
       expect(coerceCheckboxBoolean('checked')).toBe(true);
+      expect(coerceCheckboxBoolean('x')).toBe(true);
       expect(coerceCheckboxBoolean('0')).toBe(false);
       expect(coerceCheckboxBoolean('off')).toBe(false);
+      expect(coerceCheckboxBoolean('unselected')).toBe(false);
       expect(coerceCheckboxBoolean('f')).toBe(false);
     });
 
@@ -53,6 +55,7 @@ describe('searchFill helpers', () => {
       expect(coerceCheckboxPresence('n/a')).toBe(false);
       expect(coerceCheckboxPresence('not available')).toBe(false);
       expect(coerceCheckboxPresence('unknown')).toBe(false);
+      expect(coerceCheckboxPresence('none reported')).toBe(false);
       expect(coerceCheckboxPresence('some selected value')).toBe(true);
       expect(coerceCheckboxPresence('')).toBeNull();
     });
@@ -96,7 +99,9 @@ describe('searchFill helpers', () => {
       expect(normalizeCheckboxValueMap(valueMap)).toEqual({
         yes: 'y',
         in_progress: 'in_progress',
+        inprogress: 'in_progress',
         a_b: 'one_two',
+        ab: 'one_two',
       });
     });
 

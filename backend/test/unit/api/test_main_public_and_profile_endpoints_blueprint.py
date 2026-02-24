@@ -1,7 +1,7 @@
 from fastapi import HTTPException
 from starlette import status
 
-from backend.firebaseDB.user_database import UserProfileRecord
+from backend.firebaseDB.user_database import UserBillingRecord, UserProfileRecord
 
 
 def _contact_payload(**overrides) -> dict:
@@ -35,6 +35,7 @@ def test_profile_response_shape_for_base_and_god(
     auth_headers,
 ) -> None:
     _patch_auth(mocker, app_main, base_user)
+    mocker.patch.object(app_main, "billing_enabled", return_value=False)
     mocker.patch.object(
         app_main,
         "get_user_profile",
@@ -44,13 +45,31 @@ def test_profile_response_shape_for_base_and_god(
             display_name=base_user.display_name,
             role="base",
             openai_credits_remaining=7,
+            openai_credits_monthly_remaining=None,
+            openai_credits_refill_remaining=3,
+            openai_credits_available=7,
+            refill_credits_locked=True,
         ),
     )
     mocker.patch.object(app_main, "_resolve_role_limits", return_value={"detectMaxPages": 5, "fillableMaxPages": 50, "savedFormsMax": 3})
     response = client.get("/api/profile", headers=auth_headers)
     assert response.status_code == 200
     assert response.json()["creditsRemaining"] == 7
+    assert response.json()["availableCredits"] == 7
+    assert response.json()["monthlyCreditsRemaining"] is None
+    assert response.json()["refillCreditsRemaining"] == 3
+    assert response.json()["refillCreditsLocked"] is True
     assert response.json()["role"] == "base"
+    assert response.json()["billing"] == {
+        "enabled": False,
+        "plans": {},
+        "hasSubscription": False,
+        "subscriptionStatus": None,
+        "cancelAtPeriodEnd": None,
+        "cancelAt": None,
+        "currentPeriodEnd": None,
+    }
+    assert response.json()["creditPricing"]["pageBucketSize"] >= 1
 
     _patch_auth(mocker, app_main, god_user)
     mocker.patch.object(
@@ -67,7 +86,77 @@ def test_profile_response_shape_for_base_and_god(
     response = client.get("/api/profile", headers=auth_headers)
     assert response.status_code == 200
     assert response.json()["creditsRemaining"] is None
+    assert response.json()["availableCredits"] is None
+    assert response.json()["monthlyCreditsRemaining"] is None
+    assert response.json()["refillCreditsRemaining"] is None
+    assert response.json()["refillCreditsLocked"] is False
     assert response.json()["role"] == "god"
+
+
+def test_profile_includes_billing_catalog_when_enabled(
+    client,
+    app_main,
+    base_user,
+    mocker,
+    auth_headers,
+) -> None:
+    _patch_auth(mocker, app_main, base_user)
+    mocker.patch.object(app_main, "billing_enabled", return_value=True)
+    mocker.patch.object(
+        app_main,
+        "resolve_checkout_catalog",
+        return_value={
+            "pro_monthly": {
+                "kind": "pro_monthly",
+                "mode": "subscription",
+                "priceId": "price_monthly",
+                "label": "Pro Monthly",
+                "currency": "usd",
+                "unitAmount": 1000,
+                "interval": "month",
+                "refillCredits": None,
+            }
+        },
+    )
+    mocker.patch.object(
+        app_main,
+        "get_user_profile",
+        return_value=UserProfileRecord(
+            uid=base_user.app_user_id,
+            email=base_user.email,
+            display_name=base_user.display_name,
+            role="base",
+            openai_credits_remaining=7,
+            openai_credits_monthly_remaining=None,
+            openai_credits_refill_remaining=3,
+            openai_credits_available=7,
+            refill_credits_locked=True,
+        ),
+    )
+    mocker.patch.object(
+        app_main,
+        "get_user_billing_record",
+        return_value=UserBillingRecord(
+            uid=base_user.app_user_id,
+            customer_id="cus_123",
+            subscription_id="sub_123",
+            subscription_status="active",
+            subscription_price_id="price_monthly",
+        ),
+    )
+
+    response = client.get("/api/profile", headers=auth_headers)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["billing"]["enabled"] is True
+    assert payload["billing"]["hasSubscription"] is True
+    assert payload["billing"]["subscriptionStatus"] == "active"
+    assert payload["billing"]["cancelAtPeriodEnd"] is None
+    assert payload["billing"]["cancelAt"] is None
+    assert payload["billing"]["currentPeriodEnd"] is None
+    assert payload["billing"]["plans"]["pro_monthly"]["unitAmount"] == 1000
+    assert payload["creditPricing"]["renameBaseCost"] >= 1
 
 
 def test_contact_endpoint_rate_limit_global_and_per_ip(client, app_main, mocker) -> None:

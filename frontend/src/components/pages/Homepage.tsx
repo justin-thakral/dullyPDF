@@ -262,6 +262,9 @@ const Homepage: React.FC<HomepageProps> = ({
           <a href="/privacy" className="mobile-contact-button mobile-legal-button">
             Privacy &amp; Terms
           </a>
+          <a href="/usage-docs" className="mobile-contact-button">
+            Usage Docs
+          </a>
         </div>
 
         <div className="mobile-copy">

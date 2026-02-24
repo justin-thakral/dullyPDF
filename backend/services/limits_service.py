@@ -5,13 +5,15 @@ from __future__ import annotations
 from typing import Dict, Optional
 
 from backend.env_utils import int_env as _int_env
-from backend.firebaseDB.user_database import ROLE_GOD, normalize_role
+from backend.firebaseDB.user_database import ROLE_GOD, ROLE_PRO, normalize_role
 
 
 def resolve_detect_max_pages(role: Optional[str]) -> int:
     normalized = normalize_role(role)
     if normalized == ROLE_GOD:
         return max(1, _int_env("SANDBOX_DETECT_MAX_PAGES_GOD", 100))
+    if normalized == ROLE_PRO:
+        return max(1, _int_env("SANDBOX_DETECT_MAX_PAGES_PRO", 100))
     return max(1, _int_env("SANDBOX_DETECT_MAX_PAGES_BASE", 5))
 
 
@@ -19,6 +21,8 @@ def resolve_fillable_max_pages(role: Optional[str]) -> int:
     normalized = normalize_role(role)
     if normalized == ROLE_GOD:
         return max(1, _int_env("SANDBOX_FILLABLE_MAX_PAGES_GOD", 1000))
+    if normalized == ROLE_PRO:
+        return max(1, _int_env("SANDBOX_FILLABLE_MAX_PAGES_PRO", 1000))
     return max(1, _int_env("SANDBOX_FILLABLE_MAX_PAGES_BASE", 50))
 
 
@@ -26,6 +30,8 @@ def resolve_saved_forms_limit(role: Optional[str]) -> int:
     normalized = normalize_role(role)
     if normalized == ROLE_GOD:
         return max(1, _int_env("SANDBOX_SAVED_FORMS_MAX_GOD", 20))
+    if normalized == ROLE_PRO:
+        return max(1, _int_env("SANDBOX_SAVED_FORMS_MAX_PRO", 20))
     return max(1, _int_env("SANDBOX_SAVED_FORMS_MAX_BASE", 3))
 
 

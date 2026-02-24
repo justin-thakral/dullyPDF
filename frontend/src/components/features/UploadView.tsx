@@ -16,6 +16,7 @@ export interface UploadViewProps {
   pipelineError: string | null;
   verifiedUser: boolean;
   savedForms: SavedFormSummary[];
+  savedFormsLoading: boolean;
   deletingFormId: string | null;
   onSetUploadWantsRename: (checked: boolean) => void;
   onSetUploadWantsMap: (checked: boolean) => void;
@@ -41,6 +42,7 @@ export default function UploadView({
   pipelineError,
   verifiedUser,
   savedForms,
+  savedFormsLoading,
   deletingFormId,
   onSetUploadWantsRename,
   onSetUploadWantsMap,
@@ -123,6 +125,7 @@ export default function UploadView({
         <section className="saved-forms-section" aria-label="Open saved form">
           <h2 className="saved-forms-title">Open Saved Form:</h2>
           <UploadComponent variant="saved" title="" subtitle="" savedForms={savedForms}
+            savedFormsLoading={savedFormsLoading}
             onSelectSavedForm={onSelectSavedForm} onDeleteSavedForm={onDeleteSavedForm} deletingFormId={deletingFormId} />
         </section>
       )}

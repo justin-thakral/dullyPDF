@@ -21,6 +21,12 @@ def test_build_schema_mapping_payload_filters_hallucinations_and_alt_keys(app_ma
             {"targetField": "BAD_TAG", "sources": ["first_name"]},
             "bad",
         ],
+        "textTransformRules": [
+            {"targetField": "A1", "operation": "copy", "sources": ["first_name"]},
+            {"targetField": "A2", "operation": "concat", "sources": ["first_name", "consent"], "separator": " | "},
+            {"targetField": "A2", "operation": "not_allowed", "sources": ["first_name"]},
+            {"targetField": "BAD_TAG", "operation": "copy", "sources": ["first_name"]},
+        ],
         "checkbox_rules": [
             {"databaseField": "consent", "groupKey": "Consent Group"},
             {"databaseField": "consent", "groupKey": "unknown-group"},
@@ -41,6 +47,16 @@ def test_build_schema_mapping_payload_filters_hallucinations_and_alt_keys(app_ma
     assert {entry["databaseField"] for entry in payload["mappings"]} == {"first_name", "consent"}
     assert {entry["originalPdfField"] for entry in payload["mappings"]} == {"A1", "A2"}
     assert payload["templateRules"] == [{"targetField": "A1", "sources": ["first_name"]}]
+    assert payload["textTransformRules"] == [
+        {"targetField": "A1", "operation": "copy", "sources": ["first_name"], "confidence": 0.6},
+        {
+            "targetField": "A2",
+            "operation": "concat",
+            "sources": ["first_name", "consent"],
+            "confidence": 0.6,
+            "separator": " | ",
+        },
+    ]
     assert payload["checkboxRules"] == [{"databaseField": "consent", "groupKey": "consent_group"}]
     assert payload["checkboxHints"] == [
         {
@@ -50,6 +66,8 @@ def test_build_schema_mapping_payload_filters_hallucinations_and_alt_keys(app_ma
             "operation": "enum",
         }
     ]
+    assert payload["fillRules"]["version"] == 1
+    assert payload["fillRules"]["textTransformRules"] == payload["textTransformRules"]
     assert payload["identifierKey"] == "member_id"
     assert payload["notes"] == "model-notes"
 
@@ -69,6 +87,59 @@ def test_build_schema_mapping_payload_clamps_confidence_and_defaults_notes(app_m
     assert confidences == [1.0, 0.0, 0.6]
     assert payload["confidence"] == (1.0 + 0.0 + 0.6) / 3.0
     assert payload["notes"] == ""
+
+
+def test_build_schema_mapping_payload_sanitizes_split_text_transform_rules(app_main) -> None:
+    schema_fields = [{"name": "first_name"}, {"name": "last_name"}, {"name": "full_name"}]
+    template_tags = [{"tag": "A1"}, {"tag": "A2"}]
+    ai_response = {
+        "mappings": [],
+        "text_transform_rules": [
+            {
+                "targetField": "A1",
+                "operation": "split_name_first_rest",
+                "sources": ["full_name"],
+                "part": "first",
+                "confidence": 0.9,
+            },
+            {
+                "targetField": "A2",
+                "operation": "split_delimiter",
+                "sources": ["full_name"],
+                "delimiter": ",",
+                "part": "last",
+                "requires_review": "true",
+                "confidence": "0.55",
+            },
+            {
+                "targetField": "A2",
+                "operation": "split_delimiter",
+                "sources": ["full_name"],
+                "delimiter": "",
+                "part": "first",
+            },
+        ],
+    }
+
+    payload = app_main._build_schema_mapping_payload(schema_fields, template_tags, ai_response)
+    assert payload["textTransformRules"] == [
+        {
+            "targetField": "A1",
+            "operation": "split_name_first_rest",
+            "sources": ["full_name"],
+            "confidence": 0.9,
+            "part": "first",
+        },
+        {
+            "targetField": "A2",
+            "operation": "split_delimiter",
+            "sources": ["full_name"],
+            "confidence": 0.55,
+            "requiresReview": True,
+            "delimiter": ",",
+            "part": "last",
+        },
+    ]
 
 
 def test_build_schema_mapping_payload_unmapped_calculations(app_main) -> None:

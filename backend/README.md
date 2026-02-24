@@ -18,12 +18,14 @@ Detection is executed by the dedicated detector service (`backend/detection/dete
 - OpenAI rename (overlay tags + PDF pages; schema headers included for combined rename+map): `POST /api/renames/ai`.
 - OpenAI rename job status (task mode): `GET /api/renames/ai/{jobId}`.
 - Schema metadata: `POST /api/schemas`, `GET /api/schemas`.
-- Schema mapping (OpenAI): `POST /api/schema-mappings/ai` (results returned only; not persisted).
+- Schema mapping (OpenAI): `POST /api/schema-mappings/ai` (returns mappings plus fill-time rule payloads; updates session mapping state).
 - Schema mapping job status (task mode): `GET /api/schema-mappings/ai/{jobId}`.
 - Saved forms: `GET /api/saved-forms`, `POST /api/saved-forms` (supports `overwriteFormId` to replace an existing saved form), `GET /api/saved-forms/{id}`, `GET /api/saved-forms/{id}/download`, `POST /api/saved-forms/{id}/session`, `DELETE /api/saved-forms/{id}`.
 - Template session (fillable upload): `POST /api/templates/session` (stores PDF bytes + fields so rename/mapping can run).
 - Materialize fillable: `POST /api/forms/materialize` (auth required; injects fields into a PDF upload and enforces fillable page limits).
 - Profile summary: `GET /api/profile` (tier info, credits, and limits).
+- Billing webhook health: `GET /api/billing/webhook-health` (auth required; reports whether Stripe webhook delivery prerequisites are healthy. Endpoint diagnostics are restricted to `ROLE_GOD`).
+- Billing reconciliation: `POST /api/billing/reconcile` (auth required; audits recent `checkout.session.completed` events and can recover missed fulfillment).
 - Contact form: `POST /api/contact` (public; reCAPTCHA required; sends email via Gmail API).
 - reCAPTCHA verify: `POST /api/recaptcha/assess` (public; used for account creation checks).
 
@@ -115,6 +117,10 @@ See `frontend/docs/api-routing.md` for the current rewrite list and frontend cal
 - `OPENAI_REQUEST_TIMEOUT_SECONDS` (default 75; bounds each OpenAI request to avoid long UI stalls)
 - `OPENAI_MAX_RETRIES` (default 1; OpenAI SDK retry count for rename/remap calls)
 - `OPENAI_WORKER_MAX_RETRIES` (default 0; worker-only OpenAI SDK retries to avoid multiplying Cloud Tasks retries)
+- `OPENAI_CREDITS_PAGE_BUCKET_SIZE` (default 5; credits scale per `ceil(page_count / bucket_size)`)
+- `OPENAI_CREDITS_RENAME_BASE_COST` (default 1)
+- `OPENAI_CREDITS_REMAP_BASE_COST` (default 1)
+- `OPENAI_CREDITS_RENAME_REMAP_BASE_COST` (default 2)
 - `OPENAI_PRICE_INPUT_PER_1M_USD`, `OPENAI_PRICE_OUTPUT_PER_1M_USD` (optional; enables per-job USD estimates)
 - `OPENAI_PRICE_CACHED_INPUT_PER_1M_USD`, `OPENAI_PRICE_REASONING_OUTPUT_PER_1M_USD` (optional; refine USD estimates when token subclasses are available)
 - `OPENAI_PREWARM_ENABLED` (default false; best-effort worker warmup during detection)
@@ -139,20 +145,26 @@ Detector env examples:
 - Rename/remap jobs can run in `tasks` mode and are persisted in Firestore (`openai_jobs`) with pollable status.
 - Async rename/remap jobs store OpenAI usage summaries (`openai_usage_summary`, `openai_usage_events`) so status polling can report token usage (and optional USD estimates when pricing env vars are set).
 - Rename/remap task workers refund consumed credits on terminal failures.
+- Credit refunds now retry automatically (`OPENAI_CREDIT_REFUND_MAX_ATTEMPTS`, `OPENAI_CREDIT_REFUND_RETRY_BACKOFF_MS`) and unresolved failures are recorded in Firestore (`credit_refund_failures`) for reconciliation.
 - Detection can emit best-effort OpenAI worker prewarm requests when `OPENAI_PREWARM_ENABLED=true` and remaining pages are below `OPENAI_PREWARM_REMAINING_PAGES`.
 - Encrypted PDFs are rejected before detection to avoid repeated task retries.
 - `DETECTOR_TASKS_MAX_ATTEMPTS` on the detector service should match the Cloud Tasks queue max attempts to finalize failures on the last retry.
 - Session ownership guards can be sanity-checked with `python -m backend.scripts.verify_session_owner`.
-- Base users start with 10 lifetime OpenAI credits; credits are consumed per OpenAI action: Rename (1), Remap (1), Rename + Remap (2). God role bypasses credits.
+- Base users start with 10 lifetime OpenAI credits. Credits are billed per page bucket using server-side page counts:
+  `total_credits = operation_base_cost * ceil(page_count / OPENAI_CREDITS_PAGE_BUCKET_SIZE)`.
+  Defaults: Rename base cost `1`, Remap base cost `1`, Rename+Remap base cost `2`; with default bucket size `5`, a 10-page Rename+Remap costs `4`. God role bypasses credits.
+- `GET /api/profile` now includes `creditPricing` (server bucket/base-cost settings) and `billing` metadata (`enabled`, plan catalog, subscription linkage/status, and cancellation schedule fields) so frontend credit checks and billing labels stay aligned with backend/Stripe configuration.
 - Email/password logins must be email-verified; OAuth providers are treated as verified.
 - Schema metadata (headers/types) is stored in Firestore; CSV/Excel/JSON rows and field values never reach the server.
+- Schema mapping may emit deterministic fill rules (`fillRules`), including `checkboxRules`, `checkboxHints`, and `textTransformRules` (for split/join text fill cases).
+- Session and saved-form metadata persist `textTransformRules` alongside checkbox rule metadata so Search & Fill can replay deterministic transforms.
 - Postgres/SQL integrations are not part of the runtime path (moved to `legacy/`).
 - OpenAI rate limiting uses Firestore (`SANDBOX_RATE_LIMIT_BACKEND=firestore`) with the `rate_limits` collection by default.
 - Detection rate limiting uses `SANDBOX_DETECT_RATE_LIMIT_WINDOW_SECONDS` and `SANDBOX_DETECT_RATE_LIMIT_PER_USER`.
 - Public `/api/contact` and `/api/recaptcha/assess` rate limits fail closed when the Firestore limiter is unavailable.
 - Enable Firestore TTL on `rate_limits.expires_at` to auto-expire rate limit counters.
 - OpenAI and detection request logs use `SANDBOX_OPENAI_LOG_TTL_SECONDS` with Firestore TTL on `openai_requests.expires_at`,
-  `openai_rename_requests.expires_at`, and `detection_requests.expires_at`.
+  `openai_rename_requests.expires_at`, `credit_refund_failures.expires_at`, and `detection_requests.expires_at`.
 - One-time cleanup tasks (schema TTL backfill, template mapping purge) live in `scripts/cleanup_firestore_artifacts.py`.
 - OpenAPI/Docs routes are disabled in prod unless `SANDBOX_ENABLE_DOCS=true`.
 
@@ -234,6 +246,87 @@ Remap worker service entrypoint:
 ```
 uvicorn backend.ai.remap_worker_app:app --host 0.0.0.0 --port 8000
 ```
+
+### Billing testing (dev)
+
+`npm run dev` now auto-starts Stripe CLI forwarding for local billing when `STRIPE_SECRET_KEY` is present in `env/backend.dev.env`, forwarding to `http://localhost:${PORT}/api/billing/webhook` and injecting the listener session webhook secret into the backend process.
+
+Local Stripe forwarding notes:
+- Local forwarding is tunnel-based and does not create a Stripe dashboard webhook endpoint.
+- Because of that, local `npm run dev` forces `STRIPE_ENFORCE_WEBHOOK_HEALTH=false` for the backend process so checkout is not blocked by endpoint-health enforcement.
+- Set `STRIPE_DEV_LISTEN_ENABLED=false` to run local dev without Stripe forwarding.
+
+Use these commands when validating Stripe billing checkout/webhook behavior:
+
+```bash
+pytest backend/test/unit/api/test_main_billing_endpoints_blueprint.py
+pytest backend/test/unit/core/test_billing_service_blueprint.py
+pytest backend/test/integration/test_billing_webhook_integration.py
+```
+
+For a live smoke test against a running backend, including signed webhook security checks,
+card outcome event coverage (`4242`, `3155`, `0002`, `9995`), duplicate-event handling, and
+subscription lifecycle events:
+
+```bash
+./scripts/test-billing-webhooks.sh env/backend.dev.env http://localhost:8000
+```
+
+For prod deploys, `scripts/deploy-backend.sh` requires Stripe keys to come from
+Secret Manager bindings (`STRIPE_SECRET_KEY_SECRET`, `STRIPE_WEBHOOK_SECRET_SECRET`)
+and rejects literal `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` values. The deploy
+script also hard-fails unless `backend/test/integration/test_billing_webhook_integration.py`
+passes.
+
+Webhook fulfillment and checkout guardrails:
+- Refill checkout fulfillment (`checkout.session.completed` for `refill_500`) is applied only when the user is currently Pro at fulfillment time.
+- Refill checkout credits are validated against the configured Stripe refill price mapping before credits are granted; mismatched or unresolvable refill metadata now returns a retriable non-2xx webhook response so fulfillment is not silently acknowledged.
+- Pro checkout session creation (`pro_monthly` / `pro_yearly`) is blocked when the user already has an active subscription.
+- Pro checkout now binds to a stable Stripe customer, reuses an existing open Pro checkout session for that customer when present, blocks checkout when that customer already has an active Pro subscription in Stripe, and uses deterministic per-plan idempotency keys so concurrent duplicate session creates collapse without monthly/yearly key collisions.
+- Refill checkout session creation is blocked unless the user is currently eligible for refill fulfillment (active Pro state).
+- Refill checkout now also binds to a stable Stripe customer and reuses an existing open refill session for that customer when present, which prevents accidental duplicate session creation during quick retries.
+- Checkout session creation can be hard-blocked by Stripe webhook health (`STRIPE_ENFORCE_WEBHOOK_HEALTH=true`) so new purchases are disabled when delivery prerequisites are unhealthy.
+- Set `STRIPE_WEBHOOK_ENDPOINT_URL` to the exact webhook URL your backend receives. Webhook health checks match this specific URL and fail closed when enforcement is enabled but the URL is missing/misconfigured.
+- `POST /api/billing/reconcile` lets authenticated users audit and recover missed paid checkout fulfillment from recent Stripe events; `ROLE_GOD` can reconcile across users.
+- Subscription lifecycle role changes (`customer.subscription.updated` / `customer.subscription.deleted`) are applied only for configured Pro price ids; unrelated subscription products are ignored.
+- Subscription cancel requests are allowed when the user has a stored Stripe subscription id, even if role state drifted from `pro`, so users can always stop billing.
+- Fresh in-progress webhook locks now return a retriable non-2xx response instead of a duplicate `200` so Stripe retries rather than dropping fulfillment.
+- `BILLING_EVENT_LOCK_TIMEOUT_SECONDS` defaults to `120` seconds to reduce stale-lock retry delays after worker crashes.
+- When lock clearing fails after a webhook error, the handler now attempts a lock-document delete fallback to shorten retry stalls caused by transient Firestore write failures.
+- Pro checkout and invoice fulfillment now promote membership and persist Stripe subscription linkage in one Firestore transaction.
+- `STRIPE_MAX_PROCESSED_EVENTS` defaults to `0` (unbounded) and should remain `0` in production so old Stripe retries cannot bypass dedupe via event-id trimming.
+- `STRIPE_CHECKOUT_IDEMPOTENCY_WINDOW_SECONDS` defaults to `300`; this windowed idempotency applies to Pro plan checkout creation. Refill checkouts use attempt-scoped idempotency keys so consecutive refill purchases do not redirect to a previously completed session.
+- Checkout redirect URLs always include a `billing` query parameter (`success`/`cancel`) even when custom URLs are configured.
+- In `ENV=prod`, startup fails fast if Stripe billing vars are missing or if checkout redirect URLs are not `https://`.
+
+### Billing webhook troubleshooting (prod)
+
+When Stripe webhooks misbehave in production, use this sequence:
+
+1. Find the event in Cloud Logging by Stripe id and route:
+   - Filter example:
+     ```text
+     resource.type="cloud_run_revision"
+     resource.labels.service_name="dullypdf-backend"
+     jsonPayload.stripeEventId="evt_..."
+     ```
+   - The billing route logs `stripeEventId`, `eventType`, duplicate detection, completion, and retryable failures.
+
+2. Inspect Firestore lock/event state:
+   - Collection: `billing_events`
+   - Document id: Stripe `event.id`
+   - Key fields: `status` (`processing|processed|failed`), `attempts`, `updated_at`.
+   - A stuck `processing` status older than `BILLING_EVENT_LOCK_TIMEOUT_SECONDS` can be reclaimed automatically; use `status=failed` (or clear the doc) only as an incident action.
+
+3. Resend from Stripe after fixing root cause:
+   - Stripe CLI:
+     ```bash
+     stripe events resend evt_... --webhook-endpoint=we_...
+     ```
+   - Or replay from Stripe Dashboard event timeline.
+
+4. Re-run local smoke checks against the target backend:
+   - `./scripts/test-billing-webhooks.sh env/backend.dev.env http://localhost:8000`
 
 Docker images:
 - `Dockerfile` (main API)

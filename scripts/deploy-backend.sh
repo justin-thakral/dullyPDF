@@ -115,6 +115,13 @@ require_value_or_secret() {
 
 require_value_or_secret GMAIL_CLIENT_SECRET GMAIL_CLIENT_SECRET_SECRET
 require_value_or_secret GMAIL_REFRESH_TOKEN GMAIL_REFRESH_TOKEN_SECRET
+require_value_or_secret STRIPE_SECRET_KEY STRIPE_SECRET_KEY_SECRET
+require_value_or_secret STRIPE_WEBHOOK_SECRET STRIPE_WEBHOOK_SECRET_SECRET
+
+if [[ -n "${STRIPE_SECRET_KEY:-}" || -n "${STRIPE_WEBHOOK_SECRET:-}" ]]; then
+  echo "Use STRIPE_SECRET_KEY_SECRET and STRIPE_WEBHOOK_SECRET_SECRET for prod; literal STRIPE_* values are not allowed." >&2
+  exit 1
+fi
 
 if [[ "${CONTACT_REQUIRE_RECAPTCHA:-true}" != "true" || "${SIGNUP_REQUIRE_RECAPTCHA:-true}" != "true" ]]; then
   echo "CONTACT_REQUIRE_RECAPTCHA and SIGNUP_REQUIRE_RECAPTCHA must be true in prod." >&2
@@ -128,6 +135,18 @@ if [[ "${CONTACT_REQUIRE_RECAPTCHA:-true}" == "true" || "${SIGNUP_REQUIRE_RECAPT
     exit 1
   fi
 fi
+
+BILLING_INTEGRATION_TEST_PATH="backend/test/integration/test_billing_webhook_integration.py"
+if [[ ! -f "$BILLING_INTEGRATION_TEST_PATH" ]]; then
+  echo "Missing required integration test: $BILLING_INTEGRATION_TEST_PATH" >&2
+  exit 1
+fi
+if ! python3 -m pytest --version >/dev/null 2>&1; then
+  echo "pytest is required for deploy preflight checks. Install backend test dependencies first." >&2
+  exit 1
+fi
+echo "Running required billing integration gate: $BILLING_INTEGRATION_TEST_PATH"
+ENV=test python3 -m pytest -q "$BILLING_INTEGRATION_TEST_PATH"
 
 TMP_ENV_FILE="$(mktemp)"
 python3 - <<'PY' "$ENV_FILE" "$TMP_ENV_FILE"
@@ -147,6 +166,8 @@ secret_bindings = {
     "OPENAI_API_KEY_SECRET": "OPENAI_API_KEY",
     "GMAIL_CLIENT_SECRET_SECRET": "GMAIL_CLIENT_SECRET",
     "GMAIL_REFRESH_TOKEN_SECRET": "GMAIL_REFRESH_TOKEN",
+    "STRIPE_SECRET_KEY_SECRET": "STRIPE_SECRET_KEY",
+    "STRIPE_WEBHOOK_SECRET_SECRET": "STRIPE_WEBHOOK_SECRET",
     "FIREBASE_GITHUB_CLIENT_SECRET_SECRET": "FIREBASE_GITHUB_CLIENT_SECRET",
     "FIREBASE_GOOGLE_CLIENT_SECRET_SECRET": "FIREBASE_GOOGLE_CLIENT_SECRET",
 }
@@ -230,6 +251,18 @@ if [[ -n "${GMAIL_REFRESH_TOKEN_SECRET:-}" ]]; then
   append_csv SECRETS_TO_UPDATE "GMAIL_REFRESH_TOKEN=${GMAIL_REFRESH_TOKEN_SECRET}:latest"
 else
   append_csv SECRETS_TO_REMOVE "GMAIL_REFRESH_TOKEN"
+fi
+
+if [[ -n "${STRIPE_SECRET_KEY_SECRET:-}" ]]; then
+  append_csv SECRETS_TO_UPDATE "STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY_SECRET}:latest"
+else
+  append_csv SECRETS_TO_REMOVE "STRIPE_SECRET_KEY"
+fi
+
+if [[ -n "${STRIPE_WEBHOOK_SECRET_SECRET:-}" ]]; then
+  append_csv SECRETS_TO_UPDATE "STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET_SECRET}:latest"
+else
+  append_csv SECRETS_TO_REMOVE "STRIPE_WEBHOOK_SECRET"
 fi
 
 if [[ -n "${FIREBASE_GITHUB_CLIENT_SECRET_SECRET:-}" ]]; then

@@ -8,6 +8,16 @@ from typing import Any, Dict, List
 from backend.api.schemas import TemplateOverlayField
 
 
+ALLOWED_TEXT_TRANSFORM_OPERATIONS = {
+    "copy",
+    "concat",
+    "split_name_first_rest",
+    "split_delimiter",
+}
+MAX_TRANSFORM_REASONING_LEN = 280
+MAX_TRANSFORM_TOKEN_LEN = 32
+
+
 def sanitize_pdf_field_name_candidate(raw_name: str, fallback_base: str = "field") -> str:
     """Sanitize a PDF field name for rename suggestions."""
     max_len = 96
@@ -50,6 +60,143 @@ def normalize_data_key(value: str) -> str:
     normalized = re.sub(r"[\s-]+", "_", normalized)
     normalized = re.sub(r"[^a-z0-9_]", "", normalized)
     return normalized
+
+
+def _coerce_optional_bool(value: Any) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        raw = value.strip().lower()
+        if raw in {"1", "true", "yes", "y", "t"}:
+            return True
+        if raw in {"0", "false", "no", "n", "f"}:
+            return False
+    return None
+
+
+def _coerce_optional_int(value: Any) -> int | None:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed >= 0 else None
+
+
+def _coerce_transform_confidence(value: Any) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        parsed = 0.6
+    return min(max(parsed, 0.0), 1.0)
+
+
+def _sanitize_text_transform_rule(
+    raw: Dict[str, Any],
+    *,
+    allowed_schema_set: set[str],
+    allowed_template_set: set[str],
+) -> Dict[str, Any] | None:
+    target = (
+        raw.get("targetField")
+        or raw.get("target")
+        or raw.get("pdfField")
+        or raw.get("name")
+    )
+    target_field = str(target or "").strip()
+    if target_field not in allowed_template_set:
+        return None
+
+    raw_sources = raw.get("sources")
+    if isinstance(raw_sources, list):
+        candidate_sources = raw_sources
+    else:
+        candidate_sources = [
+            raw.get("source")
+            or raw.get("schemaField")
+            or raw.get("databaseField")
+        ]
+
+    sources: List[str] = []
+    seen = set()
+    for source in candidate_sources:
+        source_name = str(source or "").strip()
+        if not source_name or source_name not in allowed_schema_set or source_name in seen:
+            continue
+        seen.add(source_name)
+        sources.append(source_name)
+    if not sources:
+        return None
+
+    operation = str(
+        raw.get("operation")
+        or raw.get("op")
+        or raw.get("transform")
+        or ""
+    ).strip().lower()
+    if not operation:
+        operation = "concat" if len(sources) > 1 else "copy"
+    if operation not in ALLOWED_TEXT_TRANSFORM_OPERATIONS:
+        return None
+
+    if operation in {"copy", "split_name_first_rest", "split_delimiter"}:
+        if len(sources) != 1:
+            sources = sources[:1]
+        if len(sources) != 1:
+            return None
+
+    sanitized: Dict[str, Any] = {
+        "targetField": target_field,
+        "operation": operation,
+        "sources": sources,
+        "confidence": _coerce_transform_confidence(raw.get("confidence", 0.6)),
+    }
+
+    reasoning = str(raw.get("reasoning") or "").strip()
+    if reasoning:
+        sanitized["reasoning"] = reasoning[:MAX_TRANSFORM_REASONING_LEN]
+
+    requires_review = _coerce_optional_bool(
+        raw.get("requiresReview") if "requiresReview" in raw else raw.get("requires_review")
+    )
+    if requires_review is not None:
+        sanitized["requiresReview"] = requires_review
+
+    if operation == "concat":
+        separator = str(
+            raw.get("separator")
+            or raw.get("joinWith")
+            or raw.get("delimiter")
+            or " "
+        )
+        sanitized["separator"] = separator[:MAX_TRANSFORM_TOKEN_LEN]
+
+    if operation == "split_name_first_rest":
+        part = str(raw.get("part") or "").strip().lower()
+        if part not in {"first", "rest"}:
+            normalized_target = normalize_data_key(target_field)
+            if normalized_target.endswith("first_name") or normalized_target == "first_name":
+                part = "first"
+            else:
+                part = "rest"
+        sanitized["part"] = part
+
+    if operation == "split_delimiter":
+        delimiter = str(raw.get("delimiter") or raw.get("separator") or "").strip()
+        if not delimiter:
+            return None
+        sanitized["delimiter"] = delimiter[:MAX_TRANSFORM_TOKEN_LEN]
+        index = _coerce_optional_int(raw.get("index"))
+        part = str(raw.get("part") or "").strip().lower()
+        if index is not None:
+            sanitized["index"] = index
+        elif part in {"first", "rest", "last"}:
+            sanitized["part"] = part
+        else:
+            return None
+
+    return sanitized
 
 
 def template_fields_to_rename_fields(fields: List[TemplateOverlayField]) -> List[Dict[str, Any]]:
@@ -184,6 +331,28 @@ def build_schema_mapping_payload(
                 raw["sources"] = filtered
             template_rules.append(raw)
 
+    raw_text_transforms = (
+        ai_response.get("textTransformRules")
+        or ai_response.get("text_transform_rules")
+        or ai_response.get("textRules")
+        or ai_response.get("text_rules")
+        or []
+    )
+    if not raw_text_transforms and isinstance(raw_templates, list):
+        raw_text_transforms = raw_templates
+    text_transform_rules: List[Dict[str, Any]] = []
+    if isinstance(raw_text_transforms, list):
+        for raw in raw_text_transforms:
+            if not isinstance(raw, dict):
+                continue
+            sanitized = _sanitize_text_transform_rule(
+                raw,
+                allowed_schema_set=allowed_schema_set,
+                allowed_template_set=allowed_template_set,
+            )
+            if sanitized:
+                text_transform_rules.append(sanitized)
+
     raw_checkbox = ai_response.get("checkboxRules") or ai_response.get("checkbox_rules") or []
     checkbox_rules = []
     if isinstance(raw_checkbox, list):
@@ -218,19 +387,6 @@ def build_schema_mapping_payload(
             normalized_rule["groupKey"] = group_key
             checkbox_rules.append(normalized_rule)
 
-    def _coerce_hint_bool(value: Any) -> bool | None:
-        if isinstance(value, bool):
-            return value
-        if isinstance(value, (int, float)):
-            return value != 0
-        if isinstance(value, str):
-            raw = value.strip().lower()
-            if raw in {"1", "true", "yes", "y", "t"}:
-                return True
-            if raw in {"0", "false", "no", "n", "f"}:
-                return False
-        return None
-
     raw_hints = ai_response.get("checkboxHints") or ai_response.get("checkbox_hints") or []
     checkbox_hints: List[Dict[str, Any]] = []
     if isinstance(raw_hints, list):
@@ -257,7 +413,7 @@ def build_schema_mapping_payload(
             group_key = resolved_group_key or normalized_group_key
             if not group_key:
                 continue
-            direct_boolean = _coerce_hint_bool(
+            direct_boolean = _coerce_optional_bool(
                 raw.get("directBooleanPossible") if "directBooleanPossible" in raw else raw.get("direct_boolean_possible")
             )
             operation = str(raw.get("operation") or "").strip().lower()
@@ -295,8 +451,15 @@ def build_schema_mapping_payload(
         "success": True,
         "mappings": sanitized_mappings,
         "templateRules": template_rules,
+        "textTransformRules": text_transform_rules,
         "checkboxRules": checkbox_rules,
         "checkboxHints": checkbox_hints,
+        "fillRules": {
+            "version": 1,
+            "checkboxRules": checkbox_rules,
+            "checkboxHints": checkbox_hints,
+            "textTransformRules": text_transform_rules,
+        },
         "identifierKey": identifier_key,
         "notes": ai_response.get("notes") or "",
         "unmappedDatabaseFields": [field for field in allowed_schema if field not in mapped_schema],

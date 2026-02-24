@@ -34,14 +34,30 @@ Field editing is centered around three coordinated areas: overlay (PDF), field l
 ## Confidence labels
 
 - The field list supports high/medium/low confidence filtering.
-- Detection confidence comes from CommonForms (by [jbarrow](https://github.com/jbarrow/commonforms)).
-- Name confidence comes from OpenAI rename and/or schema mapping output.
+- Tier thresholds are:
+  - high: `>= 0.80`
+  - medium: `>= 0.65` and `< 0.80`
+  - low: `< 0.65`
+- Field confidence (`fieldConfidence`) comes from detection, or from OpenAI rename `isItAfieldConfidence` when available.
+- Name confidence comes from OpenAI rename (`renameConfidence`) and/or schema alignment (`mappingConfidence`).
+- Filtering primarily uses field confidence tiers.
 
 ## OpenAI guardrails
 
 - Rename, Map, and Rename+Map require explicit confirmation dialogs.
 - The dialogs warn users before sending PDF/schema content to OpenAI.
 - Row data and field input values are not included in OpenAI rename/map requests.
+
+## Search & Fill transform rules
+
+- Search & Fill prefers direct mapped column values first.
+- When a direct value is not available, it can apply deterministic `textTransformRules` emitted by schema mapping.
+- Supported transform operations are:
+  - `copy`
+  - `concat`
+  - `split_name_first_rest`
+  - `split_delimiter`
+- Transform rules are persisted with saved forms so the same split/join behavior replays on reload.
 
 ## Keyboard shortcuts
 

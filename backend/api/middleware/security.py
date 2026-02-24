@@ -41,7 +41,13 @@ async def enforce_security_guards(request: Request, call_next):
             )
         return await call_next(request)
 
-    if path.startswith("/api/") and path not in {"/api/health", "/api/contact", "/api/recaptcha/assess"}:
+    public_api_paths = {
+        "/api/health",
+        "/api/contact",
+        "/api/recaptcha/assess",
+    }
+    is_public_billing_webhook = path.rstrip("/") == "/api/billing/webhook"
+    if path.startswith("/api/") and path not in public_api_paths and not is_public_billing_webhook:
         authorization = request.headers.get("authorization")
         try:
             request.state.preverified_auth_payload = verify_token(authorization)

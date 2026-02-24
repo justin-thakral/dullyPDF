@@ -7,6 +7,18 @@ import { apiFetch, apiJsonFetch, buildApiUrl } from './apiConfig';
 const OPENAI_JOB_POLL_INTERVAL_MS = 1500;
 const OPENAI_JOB_POLL_TIMEOUT_MS = 600000;
 
+function buildBillingCheckoutAttemptId(): string {
+  const cryptoApi =
+    typeof globalThis !== 'undefined' && typeof globalThis.crypto !== 'undefined'
+      ? globalThis.crypto
+      : undefined;
+  if (cryptoApi && typeof cryptoApi.randomUUID === 'function') {
+    return cryptoApi.randomUUID();
+  }
+  const randomSuffix = Math.random().toString(36).slice(2, 12);
+  return `attempt_${Date.now()}_${randomSuffix}`;
+}
+
 export type SavedFormSummary = {
   id: string;
   name: string;
@@ -19,11 +31,47 @@ export type ProfileLimits = {
   savedFormsMax: number;
 };
 
+export type BillingCheckoutKind = 'pro_monthly' | 'pro_yearly' | 'refill_500';
+
+export type CreditPricingConfig = {
+  pageBucketSize: number;
+  renameBaseCost: number;
+  remapBaseCost: number;
+  renameRemapBaseCost: number;
+};
+
+export type BillingPlanCatalogItem = {
+  kind: BillingCheckoutKind;
+  mode: 'subscription' | 'payment' | string;
+  priceId: string;
+  label: string;
+  currency?: string | null;
+  unitAmount?: number | null;
+  interval?: string | null;
+  refillCredits?: number | null;
+};
+
+export type BillingProfileConfig = {
+  enabled: boolean;
+  plans: Partial<Record<BillingCheckoutKind, BillingPlanCatalogItem>>;
+  hasSubscription?: boolean;
+  subscriptionStatus?: string | null;
+  cancelAtPeriodEnd?: boolean | null;
+  cancelAt?: number | null;
+  currentPeriodEnd?: number | null;
+};
+
 export type UserProfile = {
   email?: string | null;
   displayName?: string | null;
   role?: string | null;
   creditsRemaining?: number | null;
+  monthlyCreditsRemaining?: number | null;
+  refillCreditsRemaining?: number | null;
+  availableCredits?: number | null;
+  refillCreditsLocked?: boolean;
+  creditPricing?: CreditPricingConfig;
+  billing?: BillingProfileConfig;
   limits: ProfileLimits;
 };
 
@@ -112,6 +160,81 @@ export class ApiService {
       body: JSON.stringify(payload),
     });
 
+    return apiJsonFetch(response);
+  }
+
+  /**
+   * Create a Stripe Checkout session for subscription/refill purchases.
+   */
+  static async createBillingCheckoutSession(
+    kind: BillingCheckoutKind,
+  ): Promise<{ success: boolean; kind: BillingCheckoutKind; sessionId: string; checkoutUrl: string }> {
+    const attemptId = buildBillingCheckoutAttemptId();
+    const response = await apiFetch('POST', '/api/billing/checkout-session', {
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ kind, attemptId }),
+    });
+    return apiJsonFetch(response);
+  }
+
+  /**
+   * Audit and reconcile recent Stripe checkout fulfillment for the current user.
+   */
+  static async reconcileBillingCheckoutFulfillment(
+    payload?: { lookbackHours?: number; maxEvents?: number; dryRun?: boolean },
+  ): Promise<{
+      success: boolean;
+      dryRun: boolean;
+      scope: string;
+      auditedEventCount: number;
+      candidateEventCount: number;
+      pendingReconciliationCount: number;
+      reconciledCount: number;
+      alreadyProcessedCount: number;
+      processingCount: number;
+      retryableCount: number;
+      failedCount: number;
+      invalidCount: number;
+      skippedForUserCount: number;
+      events: Array<{
+        eventId: string;
+        eventType?: string | null;
+        eventUserId?: string | null;
+        created?: number | null;
+        checkoutSessionId?: string | null;
+        checkoutKind?: string | null;
+        billingEventStatus?: string | null;
+      }>;
+    }> {
+    const response = await apiFetch('POST', '/api/billing/reconcile', {
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        lookbackHours: payload?.lookbackHours,
+        maxEvents: payload?.maxEvents,
+        dryRun: payload?.dryRun,
+      }),
+    });
+    return apiJsonFetch(response);
+  }
+
+  /**
+   * Cancel the active Stripe subscription at period end for the current user.
+   */
+  static async cancelBillingSubscription(): Promise<{
+    success: boolean;
+    subscriptionId: string;
+    status?: string | null;
+    cancelAtPeriodEnd: boolean;
+    cancelAt?: number | null;
+    currentPeriodEnd?: number | null;
+    alreadyCanceled?: boolean;
+    stateSyncDeferred?: boolean;
+  }> {
+    const response = await apiFetch('POST', '/api/billing/subscription/cancel');
     return apiJsonFetch(response);
   }
 
@@ -231,8 +354,17 @@ export class ApiService {
     url: string;
     name: string;
     sessionId?: string;
+    fillRules?: {
+      version?: number;
+      checkboxRules?: Array<Record<string, any>>;
+      checkboxHints?: Array<Record<string, any>>;
+      textTransformRules?: Array<Record<string, any>>;
+      templateRules?: Array<Record<string, any>>;
+    };
     checkboxRules?: Array<Record<string, any>>;
     checkboxHints?: Array<Record<string, any>>;
+    textTransformRules?: Array<Record<string, any>>;
+    templateRules?: Array<Record<string, any>>;
   }> {
     const response = await apiFetch('GET', `/api/saved-forms/${encodeURIComponent(formId)}`);
     return apiJsonFetch(response);
@@ -314,6 +446,7 @@ export class ApiService {
     overwriteFormId?: string,
     checkboxRules?: Array<Record<string, any>>,
     checkboxHints?: Array<Record<string, any>>,
+    textTransformRules?: Array<Record<string, any>>,
   ): Promise<{ success: boolean; id: string; name?: string }> {
     const formData = new FormData();
     formData.append('pdf', blob, `${name}.pdf`);
@@ -326,6 +459,9 @@ export class ApiService {
     }
     if (checkboxHints !== undefined) {
       formData.append('checkboxHints', JSON.stringify(checkboxHints));
+    }
+    if (textTransformRules !== undefined) {
+      formData.append('textTransformRules', JSON.stringify(textTransformRules));
     }
     if (overwriteFormId) {
       formData.append('overwriteFormId', overwriteFormId);

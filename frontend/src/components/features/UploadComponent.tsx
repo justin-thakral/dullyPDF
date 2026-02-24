@@ -13,6 +13,7 @@ interface UploadComponentProps {
   subtitle?: string;
   variant?: 'detect' | 'fillable' | 'saved';
   savedForms?: Array<{ id: string; name: string; createdAt: string }>;
+  savedFormsLoading?: boolean;
   deletingFormId?: string | null;
 }
 
@@ -28,6 +29,7 @@ const UploadComponent: React.FC<UploadComponentProps> = ({
   subtitle,
   variant = 'detect',
   savedForms = [],
+  savedFormsLoading = false,
   deletingFormId = null,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -144,7 +146,11 @@ const UploadComponent: React.FC<UploadComponentProps> = ({
               {sub && sub.trim().length > 0 && <p>{sub}</p>}
             </div>
           )}
-          {savedForms.length === 0 ? (
+          {savedFormsLoading && savedForms.length === 0 ? (
+            <p className="upload-requirements" role="status" aria-live="polite">
+              Loading saved forms while the backend starts…
+            </p>
+          ) : savedForms.length === 0 ? (
             <p className="upload-requirements">No saved forms yet. Save a form to see it here.</p>
           ) : (
             <div className="saved-forms-list">

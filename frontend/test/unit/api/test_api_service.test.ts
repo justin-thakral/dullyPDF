@@ -57,6 +57,69 @@ describe('ApiService', () => {
     });
   });
 
+  it('creates billing checkout sessions with supported kinds', async () => {
+    apiConfigMocks.apiFetch
+      .mockResolvedValueOnce({ id: 'billing-response' })
+      .mockResolvedValueOnce({ id: 'reconcile-response' })
+      .mockResolvedValueOnce({ id: 'cancel-response' });
+    apiConfigMocks.apiJsonFetch.mockResolvedValueOnce({
+      success: true,
+      kind: 'pro_yearly',
+      sessionId: 'cs_123',
+      checkoutUrl: 'https://checkout.local/session',
+    }).mockResolvedValueOnce({
+      success: true,
+      dryRun: false,
+      scope: 'self',
+      auditedEventCount: 1,
+      candidateEventCount: 1,
+      pendingReconciliationCount: 1,
+      reconciledCount: 1,
+      alreadyProcessedCount: 0,
+      processingCount: 0,
+      retryableCount: 0,
+      failedCount: 0,
+      invalidCount: 0,
+      skippedForUserCount: 0,
+      events: [{ eventId: 'evt_1' }],
+    }).mockResolvedValueOnce({
+      success: true,
+      subscriptionId: 'sub_123',
+      status: 'active',
+      cancelAtPeriodEnd: true,
+    });
+
+    const response = await ApiService.createBillingCheckoutSession('pro_yearly');
+    const reconcileResponse = await ApiService.reconcileBillingCheckoutFulfillment({ lookbackHours: 24 });
+    const cancelResponse = await ApiService.cancelBillingSubscription();
+
+    expect(response.success).toBe(true);
+    expect(response.kind).toBe('pro_yearly');
+    expect(response.checkoutUrl).toBe('https://checkout.local/session');
+    expect(reconcileResponse.success).toBe(true);
+    expect(reconcileResponse.reconciledCount).toBe(1);
+    expect(cancelResponse.success).toBe(true);
+    expect(cancelResponse.subscriptionId).toBe('sub_123');
+    expect(cancelResponse.cancelAtPeriodEnd).toBe(true);
+    expect(apiConfigMocks.apiFetch).toHaveBeenCalledWith('POST', '/api/billing/checkout-session', {
+      headers: { 'Content-Type': 'application/json' },
+      body: expect.any(String),
+    });
+    const billingPayload = JSON.parse(String(apiConfigMocks.apiFetch.mock.calls[0][2]?.body));
+    expect(billingPayload.kind).toBe('pro_yearly');
+    expect(typeof billingPayload.attemptId).toBe('string');
+    expect(billingPayload.attemptId.length).toBeGreaterThan(0);
+    expect(apiConfigMocks.apiFetch).toHaveBeenCalledWith('POST', '/api/billing/reconcile', {
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        lookbackHours: 24,
+        maxEvents: undefined,
+        dryRun: undefined,
+      }),
+    });
+    expect(apiConfigMocks.apiFetch).toHaveBeenCalledWith('POST', '/api/billing/subscription/cancel');
+  });
+
   it('wires rename/map endpoints and payload shape through buildApiUrl', async () => {
     apiConfigMocks.apiFetch
       .mockResolvedValueOnce({ id: 'rename-response' })

@@ -11,6 +11,7 @@ def test_normalize_role_maps_unknown_inputs_to_base() -> None:
     assert adb.normalize_role(None) == adb.ROLE_BASE
     assert adb.normalize_role("") == adb.ROLE_BASE
     assert adb.normalize_role("base") == adb.ROLE_BASE
+    assert adb.normalize_role("pro") == adb.ROLE_PRO
     assert adb.normalize_role("GOD") == adb.ROLE_GOD
     assert adb.normalize_role("owner") == adb.ROLE_BASE
 
@@ -370,3 +371,135 @@ def test_ensure_user_skips_update_when_no_fields_change(mocker) -> None:
     assert request_user.email == "same@example.com"
     assert request_user.display_name == "Same Name"
     assert request_user.role == adb.ROLE_BASE
+
+
+def test_ensure_user_preserves_existing_pro_role_when_claim_missing(mocker) -> None:
+    client = FakeFirestoreClient()
+    existing_doc = client.collection(adb.USERS_COLLECTION).document("u-pro").seed(
+        {
+            "firebase_uid": "u-pro",
+            "email": "pro@example.com",
+            "displayName": "Pro User",
+            adb.ROLE_FIELD: adb.ROLE_PRO,
+            adb.OPENAI_CREDITS_MONTHLY_FIELD: 500,
+            adb.OPENAI_CREDITS_REFILL_FIELD: 25,
+            adb.OPENAI_CREDITS_MONTHLY_CYCLE_FIELD: adb._current_month_cycle_key(),
+            "created_at": "old-created",
+            "updated_at": "old-updated",
+        }
+    )
+    mocker.patch("backend.firebaseDB.user_database.get_firestore_client", return_value=client)
+    mocker.patch("backend.firebaseDB.user_database.now_iso", return_value="ts-updated")
+
+    request_user = adb.ensure_user({"uid": "u-pro", "email": "pro@example.com", "name": "Pro User"})
+
+    assert request_user.role == adb.ROLE_PRO
+    # No role downgrade should have been written when the auth token omits role claims.
+    assert existing_doc.get().to_dict()[adb.ROLE_FIELD] == adb.ROLE_PRO
+
+
+def test_ensure_user_does_not_re_elevate_existing_base_user_from_pro_claim(mocker) -> None:
+    client = FakeFirestoreClient()
+    existing_doc = client.collection(adb.USERS_COLLECTION).document("u-base").seed(
+        {
+            "firebase_uid": "u-base",
+            "email": "base@example.com",
+            "displayName": "Base User",
+            adb.ROLE_FIELD: adb.ROLE_BASE,
+            adb.OPENAI_CREDITS_FIELD: adb.BASE_OPENAI_CREDITS,
+            adb.RENAME_COUNT_FIELD: 0,
+        }
+    )
+    mocker.patch("backend.firebaseDB.user_database.get_firestore_client", return_value=client)
+    mocker.patch("backend.firebaseDB.user_database.now_iso", return_value="ts-updated")
+
+    request_user = adb.ensure_user(
+        {
+            "uid": "u-base",
+            "email": "base@example.com",
+            "name": "Base User",
+            adb.ROLE_FIELD: adb.ROLE_PRO,
+        }
+    )
+
+    assert request_user.role == adb.ROLE_BASE
+    assert existing_doc.get().to_dict()[adb.ROLE_FIELD] == adb.ROLE_BASE
+
+
+def test_ensure_user_new_doc_with_pro_claim_bootstraps_as_base(mocker) -> None:
+    client = FakeFirestoreClient()
+    mocker.patch("backend.firebaseDB.user_database.get_firestore_client", return_value=client)
+    mocker.patch("backend.firebaseDB.user_database.now_iso", return_value="ts-created")
+
+    request_user = adb.ensure_user(
+        {
+            "uid": "u-new",
+            "email": "new@example.com",
+            "name": "New User",
+            adb.ROLE_FIELD: adb.ROLE_PRO,
+        }
+    )
+
+    stored = client.collection(adb.USERS_COLLECTION).document("u-new").get().to_dict()
+    assert request_user.role == adb.ROLE_BASE
+    assert stored[adb.ROLE_FIELD] == adb.ROLE_BASE
+    assert stored[adb.OPENAI_CREDITS_FIELD] == adb.BASE_OPENAI_CREDITS
+    assert adb.OPENAI_CREDITS_MONTHLY_FIELD not in stored
+
+
+def test_ensure_user_allows_god_claim_for_privileged_access(mocker) -> None:
+    client = FakeFirestoreClient()
+    existing_doc = client.collection(adb.USERS_COLLECTION).document("u-god").seed(
+        {
+            "firebase_uid": "u-god",
+            "email": "god@example.com",
+            "displayName": "God User",
+            adb.ROLE_FIELD: adb.ROLE_BASE,
+            adb.OPENAI_CREDITS_FIELD: adb.BASE_OPENAI_CREDITS,
+            adb.RENAME_COUNT_FIELD: 0,
+        }
+    )
+    mocker.patch("backend.firebaseDB.user_database.get_firestore_client", return_value=client)
+    mocker.patch("backend.firebaseDB.user_database.now_iso", return_value="ts-god")
+
+    request_user = adb.ensure_user(
+        {
+            "uid": "u-god",
+            "email": "god@example.com",
+            "name": "God User",
+            adb.ROLE_FIELD: adb.ROLE_GOD,
+        }
+    )
+
+    assert request_user.role == adb.ROLE_GOD
+    assert existing_doc.get().to_dict()[adb.ROLE_FIELD] == adb.ROLE_GOD
+
+
+def test_ensure_user_pro_role_resets_monthly_pool_when_cycle_is_stale(mocker) -> None:
+    client = FakeFirestoreClient()
+    existing_doc = client.collection(adb.USERS_COLLECTION).document("u-pro").seed(
+        {
+            "firebase_uid": "u-pro",
+            "email": "pro@example.com",
+            "displayName": "Pro User",
+            adb.ROLE_FIELD: adb.ROLE_PRO,
+            adb.OPENAI_CREDITS_MONTHLY_FIELD: 11,
+            adb.OPENAI_CREDITS_REFILL_FIELD: 30,
+            adb.OPENAI_CREDITS_MONTHLY_CYCLE_FIELD: "2026-01",
+            "created_at": "old-created",
+            "updated_at": "old-updated",
+        }
+    )
+    mocker.patch("backend.firebaseDB.user_database.get_firestore_client", return_value=client)
+    mocker.patch("backend.firebaseDB.user_database._current_month_cycle_key", return_value="2026-02")
+    mocker.patch("backend.firebaseDB.user_database.now_iso", return_value="ts-updated")
+
+    request_user = adb.ensure_user({"uid": "u-pro", "email": "pro@example.com", "name": "Pro User"})
+
+    assert request_user.role == adb.ROLE_PRO
+    assert len(existing_doc.update_calls) == 1
+    updates = existing_doc.update_calls[0]
+    assert updates[adb.OPENAI_CREDITS_MONTHLY_FIELD] == adb.PRO_MONTHLY_OPENAI_CREDITS
+    assert updates[adb.OPENAI_CREDITS_MONTHLY_CYCLE_FIELD] == "2026-02"
+    assert updates["updated_at"] == "ts-updated"
+    assert adb.OPENAI_CREDITS_REFILL_FIELD not in updates

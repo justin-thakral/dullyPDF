@@ -10,7 +10,7 @@
   - `useDialog`
 - Auth and saved forms:
   - `useAuth`
-  - `useSavedForms`
+  - `useSavedForms` (saved-form list state, retry logic, and saved-form loading status during backend startup)
 - Detection and OpenAI pipeline:
   - `useDetection`
   - `useOpenAiPipeline`

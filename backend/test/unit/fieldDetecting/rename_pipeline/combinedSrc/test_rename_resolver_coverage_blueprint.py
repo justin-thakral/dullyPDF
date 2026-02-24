@@ -74,6 +74,47 @@ def test_attach_checkbox_label_hints_prefers_right_label_and_truncates() -> None
     assert enriched[0]["labelHintBbox"] == [22, 10, 60, 20]
 
 
+def test_select_database_prompt_fields_shortlists_only_above_threshold() -> None:
+    overlay_fields = [{"name": "a1b", "type": "text", "labelHintText": "Patient Name"}]
+
+    under_limit_fields, under_total, under_truncated = rr._select_database_prompt_fields(
+        ["patient_name", "patient_email", "patient_phone"],
+        overlay_fields=overlay_fields,
+        full_threshold=3,
+        shortlist_limit=2,
+    )
+    assert under_total == 3
+    assert under_truncated is False
+    assert under_limit_fields == ["patient_name", "patient_email", "patient_phone"]
+
+    over_limit_fields, over_total, over_truncated = rr._select_database_prompt_fields(
+        ["patient_name"] + [f"schema_{i}" for i in range(10)],
+        overlay_fields=overlay_fields,
+        full_threshold=3,
+        shortlist_limit=2,
+    )
+    assert over_total == 11
+    assert over_truncated is True
+    assert len(over_limit_fields) == 2
+    assert "patient_name" in over_limit_fields
+
+
+def test_compact_prompt_noise_dedupes_duplicate_bullets() -> None:
+    raw = "\n".join(
+        [
+            "Rules:",
+            "- Keep overlay IDs stable.",
+            "- Keep overlay IDs stable.",
+            "",
+            "",
+            "- Use snake_case.",
+        ]
+    )
+    compacted = rr._compact_prompt_noise(raw)
+    assert compacted.count("- Keep overlay IDs stable.") == 1
+    assert "\n\n\n" not in compacted
+
+
 def test_build_prompt_includes_option_hint_and_commonforms_guidance(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(rr, "COMMONFORMS_CONFIDENCE_GREEN", 0.91)
     monkeypatch.setattr(rr, "COMMONFORMS_CONFIDENCE_YELLOW", 0.72)

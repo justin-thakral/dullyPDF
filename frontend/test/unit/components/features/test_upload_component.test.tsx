@@ -117,4 +117,11 @@ describe('UploadComponent', () => {
     expect(screen.getByText('Select a form from your saved templates')).toBeTruthy();
     expect(screen.getByText('No saved forms yet. Save a form to see it here.')).toBeTruthy();
   });
+
+  it('shows a loading message for empty saved forms while backend startup is pending', () => {
+    render(<UploadComponent variant="saved" savedForms={[]} savedFormsLoading />);
+
+    expect(screen.getByText('Loading saved forms while the backend starts…')).toBeTruthy();
+    expect(screen.queryByText('No saved forms yet. Save a form to see it here.')).toBeNull();
+  });
 });

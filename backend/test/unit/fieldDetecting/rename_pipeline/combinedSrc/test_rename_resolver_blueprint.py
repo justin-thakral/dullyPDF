@@ -266,6 +266,8 @@ def test_run_openai_rename_pipeline_uses_dense_overlay_env_tuning(
     monkeypatch.setenv("SANDBOX_RENAME_OVERLAY_MAX_DIM", "1000")
     monkeypatch.setenv("SANDBOX_RENAME_DENSE_MAX_DIM", "2345")
     monkeypatch.setenv("SANDBOX_RENAME_DENSE_FORMAT", "jpg")
+    monkeypatch.setenv("SANDBOX_RENAME_CLEAN_MAX_DIM", "1111")
+    monkeypatch.setenv("SANDBOX_RENAME_CLEAN_FORMAT", "jpg")
 
     monkeypatch.setattr(rr, "resolve_workers", lambda *args, **kwargs: 1)
     monkeypatch.setattr(
@@ -317,8 +319,8 @@ def test_run_openai_rename_pipeline_uses_dense_overlay_env_tuning(
 
     rr.run_openai_rename_pipeline(rendered_pages, candidates, fields, output_dir=tmp_path)
 
-    # clean page and overlay both use the dense max dim.
-    assert downscale_max_dims[:2] == [2345, 2345]
+    # clean image uses clean max dim while overlay uses dense-tuned max dim.
+    assert downscale_max_dims[:2] == [1111, 2345]
     assert image_formats[:2] == ["jpg", "jpg"]
 
 
@@ -432,3 +434,169 @@ def test_dedupe_field_names_no_duplicates_no_suffix() -> None:
     for f in fields:
         assert not f["name"].endswith("_1")
         assert not f["name"].endswith("_2")
+
+
+def test_run_openai_rename_pipeline_passes_all_schema_fields_when_count_is_1000(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("SANDBOX_RENAME_DB_PROMPT_FULL_THRESHOLD", "1000")
+    monkeypatch.setattr(rr, "resolve_workers", lambda *args, **kwargs: 1)
+    monkeypatch.setattr(
+        rr,
+        "_build_overlay_fields",
+        lambda *_args, **_kwargs: (
+            [{"page": 1, "rect": [10, 10, 20, 20], "type": "text", "name": "a1b", "displayName": "a1b"}],
+            {"a1b": 0},
+        ),
+    )
+    monkeypatch.setattr(rr, "_attach_checkbox_label_hints", lambda overlay_fields, **_kwargs: overlay_fields)
+    monkeypatch.setattr(rr, "draw_overlay", lambda *_args, **_kwargs: np.zeros((20, 20, 3), dtype=np.uint8))
+    monkeypatch.setattr(rr, "image_bgr_to_data_url", lambda *_args, **_kwargs: "data:image/png;base64,abc")
+    monkeypatch.setattr(rr, "create_openai_client", lambda **_kwargs: object())
+    monkeypatch.setattr(
+        rr,
+        "responses_create_with_temperature_fallback",
+        lambda *_args, **_kwargs: SimpleNamespace(output_text="|| a1b | patient_name | 0.9 | 0.9"),
+    )
+    monkeypatch.setattr(rr, "extract_response_text", lambda response: response.output_text)
+
+    captured: dict[str, object] = {}
+
+    def _fake_build_prompt(*_args, **kwargs):
+        captured["database_fields"] = list(kwargs.get("database_fields") or [])
+        captured["database_total_fields"] = kwargs.get("database_total_fields")
+        captured["database_fields_truncated"] = kwargs.get("database_fields_truncated")
+        return "system", "user"
+
+    monkeypatch.setattr(rr, "_build_prompt", _fake_build_prompt)
+
+    db_fields = [f"schema_field_{i}" for i in range(1000)]
+    rr.run_openai_rename_pipeline(
+        rendered_pages=[{"page_index": 1, "image": np.zeros((20, 20, 3), dtype=np.uint8)}],
+        candidates=[{"page": 1, "pageWidth": 100.0, "pageHeight": 100.0, "labels": []}],
+        fields=[{"name": "orig", "type": "text", "page": 1, "rect": [10, 10, 20, 20], "confidence": 0.8}],
+        output_dir=tmp_path,
+        database_fields=db_fields,
+    )
+
+    assert len(captured["database_fields"]) == 1000
+    assert captured["database_total_fields"] == 1000
+    assert captured["database_fields_truncated"] is False
+
+
+def test_run_openai_rename_pipeline_prompt_budget_triggers_smaller_db_shortlist(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("SANDBOX_RENAME_DB_PROMPT_FULL_THRESHOLD", "1000")
+    monkeypatch.setenv("SANDBOX_RENAME_DB_PROMPT_SHORTLIST_LIMIT", "450")
+    monkeypatch.setenv("SANDBOX_RENAME_DB_PROMPT_BUDGET_SHORTLIST_LIMIT", "120")
+    monkeypatch.setenv("SANDBOX_RENAME_PAGE_PROMPT_CHAR_BUDGET", "3000")
+    monkeypatch.setattr(rr, "resolve_workers", lambda *args, **kwargs: 1)
+    monkeypatch.setattr(
+        rr,
+        "_build_overlay_fields",
+        lambda *_args, **_kwargs: (
+            [{"page": 1, "rect": [10, 10, 20, 20], "type": "text", "name": "a1b", "displayName": "a1b"}],
+            {"a1b": 0},
+        ),
+    )
+    monkeypatch.setattr(rr, "_attach_checkbox_label_hints", lambda overlay_fields, **_kwargs: overlay_fields)
+    monkeypatch.setattr(rr, "draw_overlay", lambda *_args, **_kwargs: np.zeros((20, 20, 3), dtype=np.uint8))
+    monkeypatch.setattr(rr, "image_bgr_to_data_url", lambda *_args, **_kwargs: "data:image/png;base64,abc")
+    monkeypatch.setattr(rr, "create_openai_client", lambda **_kwargs: object())
+    monkeypatch.setattr(
+        rr,
+        "responses_create_with_temperature_fallback",
+        lambda *_args, **_kwargs: SimpleNamespace(output_text="|| a1b | patient_name | 0.9 | 0.9"),
+    )
+    monkeypatch.setattr(rr, "extract_response_text", lambda response: response.output_text)
+
+    prompt_db_lengths: list[int] = []
+
+    def _fake_build_prompt(*_args, **kwargs):
+        fields_for_prompt = list(kwargs.get("database_fields") or [])
+        prompt_db_lengths.append(len(fields_for_prompt))
+        # The first call should exceed the prompt budget and trigger shortlist fallback.
+        return "system", "x" * (len(fields_for_prompt) * 20)
+
+    monkeypatch.setattr(rr, "_build_prompt", _fake_build_prompt)
+
+    db_fields = ["patient_name"] + [f"schema_field_{i}" for i in range(1199)]
+    rr.run_openai_rename_pipeline(
+        rendered_pages=[{"page_index": 1, "image": np.zeros((20, 20, 3), dtype=np.uint8)}],
+        candidates=[{"page": 1, "pageWidth": 100.0, "pageHeight": 100.0, "labels": []}],
+        fields=[{"name": "orig", "type": "text", "page": 1, "rect": [10, 10, 20, 20], "confidence": 0.8}],
+        output_dir=tmp_path,
+        database_fields=db_fields,
+    )
+
+    assert prompt_db_lengths[:2] == [450, 120]
+
+
+def test_run_openai_rename_pipeline_image_budget_tightens_clean_profile_then_overlay(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("SANDBOX_RENAME_PAGE_IMAGE_BYTE_BUDGET", "2200")
+    monkeypatch.setenv("SANDBOX_RENAME_CLEAN_MAX_DIM", "3000")
+    monkeypatch.setenv("SANDBOX_RENAME_OVERLAY_MAX_DIM", "3000")
+    monkeypatch.setenv("SANDBOX_RENAME_OVERLAY_MIN_DIM", "1500")
+    monkeypatch.setenv("SANDBOX_RENAME_BUDGET_CLEAN_MAX_DIM", "1000")
+    monkeypatch.setenv("SANDBOX_RENAME_BUDGET_CLEAN_QUALITY", "72")
+    monkeypatch.setenv("SANDBOX_RENAME_CLEAN_DETAIL", "high")
+    monkeypatch.setattr(rr, "resolve_workers", lambda *args, **kwargs: 1)
+    monkeypatch.setattr(
+        rr,
+        "_build_overlay_fields",
+        lambda *_args, **_kwargs: (
+            [{"page": 1, "rect": [10, 10, 20, 20], "type": "text", "name": "a1b", "displayName": "a1b"}],
+            {"a1b": 0},
+        ),
+    )
+    monkeypatch.setattr(rr, "_attach_checkbox_label_hints", lambda overlay_fields, **_kwargs: overlay_fields)
+    monkeypatch.setattr(rr, "_build_prompt", lambda *_args, **_kwargs: ("system", "user"))
+    monkeypatch.setattr(rr, "draw_overlay", lambda *_args, **_kwargs: np.zeros((20, 20, 3), dtype=np.uint8))
+
+    encode_calls: list[tuple[int, str, int]] = []
+
+    def _fake_encode_model_image(_image, *, max_dim: int, format: str, quality: int) -> str:
+        encode_calls.append((max_dim, format, quality))
+        return "data:image/png;base64," + ("a" * max_dim)
+
+    monkeypatch.setattr(rr, "_encode_model_image", _fake_encode_model_image)
+
+    captured_messages: list[list[dict]] = []
+
+    def _fake_response(*_args, **kwargs):
+        captured_messages.append(kwargs["input"])
+        return SimpleNamespace(output_text="|| a1b | patient_name | 0.9 | 0.9")
+
+    monkeypatch.setattr(rr, "create_openai_client", lambda **_kwargs: object())
+    monkeypatch.setattr(rr, "responses_create_with_temperature_fallback", _fake_response)
+    monkeypatch.setattr(rr, "extract_response_text", lambda response: response.output_text)
+
+    rr.run_openai_rename_pipeline(
+        rendered_pages=[{"page_index": 1, "image": np.zeros((20, 20, 3), dtype=np.uint8)}],
+        candidates=[{"page": 1, "pageWidth": 100.0, "pageHeight": 100.0, "labels": []}],
+        fields=[{"name": "orig", "type": "text", "page": 1, "rect": [10, 10, 20, 20], "confidence": 0.8}],
+        output_dir=tmp_path,
+    )
+
+    encoded_dims = [entry[0] for entry in encode_calls]
+    assert encoded_dims[0:2] == [3000, 3000]
+    assert 1000 in encoded_dims
+    assert any(dim < 3000 for dim in encoded_dims[2:])
+
+    assert captured_messages
+    image_items = [
+        item
+        for item in captured_messages[0][1]["content"]
+        if isinstance(item, dict) and item.get("type") == "input_image"
+    ]
+    assert image_items[0]["detail"] == "low"
+    assert image_items[1]["detail"] == "high"

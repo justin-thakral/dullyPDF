@@ -1,6 +1,7 @@
 # Frontend
 
-React + TypeScript UI for viewing PDFs, editing detected fields, running Search & Fill, and saving forms. The frontend talks to the FastAPI backend for detection, OpenAI rename, and schema mapping (schema headers only).
+React + TypeScript UI for viewing PDFs, editing detected fields, running Search & Fill, and saving forms. The frontend talks to the FastAPI backend for detection, OpenAI rename, and schema mapping (schema headers only), including deterministic `fillRules` for checkbox and text split/join fill behavior.
+Public product usage documentation is available at `/usage-docs/*` (with `/docs/*` aliases).
 
 ## Quick start
 

@@ -61,16 +61,21 @@ def run_openai_rename_on_pdf(
     """
     Render PDF pages, extract labels, and run the OpenAI rename pipeline.
     """
+    # Step 1: Rasterize PDF pages so downstream overlay + model inputs can use images.
     rendered_pages = render_pdf_to_images(pdf_bytes)
+    # Step 2: Extract text labels from each page to help align field boxes to nearby prompts.
     labels_by_page = extract_labels(pdf_bytes, rendered_pages)
+    # Step 3: Build per-page candidate metadata consumed by overlay + prompt generation.
     candidates = _build_candidates(rendered_pages, labels_by_page)
     rename_report: Dict[str, Any]
     renamed_fields: List[Dict[str, Any]]
 
+    # Step 4: Use a temp workspace for per-page overlay images and optional debug artifacts.
     with tempfile.TemporaryDirectory(prefix="dullypdf-openai-rename-") as temp_dir:
         temp_root = Path(temp_dir)
         overlay_dir = temp_root / "overlays"
 
+        # Step 5: Run the core rename engine (overlay tagging + prompt build + OpenAI + post-processing).
         rename_report, renamed_fields = run_openai_rename_pipeline(
             rendered_pages,
             candidates,
@@ -81,6 +86,7 @@ def run_openai_rename_on_pdf(
             openai_max_retries=openai_max_retries,
         )
 
+        # Step 6: Optionally persist debug JSON snapshots when debug mode is enabled.
         if debug_enabled():
             _write_json(temp_root / "renames.json", rename_report)
             _write_json(
@@ -88,4 +94,5 @@ def run_openai_rename_on_pdf(
                 {"fields": renamed_fields},
             )
 
+    # Step 7: Return both summary/report data and the fully updated field objects.
     return rename_report, renamed_fields

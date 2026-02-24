@@ -183,6 +183,22 @@ describe('Homepage', () => {
     expect(screen.getByText('Contact open: no')).toBeTruthy();
   });
 
+  it('renders mobile legal and docs links with expected ordering', () => {
+    render(<Homepage onStartWorkflow={vi.fn()} />);
+
+    const mobileCta = document.querySelector('.mobile-cta');
+    expect(mobileCta).toBeTruthy();
+    if (!mobileCta) return;
+
+    const ctaLinks = within(mobileCta).getAllByRole('link');
+    const legalLink = within(mobileCta).getByRole('link', { name: 'Privacy & Terms' });
+    const usageDocsLink = within(mobileCta).getByRole('link', { name: 'Usage Docs' });
+
+    expect(legalLink.getAttribute('href')).toBe('/privacy');
+    expect(usageDocsLink.getAttribute('href')).toBe('/usage-docs');
+    expect(ctaLinks.map((link) => link.textContent?.trim())).toEqual(['Privacy & Terms', 'Usage Docs']);
+  });
+
   it('toggles homepage-no-scroll class based on desktop/mobile media queries and cleans up on unmount', () => {
     const { unmount } = render(<Homepage onStartWorkflow={vi.fn()} />);
 

@@ -16,6 +16,7 @@ export function useSavedForms(deps: {
   requestConfirm: (options: ConfirmDialogOptions) => Promise<boolean>;
 }) {
   const [savedForms, setSavedForms] = useState<Array<{ id: string; name: string; createdAt: string }>>([]);
+  const [savedFormsLoading, setSavedFormsLoading] = useState(false);
   const [activeSavedFormId, setActiveSavedFormId] = useState<string | null>(null);
   const [activeSavedFormName, setActiveSavedFormName] = useState<string | null>(null);
   const [deletingFormId, setDeletingFormId] = useState<string | null>(null);
@@ -36,20 +37,24 @@ export function useSavedForms(deps: {
     async (options?: { allowRetry?: boolean }) => {
       const currentUser = deps.authUserRef.current;
       if (!currentUser) return;
+      setSavedFormsLoading(true);
       try {
         const forms = await ApiService.getSavedForms({
           suppressErrors: false,
           timeoutMs: SAVED_FORMS_TIMEOUT_MS,
         });
         setSavedForms(forms || []);
+        setSavedFormsLoading(false);
         clearSavedFormsRetry();
       } catch (error) {
         if (!options?.allowRetry || !(error instanceof TypeError)) {
+          setSavedFormsLoading(false);
           debugLog('Failed to load saved forms', error);
           return;
         }
         const attempt = savedFormsRetryRef.current + 1;
         if (attempt > SAVED_FORMS_RETRY_LIMIT) {
+          setSavedFormsLoading(false);
           debugLog('Saved forms retry limit reached', error);
           return;
         }
@@ -141,17 +146,20 @@ export function useSavedForms(deps: {
 
   const clearSavedForms = useCallback(() => {
     setSavedForms([]);
+    setSavedFormsLoading(false);
   }, []);
 
   const reset = useCallback(() => {
     setActiveSavedFormId(null);
     setActiveSavedFormName(null);
+    setSavedFormsLoading(false);
     setShowSavedFormsLimitDialog(false);
     pendingSaveActionRef.current = null;
   }, []);
 
   return {
     savedForms,
+    savedFormsLoading,
     setSavedForms,
     activeSavedFormId,
     setActiveSavedFormId,
