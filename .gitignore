@@ -64,9 +64,17 @@ backend/fieldDetecting/sandbox/ML/data/raw/
 
 # Local generated assets
 /mcp/debugging/
+mcp/codexBugs/
+/mcpDebugging/
 mcp/.env.local
 mcp/.env.*.local
 /legacy/
+
+# Internal bug-report artifacts (PII/session data)
+/backend/test/bugs/*.md
+/test/bugs/*.md
+!/test/bugs/README.md
+!/test/bugs/BUG_TEMPLATE.md
 
 # Local run artifacts (keep cleanup scripts/README tracked)
 /output/
