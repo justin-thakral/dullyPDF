@@ -12,7 +12,8 @@ admin tokens, or auth headers (search terms: `FIREBASE_`, `GOOGLE_APPLICATION_CR
 ### Credential types and where they live
 
 1) **Firebase Web config (frontend, public)**
-   - Stored in Vite env files (`env/frontend.dev.env`, `config/frontend.*.env.example`).
+   - Stored in committed public Vite env files (`config/public/frontend.*.env`).
+   - Optional local-only overrides can be provided via `env/frontend.*.local.env` (gitignored).
    - Used by `frontend/src/config/firebaseConfig.ts` and `frontend/src/services/firebaseClient.ts`.
    - These values are not secrets, but should still be restricted via Firebase console
      (authorized domains, API key restrictions).
@@ -51,7 +52,7 @@ admin tokens, or auth headers (search terms: `FIREBASE_`, `GOOGLE_APPLICATION_CR
    Secret Manager and exports `FIREBASE_CREDENTIALS` (JSON).
 3) `backend/firebaseDB/firebase_service.py` initializes Firebase Admin using
    `FIREBASE_CREDENTIALS` or `GOOGLE_APPLICATION_CREDENTIALS`.
-4) Frontend uses the dev Firebase web config from `env/frontend.dev.env`.
+4) Frontend uses the dev Firebase web config from `config/public/frontend.dev.env` plus optional local overrides.
 5) Client ID tokens are attached as `Authorization: Bearer <token>` to backend calls.
 6) Dev-only `VITE_ADMIN_TOKEN` can be injected into `x-admin-token` headers
    by `frontend/src/services/apiConfig.ts`.
@@ -64,7 +65,7 @@ admin tokens, or auth headers (search terms: `FIREBASE_`, `GOOGLE_APPLICATION_CR
    on Cloud Run (recommended). Use `FIREBASE_CREDENTIALS` only for non-GCP runs.
 2) `scripts/run-backend-prod.sh` can be used for local prod testing; in real prod,
    prefer ADC (no JSON keys on disk).
-3) Frontend uses `config/frontend.prod.env.example` values (Firebase web config).
+3) Frontend uses `config/public/frontend.prod.env` values (Firebase web config).
 4) `VITE_ADMIN_TOKEN` must not be set in prod builds.
 
 ### Detector service auth (prod)

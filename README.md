@@ -33,18 +33,24 @@ Open the UI at `http://localhost:5173`.
 
 ### Environment setup
 
-The scripts copy example env files into `env/` if they do not already exist:
+Backend dev env is local-only and created on first run:
 
 - Backend: `env/backend.dev.env` (from `config/backend.dev.env.example`)
-- Frontend: `env/frontend.dev.env` (from `config/frontend.dev.env.example`)
 
-After first run, update values in `env/`:
+Frontend uses committed public env files:
 
-- Backend: `FIREBASE_PROJECT_ID`, `FORMS_BUCKET`, `TEMPLATES_BUCKET`, optional `OPENAI_API_KEY`.
-- Frontend: `VITE_API_URL`, Firebase web config values (`VITE_FIREBASE_*`).
+- `config/public/frontend.dev.env`
+- `config/public/frontend.stack.env`
+- `config/public/frontend.prod.env`
+
+Optional local frontend overrides can be added in ignored files:
+
+- `env/frontend.dev.local.env`
+- `env/frontend.stack.local.env`
+- `env/frontend.prod.local.env`
 
 `npm run backend:dev` loads `env/backend.dev.env`, then pulls Firebase Admin credentials via Secret Manager if configured.
-`npm run frontend:dev` copies `env/frontend.dev.env` into `frontend/.env.local` for Vite.
+`npm run frontend:dev` builds `frontend/.env.local` from `config/public/frontend.dev.env` and appends local override files when present.
 
 ### OpenAI (optional)
 

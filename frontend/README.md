@@ -46,13 +46,23 @@ The dev scripts source env vars via `scripts/use-frontend-env.sh`. Common entrie
 - `VITE_API_URL` / `VITE_DETECTION_API_URL` for backend base URLs.
 - `VITE_DETECTION_POLL_TIMEOUT_MS` to cap how long detection polling waits before returning.
 - Firebase Identity Platform keys (`VITE_FIREBASE_*`).
-- `VITE_ADMIN_TOKEN` (dev-only; never use in production builds).
 - `VITE_DISABLE_ADMIN_OVERRIDE=1` to force-disable admin overrides in dev (prod-like runs).
+
+Committed frontend env sources live in:
+- `config/public/frontend.dev.env`
+- `config/public/frontend.stack.env`
+- `config/public/frontend.prod.env`
+
+Optional local-only overrides live in ignored files:
+- `env/frontend.dev.local.env`
+- `env/frontend.stack.local.env`
+- `env/frontend.prod.local.env`
+
+Legacy local override files (`env/frontend.dev.env`, `env/frontend.stack.env`, `env/frontend.prod.env`) are still loaded when present to avoid breaking existing local setups.
 
 The dev stack runs the backend in prod mode (revocation checks on, legacy
 endpoints disabled) while targeting dev resources. It reads
-`env/frontend.stack.env` (from `config/frontend.stack.env.example`) so admin
-override headers stay disabled for
+`config/public/frontend.stack.env` so admin override headers stay disabled for
 prod-like testing.
 
 ## Cleanup
