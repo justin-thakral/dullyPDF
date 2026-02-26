@@ -205,7 +205,10 @@ const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated, onCancel }) => {
     <div className="auth-page">
       <div className="auth-card">
         <div className="auth-brand">
-          <img className="auth-logo-image" src="/DullyPDFLogoImproved.png" alt="DullyPDF" />
+          <picture>
+            <source srcSet="/DullyPDFLogoImproved.webp" type="image/webp" />
+            <img className="auth-logo-image" src="/DullyPDFLogoImproved.png" alt="DullyPDF" decoding="async" />
+          </picture>
           <div className="auth-brand-text">
             <h1>DullyPDF</h1>
             <p>AI-aligned PDF templates with trusted data mapping.</p>

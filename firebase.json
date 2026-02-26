@@ -6,6 +6,237 @@
       "**/.*",
       "**/node_modules/**"
     ],
+    "redirects": [
+      {
+        "source": "/privacy-policy",
+        "destination": "/privacy",
+        "type": 301
+      },
+      {
+        "source": "/terms-of-service",
+        "destination": "/terms",
+        "type": 301
+      },
+      {
+        "source": "/privacy/",
+        "destination": "/privacy",
+        "type": 301
+      },
+      {
+        "source": "/terms/",
+        "destination": "/terms",
+        "type": 301
+      },
+      {
+        "source": "/docs",
+        "destination": "/usage-docs",
+        "type": 301
+      },
+      {
+        "source": "/docs/:slug*",
+        "destination": "/usage-docs/:slug",
+        "type": 301
+      },
+      {
+        "source": "/usage-docs/",
+        "destination": "/usage-docs",
+        "type": 301
+      },
+      {
+        "source": "/usage-docs/getting-started/",
+        "destination": "/usage-docs/getting-started",
+        "type": 301
+      },
+      {
+        "source": "/usage-docs/detection/",
+        "destination": "/usage-docs/detection",
+        "type": 301
+      },
+      {
+        "source": "/usage-docs/rename-mapping/",
+        "destination": "/usage-docs/rename-mapping",
+        "type": 301
+      },
+      {
+        "source": "/usage-docs/editor-workflow/",
+        "destination": "/usage-docs/editor-workflow",
+        "type": 301
+      },
+      {
+        "source": "/usage-docs/search-fill/",
+        "destination": "/usage-docs/search-fill",
+        "type": 301
+      },
+      {
+        "source": "/usage-docs/save-download-profile/",
+        "destination": "/usage-docs/save-download-profile",
+        "type": 301
+      },
+      {
+        "source": "/usage-docs/troubleshooting/",
+        "destination": "/usage-docs/troubleshooting",
+        "type": 301
+      },
+      {
+        "source": "/pdf-to-fillable-form/",
+        "destination": "/pdf-to-fillable-form",
+        "type": 301
+      },
+      {
+        "source": "/pdf-to-database-template/",
+        "destination": "/pdf-to-database-template",
+        "type": 301
+      },
+      {
+        "source": "/fill-pdf-from-csv/",
+        "destination": "/fill-pdf-from-csv",
+        "type": 301
+      },
+      {
+        "source": "/fill-information-in-pdf/",
+        "destination": "/fill-information-in-pdf",
+        "type": 301
+      },
+      {
+        "source": "/fillable-form-field-name/",
+        "destination": "/fillable-form-field-name",
+        "type": 301
+      },
+      {
+        "source": "/healthcare-pdf-automation/",
+        "destination": "/healthcare-pdf-automation",
+        "type": 301
+      },
+      {
+        "source": "/acord-form-automation/",
+        "destination": "/acord-form-automation",
+        "type": 301
+      },
+      {
+        "source": "/insurance-acord-form-automation",
+        "destination": "/acord-form-automation",
+        "type": 301
+      },
+      {
+        "source": "/insurance-acord-form-automation/",
+        "destination": "/acord-form-automation",
+        "type": 301
+      },
+      {
+        "source": "/real-estate-pdf-automation/",
+        "destination": "/real-estate-pdf-automation",
+        "type": 301
+      },
+      {
+        "source": "/government-form-automation/",
+        "destination": "/government-form-automation",
+        "type": 301
+      },
+      {
+        "source": "/finance-loan-pdf-automation/",
+        "destination": "/finance-loan-pdf-automation",
+        "type": 301
+      },
+      {
+        "source": "/hr-pdf-automation/",
+        "destination": "/hr-pdf-automation",
+        "type": 301
+      },
+      {
+        "source": "/legal-pdf-workflow-automation/",
+        "destination": "/legal-pdf-workflow-automation",
+        "type": 301
+      },
+      {
+        "source": "/education-form-automation/",
+        "destination": "/education-form-automation",
+        "type": 301
+      },
+      {
+        "source": "/nonprofit-pdf-form-automation/",
+        "destination": "/nonprofit-pdf-form-automation",
+        "type": 301
+      },
+      {
+        "source": "/logistics-pdf-automation/",
+        "destination": "/logistics-pdf-automation",
+        "type": 301
+      }
+    ],
+    "headers": [
+      {
+        "source": "/assets/**",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public,max-age=31536000,immutable"
+          }
+        ]
+      },
+      {
+        "source": "/demo/**",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public,max-age=31536000,immutable"
+          }
+        ]
+      },
+      {
+        "source": "/DullyPDFLogoImproved.png",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public,max-age=31536000,immutable"
+          }
+        ]
+      },
+      {
+        "source": "/DullyPDFLogoImproved.webp",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public,max-age=31536000,immutable"
+          }
+        ]
+      },
+      {
+        "source": "/DullyPDF.webp",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public,max-age=31536000,immutable"
+          }
+        ]
+      },
+      {
+        "source": "/DullyPDF-logo.svg",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public,max-age=31536000,immutable"
+          }
+        ]
+      },
+      {
+        "source": "/DullyPDF.png",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public,max-age=31536000,immutable"
+          }
+        ]
+      },
+      {
+        "source": "/favicon.ico",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public,max-age=31536000,immutable"
+          }
+        ]
+      }
+    ],
     "rewrites": [
       {
         "source": "/api/health",
@@ -30,6 +261,34 @@
       },
       {
         "source": "/api/profile",
+        "run": {
+          "serviceId": "dullypdf-backend",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/billing/checkout-session",
+        "run": {
+          "serviceId": "dullypdf-backend",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/billing/subscription/cancel",
+        "run": {
+          "serviceId": "dullypdf-backend",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/billing/reconcile",
+        "run": {
+          "serviceId": "dullypdf-backend",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/billing/webhook-health",
         "run": {
           "serviceId": "dullypdf-backend",
           "region": "us-central1"
@@ -71,7 +330,115 @@
         }
       },
       {
-        "source": "**",
+        "source": "/",
+        "destination": "/index.html"
+      },
+      {
+        "source": "/privacy",
+        "destination": "/index.html"
+      },
+      {
+        "source": "/privacy-policy",
+        "destination": "/index.html"
+      },
+      {
+        "source": "/terms",
+        "destination": "/index.html"
+      },
+      {
+        "source": "/terms-of-service",
+        "destination": "/index.html"
+      },
+      {
+        "source": "/usage-docs",
+        "destination": "/index.html"
+      },
+      {
+        "source": "/usage-docs/getting-started",
+        "destination": "/index.html"
+      },
+      {
+        "source": "/usage-docs/detection",
+        "destination": "/index.html"
+      },
+      {
+        "source": "/usage-docs/rename-mapping",
+        "destination": "/index.html"
+      },
+      {
+        "source": "/usage-docs/editor-workflow",
+        "destination": "/index.html"
+      },
+      {
+        "source": "/usage-docs/search-fill",
+        "destination": "/index.html"
+      },
+      {
+        "source": "/usage-docs/save-download-profile",
+        "destination": "/index.html"
+      },
+      {
+        "source": "/usage-docs/troubleshooting",
+        "destination": "/index.html"
+      },
+      {
+        "source": "/pdf-to-fillable-form",
+        "destination": "/index.html"
+      },
+      {
+        "source": "/pdf-to-database-template",
+        "destination": "/index.html"
+      },
+      {
+        "source": "/fill-pdf-from-csv",
+        "destination": "/index.html"
+      },
+      {
+        "source": "/fill-information-in-pdf",
+        "destination": "/index.html"
+      },
+      {
+        "source": "/fillable-form-field-name",
+        "destination": "/index.html"
+      },
+      {
+        "source": "/healthcare-pdf-automation",
+        "destination": "/index.html"
+      },
+      {
+        "source": "/acord-form-automation",
+        "destination": "/index.html"
+      },
+      {
+        "source": "/real-estate-pdf-automation",
+        "destination": "/index.html"
+      },
+      {
+        "source": "/government-form-automation",
+        "destination": "/index.html"
+      },
+      {
+        "source": "/finance-loan-pdf-automation",
+        "destination": "/index.html"
+      },
+      {
+        "source": "/hr-pdf-automation",
+        "destination": "/index.html"
+      },
+      {
+        "source": "/legal-pdf-workflow-automation",
+        "destination": "/index.html"
+      },
+      {
+        "source": "/education-form-automation",
+        "destination": "/index.html"
+      },
+      {
+        "source": "/nonprofit-pdf-form-automation",
+        "destination": "/index.html"
+      },
+      {
+        "source": "/logistics-pdf-automation",
         "destination": "/index.html"
       }
     ]

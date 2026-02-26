@@ -209,7 +209,10 @@ export function HeaderBar({
             </button>
           ) : null}
           <div className="header-logo">
-            <img className="logo-image" src="/DullyPDFLogoImproved.png" alt="DullyPDF" />
+            <picture>
+              <source srcSet="/DullyPDFLogoImproved.webp" type="image/webp" />
+              <img className="logo-image" src="/DullyPDFLogoImproved.png" alt="DullyPDF" decoding="async" />
+            </picture>
             <span className="logo-text">DullyPDF</span>
           </div>
         </div>

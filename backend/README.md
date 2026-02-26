@@ -150,6 +150,15 @@ Detector env examples:
 - Encrypted PDFs are rejected before detection to avoid repeated task retries.
 - `DETECTOR_TASKS_MAX_ATTEMPTS` on the detector service should match the Cloud Tasks queue max attempts to finalize failures on the last retry.
 - Session ownership guards can be sanity-checked with `python -m backend.scripts.verify_session_owner`.
+- One-off Gmail sends can be run with `python -m backend.scripts.send_gmail_once <recipient> "<subject>" "<body>"`.
+  The script uses the existing Gmail prod env vars, appends successful recipients to `tmp/sent-email-recipients.txt`,
+  and exits with failure when the recipient already exists in that sent log (override path via `--sent-log-path`).
+  Follow-ups are blocked by default and require explicit flags:
+  `--mode followup --followup-flag FOLLOWUP_OK` (follow-up log path defaults to `tmp/sent-email-followups.txt`).
+- Outbound research + personalization + sending guidance for Codex terminals is documented in
+  `backend/scripts/outbound_email_playbook.md`.
+- Generated outbound lead artifacts under `backend/scripts/leads/` are local-only and can be
+  removed with `python3 clean.py --outbound-leads` (also included in the default `npm run clean`).
 - Base users start with 10 lifetime OpenAI credits. Credits are billed per page bucket using server-side page counts:
   `total_credits = operation_base_cost * ceil(page_count / OPENAI_CREDITS_PAGE_BUCKET_SIZE)`.
   Defaults: Rename base cost `1`, Remap base cost `1`, Rename+Remap base cost `2`; with default bucket size `5`, a 10-page Rename+Remap costs `4`. God role bypasses credits.

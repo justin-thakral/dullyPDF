@@ -1,7 +1,8 @@
 # Frontend
 
 React + TypeScript UI for viewing PDFs, editing detected fields, running Search & Fill, and saving forms. The frontend talks to the FastAPI backend for detection, OpenAI rename, and schema mapping (schema headers only), including deterministic `fillRules` for checkbox and text split/join fill behavior.
-Public product usage documentation is available at `/usage-docs/*` (with `/docs/*` aliases).
+Public product usage documentation is available at canonical `/usage-docs/*` URLs. Legacy `/docs/*` URLs permanently redirect to matching canonical docs routes.
+Public intent landing pages are also available for search-oriented entry routes (for example `/pdf-to-fillable-form`, `/pdf-to-database-template`, and `/fill-pdf-from-csv`) and industry-focused routes (for example `/healthcare-pdf-automation` and `/acord-form-automation`).
 
 ## Quick start
 
@@ -68,7 +69,21 @@ python3 clean.py --frontend-tmp
 
 Add `--dry-run` to preview.
 
+## WebP Assets
+
+Use the open-source ImageMagick CLI (`convert`) to refresh `.webp` mirrors for files in
+`frontend/public`:
+
+```bash
+npm run frontend:webp
+```
+
+You can tune conversion settings with:
+- `WEBP_QUALITY` (default `82`)
+- `WEBP_METHOD` (default `6`)
+
 ## Docs
 
 See `frontend/docs/README.md` for architecture and workflow notes.
+See `frontend/docs/seo-operations.md` for weekly Search Console and authority growth workflow.
 See `frontend/test/docs/unit.md` for frontend unit test implementation guidance.

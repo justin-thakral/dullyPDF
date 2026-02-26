@@ -47,6 +47,12 @@ backend/fieldDetecting/logs/
 backend/uploads/
 backend/temp/
 
+# Outbound email / lead-generation local artifacts
+backend/scripts/leads/
+backend/scripts/outbound_email_playbook.md
+backend/scripts/send_gmail_once.py
+backend/test/unit/scripts/test_send_gmail_once_blueprint.py
+
 # ML training datasets (raw PDFs, images, tiles)
 backend/fieldDetecting/ML/data/
 backend/fieldDetecting/sandbox/ML/data/

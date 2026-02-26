@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import type { ReactNode } from 'react';
 import './LegalPage.css';
+import { applyRouteSeo } from '../../utils/seo';
 
 export type LegalPageKind = 'privacy' | 'terms';
 
@@ -16,7 +17,7 @@ type LegalCopy = {
   sections: LegalSection[];
 };
 
-const LAST_UPDATED = 'February 3, 2026';
+const LAST_UPDATED = 'February 24, 2026';
 const SUPPORT_EMAIL = 'justin@ttcommercial.com';
 
 const PRIVACY_COPY: LegalCopy = {
@@ -50,6 +51,10 @@ const PRIVACY_COPY: LegalCopy = {
               Usage and diagnostic metadata like request timestamps, session identifiers, and rate-limit signals.
             </li>
             <li>
+              Billing metadata required for subscriptions and credit refills, such as Stripe customer and
+              subscription identifiers, plan identifiers, checkout/payment status, and cancellation schedule fields.
+            </li>
+            <li>
               Contact form details (name, company, email, phone, and message) when you reach out for support.
             </li>
           </ul>
@@ -65,10 +70,28 @@ const PRIVACY_COPY: LegalCopy = {
           <ul>
             <li>Provide PDF detection, template editing, and Search &amp; Fill features.</li>
             <li>Authenticate users, enforce usage limits, and keep your saved forms tied to your account.</li>
+            <li>Process Stripe-backed subscriptions, credit refill purchases, and related billing state synchronization.</li>
             <li>Run optional AI rename and schema mapping workflows when you enable them.</li>
             <li>Respond to support requests and communicate about your account.</li>
             <li>Protect the service against abuse, fraud, and automated traffic.</li>
           </ul>
+        </>
+      ),
+    },
+    {
+      id: 'billing-and-payments',
+      title: 'Billing and payments',
+      body: (
+        <>
+          <p>
+            Paid subscriptions and credit refill transactions are processed by Stripe. We do not store full payment
+            card numbers on DullyPDF servers.
+          </p>
+          <p>
+            To support subscriptions and refill fulfillment, we store billing metadata (such as Stripe customer id,
+            subscription id, checkout session id, and webhook event ids) and account billing state (for example
+            subscription status and cancellation schedule).
+          </p>
         </>
       ),
     },
@@ -84,7 +107,8 @@ const PRIVACY_COPY: LegalCopy = {
           </p>
           <p>
             DullyPDF uses service providers such as Firebase (authentication), Google Cloud Storage and Firestore
-            (data storage), Google reCAPTCHA (abuse protection), and email delivery services for the contact form.
+            (data storage), Stripe (payment processing), Google reCAPTCHA (abuse protection), and email delivery
+            services for the contact form.
           </p>
         </>
       ),
@@ -96,7 +120,8 @@ const PRIVACY_COPY: LegalCopy = {
         <>
           <p>
             We do not sell your personal information. We share data only with service providers that help operate
-            DullyPDF (for example, cloud hosting, authentication, storage, and AI processing) or when required by law.
+            DullyPDF (for example, cloud hosting, authentication, storage, payment processing, and AI processing) or
+            when required by law.
           </p>
         </>
       ),
@@ -135,6 +160,7 @@ const PRIVACY_COPY: LegalCopy = {
           <ul>
             <li>Disable AI workflows and keep processing limited to detection and local editing.</li>
             <li>Delete saved forms from your profile to remove stored PDFs and template metadata.</li>
+            <li>Manage or cancel active subscriptions from your profile billing section.</li>
             <li>Contact us to request account deletion or access questions at {SUPPORT_EMAIL}.</li>
           </ul>
         </>
@@ -189,7 +215,8 @@ const TERMS_COPY: LegalCopy = {
         <>
           <p>
             DullyPDF provides tools to detect PDF form fields, rename and map fields with optional AI workflows, and
-            fill templates with data from local CSV/Excel/JSON sources.
+            fill templates with data from local CSV/Excel/JSON sources. Paid plans include recurring Pro subscriptions
+            and Pro-only credit refill purchases.
           </p>
         </>
       ),
@@ -254,6 +281,27 @@ const TERMS_COPY: LegalCopy = {
           <p>
             The service may enforce page limits, credits, or other restrictions. We may modify, suspend, or discontinue
             features at any time, including in response to misuse or capacity constraints.
+          </p>
+        </>
+      ),
+    },
+    {
+      id: 'billing-subscriptions',
+      title: 'Billing and subscriptions',
+      body: (
+        <>
+          <p>
+            DullyPDF uses Stripe Checkout for secure subscription and refill transactions. Pro Monthly and Pro Yearly
+            are recurring subscriptions. Refill purchases are one-time credit packs that require an active Pro
+            subscription.
+          </p>
+          <p>
+            Subscription cancellation is handled from the profile billing section and is scheduled for period end. Your
+            paid access remains active until the scheduled end date.
+          </p>
+          <p>
+            Prices and plan availability are shown at checkout and may change over time. Payment processing is subject
+            to Stripe's terms and policies in addition to these terms.
           </p>
         </>
       ),
@@ -325,6 +373,7 @@ const LEGAL_COPY: Record<LegalPageKind, LegalCopy> = {
 
 const NAV_LINKS = [
   { label: 'Home', href: '/' },
+  { label: 'Usage Docs', href: '/usage-docs' },
   { label: 'Privacy', href: '/privacy', kind: 'privacy' as LegalPageKind },
   { label: 'Terms', href: '/terms', kind: 'terms' as LegalPageKind },
 ];
@@ -337,16 +386,18 @@ const LegalPage = ({ kind }: LegalPageProps) => {
   const copy = LEGAL_COPY[kind];
 
   useEffect(() => {
-    if (typeof document === 'undefined') return;
-    document.title = `${copy.title} | DullyPDF`;
-  }, [copy.title]);
+    applyRouteSeo({ kind: 'legal', legalKind: kind });
+  }, [kind]);
 
   return (
     <div className="legal-page">
       <div className="legal-card">
         <header className="legal-header">
           <div className="legal-brand">
-            <img src="/DullyPDFLogoImproved.png" alt="DullyPDF" className="legal-brand__logo" />
+            <picture>
+              <source srcSet="/DullyPDFLogoImproved.webp" type="image/webp" />
+              <img src="/DullyPDFLogoImproved.png" alt="DullyPDF" className="legal-brand__logo" decoding="async" />
+            </picture>
             <div className="legal-brand__text">
               <span className="legal-brand__name">DullyPDF</span>
               <span className="legal-brand__tagline">Automatic PDF to template</span>

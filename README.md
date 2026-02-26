@@ -70,6 +70,7 @@ Use the repo cleanup entrypoint to clear generated artifacts:
 python3 clean.py --mcp --mcp-logs --mcp-screenshots
 python3 clean.py --runs --tmp --test-results
 python3 clean.py --field-detect-logs --mcp-bug-logs --frontend-tmp
+python3 clean.py --outbound-leads
 python3 clean.py --bug-reports --mcp-security-logs
 python3 clean.py --coverage --pytest-cache --python-cache --frontend-dist --output --repo-logs --pipeline-improve
 python3 clean.py --all --dry-run

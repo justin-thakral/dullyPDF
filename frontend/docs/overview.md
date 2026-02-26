@@ -14,9 +14,31 @@ The frontend is a React + TypeScript app for loading PDFs, editing fields, and f
 
 ## Public usage docs
 
-- End-user documentation is available at `/usage-docs/*` (with `/docs/*` aliases).
+- End-user documentation is available at canonical `/usage-docs/*` URLs.
+- Legacy `/docs/*` URLs are compatibility redirects (HTTP 301) to `/usage-docs/*`.
 - The docs include dedicated pages for detection, rename/mapping, editor workflow, Search & Fill, and troubleshooting.
 - Route handling lives in `frontend/src/main.tsx` alongside legal page route handling.
+
+## SEO landing routes
+
+- Public intent landing pages cover commercial search intents:
+  - `/pdf-to-fillable-form`
+  - `/pdf-to-database-template`
+  - `/fill-pdf-from-csv`
+  - `/fill-information-in-pdf`
+  - `/fillable-form-field-name`
+- Industry-specific SEO routes are available for:
+  - `/healthcare-pdf-automation`
+  - `/acord-form-automation`
+  - `/real-estate-pdf-automation`
+  - `/government-form-automation`
+  - `/finance-loan-pdf-automation`
+  - `/hr-pdf-automation`
+  - `/legal-pdf-workflow-automation`
+  - `/education-form-automation`
+  - `/nonprofit-pdf-form-automation`
+  - `/logistics-pdf-automation`
+- Each route has unique canonical metadata and FAQ structured data.
 
 ## Data source behavior
 

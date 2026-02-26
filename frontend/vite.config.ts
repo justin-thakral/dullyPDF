@@ -7,6 +7,21 @@ export default defineConfig(({ mode }) => {
   const apiTarget = (env.VITE_API_URL || 'http://localhost:8000').replace(/\/+$/, '');
   return {
     plugins: [react()],
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('pdfjs-dist')) return 'vendor-pdfjs';
+            if (id.includes('/firebase/')) return 'vendor-firebase';
+            if (id.includes('/read-excel-file/')) return 'vendor-data-import';
+            if (id.includes('/react/') || id.includes('/react-dom/') || id.includes('/scheduler/')) {
+              return 'vendor-react';
+            }
+            return undefined;
+          },
+        },
+      },
+    },
     test: {
       environment: 'jsdom',
       setupFiles: './test/setup.ts',

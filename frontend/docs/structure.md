@@ -30,12 +30,15 @@ frontend/
 - `frontend/src/services/apiConfig.ts`: Shared fetch wrapper, auth headers, status normalization, and API base URL resolution.
 - `frontend/src/services/api.ts`: Profile/contact/recaptcha, schema persistence, OpenAI endpoints, saved forms, materialize/download operations.
 - `frontend/src/services/detectionApi.ts`: Detection upload + polling (`/detect-fields`) and detection-session keep-alive.
+- `frontend/src/config/intentPages.ts`: Content + FAQ + SEO metadata config for public intent and industry landing routes.
+- `frontend/src/config/routeSeo.ts`: Canonical SEO route metadata map for all indexable public pages (`/`, legal, and `/usage-docs/*`).
+- `frontend/src/utils/seo.ts`: Head-tag applier for title, description, canonical, Open Graph, and Twitter metadata from the shared SEO map.
 - `frontend/src/components/viewer/PdfViewer.tsx`: PDF canvas rendering and overlay mounting.
 - `frontend/src/components/panels/FieldListPanel.tsx`: Field list, page navigation, filter/search, and display toggles.
 - `frontend/src/components/panels/FieldInspectorPanel.tsx`: Selected-field metadata/geometry editing, create/delete actions, undo/redo controls.
 - `frontend/src/components/features/SearchFillModal.tsx`: Record search and field fill logic.
 - `frontend/src/components/features/UploadView.tsx`: Upload + saved-form selection UI and OpenAI preflight modal entry.
-- `frontend/src/components/pages/*.tsx`: Homepage, auth pages, profile page, legal pages, and public usage docs pages (`/usage-docs/*`).
+- `frontend/src/components/pages/*.tsx`: Homepage, auth pages, profile page, legal pages, public usage docs pages (`/usage-docs/*`), and intent landing pages.
 - `frontend/src/config/appConstants.tsx`: Shared app-level constants (history limits, demo assets/steps, processing copy).
 - `frontend/src/utils/pdf.ts`: PDF.js loading, page size extraction, and AcroForm field extraction.
 - `frontend/src/styles/*.css` + `frontend/src/components/**/*.css`: Shared shell styles and component-scoped styles.

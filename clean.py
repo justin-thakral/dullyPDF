@@ -240,6 +240,11 @@ def main(argv: list[str]) -> int:
         action="store_true",
         help="Clear mcp/debugging/pipeline-improve artifacts",
     )
+    parser.add_argument(
+        "--outbound-leads",
+        action="store_true",
+        help="Clear generated outbound lead/email artifacts under backend/scripts/leads",
+    )
 
     args = parser.parse_args(argv)
 
@@ -275,6 +280,7 @@ def main(argv: list[str]) -> int:
         "output": args.all or args.output,
         "repo-logs": args.all or args.repo_logs,
         "pipeline-improve": args.all or args.pipeline_improve,
+        "outbound-leads": args.all or args.outbound_leads,
     }
 
     if not any(selected.values()):
@@ -431,6 +437,9 @@ def main(argv: list[str]) -> int:
             REPO_ROOT / "mcp" / "debugging" / "pipeline-improve",
             args.dry_run,
         )
+
+    if selected["outbound-leads"]:
+        _clear_dir_contents(REPO_ROOT / "backend" / "scripts" / "leads", args.dry_run)
 
     if failures:
         return 1

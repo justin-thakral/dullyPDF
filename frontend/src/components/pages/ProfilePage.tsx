@@ -235,7 +235,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({
           <section className="profile-billing">
             <div className="profile-billing__header">
               <h2>Billing</h2>
-              <p>Manage Pro access and OpenAI credit refills.</p>
+              <p>Manage Pro access and OpenAI credit refills. Secure transactions are processed by Stripe Checkout.</p>
             </div>
             <div className="profile-billing__actions">
               <button

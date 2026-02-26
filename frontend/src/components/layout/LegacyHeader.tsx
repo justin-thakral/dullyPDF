@@ -87,10 +87,7 @@ const LegacyHeader: React.FC<LegacyHeaderProps> = ({
         <div className="header-right">
           <div className="header-link-group">
             <a className="header-link-button" href="/usage-docs">
-              Usage Docs
-            </a>
-            <a className="header-link-button" href="/privacy">
-              Privacy &amp; Terms
+              Docs &amp; Privacy &amp; Terms
             </a>
           </div>
           {userEmail ? (
@@ -137,7 +134,10 @@ const LegacyHeader: React.FC<LegacyHeaderProps> = ({
             )
           )}
           <div className="header-logo">
-            <img className="logo-image" src="/DullyPDFLogoImproved.png" alt="DullyPDF" />
+            <picture>
+              <source srcSet="/DullyPDFLogoImproved.webp" type="image/webp" />
+              <img className="logo-image" src="/DullyPDFLogoImproved.png" alt="DullyPDF" decoding="async" />
+            </picture>
             <span className="logo-text">DullyPDF</span>
           </div>
         </div>

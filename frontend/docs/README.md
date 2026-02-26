@@ -8,3 +8,4 @@
 - `field-editing.md` - Overlay, inspector, and fill behavior.
 - `styling.md` - Tokens, stylesheet modules, and typography rules.
 - `usage-docs.md` - Public `/usage-docs/*` information architecture and page layout notes.
+- `seo-operations.md` - Weekly SEO operations, query tuning, and authority growth workflow.

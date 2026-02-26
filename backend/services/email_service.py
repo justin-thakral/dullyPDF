@@ -126,6 +126,48 @@ def format_reply_to_header(reply_to: Optional[Dict[str, str]]) -> Optional[str]:
     return addr
 
 
+async def send_gmail_message(
+    *,
+    to_email: str,
+    from_email: str,
+    subject: str,
+    body: str,
+    access_token: str,
+    reply_to: Optional[Dict[str, str]] = None,
+    failure_context: str = "Gmail API email send",
+    failure_detail: str = "Failed to send email",
+) -> None:
+    to_label = sanitize_email_header_value(to_email)
+    from_label = sanitize_email_header_value(from_email)
+    subject_label = sanitize_email_header_value(subject)
+    if not to_label or not from_label or not subject_label:
+        raise ValueError("to_email, from_email, and subject are required")
+
+    headers = [
+        f"From: {from_label}",
+        f"To: {to_label}",
+        f"Subject: {subject_label}",
+        'Content-Type: text/plain; charset="UTF-8"',
+        "Content-Transfer-Encoding: 7bit",
+    ]
+    if reply_to:
+        reply_label = format_reply_to_header(reply_to)
+        if reply_label:
+            headers.append(f"Reply-To: {reply_label}")
+
+    raw_message = "\r\n".join(headers) + "\r\n\r\n" + (body or "")
+    encoded_message = base64.urlsafe_b64encode(raw_message.encode("utf-8")).decode("utf-8")
+
+    gmail_payload = {"raw": encoded_message}
+    user_id = resolve_gmail_user_id()
+    url = f"https://gmail.googleapis.com/gmail/v1/users/{user_id}/messages/send"
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        response = await client.post(url, headers={"Authorization": f"Bearer {access_token}"}, json=gmail_payload)
+    if response.status_code >= 400:
+        _log_external_http_failure(failure_context, response)
+        raise HTTPException(status_code=502, detail=failure_detail)
+
+
 async def send_contact_email(subject: str, body: str, reply_to: Optional[Dict[str, str]]) -> None:
     to_email = _env_value("CONTACT_TO_EMAIL")
     from_email = _env_value("CONTACT_FROM_EMAIL") or to_email
@@ -140,26 +182,13 @@ async def send_contact_email(subject: str, body: str, reply_to: Optional[Dict[st
         logger.warning("Gmail API not configured; skipping contact email.")
         return
 
-    headers = [
-        f"From: {from_email}",
-        f"To: {to_email}",
-        f"Subject: {subject}",
-        'Content-Type: text/plain; charset="UTF-8"',
-        "Content-Transfer-Encoding: 7bit",
-    ]
-    if reply_to:
-        reply_label = format_reply_to_header(reply_to)
-        if reply_label:
-            headers.append(f"Reply-To: {reply_label}")
-
-    raw_message = "\r\n".join(headers) + "\r\n\r\n" + body
-    encoded_message = base64.urlsafe_b64encode(raw_message.encode("utf-8")).decode("utf-8")
-
-    gmail_payload = {"raw": encoded_message}
-    user_id = resolve_gmail_user_id()
-    url = f"https://gmail.googleapis.com/gmail/v1/users/{user_id}/messages/send"
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        response = await client.post(url, headers={"Authorization": f"Bearer {access_token}"}, json=gmail_payload)
-    if response.status_code >= 400:
-        _log_external_http_failure("Gmail API contact email send", response)
-        raise HTTPException(status_code=502, detail="Failed to send contact email")
+    await send_gmail_message(
+        to_email=to_email,
+        from_email=from_email,
+        subject=subject,
+        body=body,
+        access_token=access_token,
+        reply_to=reply_to,
+        failure_context="Gmail API contact email send",
+        failure_detail="Failed to send contact email",
+    )
