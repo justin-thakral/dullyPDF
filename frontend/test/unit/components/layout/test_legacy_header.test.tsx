@@ -101,21 +101,16 @@ describe('LegacyHeader', () => {
     expect(screen.getByText('person@example.com')).toBeTruthy();
   });
 
-  it('renders branding assets and legal navigation link', () => {
+  it('renders branding assets and combined docs/legal navigation link', () => {
     render(<LegacyHeader {...createProps()} />);
 
-    const usageDocsLink = screen.getByRole('link', { name: 'Usage Docs' });
-    const legalLink = screen.getByRole('link', { name: 'Privacy & Terms' });
-    expect(usageDocsLink.getAttribute('href')).toBe('/usage-docs');
-    expect(legalLink.getAttribute('href')).toBe('/privacy');
+    const docsLink = screen.getByRole('link', { name: 'Docs & Privacy & Terms' });
+    expect(docsLink.getAttribute('href')).toBe('/usage-docs');
 
     const headerLinks = screen
       .getAllByRole('link')
       .filter((element) => element.className.includes('header-link-button'));
-    expect(headerLinks.map((element) => element.textContent?.trim())).toEqual([
-      'Usage Docs',
-      'Privacy & Terms',
-    ]);
+    expect(headerLinks.map((element) => element.textContent?.trim())).toEqual(['Docs & Privacy & Terms']);
 
     expect(screen.getByRole('img', { name: 'DullyPDF' })).toBeTruthy();
     expect(screen.getAllByText('DullyPDF').length).toBeGreaterThan(0);

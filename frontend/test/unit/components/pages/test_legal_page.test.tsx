@@ -7,12 +7,15 @@ describe('LegalPage', () => {
     render(<LegalPage kind="privacy" />);
 
     expect(screen.getByRole('heading', { name: 'Privacy Policy' })).toBeTruthy();
-    expect(screen.getByText('Last updated: February 3, 2026')).toBeTruthy();
+    expect(screen.getByText('Last updated: February 24, 2026')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Billing and payments' })).toBeTruthy();
 
     const privacyLink = screen.getByRole('link', { name: 'Privacy' });
     const termsLink = screen.getByRole('link', { name: 'Terms' });
+    const usageDocsLink = screen.getByRole('link', { name: 'Usage Docs' });
     expect(privacyLink.className.includes('legal-nav__link--active')).toBe(true);
     expect(termsLink.className.includes('legal-nav__link--active')).toBe(false);
+    expect(usageDocsLink.getAttribute('href')).toBe('/usage-docs');
 
     const supportLink = screen.getByRole('link', { name: 'justin@ttcommercial.com' });
     expect(supportLink.getAttribute('href')).toBe('mailto:justin@ttcommercial.com');
@@ -22,19 +25,24 @@ describe('LegalPage', () => {
     render(<LegalPage kind="terms" />);
 
     expect(screen.getByRole('heading', { name: 'Terms of Service' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Billing and subscriptions' })).toBeTruthy();
 
     const privacyLink = screen.getByRole('link', { name: 'Privacy' });
     const termsLink = screen.getByRole('link', { name: 'Terms' });
+    const usageDocsLink = screen.getByRole('link', { name: 'Usage Docs' });
     expect(privacyLink.className.includes('legal-nav__link--active')).toBe(false);
     expect(termsLink.className.includes('legal-nav__link--active')).toBe(true);
+    expect(usageDocsLink.getAttribute('href')).toBe('/usage-docs');
   });
 
   it('updates document title per legal page kind', () => {
     const { rerender } = render(<LegalPage kind="privacy" />);
     expect(document.title).toBe('Privacy Policy | DullyPDF');
+    expect(document.querySelector('link[rel="canonical"]')?.getAttribute('href')).toBe('https://dullypdf.com/privacy');
 
     rerender(<LegalPage kind="terms" />);
     expect(document.title).toBe('Terms of Service | DullyPDF');
+    expect(document.querySelector('link[rel="canonical"]')?.getAttribute('href')).toBe('https://dullypdf.com/terms');
   });
 
   it('renders legal section ids for in-page anchors', () => {

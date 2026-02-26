@@ -107,6 +107,13 @@ describe('Homepage', () => {
 
     render(<Homepage onStartWorkflow={onStartWorkflow} onStartDemo={onStartDemo} />);
 
+    expect(
+      screen.getByRole('heading', {
+        level: 1,
+        name: 'PDF to Fillable Form Converter and Database Template Mapping',
+      }),
+    ).toBeTruthy();
+
     const ctaButtons = screen.getByRole('button', { name: 'Try Now' }).parentElement;
     if (!ctaButtons) {
       throw new Error('CTA button group not found');
@@ -183,7 +190,7 @@ describe('Homepage', () => {
     expect(screen.getByText('Contact open: no')).toBeTruthy();
   });
 
-  it('renders mobile legal and docs links with expected ordering', () => {
+  it('renders mobile combined docs/legal link', () => {
     render(<Homepage onStartWorkflow={vi.fn()} />);
 
     const mobileCta = document.querySelector('.mobile-cta');
@@ -191,12 +198,27 @@ describe('Homepage', () => {
     if (!mobileCta) return;
 
     const ctaLinks = within(mobileCta).getAllByRole('link');
-    const legalLink = within(mobileCta).getByRole('link', { name: 'Privacy & Terms' });
-    const usageDocsLink = within(mobileCta).getByRole('link', { name: 'Usage Docs' });
+    const combinedLink = within(mobileCta).getByRole('link', { name: 'Docs & Privacy & Terms' });
 
-    expect(legalLink.getAttribute('href')).toBe('/privacy');
-    expect(usageDocsLink.getAttribute('href')).toBe('/usage-docs');
-    expect(ctaLinks.map((link) => link.textContent?.trim())).toEqual(['Privacy & Terms', 'Usage Docs']);
+    expect(combinedLink.getAttribute('href')).toBe('/usage-docs');
+    expect(ctaLinks.map((link) => link.textContent?.trim())).toEqual(['Docs & Privacy & Terms']);
+  });
+
+  it('renders descriptive internal links for intent and industry landing pages', () => {
+    render(<Homepage onStartWorkflow={vi.fn()} />);
+
+    expect(screen.getByRole('link', { name: 'PDF to fillable form conversion' }).getAttribute('href')).toBe(
+      '/pdf-to-fillable-form',
+    );
+    expect(screen.getByRole('link', { name: 'Fillable form field name standardization' }).getAttribute('href')).toBe(
+      '/fillable-form-field-name',
+    );
+    expect(screen.getByRole('link', { name: 'Healthcare and medical intake PDF automation' }).getAttribute('href')).toBe(
+      '/healthcare-pdf-automation',
+    );
+    expect(screen.getByRole('link', { name: 'Insurance ACORD form automation' }).getAttribute('href')).toBe(
+      '/acord-form-automation',
+    );
   });
 
   it('toggles homepage-no-scroll class based on desktop/mobile media queries and cleans up on unmount', () => {

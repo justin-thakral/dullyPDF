@@ -29,6 +29,9 @@ These calls are made with relative `/api/...` paths:
 - `GET /api/profile`
 - `POST /api/contact`
 - `POST /api/recaptcha/assess`
+- `POST /api/billing/checkout-session`
+- `POST /api/billing/subscription/cancel`
+- `POST /api/billing/reconcile`
 - `POST /api/schemas`
 - `GET /api/saved-forms`
 - `GET /api/saved-forms/{formId}`
@@ -56,7 +59,7 @@ These calls are made with absolute URLs (via `buildApiUrl(...)` or detection bas
 
 ## Production behavior
 
-`firebase.json` includes Hosting rewrites for selected `/api/...` routes (for example `/api/profile`, `/api/contact`, `/api/recaptcha/assess`, `/api/saved-forms` patterns, and `/api/health`). Routes not covered by rewrites are called directly by the frontend via backend base URL.
+`firebase.json` includes Hosting rewrites for selected `/api/...` routes (for example `/api/profile`, `/api/contact`, `/api/recaptcha/assess`, billing endpoints under `/api/billing/*`, `/api/saved-forms` patterns, and `/api/health`). Routes not covered by rewrites are called directly by the frontend via backend base URL.
 
 ## Local development behavior
 

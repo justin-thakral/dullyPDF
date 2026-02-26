@@ -26,18 +26,13 @@ describe('UsageDocsPage', () => {
     expect(activePageLink.className.includes('usage-docs-sidebar__page--active')).toBe(true);
   });
 
-  it('shows not-found notice when unknown slug is provided', () => {
-    render(<UsageDocsPage pageKey="index" unknownSlug="not-real" />);
-
-    expect(screen.getByText(/Could not find a page for/i)).toBeTruthy();
-    expect(screen.getByText('not-real')).toBeTruthy();
-  });
-
   it('updates document title based on page key', () => {
     const { rerender } = render(<UsageDocsPage pageKey="index" />);
-    expect(document.title).toBe('Usage Docs | DullyPDF');
+    expect(document.title).toBe('PDF Form Automation Docs and Workflow Guide | DullyPDF');
+    expect(document.querySelector('link[rel="canonical"]')?.getAttribute('href')).toBe('https://dullypdf.com/usage-docs');
 
     rerender(<UsageDocsPage pageKey="search-fill" />);
-    expect(document.title).toBe('Search & Fill | Usage Docs | DullyPDF');
+    expect(document.title).toBe('Auto Fill PDF from CSV, Excel, and JSON | DullyPDF Docs');
+    expect(document.querySelector('link[rel="canonical"]')?.getAttribute('href')).toBe('https://dullypdf.com/usage-docs/search-fill');
   });
 });

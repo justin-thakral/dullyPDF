@@ -6,10 +6,10 @@ import {
   usageDocsHref,
 } from './usageDocsContent';
 import './UsageDocsPage.css';
+import { applyRouteSeo } from '../../utils/seo';
 
 type UsageDocsPageProps = {
   pageKey: UsageDocsPageKey;
-  unknownSlug?: string | null;
 };
 
 const HEADER_LINKS = [
@@ -19,22 +19,23 @@ const HEADER_LINKS = [
   { label: 'Terms', href: '/terms' },
 ];
 
-const UsageDocsPage = ({ pageKey, unknownSlug = null }: UsageDocsPageProps) => {
+const UsageDocsPage = ({ pageKey }: UsageDocsPageProps) => {
   const page = getUsageDocsPage(pageKey);
   const pages = getUsageDocsPages();
 
   useEffect(() => {
-    if (typeof document === 'undefined') return;
-    const title = pageKey === 'index' ? 'Usage Docs | DullyPDF' : `${page.title} | Usage Docs | DullyPDF`;
-    document.title = title;
-  }, [page.title, pageKey]);
+    applyRouteSeo({ kind: 'usage-docs', pageKey });
+  }, [pageKey]);
 
   return (
     <div className="usage-docs-page">
       <div className="usage-docs-card">
         <header className="usage-docs-header">
           <div className="usage-docs-brand">
-            <img src="/DullyPDFLogoImproved.png" alt="DullyPDF" className="usage-docs-brand__logo" />
+            <picture>
+              <source srcSet="/DullyPDFLogoImproved.webp" type="image/webp" />
+              <img src="/DullyPDFLogoImproved.png" alt="DullyPDF" className="usage-docs-brand__logo" decoding="async" />
+            </picture>
             <div className="usage-docs-brand__text">
               <span className="usage-docs-brand__name">DullyPDF</span>
               <span className="usage-docs-brand__tagline">Usage Documentation</span>
@@ -57,11 +58,6 @@ const UsageDocsPage = ({ pageKey, unknownSlug = null }: UsageDocsPageProps) => {
           <span className="usage-docs-kicker">Usage docs</span>
           <h1 className="usage-docs-title">{page.title}</h1>
           <p className="usage-docs-summary">{page.summary}</p>
-          {unknownSlug ? (
-            <div className="usage-docs-warning" role="status">
-              Could not find a page for <code>{unknownSlug}</code>. Showing the overview instead.
-            </div>
-          ) : null}
         </section>
 
         <div className="usage-docs-layout">

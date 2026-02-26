@@ -25,10 +25,10 @@ export type UsageDocsPage = {
   sections: UsageDocsSection[];
 };
 
-export type ResolvedUsageDocsPath = {
-  pageKey: UsageDocsPageKey;
-  unknownSlug: string | null;
-};
+export type ResolvedUsageDocsPath =
+  | { kind: 'canonical'; pageKey: UsageDocsPageKey }
+  | { kind: 'redirect'; targetPath: string }
+  | { kind: 'not-found'; requestedPath: string };
 
 const USAGE_DOCS_PAGES: UsageDocsPage[] = [
   {
@@ -552,8 +552,9 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
           <>
             <p>Profile billing actions are backed by Stripe Checkout:</p>
             <ul>
-              <li>Pro Monthly (`pro_monthly`) and Pro Yearly (`pro_yearly`) labels are sourced from backend Stripe plan metadata.</li>
-              <li>Refill 500 (`refill_500`) is Pro-only and displays backend-provided Stripe plan metadata.</li>
+              <li>Pro Monthly (`pro_monthly`) and Pro Yearly (`pro_yearly`) are recurring Stripe subscriptions.</li>
+              <li>Refill 500 (`refill_500`) is a Pro-only one-time credit pack and uses backend-provided Stripe plan metadata.</li>
+              <li>Payments are handled through Stripe Checkout for secure transaction processing.</li>
               <li>Canceling Pro schedules cancellation at period end; Pro access remains active until that date.</li>
             </ul>
             <p>
@@ -670,28 +671,31 @@ export const usageDocsHref = (pageKey: UsageDocsPageKey): string => {
 export const resolveUsageDocsPath = (pathname: string): ResolvedUsageDocsPath | null => {
   const normalizedPath = pathname.replace(/\/+$/, '') || '/';
 
-  if (normalizedPath === '/usage-docs' || normalizedPath === '/docs') {
-    return { pageKey: USAGE_DOCS_DEFAULT_PAGE_KEY, unknownSlug: null };
+  if (normalizedPath === '/usage-docs') {
+    return { kind: 'canonical', pageKey: USAGE_DOCS_DEFAULT_PAGE_KEY };
   }
 
-  let slugPath = '';
   if (normalizedPath.startsWith('/usage-docs/')) {
-    slugPath = normalizedPath.slice('/usage-docs/'.length);
-  } else if (normalizedPath.startsWith('/docs/')) {
-    slugPath = normalizedPath.slice('/docs/'.length);
-  } else {
-    return null;
+    const slugParts = normalizedPath.slice('/usage-docs/'.length).split('/').filter(Boolean);
+    if (slugParts.length !== 1) {
+      return { kind: 'not-found', requestedPath: normalizedPath };
+    }
+    const slug = slugParts[0];
+    const page = PAGE_BY_SLUG.get(slug);
+    if (page) {
+      return { kind: 'canonical', pageKey: page.key };
+    }
+    return { kind: 'not-found', requestedPath: normalizedPath };
   }
 
-  const slug = slugPath.split('/')[0]?.trim();
-  if (!slug) {
-    return { pageKey: USAGE_DOCS_DEFAULT_PAGE_KEY, unknownSlug: null };
+  if (normalizedPath === '/docs') {
+    return { kind: 'redirect', targetPath: '/usage-docs' };
   }
 
-  const page = PAGE_BY_SLUG.get(slug);
-  if (page) {
-    return { pageKey: page.key, unknownSlug: null };
+  if (normalizedPath.startsWith('/docs/')) {
+    const suffix = normalizedPath.slice('/docs'.length);
+    return { kind: 'redirect', targetPath: `/usage-docs${suffix}` };
   }
 
-  return { pageKey: USAGE_DOCS_DEFAULT_PAGE_KEY, unknownSlug: slug };
+  return null;
 };
