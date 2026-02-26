@@ -6,9 +6,11 @@
 npm run frontend:dev
 ```
 
-This command runs `scripts/use-frontend-env.sh dev`, which copies `env/frontend.dev.env` to `frontend/.env.local`, then starts Vite.
+This command runs `scripts/use-frontend-env.sh dev`, which writes `frontend/.env.local` from committed public config plus optional local overrides, then starts Vite.
 
-If `env/frontend.dev.env` does not exist, the script creates it from `config/frontend.dev.env.example`.
+The script always starts from `config/public/frontend.dev.env` and appends local overrides from:
+- `env/frontend.dev.env` (legacy local override, optional)
+- `env/frontend.dev.local.env` (preferred local override, optional)
 
 ## Direct run (from `frontend/`)
 
@@ -40,7 +42,8 @@ npm run dev:stack:stop
 
 `npm run dev:stack` reads:
 - `env/backend.dev.stack.env` (backend settings; copied from `config/backend.dev.stack.env.example` when missing)
-- `env/frontend.stack.env` (frontend settings; copied from `config/frontend.stack.env.example` when missing)
+- `config/public/frontend.stack.env` (frontend committed public settings)
+- optional `env/frontend.stack.local.env` for local-only overrides
 
 ## Build and test scripts
 

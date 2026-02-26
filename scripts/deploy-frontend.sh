@@ -4,8 +4,8 @@ set -euo pipefail
 PROJECT_ID="${PROJECT_ID:-dullypdf}"
 ALLOW_NON_PROD="${DULLYPDF_ALLOW_NON_PROD:-}"
 MODE="prod"
-ENV_FILE="${ENV_FILE:-env/frontend.${MODE}.env}"
-EXAMPLE="config/frontend.${MODE}.env.example"
+OVERRIDE_FILE="${ENV_FILE:-}"
+ENV_FILE="frontend/.env.local"
 CRITICAL_WEBP_ASSETS=(
   "/DullyPDFLogoImproved.webp"
   "/demo/mobile-raw-pdf.webp"
@@ -21,15 +21,10 @@ if [[ "$PROJECT_ID" != "dullypdf" && -z "$ALLOW_NON_PROD" ]]; then
   exit 1
 fi
 
-if [[ ! -f "$ENV_FILE" ]]; then
-  if [[ -f "$EXAMPLE" ]]; then
-    mkdir -p "env"
-    cp "$EXAMPLE" "$ENV_FILE"
-    echo "Created $ENV_FILE from $EXAMPLE. Update values and re-run." >&2
-    exit 1
-  fi
-  echo "Missing $ENV_FILE and $EXAMPLE." >&2
-  exit 1
+if [[ -n "$OVERRIDE_FILE" ]]; then
+  FRONTEND_ENV_OVERRIDE_FILE="$OVERRIDE_FILE" bash scripts/use-frontend-env.sh "$MODE"
+else
+  bash scripts/use-frontend-env.sh "$MODE"
 fi
 
 set -a
@@ -111,7 +106,6 @@ if [[ "${VITE_CONTACT_REQUIRE_RECAPTCHA:-true}" == "true" || "${VITE_SIGNUP_REQU
   require_nonempty VITE_RECAPTCHA_SITE_KEY
 fi
 
-bash scripts/use-frontend-env.sh "$MODE"
 if command -v convert >/dev/null 2>&1; then
   bash scripts/convert-webp-assets.sh
 else

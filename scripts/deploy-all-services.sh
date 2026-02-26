@@ -49,6 +49,10 @@ fi
 run_cmd env PROJECT_ID="$PROJECT_ID" REGION="$REGION" ENV_FILE="$ENV_FILE" bash scripts/deploy-backend.sh
 run_cmd env PROJECT_ID="$PROJECT_ID" REGION="$REGION" bash scripts/deploy-detector-services.sh "$ENV_FILE"
 run_cmd env PROJECT_ID="$PROJECT_ID" REGION="$REGION" bash scripts/deploy-openai-workers.sh "$ENV_FILE"
-run_cmd env PROJECT_ID="$PROJECT_ID" ENV_FILE="env/frontend.prod.env" bash scripts/deploy-frontend.sh
+if [[ -n "${FRONTEND_ENV_OVERRIDE_FILE:-}" ]]; then
+  run_cmd env PROJECT_ID="$PROJECT_ID" ENV_FILE="$FRONTEND_ENV_OVERRIDE_FILE" bash scripts/deploy-frontend.sh
+else
+  run_cmd env PROJECT_ID="$PROJECT_ID" bash scripts/deploy-frontend.sh
+fi
 
 echo "All service deploy steps completed."
