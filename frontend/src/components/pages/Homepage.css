@@ -135,73 +135,6 @@
   font-size: clamp(0.9rem, 0.86rem + 0.25vw, 0.98rem);
 }
 
-.search-intent-section {
-  margin-top: 0.95rem;
-  border: 1px solid #dbe4f2;
-  border-radius: 12px;
-  background: #f8fbff;
-  padding: 0.8rem 0.9rem;
-}
-
-.search-intent-section h3,
-.industry-intent-section h3 {
-  margin: 0 0 0.45rem;
-  color: #1e3a8a;
-  font-size: 1rem;
-}
-
-.search-intent-section p,
-.industry-intent-section p {
-  margin: 0 0 0.62rem;
-  color: #334155;
-  line-height: 1.5;
-  font-size: 0.9rem;
-}
-
-.search-intent-links {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.45rem;
-}
-
-.search-intent-links a {
-  color: #1d4ed8;
-  font-weight: 600;
-  text-decoration: none;
-  font-size: 0.84rem;
-  line-height: 1.35;
-}
-
-.search-intent-links a:hover {
-  text-decoration: underline;
-}
-
-.industry-intent-section {
-  margin-top: 0.8rem;
-  border: 1px solid #dbe4f2;
-  border-radius: 12px;
-  background: #f8fbff;
-  padding: 0.8rem 0.9rem;
-}
-
-.industry-intent-links {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.45rem;
-}
-
-.industry-intent-links a {
-  color: #1d4ed8;
-  font-weight: 600;
-  text-decoration: none;
-  font-size: 0.84rem;
-  line-height: 1.35;
-}
-
-.industry-intent-links a:hover {
-  text-decoration: underline;
-}
-
 /* Right Panel - Call to Action */
 .action-panel {
   background: #ffffff;
@@ -258,6 +191,8 @@
   display: flex;
   gap: 1.5rem;
   flex-wrap: wrap;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .homepage-legal a {
@@ -1255,14 +1190,6 @@
     font-size: clamp(0.95rem, 0.9rem + 0.4vw, 1.05rem);
   }
 
-  .search-intent-links {
-    grid-template-columns: 1fr;
-  }
-
-  .industry-intent-links {
-    grid-template-columns: 1fr;
-  }
-
   .cta-section h3 {
     font-size: clamp(1.35rem, 1.1rem + 1vw, 1.65rem);
   }
@@ -1304,6 +1231,18 @@
 
   .homepage-legal {
     flex-direction: column;
+    text-align: center;
+  }
+
+  .homepage-legal__links {
+    width: 100%;
+    justify-content: center;
+    gap: 0.75rem;
+  }
+
+  .homepage-legal a {
+    white-space: normal;
+    overflow-wrap: anywhere;
     text-align: center;
   }
 }
