@@ -88,27 +88,6 @@ const DEMO_WALKTHROUGH: DemoWalkthroughStep[] = [
   },
 ];
 
-const SEARCH_INTENT_LINKS = [
-  { href: '/pdf-to-fillable-form', label: 'PDF to fillable form conversion' },
-  { href: '/pdf-to-database-template', label: 'PDF to database template mapping' },
-  { href: '/fill-pdf-from-csv', label: 'Fill PDF from CSV workflows' },
-  { href: '/fill-information-in-pdf', label: 'How to fill information in PDF forms' },
-  { href: '/fillable-form-field-name', label: 'Fillable form field name standardization' },
-];
-
-const INDUSTRY_INTENT_LINKS = [
-  { href: '/healthcare-pdf-automation', label: 'Healthcare and medical intake PDF automation' },
-  { href: '/acord-form-automation', label: 'Insurance ACORD form automation' },
-  { href: '/real-estate-pdf-automation', label: 'Real estate and mortgage PDF automation' },
-  { href: '/government-form-automation', label: 'Government and permit form automation' },
-  { href: '/finance-loan-pdf-automation', label: 'Finance and loan application PDF automation' },
-  { href: '/hr-pdf-automation', label: 'HR onboarding PDF automation' },
-  { href: '/legal-pdf-workflow-automation', label: 'Legal PDF workflow automation' },
-  { href: '/education-form-automation', label: 'Education and admissions PDF automation' },
-  { href: '/nonprofit-pdf-form-automation', label: 'Nonprofit and grant form automation' },
-  { href: '/logistics-pdf-automation', label: 'Logistics and transportation PDF automation' },
-];
-
 /**
  * Landing page describing the end-to-end workflow.
  */
@@ -552,37 +531,6 @@ const Homepage: React.FC<HomepageProps> = ({
                   </div>
                 </div>
 
-                <div className="search-intent-section">
-                  <h3>Popular search intents</h3>
-                  <p>
-                    Users looking for “fillable form”, “PDF database template”, or “fill information in PDF” typically
-                    need the same workflow: detect fields, standardize names, map schema headers, and run Search &amp; Fill.
-                  </p>
-                  <div className="search-intent-links">
-                    {SEARCH_INTENT_LINKS.map((intent) => (
-                      <a key={intent.href} href={intent.href}>
-                        {intent.label}
-                      </a>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="industry-intent-section">
-                  <h3>Industry automation pages</h3>
-                  <p>
-                    Industry-specific landing pages target healthcare intake, ACORD insurance forms, mortgage and rental
-                    packets, government permits, loan processing, HR onboarding, legal workflows, education admissions,
-                    nonprofit grants, and logistics paperwork.
-                  </p>
-                  <div className="industry-intent-links">
-                    {INDUSTRY_INTENT_LINKS.map((intent) => (
-                      <a key={intent.href} href={intent.href}>
-                        {intent.label}
-                      </a>
-                    ))}
-                  </div>
-                </div>
-
               </div>
             </div>
           </div>
@@ -650,6 +598,7 @@ const Homepage: React.FC<HomepageProps> = ({
       <footer className="homepage-legal">
         <span>© 2026 DullyPDF</span>
         <div className="homepage-legal__links">
+          <a href="/pdf-to-fillable-form">Explore workflow pages</a>
           <a href="/usage-docs">Usage Docs</a>
           <a href="/privacy">Privacy Policy</a>
           <a href="/terms">Terms of Service</a>

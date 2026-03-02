@@ -50,7 +50,7 @@ Authority growth is not a one-time code change. Use this recurring plan:
 3. Share each post in relevant communities and partner channels (healthcare ops, legal ops, intake automation, no-code ops).
 4. Track referring domains and new backlinks in Search Console + GA referral traffic.
 5. Keep internal links updated:
-   - homepage -> intent pages,
+   - intent pages -> other intent pages,
    - intent pages -> docs sections,
    - docs sections -> matching intent pages.
 

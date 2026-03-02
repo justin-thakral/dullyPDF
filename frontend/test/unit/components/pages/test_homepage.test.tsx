@@ -204,21 +204,21 @@ describe('Homepage', () => {
     expect(ctaLinks.map((link) => link.textContent?.trim())).toEqual(['Docs & Privacy & Terms']);
   });
 
-  it('renders descriptive internal links for intent and industry landing pages', () => {
+  it('renders footer link to workflow landing pages', () => {
     render(<Homepage onStartWorkflow={vi.fn()} />);
 
-    expect(screen.getByRole('link', { name: 'PDF to fillable form conversion' }).getAttribute('href')).toBe(
+    expect(screen.getByRole('link', { name: 'Explore workflow pages' }).getAttribute('href')).toBe(
       '/pdf-to-fillable-form',
     );
-    expect(screen.getByRole('link', { name: 'Fillable form field name standardization' }).getAttribute('href')).toBe(
-      '/fillable-form-field-name',
-    );
-    expect(screen.getByRole('link', { name: 'Healthcare and medical intake PDF automation' }).getAttribute('href')).toBe(
-      '/healthcare-pdf-automation',
-    );
-    expect(screen.getByRole('link', { name: 'Insurance ACORD form automation' }).getAttribute('href')).toBe(
-      '/acord-form-automation',
-    );
+  });
+
+  it('does not render visible SEO intent sections on homepage', () => {
+    render(<Homepage onStartWorkflow={vi.fn()} />);
+
+    expect(screen.queryByRole('heading', { level: 3, name: 'Popular search intents' })).toBeNull();
+    expect(screen.queryByRole('heading', { level: 3, name: 'Industry automation pages' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'PDF to fillable form conversion' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Healthcare and medical intake PDF automation' })).toBeNull();
   });
 
   it('toggles homepage-no-scroll class based on desktop/mobile media queries and cleans up on unmount', () => {
