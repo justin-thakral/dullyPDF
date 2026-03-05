@@ -195,8 +195,8 @@ function generatePageHtml(route, viteAssets) {
   </head>
   <body>
     <div id="root">
-      ${bodyContent}
-      ${footerHtml}
+      <div class="seo-shell" style="display:none">${bodyContent}
+      ${footerHtml}</div>
     </div>
     ${viteAssets.scriptTags.join('\n    ')}
   </body>

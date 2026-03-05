@@ -39,6 +39,7 @@ Run this every week for the previous 7 days:
    - `fill information in pdf`
    - `fillable form field name`
    - `automate medical intake forms`
+   - `dental intake form automation`
    - `acord form automation`
    - `insurance pdf automation`
    - `certificate of insurance automation`
@@ -93,7 +94,7 @@ Authority growth is not a one-time code change. Use this recurring plan:
 - `/fill-pdf-from-csv`: row-based PDF filling from CSV/XLSX/JSON.
 - `/fill-information-in-pdf`: broad informational fill intent.
 - `/fillable-form-field-name`: field naming normalization and mapping quality.
-- `/healthcare-pdf-automation`: healthcare intake, registration, and HIPAA/consent forms.
+- `/healthcare-pdf-automation`: healthcare and dental intake, registration, and HIPAA/consent forms.
 - `/acord-form-automation`: ACORD-first workflows (ACORD 25/24/27/28/126/140) and certificate processing.
 - `/insurance-pdf-automation`: broader insurance PDF automation for ACORD plus carrier-specific forms.
 - `/real-estate-pdf-automation`: rental, lease, and mortgage packet workflows.

@@ -163,13 +163,13 @@ const INTENT_PAGES = [
     navLabel: 'Healthcare PDF Automation',
     heroTitle: 'Automate Medical Intake and Healthcare PDF Form Workflows',
     heroSummary:
-      'Convert medical intake, registration, history, consent, and HIPAA release PDFs into reusable templates that map directly to structured data columns.',
-    seoTitle: 'Healthcare PDF Form Automation for Medical Intake | DullyPDF',
+      'Convert medical and dental intake, registration, history, consent, and HIPAA release PDFs into reusable templates that map directly to structured data columns.',
+    seoTitle: 'Healthcare and Dental Intake PDF Form Automation | DullyPDF',
     seoDescription:
-      'Automate medical intake forms, map patient intake PDFs to database-ready templates, and fill healthcare PDFs from structured records.',
-    seoKeywords: ['automate medical intake forms', 'patient intake pdf to database', 'healthcare pdf form automation', 'patient registration form automation', 'hipaa release form automation'],
+      'Automate medical and dental intake forms, map patient intake PDFs to database-ready templates, and fill healthcare PDFs from structured records.',
+    seoKeywords: ['automate medical intake forms', 'dental intake form automation', 'dental patient intake pdf automation', 'patient intake pdf to database', 'healthcare pdf form automation', 'patient registration form automation', 'hipaa release form automation'],
     valuePoints: [
-      'Build reusable templates for intake, registration, history, and consent packets.',
+      'Build reusable templates for medical and dental intake, registration, history, and consent packets.',
       'Normalize field names so front-desk teams can map once and reuse consistently.',
       'Support checkbox-heavy workflows for symptoms, disclosures, and releases.',
     ],
@@ -179,7 +179,7 @@ const INTENT_PAGES = [
       'Templates can be saved and reused for recurring appointment workflows.',
     ],
     faqs: [
-      { question: 'Can DullyPDF automate patient intake PDFs and registration forms?', answer: 'Yes. You can detect fields, refine them in the editor, map to schema headers, and then fill forms from structured intake data.' },
+      { question: 'Can DullyPDF automate patient and dental intake PDFs and registration forms?', answer: 'Yes. You can detect fields, refine them in the editor, map to schema headers, and then fill medical or dental intake forms from structured data.' },
       { question: 'Does DullyPDF work for HIPAA release and consent forms?', answer: 'Yes. Checkbox and text field mapping supports release and consent-style healthcare forms.' },
       { question: 'Can healthcare teams reuse the same mapped template daily?', answer: 'Yes. Saved templates retain PDF bytes, field metadata, and mapping context for repeat usage.' },
     ],
