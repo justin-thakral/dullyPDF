@@ -26,6 +26,7 @@ const createDeferred = <T,>() => {
 
 describe('VerifyEmailPage', () => {
   beforeEach(() => {
+    window.localStorage.clear();
     verifyEmailMocks.sendVerificationEmail.mockReset();
     verifyEmailMocks.sendVerificationEmail.mockResolvedValue(undefined);
   });
