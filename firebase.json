@@ -1,6 +1,7 @@
 {
   "hosting": {
     "public": "frontend/dist",
+    "trailingSlash": false,
     "ignore": [
       "firebase.json",
       "**/.*",
@@ -18,16 +19,6 @@
         "type": 301
       },
       {
-        "source": "/privacy/",
-        "destination": "/privacy",
-        "type": 301
-      },
-      {
-        "source": "/terms/",
-        "destination": "/terms",
-        "type": 301
-      },
-      {
         "source": "/docs",
         "destination": "/usage-docs",
         "type": 301
@@ -38,158 +29,8 @@
         "type": 301
       },
       {
-        "source": "/usage-docs/",
-        "destination": "/usage-docs",
-        "type": 301
-      },
-      {
-        "source": "/usage-docs/getting-started/",
-        "destination": "/usage-docs/getting-started",
-        "type": 301
-      },
-      {
-        "source": "/usage-docs/detection/",
-        "destination": "/usage-docs/detection",
-        "type": 301
-      },
-      {
-        "source": "/usage-docs/rename-mapping/",
-        "destination": "/usage-docs/rename-mapping",
-        "type": 301
-      },
-      {
-        "source": "/usage-docs/editor-workflow/",
-        "destination": "/usage-docs/editor-workflow",
-        "type": 301
-      },
-      {
-        "source": "/usage-docs/search-fill/",
-        "destination": "/usage-docs/search-fill",
-        "type": 301
-      },
-      {
-        "source": "/usage-docs/save-download-profile/",
-        "destination": "/usage-docs/save-download-profile",
-        "type": 301
-      },
-      {
-        "source": "/usage-docs/troubleshooting/",
-        "destination": "/usage-docs/troubleshooting",
-        "type": 301
-      },
-      {
-        "source": "/pdf-to-fillable-form/",
-        "destination": "/pdf-to-fillable-form",
-        "type": 301
-      },
-      {
-        "source": "/pdf-to-database-template/",
-        "destination": "/pdf-to-database-template",
-        "type": 301
-      },
-      {
-        "source": "/fill-pdf-from-csv/",
-        "destination": "/fill-pdf-from-csv",
-        "type": 301
-      },
-      {
-        "source": "/fill-information-in-pdf/",
-        "destination": "/fill-information-in-pdf",
-        "type": 301
-      },
-      {
-        "source": "/fillable-form-field-name/",
-        "destination": "/fillable-form-field-name",
-        "type": 301
-      },
-      {
-        "source": "/healthcare-pdf-automation/",
-        "destination": "/healthcare-pdf-automation",
-        "type": 301
-      },
-      {
-        "source": "/acord-form-automation/",
-        "destination": "/acord-form-automation",
-        "type": 301
-      },
-      {
         "source": "/insurance-acord-form-automation",
         "destination": "/acord-form-automation",
-        "type": 301
-      },
-      {
-        "source": "/insurance-acord-form-automation/",
-        "destination": "/acord-form-automation",
-        "type": 301
-      },
-      {
-        "source": "/real-estate-pdf-automation/",
-        "destination": "/real-estate-pdf-automation",
-        "type": 301
-      },
-      {
-        "source": "/government-form-automation/",
-        "destination": "/government-form-automation",
-        "type": 301
-      },
-      {
-        "source": "/finance-loan-pdf-automation/",
-        "destination": "/finance-loan-pdf-automation",
-        "type": 301
-      },
-      {
-        "source": "/hr-pdf-automation/",
-        "destination": "/hr-pdf-automation",
-        "type": 301
-      },
-      {
-        "source": "/legal-pdf-workflow-automation/",
-        "destination": "/legal-pdf-workflow-automation",
-        "type": 301
-      },
-      {
-        "source": "/education-form-automation/",
-        "destination": "/education-form-automation",
-        "type": 301
-      },
-      {
-        "source": "/nonprofit-pdf-form-automation/",
-        "destination": "/nonprofit-pdf-form-automation",
-        "type": 301
-      },
-      {
-        "source": "/logistics-pdf-automation/",
-        "destination": "/logistics-pdf-automation",
-        "type": 301
-      },
-      {
-        "source": "/blog/",
-        "destination": "/blog",
-        "type": 301
-      },
-      {
-        "source": "/batch-fill-pdf-forms/",
-        "destination": "/batch-fill-pdf-forms",
-        "type": 301
-      },
-      {
-        "source": "/pdf-checkbox-automation/",
-        "destination": "/pdf-checkbox-automation",
-        "type": 301
-      },
-      {
-        "source": "/pdf-field-detection-tool/",
-        "destination": "/pdf-field-detection-tool",
-        "type": 301
-      },
-      {
-        "source": "/construction-pdf-automation/",
-        "destination": "/construction-pdf-automation",
-        "type": 301
-      },
-      {
-        "source": "/accounting-tax-pdf-automation/",
-        "destination": "/accounting-tax-pdf-automation",
         "type": 301
       }
     ],
