@@ -98,7 +98,7 @@
   white-space: nowrap;
 }
 
-@media (max-width: 1180px) {
+@media (max-width: 1180px) and (min-width: 901px) {
   .site-footer {
     padding: 0.45rem 0.72rem;
   }
@@ -145,26 +145,104 @@
   }
 }
 
+@media (max-width: 900px) {
+  .site-footer {
+    padding: 0.68rem 0.78rem 0.56rem;
+  }
+
+  .site-footer__mobile {
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+
+  .site-footer__mobile-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 0.22rem;
+    margin-bottom: 0.42rem;
+  }
+
+  .site-footer__mobile-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.52rem;
+    align-items: baseline;
+  }
+
+  .site-footer__mobile-row .site-footer__link-group {
+    gap: 0.24rem;
+    white-space: normal;
+    min-width: 0;
+  }
+
+  .site-footer__mobile-row .site-footer__label {
+    font-size: 0.6rem;
+    letter-spacing: 0.01em;
+    flex-shrink: 0;
+  }
+
+  .site-footer__mobile-row .site-footer__links {
+    flex-wrap: nowrap;
+    white-space: nowrap;
+    gap: 0;
+    min-width: 0;
+  }
+
+  .site-footer__mobile-row .site-footer__links a {
+    font-size: 0.6rem;
+    line-height: 1.2;
+  }
+
+  .site-footer__mobile-row .site-footer__links a + a {
+    margin-left: 0.28rem;
+    padding-left: 0.28rem;
+  }
+
+  .site-footer__mobile-row .site-footer__links a + a::before {
+    left: -0.02rem;
+  }
+
+  .site-footer__mobile-bottom {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding-top: 0.38rem;
+    border-top: 1px solid #e2e8f0;
+    font-size: 0.66rem;
+    color: #94a3b8;
+    font-weight: 700;
+    text-align: center;
+  }
+}
+
 @media (max-width: 640px) {
   .site-footer {
-    padding: 0.42rem 0.56rem;
+    padding: 0.62rem 0.56rem 0.48rem;
   }
 
-  .site-footer__bar {
-    gap: 0.28rem;
+  .site-footer__mobile-rows {
+    gap: 0.18rem;
   }
 
-  .site-footer__link-group {
-    gap: 0.22rem;
+  .site-footer__mobile-row {
+    gap: 0.42rem;
   }
 
-  .site-footer__links {
-    gap: 0.24rem 0.42rem;
+  .site-footer__mobile-row .site-footer__link-group {
+    gap: 0.2rem;
   }
 
-  .site-footer__label,
-  .site-footer__links a,
-  .site-footer__center {
-    font-size: 0.67rem;
+  .site-footer__mobile-row .site-footer__label,
+  .site-footer__mobile-row .site-footer__links a {
+    font-size: 0.56rem;
+  }
+
+  .site-footer__mobile-row .site-footer__links a + a {
+    margin-left: 0.24rem;
+    padding-left: 0.24rem;
+  }
+
+  .site-footer__mobile-bottom {
+    font-size: 0.64rem;
   }
 }
