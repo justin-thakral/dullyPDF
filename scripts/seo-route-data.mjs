@@ -673,7 +673,7 @@ const HOME_ROUTE_SEO = {
       name: 'DullyPDF',
       url: 'https://dullypdf.com/',
       logo: 'https://dullypdf.com/DullyPDFLogoImproved.png',
-      contactPoint: { '@type': 'ContactPoint', contactType: 'customer support', email: 'justin@ttcommercial.com' },
+      contactPoint: { '@type': 'ContactPoint', contactType: 'customer support', email: 'justin@dullypdf.com' },
     },
   ],
   bodyContent: {

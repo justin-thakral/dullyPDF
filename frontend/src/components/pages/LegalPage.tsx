@@ -20,7 +20,7 @@ type LegalCopy = {
 };
 
 const LAST_UPDATED = 'February 24, 2026';
-const SUPPORT_EMAIL = 'justin@ttcommercial.com';
+const SUPPORT_EMAIL = 'justin@dullypdf.com';
 
 const PRIVACY_COPY: LegalCopy = {
   title: 'Privacy Policy',

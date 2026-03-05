@@ -103,7 +103,7 @@ const IntentLandingPage = ({ pageKey }: IntentLandingPageProps) => {
           <a href="/usage-docs/troubleshooting" className="intent-page__related-link">
             Troubleshooting playbook example
           </a>
-          <a href="mailto:justin@ttcommercial.com" className="intent-page__related-link">
+          <a href="mailto:justin@dullypdf.com" className="intent-page__related-link">
             Request partner workflow review
           </a>
         </div>

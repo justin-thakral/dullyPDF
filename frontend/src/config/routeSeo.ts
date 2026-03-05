@@ -74,7 +74,7 @@ const HOME_ROUTE_SEO: RouteSeoMetadata = {
       contactPoint: {
         '@type': 'ContactPoint',
         contactType: 'customer support',
-        email: 'justin@ttcommercial.com',
+        email: 'justin@dullypdf.com',
       },
     },
   ],

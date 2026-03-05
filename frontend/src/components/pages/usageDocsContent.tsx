@@ -671,7 +671,7 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
         body: (
           <p>
             For persistent issues, include your route, action sequence, and screenshot evidence when
-            contacting support at <a href="mailto:justin@ttcommercial.com">justin@ttcommercial.com</a>.
+            contacting support at <a href="mailto:justin@dullypdf.com">justin@dullypdf.com</a>.
           </p>
         ),
       },
