@@ -496,6 +496,7 @@ function WorkspaceRuntime({
     setActiveSavedFormId: savedForms.setActiveSavedFormId,
     setActiveSavedFormName: savedForms.setActiveSavedFormName,
     queueSaveAfterLimit: savedForms.queueSaveAfterLimit,
+    allowAnonymousDownload: sourceFileIsDemo,
   });
 
   // ── OpenAI header bar handlers ─────────────────────────────────────
