@@ -56,6 +56,7 @@ The frontend is a React + TypeScript app for loading PDFs, editing fields, and f
 
 - Firebase auth supports email/password, Google, and GitHub.
 - Password users must verify email before editor access.
+- Verification email resend is throttled in the UI (60-second cooldown, max 5 sends per day per account on that browser).
 - Profile view shows limits, credits, Stripe billing/subscription status, and saved forms.
 
 ## Demo and fixtures
