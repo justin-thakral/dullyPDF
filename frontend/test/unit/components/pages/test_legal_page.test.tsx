@@ -17,7 +17,7 @@ describe('LegalPage', () => {
     expect(termsLink.className.includes('legal-nav__link--active')).toBe(false);
     expect(usageDocsLinks.some((link) => link.getAttribute('href') === '/usage-docs')).toBe(true);
 
-    expect(screen.getByText(/justin@ttcommercial\.com/i)).toBeTruthy();
+    expect(screen.getByText(/justin@dullypdf\.com/i)).toBeTruthy();
   });
 
   it('renders terms copy with active terms navigation', () => {
