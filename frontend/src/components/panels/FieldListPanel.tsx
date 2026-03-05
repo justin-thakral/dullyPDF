@@ -1,7 +1,7 @@
 /**
  * Side panel that lists fields and controls visibility/filtering.
  */
-import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import type { ConfidenceFilter, ConfidenceTier, FieldType, PdfField } from '../../types';
 import {
   fieldConfidenceForField,
@@ -15,14 +15,21 @@ import { FIELD_TYPES, fieldTypeLabel } from '../../utils/fieldUi';
 
 const MIN_PAGE = 1;
 
+type SortMode = 'page' | 'name' | 'type' | 'confidence';
+export type FieldListDisplayPreset = 'review' | 'edit' | 'fill' | 'custom';
+
 type FieldListPanelProps = {
   fields: PdfField[];
+  totalFieldCount: number;
   selectedFieldId: string | null;
+  selectedField: PdfField | null;
   currentPage: number;
   pageCount: number;
   showFields: boolean;
   showFieldNames: boolean;
   showFieldInfo: boolean;
+  displayPreset: FieldListDisplayPreset;
+  onApplyDisplayPreset: (preset: Exclude<FieldListDisplayPreset, 'custom'>) => void;
   onShowFieldsChange: (enabled: boolean) => void;
   onShowFieldNamesChange: (enabled: boolean) => void;
   onShowFieldInfoChange: (enabled: boolean) => void;
@@ -30,6 +37,7 @@ type FieldListPanelProps = {
   onClearInputs: () => void;
   confidenceFilter: ConfidenceFilter;
   onConfidenceFilterChange: (tier: ConfidenceTier, enabled: boolean) => void;
+  onResetConfidenceFilters: () => void;
   onSelectField: (fieldId: string) => void;
   onPageChange: (page: number) => void;
 };
@@ -43,16 +51,51 @@ function clampPage(value: number, pageCount: number) {
 }
 
 /**
+ * Return a sorted copy of fields according to the selected mode.
+ */
+function sortFields(items: PdfField[], mode: SortMode): PdfField[] {
+  const sorted = [...items];
+  sorted.sort((a, b) => {
+    if (mode === 'name') {
+      return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+    }
+    if (mode === 'type') {
+      const byType = fieldTypeLabel(a.type).localeCompare(fieldTypeLabel(b.type), undefined, {
+        sensitivity: 'base',
+      });
+      if (byType !== 0) return byType;
+      return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+    }
+    if (mode === 'confidence') {
+      const aConfidence = fieldConfidenceForField(a) ?? -1;
+      const bConfidence = fieldConfidenceForField(b) ?? -1;
+      if (aConfidence !== bConfidence) return bConfidence - aConfidence;
+      return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+    }
+
+    if (a.page !== b.page) return a.page - b.page;
+    if (a.rect.y !== b.rect.y) return a.rect.y - b.rect.y;
+    if (a.rect.x !== b.rect.x) return a.rect.x - b.rect.x;
+    return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+  });
+  return sorted;
+}
+
+/**
  * Render the field list UI with filtering and selection.
  */
 export function FieldListPanel({
   fields,
+  totalFieldCount,
   selectedFieldId,
+  selectedField,
   currentPage,
   pageCount,
   showFields,
   showFieldNames,
   showFieldInfo,
+  displayPreset,
+  onApplyDisplayPreset,
   onShowFieldsChange,
   onShowFieldNamesChange,
   onShowFieldInfoChange,
@@ -60,11 +103,13 @@ export function FieldListPanel({
   onClearInputs,
   confidenceFilter,
   onConfidenceFilterChange,
+  onResetConfidenceFilters,
   onSelectField,
   onPageChange,
 }: FieldListPanelProps) {
   const [query, setQuery] = useState('');
   const [filterType, setFilterType] = useState<FieldType | 'all'>('all');
+  const [sortMode, setSortMode] = useState<SortMode>('page');
   const [showAllPages, setShowAllPages] = useState(false);
   const rowRefs = useRef(new Map<string, HTMLButtonElement | null>());
 
@@ -82,7 +127,10 @@ export function FieldListPanel({
     });
   }, [baseFields, filterType, query]);
 
-  const headerCount = showAllPages ? fields.length : baseFields.length;
+  const sorted = useMemo(() => sortFields(filtered, sortMode), [filtered, sortMode]);
+
+  const headerScopeCount = baseFields.length;
+  const visibleCount = sorted.length;
   const emptyMessage =
     baseFields.length === 0
       ? showAllPages
@@ -92,6 +140,26 @@ export function FieldListPanel({
 
   const inputValue = pageCount === 0 ? '' : String(currentPage);
 
+  const selectedOutsideFilters = useMemo(() => {
+    if (!selectedField) return null;
+    if (sorted.some((field) => field.id === selectedField.id)) return null;
+    return selectedField;
+  }, [selectedField, sorted]);
+
+  const confidenceChipLabel = useMemo(() => {
+    const enabled = (['high', 'medium', 'low'] as const).filter((tier) => confidenceFilter[tier]);
+    if (enabled.length === 3) return null;
+    if (enabled.length === 0) return 'Confidence: none';
+    return `Confidence: ${enabled.join(', ')}`;
+  }, [confidenceFilter]);
+
+  const hasActiveFilters =
+    query.trim().length > 0 ||
+    filterType !== 'all' ||
+    sortMode !== 'page' ||
+    showAllPages ||
+    Boolean(confidenceChipLabel);
+
   useEffect(() => {
     if (!selectedFieldId) return;
     const node = rowRefs.current.get(selectedFieldId);
@@ -99,7 +167,7 @@ export function FieldListPanel({
     requestAnimationFrame(() => {
       node.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     });
-  }, [filtered, selectedFieldId]);
+  }, [selectedFieldId, sorted]);
 
   const handlePageInput = (event: ChangeEvent<HTMLInputElement>) => {
     const raw = Number(event.target.value);
@@ -110,6 +178,27 @@ export function FieldListPanel({
   const handlePrev = () => onPageChange(clampPage(currentPage - 1, pageCount));
   const handleNext = () => onPageChange(clampPage(currentPage + 1, pageCount));
 
+  const clearFilters = useCallback(() => {
+    setQuery('');
+    setFilterType('all');
+    setSortMode('page');
+    setShowAllPages(false);
+    onResetConfidenceFilters();
+  }, [onResetConfidenceFilters]);
+
+  const handleRevealSelected = useCallback(() => {
+    if (!selectedOutsideFilters) return;
+    setQuery('');
+    setFilterType('all');
+    setSortMode('page');
+    setShowAllPages(true);
+    onResetConfidenceFilters();
+    if (selectedOutsideFilters.page !== currentPage) {
+      onPageChange(selectedOutsideFilters.page);
+    }
+    onSelectField(selectedOutsideFilters.id);
+  }, [currentPage, onPageChange, onResetConfidenceFilters, onSelectField, selectedOutsideFilters]);
+
   const isNavDisabled = pageCount === 0;
   const canGoBack = currentPage > MIN_PAGE;
   const canGoForward = currentPage < pageCount;
@@ -119,9 +208,12 @@ export function FieldListPanel({
       <div className="panel__header">
         <div>
           <h2>Fields</h2>
-          <p className="panel__hint">Filter and select fields.</p>
+          <p className="panel__hint">Filter, sort, and jump to fields fast.</p>
         </div>
-        <div className="panel__meta">{headerCount}</div>
+        <div className="panel__meta panel__meta--counts" title={`Visible ${visibleCount} of ${headerScopeCount} in scope; ${fields.length} of ${totalFieldCount} after confidence filter.`}>
+          <span className="panel__meta-primary">{visibleCount} / {headerScopeCount}</span>
+          <span className="panel__meta-secondary">of {totalFieldCount}</span>
+        </div>
       </div>
 
       <div className="panel__body">
@@ -167,6 +259,29 @@ export function FieldListPanel({
         </div>
 
         <div className="panel__section panel__section--tight">
+          <div>
+            <span className="panel__label">Display mode</span>
+            <div className="panel-display-modes" role="group" aria-label="Display mode presets">
+              {([
+                { key: 'review', label: 'Review' },
+                { key: 'edit', label: 'Edit' },
+                { key: 'fill', label: 'Fill' },
+              ] as const).map((preset) => (
+                <button
+                  key={preset.key}
+                  type="button"
+                  className={`panel-mode-chip${displayPreset === preset.key ? ' panel-mode-chip--active' : ''}`}
+                  onClick={() => onApplyDisplayPreset(preset.key)}
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
+            {displayPreset === 'custom' ? (
+              <p className="panel__micro">Custom mode active from manual visibility toggles.</p>
+            ) : null}
+          </div>
+
           <div className="panel__toggle-row" role="group" aria-label="Field display controls">
             <label
               className={`panel-pill-toggle${showFields ? ' panel-pill-toggle--active' : ''}`}
@@ -230,6 +345,7 @@ export function FieldListPanel({
               Clear
             </button>
           </div>
+
           <div>
             <span className="panel__label">Confidence</span>
             <div className="confidence-filter confidence-filter--compact" role="group" aria-label="Filter by confidence">
@@ -250,6 +366,7 @@ export function FieldListPanel({
               ))}
             </div>
           </div>
+
           <div className="panel__controls">
             <div>
               <label className="panel__label" htmlFor="field-search">
@@ -283,15 +400,64 @@ export function FieldListPanel({
                 ))}
               </select>
             </div>
+            <div>
+              <label className="panel__label" htmlFor="field-sort">
+                Sort
+              </label>
+              <select
+                id="field-sort"
+                name="field-sort"
+                className="panel__select"
+                value={sortMode}
+                onChange={(event) => setSortMode(event.target.value as SortMode)}
+              >
+                <option value="page">Page order</option>
+                <option value="name">Name</option>
+                <option value="type">Type</option>
+                <option value="confidence">Confidence</option>
+              </select>
+            </div>
           </div>
+
+          {hasActiveFilters ? (
+            <div className="panel-filter-summary">
+              {query.trim().length > 0 ? <span className="panel-filter-chip">Search: {query.trim()}</span> : null}
+              {filterType !== 'all' ? <span className="panel-filter-chip">Type: {fieldTypeLabel(filterType)}</span> : null}
+              {showAllPages ? <span className="panel-filter-chip">Scope: all pages</span> : null}
+              {sortMode !== 'page' ? <span className="panel-filter-chip">Sort: {sortMode}</span> : null}
+              {confidenceChipLabel ? <span className="panel-filter-chip">{confidenceChipLabel}</span> : null}
+              <button
+                type="button"
+                className="panel-filter-reset"
+                onClick={clearFilters}
+              >
+                Reset filters
+              </button>
+            </div>
+          ) : null}
         </div>
 
         <div className="panel__list">
+          {selectedOutsideFilters ? (
+            <div className="panel-selected-outside">
+              <p className="panel-selected-outside__text">
+                Selected field is outside the current filters.
+              </p>
+              <button
+                type="button"
+                className="panel-selected-outside__action"
+                onClick={handleRevealSelected}
+              >
+                Reveal selected
+              </button>
+            </div>
+          ) : null}
+
           <div className="field-list">
-            {filtered.length === 0 ? (
+            {sorted.length === 0 ? (
               <p className="panel__empty">{emptyMessage}</p>
             ) : (
-              filtered.map((field) => {
+              sorted.map((field) => {
                 const fieldConfidence = fieldConfidenceForField(field);
                 const nameConfidence = nameConfidenceForField(field);
                 const fieldTier = fieldConfidenceTierForField(field);

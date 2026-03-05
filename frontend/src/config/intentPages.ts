@@ -13,7 +13,12 @@ export type IntentPageKey =
   | 'legal-pdf-workflow-automation'
   | 'education-form-automation'
   | 'nonprofit-pdf-form-automation'
-  | 'logistics-pdf-automation';
+  | 'logistics-pdf-automation'
+  | 'batch-fill-pdf-forms'
+  | 'pdf-checkbox-automation'
+  | 'pdf-field-detection-tool'
+  | 'construction-pdf-automation'
+  | 'accounting-tax-pdf-automation';
 
 export type IntentPageCategory = 'workflow' | 'industry';
 
@@ -715,6 +720,233 @@ const INTENT_PAGES: IntentPage[] = [
         question: 'Can operations teams maintain one template per document type?',
         answer:
           'Yes. Saved template workflows support canonical forms for recurring logistics tasks.',
+      },
+    ],
+  },
+  {
+    key: 'batch-fill-pdf-forms',
+    category: 'workflow',
+    path: '/batch-fill-pdf-forms',
+    navLabel: 'Batch Fill PDF Forms',
+    heroTitle: 'Batch Fill PDF Forms From Multiple Records',
+    heroSummary:
+      'Fill the same PDF template with multiple records from your CSV, Excel, or JSON data. Map once, then fill form after form in seconds.',
+    seoTitle: 'Batch Fill PDF Forms From CSV, Excel, and JSON | DullyPDF',
+    seoDescription:
+      'Batch fill PDF forms by mapping a template once and populating it from multiple records in CSV, Excel, or JSON data sources.',
+    seoKeywords: [
+      'batch fill pdf forms',
+      'bulk pdf filling',
+      'fill multiple pdfs from spreadsheet',
+      'batch pdf form automation',
+    ],
+    valuePoints: [
+      'Map a PDF template once and fill it from any number of records.',
+      'Search and select rows individually for controlled batch output.',
+      'Clear and refill between records to verify mapping quality.',
+    ],
+    proofPoints: [
+      'Search & Fill supports fast row switching for sequential form filling.',
+      'Templates persist mapping context between fill sessions.',
+      'Filled output can be downloaded immediately for each record.',
+    ],
+    faqs: [
+      {
+        question: 'Can I fill the same PDF form with different records?',
+        answer:
+          'Yes. After mapping, use Search & Fill to select any row and populate the template, then clear and fill with the next record.',
+      },
+      {
+        question: 'Does DullyPDF support bulk PDF generation?',
+        answer:
+          'DullyPDF fills one record at a time through Search & Fill for controlled output. Map once, then fill repeatedly from your data rows.',
+      },
+      {
+        question: 'What data sources work for batch filling?',
+        answer:
+          'CSV, XLSX, and JSON files with row data. Each row represents one form to fill.',
+      },
+    ],
+  },
+  {
+    key: 'pdf-checkbox-automation',
+    category: 'workflow',
+    path: '/pdf-checkbox-automation',
+    navLabel: 'PDF Checkbox Automation',
+    heroTitle: 'Automate PDF Checkbox Fields With Rule-Based Logic',
+    heroSummary:
+      'DullyPDF handles complex checkbox scenarios including yes/no pairs, enum selections, multi-select lists, and presence-based toggles with configurable rule logic.',
+    seoTitle: 'PDF Checkbox Automation With Rule-Based Fill Logic | DullyPDF',
+    seoDescription:
+      'Automate PDF checkbox filling with yes/no, enum, presence, and list rules. Map checkbox groups to data columns for reliable automated form output.',
+    seoKeywords: [
+      'pdf checkbox automation',
+      'auto fill checkboxes pdf',
+      'pdf checkbox rules',
+      'checkbox form automation',
+    ],
+    valuePoints: [
+      'Support four checkbox rule types: yes_no, presence, enum, and list.',
+      'Map checkbox groups and option keys to structured data columns.',
+      'Handle multi-select checkbox fields with list-based splitting.',
+    ],
+    proofPoints: [
+      'Checkbox rule precedence follows a defined six-step resolution order.',
+      'Built-in alias fallback groups handle common medical and HR patterns.',
+      'Boolean token normalization covers yes/no, true/false, 1/0, and variants.',
+    ],
+    faqs: [
+      {
+        question: 'Can DullyPDF auto-fill checkboxes in PDF forms?',
+        answer:
+          'Yes. DullyPDF supports rule-based checkbox automation with yes/no, presence, enum, and list modes.',
+      },
+      {
+        question: 'How does checkbox group mapping work?',
+        answer:
+          'Each checkbox has a groupKey and optionKey. Map the group to a data column, and DullyPDF selects the correct option based on the cell value and rule type.',
+      },
+      {
+        question: 'Does this work for forms with dozens of checkboxes?',
+        answer:
+          'Yes. Checkbox-heavy forms like medical intake and benefits enrollment are common use cases for rule-based automation.',
+      },
+    ],
+  },
+  {
+    key: 'pdf-field-detection-tool',
+    category: 'workflow',
+    path: '/pdf-field-detection-tool',
+    navLabel: 'PDF Field Detection Tool',
+    heroTitle: 'Detect Form Fields in Any PDF With AI',
+    heroSummary:
+      'Upload any PDF and let AI detect text fields, checkboxes, date fields, and signature areas automatically. Review confidence scores and refine in the visual editor.',
+    seoTitle: 'AI PDF Field Detection Tool for Form Automation | DullyPDF',
+    seoDescription:
+      'Detect form fields in any PDF with AI-powered field detection. Identify text, checkbox, date, and signature fields with confidence scoring.',
+    seoKeywords: [
+      'pdf field detection',
+      'detect form fields in pdf',
+      'pdf field detection tool',
+      'ai form field detection',
+    ],
+    valuePoints: [
+      'Detect text, date, checkbox, and signature fields automatically.',
+      'Review confidence scores to prioritize fields needing manual review.',
+      'Refine detection results with visual editor tools.',
+    ],
+    proofPoints: [
+      'Supports PDF uploads up to 50MB with multi-page detection.',
+      'Confidence tiers: high (80%+), medium (65-80%), low (below 65%).',
+      'Field geometry uses normalized top-left origin coordinates.',
+    ],
+    faqs: [
+      {
+        question: 'Can DullyPDF detect fields in scanned PDFs?',
+        answer:
+          'Yes. The AI model analyzes rendered page images and works with both native and scanned PDFs.',
+      },
+      {
+        question: 'How accurate is field detection?',
+        answer:
+          'Detection quality depends on PDF clarity. High-confidence detections (80%+) are typically accurate. Low-confidence items should be reviewed.',
+      },
+      {
+        question: 'Can I add fields the AI missed?',
+        answer:
+          'Yes. The editor lets you add text, date, checkbox, and signature fields manually for regions the detector did not identify.',
+      },
+    ],
+  },
+  {
+    key: 'construction-pdf-automation',
+    category: 'industry',
+    path: '/construction-pdf-automation',
+    navLabel: 'Construction PDF Automation',
+    heroTitle: 'Construction Permit and Safety Form PDF Automation',
+    heroSummary:
+      'Automate construction permits, safety inspection forms, change orders, and daily logs by mapping PDF fields to project and subcontractor data.',
+    seoTitle: 'Construction PDF Form Automation for Permits and Safety | DullyPDF',
+    seoDescription:
+      'Automate construction permit PDFs, safety inspection forms, and change orders with mapped templates and structured project data.',
+    seoKeywords: [
+      'construction pdf automation',
+      'permit form automation',
+      'safety inspection form pdf',
+      'construction change order automation',
+      'daily log pdf automation',
+    ],
+    valuePoints: [
+      'Standardize permit, inspection, and change order form templates.',
+      'Map project and subcontractor data fields to form inputs.',
+      'Reuse templates across job sites and recurring submission cycles.',
+    ],
+    proofPoints: [
+      'Search & Fill supports fast row selection from project records.',
+      'Editor tools handle variable legacy form layouts from different agencies.',
+      'Template reuse reduces repetitive data entry for field office teams.',
+    ],
+    faqs: [
+      {
+        question: 'Can DullyPDF automate construction permit PDF forms?',
+        answer:
+          'Yes. Upload permit forms, detect fields, map to your project data, and fill them from structured records.',
+      },
+      {
+        question: 'Does this work for safety inspection and daily log forms?',
+        answer:
+          'Yes. Safety inspection and daily log PDFs can be standardized as mapped templates.',
+      },
+      {
+        question: 'Can GCs reuse templates across multiple job sites?',
+        answer:
+          'Yes. Saved templates can be reused for recurring form types across projects.',
+      },
+    ],
+  },
+  {
+    key: 'accounting-tax-pdf-automation',
+    category: 'industry',
+    path: '/accounting-tax-pdf-automation',
+    navLabel: 'Accounting & Tax PDF Automation',
+    heroTitle: 'Accounting and Tax Form PDF Automation Workflows',
+    heroSummary:
+      'Automate W-9s, 1099s, engagement letters, and other accounting-related PDFs by mapping form fields to client records and tax preparation data.',
+    seoTitle: 'Accounting and Tax PDF Form Automation | DullyPDF',
+    seoDescription:
+      'Automate accounting and tax PDF forms, fill W-9 and 1099 templates from client data, and streamline CPA firm document workflows.',
+    seoKeywords: [
+      'accounting pdf automation',
+      'tax form pdf automation',
+      'w9 form automation',
+      '1099 pdf automation',
+      'cpa firm pdf automation',
+    ],
+    valuePoints: [
+      'Map client and entity data to recurring tax and engagement forms.',
+      'Reduce rekeying for W-9 collection, 1099 preparation, and engagement letters.',
+      'Support repeat workflows across clients and tax seasons.',
+    ],
+    proofPoints: [
+      'Template reuse supports high-volume tax season processing.',
+      'Search & Fill handles quick client record lookup from data exports.',
+      'Rename and mapping improve consistency for inconsistent legacy form labels.',
+    ],
+    faqs: [
+      {
+        question: 'Can DullyPDF automate W-9 and 1099 PDF forms?',
+        answer:
+          'Yes. Tax document templates can be mapped to client data and filled from structured records.',
+      },
+      {
+        question: 'Does this work for CPA firm engagement letters?',
+        answer:
+          'Yes. Engagement letter templates can be standardized and reused across clients.',
+      },
+      {
+        question: 'Can accounting teams handle tax season volume with templates?',
+        answer:
+          'Yes. Saved templates support repeat filling from client data exports for high-volume processing.',
       },
     ],
   },

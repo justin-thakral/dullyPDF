@@ -5,6 +5,8 @@ import {
   type IntentPageKey,
 } from '../../config/intentPages';
 import { applyRouteSeo } from '../../utils/seo';
+import { Breadcrumbs } from '../ui/Breadcrumbs';
+import { SiteFooter } from '../ui/SiteFooter';
 import './IntentLandingPage.css';
 
 type IntentLandingPageProps = {
@@ -58,6 +60,13 @@ const IntentLandingPage = ({ pageKey }: IntentLandingPageProps) => {
         </header>
 
         <main className="intent-page__content">
+          <Breadcrumbs
+            items={[
+              { label: 'Home', href: '/' },
+              { label: page.category === 'industry' ? 'Industries' : 'Workflows' },
+              { label: page.navLabel },
+            ]}
+          />
           <section className="intent-page__hero">
             <p className="intent-page__kicker">
               {page.category === 'industry' ? 'Industry workflow page' : 'Commercial workflow page'}
@@ -160,6 +169,7 @@ const IntentLandingPage = ({ pageKey }: IntentLandingPageProps) => {
             </div>
           </section>
         </main>
+        <SiteFooter />
       </div>
     </div>
   );

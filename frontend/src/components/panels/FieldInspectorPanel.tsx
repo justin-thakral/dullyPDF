@@ -16,10 +16,6 @@ type FieldInspectorPanelProps = {
   onCreateField: (type: FieldType) => void;
   onBeginFieldChange: () => void;
   onCommitFieldChange: () => void;
-  canUndo: boolean;
-  canRedo: boolean;
-  onUndo: () => void;
-  onRedo: () => void;
 };
 
 /**
@@ -35,10 +31,6 @@ export function FieldInspectorPanel({
   onCreateField,
   onBeginFieldChange,
   onCommitFieldChange,
-  canUndo,
-  canRedo,
-  onUndo,
-  onRedo,
 }: FieldInspectorPanelProps) {
   const selected = fields.find((field) => field.id === selectedFieldId) || null;
 
@@ -181,6 +173,7 @@ export function FieldInspectorPanel({
                 className="ui-button ui-button--danger ui-button--compact"
                 type="button"
                 onClick={() => onDeleteField(selected.id)}
+                title="Delete selected field (Delete/Backspace)"
               >
                 Delete field
               </button>
@@ -206,26 +199,12 @@ export function FieldInspectorPanel({
         </div>
 
         <div className="panel__section panel__section--divider">
-          <h3>Actions</h3>
-          <div className="panel__action-grid">
-            <button
-              className="ui-button ui-button--ghost ui-button--compact"
-              type="button"
-              onClick={onUndo}
-              disabled={!canUndo}
-            >
-              Undo
-            </button>
-            <button
-              className="ui-button ui-button--ghost ui-button--compact"
-              type="button"
-              onClick={onRedo}
-              disabled={!canRedo}
-            >
-              Redo
-            </button>
-          </div>
-          <p className="panel__micro">Undo or redo the last 10 field edits.</p>
+          <h3>Shortcuts</h3>
+          <p className="panel__micro">
+            Shortcuts: Delete/Backspace delete selected, Ctrl/Cmd+Z undo, Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y redo,
+            Ctrl/Cmd+F or / focus search, [ and ] change pages, Alt+Arrow nudge (Shift+Alt for 10), and hold Shift
+            during corner-resize to lock aspect ratio.
+          </p>
         </div>
       </div>
     </aside>

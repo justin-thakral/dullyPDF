@@ -304,10 +304,11 @@ export function useOpenAiPipeline(deps: UseOpenAiPipelineDeps) {
       }
       const hasSchemaForMap = Boolean(renameSchemaId);
       if (confirm) {
-        const baseMessage = 'This PDF and its field tags will be sent to OpenAI. No row data or field values are sent.';
+        const baseMessage =
+          'OpenAI will receive PDF page content and field tags. Row data and field input values are not sent.';
         const renameOnlyWarning =
-          '\n\nA base rename without a Map schema in the same step does not align to database columns. ' +
-          'Explicit yes/no checkbox columns will only fill if names already match, and complex checkbox groups will fail.';
+          '\n\nRename-only standardizes names but does not align fields to database columns. ' +
+          'For reliable checkbox and schema fill behavior, run Map or Rename + Map.';
         const ok = await deps.requestConfirm({
           title: 'Send to OpenAI?',
           message: hasSchemaForMap ? baseMessage : baseMessage + renameOnlyWarning,
@@ -427,21 +428,71 @@ export function useOpenAiPipeline(deps: UseOpenAiPipelineDeps) {
   );
 
   // ── Computed capability flags ──────────────────────────────────────
-  const canRename = useMemo(() => {
-    if (!deps.verifiedUser || !deps.hasDocument || deps.fieldsCount === 0 || !deps.detectSessionId) return false;
-    return true;
-  }, [deps.detectSessionId, deps.fieldsCount, deps.hasDocument, deps.verifiedUser]);
+  const renameDisabledReason = useMemo(() => {
+    if (renameInProgress) return 'Rename is already running.';
+    if (mappingInProgress || mapSchemaInProgress) return 'Another OpenAI action is already running.';
+    if (!deps.verifiedUser) return 'Sign in to run Rename.';
+    if (!deps.hasDocument) return 'Upload a PDF first.';
+    if (deps.fieldsCount === 0) return 'Detect fields or add at least one field before Rename.';
+    if (!deps.detectSessionId) return 'Template session is still initializing. Try again in a moment.';
+    return null;
+  }, [
+    deps.detectSessionId,
+    deps.fieldsCount,
+    deps.hasDocument,
+    deps.verifiedUser,
+    mapSchemaInProgress,
+    mappingInProgress,
+    renameInProgress,
+  ]);
 
-  const canMapSchema = useMemo(() => {
-    if (!deps.verifiedUser || !deps.hasDocument || deps.fieldsCount === 0) return false;
-    if (!deps.detectSessionId && !deps.activeSavedFormId) return false;
-    if (deps.dataSourceKind === 'csv' || deps.dataSourceKind === 'excel' || deps.dataSourceKind === 'json' || deps.dataSourceKind === 'txt') {
-      return deps.dataColumns.length > 0 && deps.hasSchemaOrPending;
+  const mapSchemaDisabledReason = useMemo(() => {
+    if (mapSchemaInProgress) return 'Mapping is already running.';
+    if (mappingInProgress || renameInProgress) return 'Another OpenAI action is already running.';
+    if (!deps.verifiedUser) return 'Sign in to run Map Schema.';
+    if (!deps.hasDocument) return 'Upload a PDF first.';
+    if (deps.fieldsCount === 0) return 'Detect fields or add at least one field before mapping.';
+    if (!deps.detectSessionId && !deps.activeSavedFormId) {
+      return 'Template session is still initializing. Try again in a moment.';
     }
-    return false;
-  }, [deps.activeSavedFormId, deps.dataColumns.length, deps.hasSchemaOrPending, deps.dataSourceKind, deps.detectSessionId, deps.fieldsCount, deps.hasDocument, deps.verifiedUser]);
+    if (
+      deps.dataSourceKind !== 'csv' &&
+      deps.dataSourceKind !== 'excel' &&
+      deps.dataSourceKind !== 'json' &&
+      deps.dataSourceKind !== 'txt'
+    ) {
+      return 'Connect a CSV, Excel, JSON, or TXT schema source first.';
+    }
+    if (deps.dataColumns.length === 0) {
+      return 'Upload schema headers before mapping.';
+    }
+    if (!deps.hasSchemaOrPending) {
+      return 'Schema metadata is required before mapping.';
+    }
+    return null;
+  }, [
+    deps.activeSavedFormId,
+    deps.dataColumns.length,
+    deps.dataSourceKind,
+    deps.detectSessionId,
+    deps.fieldsCount,
+    deps.hasDocument,
+    deps.hasSchemaOrPending,
+    deps.verifiedUser,
+    mapSchemaInProgress,
+    mappingInProgress,
+    renameInProgress,
+  ]);
 
-  const canRenameAndMap = useMemo(() => canRename && canMapSchema, [canMapSchema, canRename]);
+  const renameAndMapDisabledReason = useMemo(() => {
+    if (renameDisabledReason) return renameDisabledReason;
+    if (mapSchemaDisabledReason) return mapSchemaDisabledReason;
+    return null;
+  }, [mapSchemaDisabledReason, renameDisabledReason]);
+
+  const canRename = useMemo(() => !renameDisabledReason, [renameDisabledReason]);
+  const canMapSchema = useMemo(() => !mapSchemaDisabledReason, [mapSchemaDisabledReason]);
+  const canRenameAndMap = useMemo(() => !renameAndMapDisabledReason, [renameAndMapDisabledReason]);
 
   const reset = useCallback(() => {
     setMappingInProgress(false);
@@ -476,6 +527,9 @@ export function useOpenAiPipeline(deps: UseOpenAiPipelineDeps) {
     canRename,
     canMapSchema,
     canRenameAndMap,
+    renameDisabledReason,
+    mapSchemaDisabledReason,
+    renameAndMapDisabledReason,
     reset,
   };
 }

@@ -180,15 +180,15 @@ Use this snippet wherever you need a simple checklist or bash command to grant s
 
 ````markdown
 1. Load the matching env + secrets:
-   - `scripts/set-role-dev.sh --email aparcelluzzi30@gmail.com --role god`
-   - `scripts/set-role-prod.sh --email aparcelluzzi30@gmail.com --role god`
+   - `scripts/set-role-dev.sh --email admin@example.com --role god`
+   - `scripts/set-role-prod.sh --email admin@example.com --role god`
    - Add `--reset-rename-count` to zero the rename quota.
 
 2. Explicit credentials command (if not using the helper scripts):
 
    ```bash
    FIREBASE_PROJECT_ID=dullypdf python -m backend.firebaseDB.role_cli \
-     --email aparcelluzzi30@gmail.com --role god
+     --email admin@example.com --role god
    ```
 
 3. Ensure the environment exports:

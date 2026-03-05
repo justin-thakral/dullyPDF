@@ -9,6 +9,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState, type CSSPrope
 import './Homepage.css';
 import { CommonFormsAttribution } from '../ui/CommonFormsAttribution';
 import { ContactDialog } from '../features/ContactDialog';
+import { SiteFooter } from '../ui/SiteFooter';
 
 interface HomepageProps {
   onStartWorkflow: () => void;
@@ -595,15 +596,7 @@ const Homepage: React.FC<HomepageProps> = ({
           </div>
         </div>
       </div>
-      <footer className="homepage-legal">
-        <span>© 2026 DullyPDF</span>
-        <div className="homepage-legal__links">
-          <a href="/pdf-to-fillable-form">Explore workflow pages</a>
-          <a href="/usage-docs">Usage Docs</a>
-          <a href="/privacy">Privacy Policy</a>
-          <a href="/terms">Terms of Service</a>
-        </div>
-      </footer>
+      <SiteFooter />
       <ContactDialog open={contactOpen} onClose={handleCloseContact} defaultEmail={userEmail} />
     </div>
   );

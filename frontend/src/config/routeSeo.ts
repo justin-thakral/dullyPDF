@@ -1,5 +1,7 @@
 import type { UsageDocsPageKey } from '../components/pages/usageDocsContent';
 import { getIntentPages, type IntentFaq, type IntentPageKey } from './intentPages';
+import { BLOG_INDEX_SEO, resolveBlogSeo } from './blogSeo';
+import { getBlogSlugs } from './blogPosts';
 
 export type LegalRouteKey = 'privacy' | 'terms';
 
@@ -7,7 +9,9 @@ export type PublicRouteSeoTarget =
   | { kind: 'app' }
   | { kind: 'legal'; legalKind: LegalRouteKey }
   | { kind: 'usage-docs'; pageKey: UsageDocsPageKey }
-  | { kind: 'intent'; intentKey: IntentPageKey };
+  | { kind: 'intent'; intentKey: IntentPageKey }
+  | { kind: 'blog-index' }
+  | { kind: 'blog-post'; slug: string };
 
 export type RouteSeoMetadata = {
   title: string;
@@ -26,9 +30,9 @@ export const DEFAULT_SOCIAL_IMAGE_PATH = '/DullyPDFLogoImproved.png';
 export const DEFAULT_SOCIAL_IMAGE_ALT = 'DullyPDF logo';
 
 const HOME_ROUTE_SEO: RouteSeoMetadata = {
-  title: 'PDF to Fillable Form Converter and Database Mapping | DullyPDF',
+  title: 'DullyPDF \u2014 Convert PDFs to Fillable Forms & Map to Database',
   description:
-    'Convert raw PDFs into fillable form templates, map fields to database columns, and auto-fill forms from CSV, Excel, or JSON in DullyPDF.',
+    'DullyPDF converts PDFs into fillable templates with AI field detection. Map fields to database columns and auto-fill from CSV, Excel, or JSON. Free to start.',
   canonicalPath: '/',
   keywords: [
     'pdf to fillable form',
@@ -279,11 +283,19 @@ export const INDEXABLE_PUBLIC_ROUTE_PATHS: string[] = [
   LEGAL_ROUTE_SEO.terms.canonicalPath,
   ...USAGE_DOCS_ROUTE_ORDER.map((pageKey) => USAGE_DOCS_ROUTE_SEO[pageKey].canonicalPath),
   ...getIntentPages().map((page) => page.path),
+  BLOG_INDEX_SEO.canonicalPath,
+  ...getBlogSlugs().map((slug) => `/blog/${slug}`),
 ];
 
 export const resolveRouteSeo = (target: PublicRouteSeoTarget): RouteSeoMetadata => {
   if (target.kind === 'app') return HOME_ROUTE_SEO;
   if (target.kind === 'legal') return LEGAL_ROUTE_SEO[target.legalKind];
   if (target.kind === 'intent') return INTENT_ROUTE_SEO[target.intentKey];
+  if (target.kind === 'blog-index') return BLOG_INDEX_SEO;
+  if (target.kind === 'blog-post') {
+    const blogSeo = resolveBlogSeo(target.slug);
+    if (blogSeo) return blogSeo;
+    return BLOG_INDEX_SEO;
+  }
   return USAGE_DOCS_ROUTE_SEO[target.pageKey];
 };

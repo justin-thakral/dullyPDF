@@ -368,9 +368,10 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
             <li>Field list is best for scanning, filtering, and page jumping.</li>
             <li>Inspector is best for precise metadata and geometry edits.</li>
             <li>
-              Panel toggles are explicit: <code>Fields</code>, <code>Names</code>, <code>Info</code>, <code>All</code>,
-              and <code>Clear</code>.
+              Display presets are <code>Review</code>, <code>Edit</code>, and <code>Fill</code>, with manual toggles for
+              <code>Fields</code>, <code>Names</code>, <code>Info</code>, <code>All</code>, and <code>Clear</code>.
             </li>
+            <li>The field list header shows <code>visible / in-scope</code> counts and overall total for state clarity.</li>
           </ul>
         ),
       },
@@ -380,10 +381,14 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
         body: (
           <ul>
             <li>Drag fields to move and use handles to resize.</li>
+            <li>Corner handles follow standard freeform resize behavior by default (independent width/height).</li>
+            <li>Hold <code>Shift</code> while dragging a corner to preserve aspect ratio for that drag.</li>
+            <li>All four corners and all four edges provide resize handles for direct geometry control.</li>
             <li>Use inspector inputs for exact x/y/width/height updates.</li>
             <li>Add text, date, signature, and checkbox fields for missing regions.</li>
             <li>Delete invalid candidates to keep templates clean.</li>
             <li>Geometry is clamped to page bounds and minimum 6-point width/height.</li>
+            <li>If a selected field is hidden by active filters, use <code>Reveal selected</code> in the list panel.</li>
           </ul>
         ),
       },
@@ -407,6 +412,24 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
             <li>Undo/redo depth is 10 edits.</li>
             <li><code>Clear</code> removes meaningful field values and resets them to null.</li>
             <li>For booleans, only true values are considered filled for clear-state checks.</li>
+            <li>Header OpenAI actions surface prerequisite hints when disabled to reduce trial-and-error clicks.</li>
+          </ul>
+        ),
+      },
+      {
+        id: 'keyboard-shortcuts',
+        title: 'Keyboard shortcuts',
+        body: (
+          <ul>
+            <li><code>Ctrl/Cmd+Z</code>: undo</li>
+            <li><code>Ctrl/Cmd+Shift+Z</code> or <code>Ctrl/Cmd+Y</code>: redo</li>
+            <li><code>Delete</code>, <code>Backspace</code>, or <code>Ctrl/Cmd+X</code>: delete selected field</li>
+            <li><code>Ctrl/Cmd+F</code> or <code>/</code>: focus field search</li>
+            <li><code>[</code> and <code>]</code>: previous/next page</li>
+            <li><code>Alt+Arrow</code>: nudge selected field by 1 point</li>
+            <li><code>Shift+Alt+Arrow</code>: nudge selected field by 10 points</li>
+            <li><code>Ctrl/Cmd+0</code>: reset zoom to 100%</li>
+            <li><code>Shift</code> (during corner drag): temporary aspect-ratio lock</li>
           </ul>
         ),
       },

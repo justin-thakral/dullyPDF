@@ -472,18 +472,30 @@
 .homepage-mobile-logo {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 0.55rem;
   padding: 0 0.6rem;
   border-radius: 12px;
   height: var(--mobile-pill-height);
   background: rgba(15, 23, 42, 0.55);
   border: 1px solid rgba(148, 163, 184, 0.35);
+  line-height: 0;
+}
+
+.homepage-mobile-logo picture {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  line-height: 0;
 }
 
 .homepage-logo-image {
+  display: block;
   width: var(--mobile-logo-size);
   height: var(--mobile-logo-size);
   object-fit: contain;
+  transform: translateY(1px);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.1);
 }

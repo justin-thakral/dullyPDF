@@ -117,6 +117,20 @@ fi
   npm run build
 )
 
+echo "Generating static HTML for SEO prerendering..."
+node scripts/generate-static-html.mjs
+
+echo "Generating sitemap..."
+node scripts/generate-sitemap.mjs
+
+# Validate key static HTML files exist
+require_file "frontend/dist/index.html"
+require_file "frontend/dist/healthcare-pdf-automation/index.html"
+require_file "frontend/dist/pdf-to-fillable-form/index.html"
+require_file "frontend/dist/usage-docs/index.html"
+require_file "frontend/dist/sitemap.xml"
+echo "Static HTML and sitemap validation passed."
+
 for asset_path in "${CRITICAL_WEBP_ASSETS[@]}"; do
   require_file "frontend/dist${asset_path}"
 done

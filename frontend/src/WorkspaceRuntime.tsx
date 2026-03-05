@@ -23,7 +23,7 @@ import UploadView from './components/features/UploadView';
 import ProcessingView from './components/features/ProcessingView';
 import { DemoTour } from './components/demo/DemoTour';
 import { FieldInspectorPanel } from './components/panels/FieldInspectorPanel';
-import { FieldListPanel } from './components/panels/FieldListPanel';
+import { FieldListPanel, type FieldListDisplayPreset } from './components/panels/FieldListPanel';
 import { PdfViewer } from './components/viewer/PdfViewer';
 import { Alert } from './components/ui/Alert';
 import { ConfirmDialog, PromptDialog, SavedFormsLimitDialog } from './components/ui/Dialog';
@@ -49,6 +49,7 @@ import { useSaveDownload } from './hooks/useSaveDownload';
 import { useDemo } from './hooks/useDemo';
 import { ApiService, type BillingCheckoutKind } from './services/api';
 import { applyRouteSeo } from './utils/seo';
+import { clampRectToPage } from './utils/coords';
 
 /**
  * Launch actions that can be requested by the lightweight homepage shell.
@@ -542,6 +543,31 @@ function WorkspaceRuntime({
     [currentPage, fieldState, pageSizes],
   );
 
+  const handleApplyDisplayPreset = useCallback(
+    (preset: Exclude<FieldListDisplayPreset, 'custom'>) => {
+      if (preset === 'review') {
+        fieldState.setShowFields(true);
+        fieldState.setShowFieldNames(true);
+        fieldState.setShowFieldInfo(false);
+        return;
+      }
+      if (preset === 'edit') {
+        fieldState.setShowFields(true);
+        fieldState.setShowFieldNames(false);
+        fieldState.setShowFieldInfo(false);
+        return;
+      }
+      fieldState.setShowFields(true);
+      fieldState.setShowFieldNames(false);
+      fieldState.setShowFieldInfo(true);
+    },
+    [fieldState],
+  );
+
+  const handleResetConfidenceFilters = useCallback(() => {
+    fieldState.setConfidenceFilter({ high: true, medium: true, low: true });
+  }, [fieldState]);
+
   const handleUndo = useCallback(
     () => fieldHistory.handleUndo((updater) => fieldState.setSelectedFieldId(updater)),
     [fieldHistory, fieldState],
@@ -563,7 +589,7 @@ function WorkspaceRuntime({
   // ── Effects ────────────────────────────────────────────────────────
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const mediaQuery = window.matchMedia('(max-width: 1020px)');
+    const mediaQuery = window.matchMedia('(max-width: 900px)');
     const update = () => setIsMobileView(mediaQuery.matches);
     update();
     if (typeof mediaQuery.addEventListener === 'function') {
@@ -578,13 +604,24 @@ function WorkspaceRuntime({
     return () => legacyMediaQuery.removeListener(update);
   }, []);
 
+  const mobileViewTransitionRef = useRef(false);
   useEffect(() => {
+    const wasMobile = mobileViewTransitionRef.current;
+    mobileViewTransitionRef.current = isMobileView;
+
     if (!isMobileView || showHomepage) return;
     if (pdfDoc || detection.isProcessing) {
-      if (!dialog.bannerNotice && !openAi.openAiError && !dataSource.schemaError) {
+      const transitionedToMobile = !wasMobile && isMobileView;
+      if (
+        transitionedToMobile &&
+        !dialog.bannerNotice &&
+        !openAi.openAiError &&
+        !dataSource.schemaError
+      ) {
         dialog.setBannerNotice({
           tone: 'info',
-          message: 'The editor works best on larger screens. If controls feel cramped, increase your window size.',
+          message:
+            'The full editor is optimized for desktop. Increase window width above 900px for the best editing workflow.',
           autoDismissMs: 8000,
         });
       }
@@ -678,19 +715,122 @@ function WorkspaceRuntime({
     };
   }, [pdfDoc]);
 
+  const focusFieldSearch = useCallback(() => {
+    if (typeof document === 'undefined') return;
+    const input = document.getElementById('field-search');
+    if (!(input instanceof HTMLInputElement)) return;
+    input.focus();
+    input.select();
+  }, []);
+
+  const nudgeSelectedField = useCallback(
+    (deltaX: number, deltaY: number, step = 1) => {
+      const selectedId = fieldState.selectedFieldId;
+      if (!selectedId) return;
+      const selectedField = fieldHistory.fieldsRef.current.find((field) => field.id === selectedId);
+      if (!selectedField) return;
+      const pageSize = pageSizes[selectedField.page];
+      if (!pageSize) return;
+
+      const nextRect = clampRectToPage(
+        {
+          ...selectedField.rect,
+          x: selectedField.rect.x + deltaX * step,
+          y: selectedField.rect.y + deltaY * step,
+        },
+        pageSize,
+        6,
+      );
+      fieldState.handleUpdateField(selectedId, { rect: nextRect });
+    },
+    [fieldHistory.fieldsRef, fieldState, pageSizes],
+  );
+
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (!pdfDoc || event.defaultPrevented) return;
       const target = event.target as HTMLElement | null;
-      if (target && (target.isContentEditable || target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT')) return;
+      if (
+        target &&
+        (target.isContentEditable ||
+          target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT')
+      ) {
+        return;
+      }
       const isMac = /Mac|iPhone|iPad|iPod/.test(navigator.platform);
       const modifier = isMac ? event.metaKey : event.ctrlKey;
-      if (!modifier) return;
       const key = event.key.toLowerCase();
+
+      if (!modifier && !event.altKey) {
+        if (key === 'delete' || key === 'backspace') {
+          if (!fieldState.selectedFieldId) return;
+          event.preventDefault();
+          fieldState.handleDeleteField(fieldState.selectedFieldId);
+          return;
+        }
+        if (key === '[' && pageCount > 0) {
+          event.preventDefault();
+          handlePageJump(Math.max(1, currentPage - 1));
+          return;
+        }
+        if (key === ']' && pageCount > 0) {
+          event.preventDefault();
+          handlePageJump(Math.min(pageCount, currentPage + 1));
+          return;
+        }
+        if (key === '/') {
+          event.preventDefault();
+          focusFieldSearch();
+          return;
+        }
+      }
+
+      if (event.altKey && !modifier) {
+        const step = event.shiftKey ? 10 : 1;
+        if (key === 'arrowleft') {
+          event.preventDefault();
+          nudgeSelectedField(-1, 0, step);
+          return;
+        }
+        if (key === 'arrowright') {
+          event.preventDefault();
+          nudgeSelectedField(1, 0, step);
+          return;
+        }
+        if (key === 'arrowup') {
+          event.preventDefault();
+          nudgeSelectedField(0, -1, step);
+          return;
+        }
+        if (key === 'arrowdown') {
+          event.preventDefault();
+          nudgeSelectedField(0, 1, step);
+          return;
+        }
+      }
+
+      if (!modifier) return;
+
+      if (key === 'f') {
+        event.preventDefault();
+        focusFieldSearch();
+        return;
+      }
+      if (key === '0') {
+        event.preventDefault();
+        setScale(1);
+        return;
+      }
       if (key === 'z') {
         event.preventDefault();
         if (event.shiftKey) handleRedo(); else handleUndo();
       } else if (key === 'x') {
+        if (!fieldState.selectedFieldId) return;
+        event.preventDefault();
+        fieldState.handleDeleteField(fieldState.selectedFieldId);
+      } else if (key === 'backspace') {
         if (!fieldState.selectedFieldId) return;
         event.preventDefault();
         fieldState.handleDeleteField(fieldState.selectedFieldId);
@@ -700,7 +840,17 @@ function WorkspaceRuntime({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [fieldState, handleRedo, handleUndo, pdfDoc]);
+  }, [
+    currentPage,
+    fieldState,
+    focusFieldSearch,
+    handlePageJump,
+    handleRedo,
+    handleUndo,
+    nudgeSelectedField,
+    pageCount,
+    pdfDoc,
+  ]);
 
   // ── Computed values ────────────────────────────────────────────────
   const { demoActive, demoStepIndex, demoCompletionOpen, demoSearchPreset } = demo;
@@ -720,11 +870,24 @@ function WorkspaceRuntime({
     canRename,
     canMapSchema,
     canRenameAndMap,
+    renameDisabledReason,
+    mapSchemaDisabledReason,
+    renameAndMapDisabledReason,
   } = openAi;
   const { schemaError, dataSourceKind, dataSourceLabel, schemaUploadInProgress, dataColumns, dataRows, identifierKey, canSearchFill } = dataSource;
   const { savedForms: savedFormsList, savedFormsLoading, deletingFormId, showSavedFormsLimitDialog } = savedForms;
   const { fields } = fieldHistory;
   const { showFields, showFieldNames, showFieldInfo, confidenceFilter, selectedFieldId, visibleFields, hasFieldValues } = fieldState;
+  const selectedField = useMemo(
+    () => fields.find((field) => field.id === selectedFieldId) || null,
+    [fields, selectedFieldId],
+  );
+  const displayPreset = useMemo<FieldListDisplayPreset>(() => {
+    if (showFields && showFieldNames && !showFieldInfo) return 'review';
+    if (showFields && !showFieldNames && !showFieldInfo) return 'edit';
+    if (showFields && !showFieldNames && showFieldInfo) return 'fill';
+    return 'custom';
+  }, [showFieldInfo, showFieldNames, showFields]);
 
   const bootstrapAuthSyncedRef = useRef(false);
   useEffect(() => {
@@ -929,6 +1092,9 @@ function WorkspaceRuntime({
         onMapSchema={demoActive ? demo.handleDemoMapSchema : handleMapSchema}
         canMapSchema={demoActive ? true : canMapSchema} canRename={demoActive ? true : canRename}
         canRenameAndMap={demoActive ? true : canRenameAndMap}
+        mapSchemaDisabledReason={demoActive ? null : mapSchemaDisabledReason}
+        renameDisabledReason={demoActive ? null : renameDisabledReason}
+        renameAndMapDisabledReason={demoActive ? null : renameAndMapDisabledReason}
         onOpenSearchFill={canSearchFill ? () => setShowSearchFill(true) : undefined}
         canSearchFill={canSearchFill} onDownload={saveDownload.handleDownload} onSaveToProfile={saveDownload.handleSaveToProfile}
         downloadInProgress={saveDownload.downloadInProgress} saveInProgress={saveDownload.saveInProgress}
@@ -938,14 +1104,17 @@ function WorkspaceRuntime({
         onSignOut={verifiedUser ? handleSignOut : undefined}
         demoLocked={demoUiLocked} onDemoLockedAction={handleDemoLockedAction} />
       <div className="app-shell">
-        <FieldListPanel fields={visibleFields} selectedFieldId={selectedFieldId}
+        <FieldListPanel fields={visibleFields} totalFieldCount={fields.length}
+          selectedFieldId={selectedFieldId} selectedField={selectedField}
           currentPage={currentPage} pageCount={pageCount} showFields={showFields}
           showFieldNames={showFieldNames} showFieldInfo={showFieldInfo}
+          displayPreset={displayPreset} onApplyDisplayPreset={handleApplyDisplayPreset}
           onShowFieldsChange={fieldState.handleShowFieldsChange}
           onShowFieldNamesChange={fieldState.handleShowFieldNamesChange}
           onShowFieldInfoChange={fieldState.handleShowFieldInfoChange}
           canClearInputs={hasFieldValues} onClearInputs={fieldState.handleClearFieldValues}
           confidenceFilter={confidenceFilter} onConfidenceFilterChange={fieldState.handleConfidenceFilterChange}
+          onResetConfidenceFilters={handleResetConfidenceFilters}
           onSelectField={handleSelectField} onPageChange={handlePageJump} />
         <main className="workspace">
           {loadError ? (
@@ -955,7 +1124,8 @@ function WorkspaceRuntime({
               </div>
             </div>
           ) : (
-            <PdfViewer pdfDoc={pdfDoc} pageNumber={currentPage} scale={scale} pageSizes={pageSizes}
+            <PdfViewer pdfDoc={pdfDoc} pageNumber={currentPage} scale={scale}
+              pageSizes={pageSizes}
               fields={visibleFields} showFields={showFields} showFieldNames={showFieldNames}
               showFieldInfo={showFieldInfo} selectedFieldId={selectedFieldId}
               onSelectField={handleSelectField} onUpdateField={fieldState.handleUpdateField}
@@ -971,9 +1141,7 @@ function WorkspaceRuntime({
           onUpdateFieldDraft={fieldState.handleUpdateFieldDraft}
           onDeleteField={fieldState.handleDeleteField} onCreateField={handleCreateField}
           onBeginFieldChange={fieldHistory.beginFieldHistory}
-          onCommitFieldChange={fieldHistory.commitFieldHistory}
-          canUndo={fieldHistory.canUndo} canRedo={fieldHistory.canRedo}
-          onUndo={handleUndo} onRedo={handleRedo} />
+          onCommitFieldChange={fieldHistory.commitFieldHistory} />
       </div>
       {showSearchFill ? (
         <SearchFillModal open={showSearchFill} onClose={() => setShowSearchFill(false)}

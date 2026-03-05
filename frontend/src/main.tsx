@@ -14,13 +14,17 @@ const LegalPage = lazy(() => import('./components/pages/LegalPage'));
 const UsageDocsPage = lazy(() => import('./components/pages/UsageDocsPage'));
 const UsageDocsNotFoundPage = lazy(() => import('./components/pages/UsageDocsNotFoundPage'));
 const IntentLandingPage = lazy(() => import('./components/pages/IntentLandingPage'));
+const BlogIndexPage = lazy(() => import('./components/pages/BlogIndexPage'));
+const BlogPostPage = lazy(() => import('./components/pages/BlogPostPage'));
 
 type AppRoute =
   | { kind: 'app' }
   | { kind: 'legal'; legalKind: LegalPageKind }
   | { kind: 'intent'; intentKey: IntentPageKey }
   | { kind: 'usage-docs'; pageKey: UsageDocsPageKey }
-  | { kind: 'usage-docs-not-found'; requestedPath: string };
+  | { kind: 'usage-docs-not-found'; requestedPath: string }
+  | { kind: 'blog-index' }
+  | { kind: 'blog-post'; slug: string };
 
 const replaceBrowserPath = (targetPath: string): void => {
   if (typeof window === 'undefined') return;
@@ -38,6 +42,18 @@ const resolveRoute = (): AppRoute => {
   }
   if (normalizedPath === '/terms' || normalizedPath === '/terms-of-service') {
     return { kind: 'legal', legalKind: 'terms' };
+  }
+
+  if (normalizedPath === '/blog') {
+    if (path !== normalizedPath) replaceBrowserPath(normalizedPath);
+    return { kind: 'blog-index' };
+  }
+  if (normalizedPath.startsWith('/blog/')) {
+    const slug = normalizedPath.slice('/blog/'.length);
+    if (slug && !slug.includes('/')) {
+      if (path !== normalizedPath) replaceBrowserPath(normalizedPath);
+      return { kind: 'blog-post', slug };
+    }
   }
 
   const intentKey = resolveIntentPath(normalizedPath);
@@ -100,6 +116,10 @@ createRoot(document.getElementById('root')!).render(
         <UsageDocsPage pageKey={route.pageKey} />
       ) : route.kind === 'usage-docs-not-found' ? (
         <UsageDocsNotFoundPage requestedPath={route.requestedPath} />
+      ) : route.kind === 'blog-index' ? (
+        <BlogIndexPage />
+      ) : route.kind === 'blog-post' ? (
+        <BlogPostPage slug={route.slug} />
       ) : (
         <App />
       )}

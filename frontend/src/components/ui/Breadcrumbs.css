@@ -1,0 +1,38 @@
+.breadcrumbs {
+  margin-bottom: 1rem;
+}
+
+.breadcrumbs__list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.breadcrumbs__item {
+  display: flex;
+  align-items: center;
+  font-size: 0.84rem;
+  line-height: 1.4;
+}
+
+.breadcrumbs__link {
+  color: #6366f1;
+  text-decoration: none;
+}
+
+.breadcrumbs__link:hover {
+  text-decoration: underline;
+}
+
+.breadcrumbs__separator {
+  margin: 0 0.4rem;
+  color: #94a3b8;
+}
+
+.breadcrumbs__current {
+  color: #64748b;
+}

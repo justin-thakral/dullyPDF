@@ -175,6 +175,24 @@
   transition: opacity 0.2s ease;
 }
 
+.field-handle--tl {
+  left: -5px;
+  top: -5px;
+  cursor: nwse-resize;
+}
+
+.field-handle--tr {
+  right: -5px;
+  top: -5px;
+  cursor: nesw-resize;
+}
+
+.field-handle--bl {
+  left: -5px;
+  bottom: -5px;
+  cursor: nesw-resize;
+}
+
 .field-handle--br {
   right: -5px;
   bottom: -5px;
