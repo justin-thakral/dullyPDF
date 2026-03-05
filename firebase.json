@@ -161,6 +161,36 @@
         "source": "/logistics-pdf-automation/",
         "destination": "/logistics-pdf-automation",
         "type": 301
+      },
+      {
+        "source": "/blog/",
+        "destination": "/blog",
+        "type": 301
+      },
+      {
+        "source": "/batch-fill-pdf-forms/",
+        "destination": "/batch-fill-pdf-forms",
+        "type": 301
+      },
+      {
+        "source": "/pdf-checkbox-automation/",
+        "destination": "/pdf-checkbox-automation",
+        "type": 301
+      },
+      {
+        "source": "/pdf-field-detection-tool/",
+        "destination": "/pdf-field-detection-tool",
+        "type": 301
+      },
+      {
+        "source": "/construction-pdf-automation/",
+        "destination": "/construction-pdf-automation",
+        "type": 301
+      },
+      {
+        "source": "/accounting-tax-pdf-automation/",
+        "destination": "/accounting-tax-pdf-automation",
+        "type": 301
       }
     ],
     "headers": [
@@ -330,115 +360,7 @@
         }
       },
       {
-        "source": "/",
-        "destination": "/index.html"
-      },
-      {
-        "source": "/privacy",
-        "destination": "/index.html"
-      },
-      {
-        "source": "/privacy-policy",
-        "destination": "/index.html"
-      },
-      {
-        "source": "/terms",
-        "destination": "/index.html"
-      },
-      {
-        "source": "/terms-of-service",
-        "destination": "/index.html"
-      },
-      {
-        "source": "/usage-docs",
-        "destination": "/index.html"
-      },
-      {
-        "source": "/usage-docs/getting-started",
-        "destination": "/index.html"
-      },
-      {
-        "source": "/usage-docs/detection",
-        "destination": "/index.html"
-      },
-      {
-        "source": "/usage-docs/rename-mapping",
-        "destination": "/index.html"
-      },
-      {
-        "source": "/usage-docs/editor-workflow",
-        "destination": "/index.html"
-      },
-      {
-        "source": "/usage-docs/search-fill",
-        "destination": "/index.html"
-      },
-      {
-        "source": "/usage-docs/save-download-profile",
-        "destination": "/index.html"
-      },
-      {
-        "source": "/usage-docs/troubleshooting",
-        "destination": "/index.html"
-      },
-      {
-        "source": "/pdf-to-fillable-form",
-        "destination": "/index.html"
-      },
-      {
-        "source": "/pdf-to-database-template",
-        "destination": "/index.html"
-      },
-      {
-        "source": "/fill-pdf-from-csv",
-        "destination": "/index.html"
-      },
-      {
-        "source": "/fill-information-in-pdf",
-        "destination": "/index.html"
-      },
-      {
-        "source": "/fillable-form-field-name",
-        "destination": "/index.html"
-      },
-      {
-        "source": "/healthcare-pdf-automation",
-        "destination": "/index.html"
-      },
-      {
-        "source": "/acord-form-automation",
-        "destination": "/index.html"
-      },
-      {
-        "source": "/real-estate-pdf-automation",
-        "destination": "/index.html"
-      },
-      {
-        "source": "/government-form-automation",
-        "destination": "/index.html"
-      },
-      {
-        "source": "/finance-loan-pdf-automation",
-        "destination": "/index.html"
-      },
-      {
-        "source": "/hr-pdf-automation",
-        "destination": "/index.html"
-      },
-      {
-        "source": "/legal-pdf-workflow-automation",
-        "destination": "/index.html"
-      },
-      {
-        "source": "/education-form-automation",
-        "destination": "/index.html"
-      },
-      {
-        "source": "/nonprofit-pdf-form-automation",
-        "destination": "/index.html"
-      },
-      {
-        "source": "/logistics-pdf-automation",
+        "source": "**",
         "destination": "/index.html"
       }
     ]

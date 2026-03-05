@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import type { UsageDocsPageKey } from './usageDocsContent';
 import {
   getUsageDocsPage,
@@ -7,6 +7,10 @@ import {
 } from './usageDocsContent';
 import './UsageDocsPage.css';
 import { applyRouteSeo } from '../../utils/seo';
+import { Breadcrumbs } from '../ui/Breadcrumbs';
+import { SiteFooter } from '../ui/SiteFooter';
+import type { IntentPageKey } from '../../config/intentPages';
+import { getIntentPage } from '../../config/intentPages';
 
 type UsageDocsPageProps = {
   pageKey: UsageDocsPageKey;
@@ -19,13 +23,36 @@ const HEADER_LINKS = [
   { label: 'Terms', href: '/terms' },
 ];
 
+const RELATED_INTENT_PAGES: Record<string, IntentPageKey[]> = {
+  'getting-started': ['pdf-to-fillable-form', 'fill-pdf-from-csv'],
+  detection: ['pdf-to-fillable-form', 'healthcare-pdf-automation'],
+  'rename-mapping': ['pdf-to-database-template', 'fillable-form-field-name'],
+  'search-fill': ['fill-pdf-from-csv', 'fill-information-in-pdf'],
+  'save-download-profile': ['pdf-to-fillable-form'],
+  troubleshooting: [],
+  'editor-workflow': ['pdf-to-fillable-form'],
+  index: [],
+};
+
 const UsageDocsPage = ({ pageKey }: UsageDocsPageProps) => {
   const page = getUsageDocsPage(pageKey);
   const pages = getUsageDocsPages();
 
+  const relatedWorkflows = useMemo(() => {
+    const keys = RELATED_INTENT_PAGES[pageKey] || [];
+    return keys.map((key) => {
+      const p = getIntentPage(key);
+      return { label: p.navLabel, href: p.path };
+    });
+  }, [pageKey]);
+
   useEffect(() => {
     applyRouteSeo({ kind: 'usage-docs', pageKey });
   }, [pageKey]);
+
+  const breadcrumbItems = pageKey === 'index'
+    ? [{ label: 'Home', href: '/' }, { label: 'Usage Docs' }]
+    : [{ label: 'Home', href: '/' }, { label: 'Usage Docs', href: '/usage-docs' }, { label: page.title }];
 
   return (
     <div className="usage-docs-page">
@@ -55,6 +82,7 @@ const UsageDocsPage = ({ pageKey }: UsageDocsPageProps) => {
         </header>
 
         <section className="usage-docs-hero">
+          <Breadcrumbs items={breadcrumbItems} />
           <span className="usage-docs-kicker">Usage docs</span>
           <h1 className="usage-docs-title">{page.title}</h1>
           <p className="usage-docs-summary">{page.summary}</p>
@@ -100,15 +128,23 @@ const UsageDocsPage = ({ pageKey }: UsageDocsPageProps) => {
                 {section.body}
               </section>
             ))}
+
+            {relatedWorkflows.length > 0 && (
+              <section className="usage-docs-section usage-docs-section--related">
+                <h2>Related workflows</h2>
+                <ul>
+                  {relatedWorkflows.map((link) => (
+                    <li key={link.href}>
+                      <a href={link.href}>{link.label}</a>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
           </main>
         </div>
 
-        <footer className="usage-docs-footer">
-          <div>
-            Questions about product usage: <a href="mailto:justin@ttcommercial.com">justin@ttcommercial.com</a>
-          </div>
-          <div className="usage-docs-footer__meta">DullyPDF</div>
-        </footer>
+        <SiteFooter />
       </div>
     </div>
   );

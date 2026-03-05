@@ -23,12 +23,15 @@ type HeaderBarProps = {
   hasMappedSchema?: boolean;
   onMapSchema?: () => void;
   canMapSchema?: boolean;
+  mapSchemaDisabledReason?: string | null;
   renameInProgress?: boolean;
   hasRenamedFields?: boolean;
   onRename?: () => void;
   onRenameAndMap?: () => void;
   canRename?: boolean;
   canRenameAndMap?: boolean;
+  renameDisabledReason?: string | null;
+  renameAndMapDisabledReason?: string | null;
   onOpenSearchFill?: () => void;
   canSearchFill?: boolean;
   onDownload?: () => void;
@@ -40,6 +43,12 @@ type HeaderBarProps = {
   demoLocked?: boolean;
   onDemoLockedAction?: () => void;
 };
+
+function isSchemaPrerequisiteHint(reason: string | null | undefined): boolean {
+  return reason === 'Connect a CSV, Excel, JSON, or TXT schema source first.' ||
+    reason === 'Upload schema headers before mapping.' ||
+    reason === 'Schema metadata is required before mapping.';
+}
 
 /**
  * Render header controls for navigation, mapping, and account actions.
@@ -63,12 +72,15 @@ export function HeaderBar({
   hasMappedSchema = false,
   onMapSchema,
   canMapSchema = false,
+  mapSchemaDisabledReason = null,
   renameInProgress = false,
   hasRenamedFields = false,
   onRename,
   onRenameAndMap,
   canRename = false,
   canRenameAndMap = false,
+  renameDisabledReason = null,
+  renameAndMapDisabledReason = null,
   onOpenSearchFill,
   canSearchFill = false,
   onDownload,
@@ -88,13 +100,35 @@ export function HeaderBar({
   const renameLabel = renameInProgress ? 'Renaming' : hasRenamedFields ? 'Renamed' : 'Rename';
   const renameAndMapLabel = mapSchemaInProgress ? 'Mapping' : 'Rename + Map';
   const demoOverride = demoLocked && Boolean(onDemoLockedAction);
-  const disableMapSchema = demoOverride ? false : mappingInProgress || mapSchemaInProgress;
+  const deferSchemaPrereqHint = isSchemaPrerequisiteHint(mapSchemaDisabledReason);
+  const disableMapSchema = demoOverride
+    ? false
+    : mappingInProgress || mapSchemaInProgress || (!canMapSchema && !deferSchemaPrereqHint);
   const disableRename =
     demoOverride ? false : !canRename || mappingInProgress || renameInProgress || mapSchemaInProgress;
   const disableRenameAndMap =
     demoOverride ? false : !canRenameAndMap || mappingInProgress || renameInProgress || mapSchemaInProgress;
   const disableSearch = !canSearchFill || mappingInProgress;
   const showSearchHint = !canSearchFill;
+  const rawActionHint = demoOverride
+    ? null
+    : disableMapSchema
+      ? mapSchemaDisabledReason
+      : disableRenameAndMap
+        ? renameAndMapDisabledReason
+        : disableRename
+          ? renameDisabledReason
+          : null;
+  const actionHint = isSchemaPrerequisiteHint(rawActionHint) ? null : rawActionHint;
+  const mapSchemaTooltip = disableMapSchema
+    ? mapSchemaDisabledReason || 'Mapping is unavailable right now.'
+    : 'Map PDF field names to schema headers';
+  const renameTooltip = disableRename
+    ? renameDisabledReason || 'Rename is unavailable right now.'
+    : 'Rename PDF field names using OpenAI';
+  const renameAndMapTooltip = disableRenameAndMap
+    ? renameAndMapDisabledReason || 'Rename + Map is unavailable right now.'
+    : 'Run Rename and Map in one step';
   const disableDownload = demoOverride ? false : !canDownload || downloadInProgress;
   const disableSave = demoOverride ? false : !canSave || saveInProgress;
 
@@ -350,6 +384,7 @@ export function HeaderBar({
                     onRename?.();
                   }}
                   disabled={disableRename}
+                  title={renameTooltip}
                 >
                   {renameLabel}
                 </button>
@@ -358,7 +393,7 @@ export function HeaderBar({
                 className="ui-button ui-button--ghost ui-button--compact"
                 type="button"
                 data-demo-target="openai-remap"
-                aria-disabled={!canMapSchema}
+                aria-disabled={disableMapSchema}
                 onClick={() => {
                   if (demoOverride) {
                     onDemoLockedAction?.();
@@ -367,6 +402,7 @@ export function HeaderBar({
                   onMapSchema?.();
                 }}
                 disabled={disableMapSchema}
+                title={mapSchemaTooltip}
               >
                 {mapSchemaLabel}
               </button>
@@ -382,6 +418,7 @@ export function HeaderBar({
                     onRenameAndMap?.();
                   }}
                   disabled={disableRenameAndMap}
+                  title={renameAndMapTooltip}
                 >
                   {renameAndMapLabel}
                 </button>
@@ -404,6 +441,7 @@ export function HeaderBar({
               ) : null}
             </div>
           ) : null}
+          {actionHint ? <span className="ui-header__action-hint">{actionHint}</span> : null}
           {onSaveToProfile ? (
             <div className="ui-header__save-row ui-header__save-row--inline">
               {onDownload ? (

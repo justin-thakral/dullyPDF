@@ -138,6 +138,17 @@
   letter-spacing: 0.01em;
 }
 
+.ui-header__action-hint {
+  font-size: 0.72rem;
+  color: rgba(226, 232, 240, 0.9);
+  background: rgba(15, 23, 42, 0.42);
+  border: 1px solid rgba(148, 163, 184, 0.34);
+  border-radius: 10px;
+  padding: 0.28rem 0.55rem;
+  line-height: 1.25;
+  max-width: min(440px, 100%);
+}
+
 .data-source {
   position: relative;
 }
@@ -438,4 +449,3 @@
   width: 120px;
   accent-color: #60a5fa;
 }
-

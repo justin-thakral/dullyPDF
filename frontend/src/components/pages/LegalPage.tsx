@@ -2,6 +2,8 @@ import { useEffect } from 'react';
 import type { ReactNode } from 'react';
 import './LegalPage.css';
 import { applyRouteSeo } from '../../utils/seo';
+import { Breadcrumbs } from '../ui/Breadcrumbs';
+import { SiteFooter } from '../ui/SiteFooter';
 
 export type LegalPageKind = 'privacy' | 'terms';
 
@@ -421,6 +423,12 @@ const LegalPage = ({ kind }: LegalPageProps) => {
         </header>
 
         <section className="legal-hero">
+          <Breadcrumbs
+            items={[
+              { label: 'Home', href: '/' },
+              { label: copy.title },
+            ]}
+          />
           <span className="legal-kicker">Legal</span>
           <h1 className="legal-title">{copy.title}</h1>
           <div className="legal-updated">Last updated: {LAST_UPDATED}</div>
@@ -436,12 +444,7 @@ const LegalPage = ({ kind }: LegalPageProps) => {
           ))}
         </section>
 
-        <footer className="legal-footer">
-          <div>
-            Contact: <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a>
-          </div>
-          <div className="legal-footer__meta">DullyPDF</div>
-        </footer>
+        <SiteFooter />
       </div>
     </div>
   );
