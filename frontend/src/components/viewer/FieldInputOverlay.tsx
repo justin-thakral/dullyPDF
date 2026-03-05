@@ -93,8 +93,11 @@ export function FieldInputOverlay({
         const rect = toViewportRect(field.rect, scale);
         const confidenceTier = fieldConfidenceTierForField(field);
         const selected = field.id === selectedFieldId;
+        const minSide = Math.min(rect.width, rect.height);
         const fontSize =
-          field.type === 'checkbox' ? undefined : Math.max(8, Math.min(10, rect.height * 0.55));
+          field.type === 'checkbox' ? undefined : Math.max(8, Math.min(32, rect.height * 0.48));
+        const checkboxSize =
+          field.type === 'checkbox' ? Math.max(14, Math.min(56, minSide - 4)) : undefined;
 
         const boxClassName = [
           'field-input-box',
@@ -126,6 +129,7 @@ export function FieldInputOverlay({
               width: rect.width,
               height: rect.height,
               ...(fontSize ? { ['--field-font-size' as string]: `${fontSize}px` } : {}),
+              ...(checkboxSize ? { ['--field-checkbox-size' as string]: `${checkboxSize}px` } : {}),
             }}
           >
             {field.type === 'checkbox' ? (
@@ -144,6 +148,15 @@ export function FieldInputOverlay({
                 value={coerceToString(field.value)}
                 onChange={handleTextChange(field)}
                 onBlur={handleBlur(field)}
+              />
+            ) : field.type === 'signature' ? (
+              <input
+                {...commonInputProps}
+                className="field-input field-input--signature"
+                type="text"
+                value={coerceToString(field.value)}
+                onChange={handleTextChange(field)}
+                placeholder="Sign here"
               />
             ) : (
               <input

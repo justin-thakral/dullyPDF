@@ -4,10 +4,12 @@ import { BLOG_INDEX_SEO, resolveBlogSeo } from './blogSeo';
 import { getBlogSlugs } from './blogPosts';
 
 export type LegalRouteKey = 'privacy' | 'terms';
+export type IntentHubRouteKey = 'workflows' | 'industries';
 
 export type PublicRouteSeoTarget =
   | { kind: 'app' }
   | { kind: 'legal'; legalKind: LegalRouteKey }
+  | { kind: 'intent-hub'; hubKey: IntentHubRouteKey }
   | { kind: 'usage-docs'; pageKey: UsageDocsPageKey }
   | { kind: 'intent'; intentKey: IntentPageKey }
   | { kind: 'blog-index' }
@@ -92,6 +94,31 @@ const LEGAL_ROUTE_SEO: Record<LegalRouteKey, RouteSeoMetadata> = {
       'Review DullyPDF service terms covering accounts, AI-assisted workflows, billing, acceptable use, and platform limitations.',
     canonicalPath: '/terms',
     keywords: ['dullypdf terms', 'pdf automation terms of service'],
+  },
+};
+
+const INTENT_HUB_ROUTE_SEO: Record<IntentHubRouteKey, RouteSeoMetadata> = {
+  workflows: {
+    title: 'Workflow Library for PDF Automation | DullyPDF',
+    description:
+      'Explore DullyPDF workflow pages for converting PDFs to fillable templates, mapping fields to schemas, and auto-filling from structured data.',
+    canonicalPath: '/workflows',
+    keywords: [
+      'pdf workflow library',
+      'pdf to fillable form workflow',
+      'pdf mapping and autofill workflows',
+    ],
+  },
+  industries: {
+    title: 'Industry PDF Automation Solutions | DullyPDF',
+    description:
+      'Explore DullyPDF industry pages for healthcare, insurance, legal, HR, finance, and other repeat PDF automation workflows.',
+    canonicalPath: '/industries',
+    keywords: [
+      'industry pdf automation',
+      'healthcare insurance legal pdf workflows',
+      'pdf form automation by industry',
+    ],
   },
 };
 
@@ -281,6 +308,8 @@ export const INDEXABLE_PUBLIC_ROUTE_PATHS: string[] = [
   HOME_ROUTE_SEO.canonicalPath,
   LEGAL_ROUTE_SEO.privacy.canonicalPath,
   LEGAL_ROUTE_SEO.terms.canonicalPath,
+  INTENT_HUB_ROUTE_SEO.workflows.canonicalPath,
+  INTENT_HUB_ROUTE_SEO.industries.canonicalPath,
   ...USAGE_DOCS_ROUTE_ORDER.map((pageKey) => USAGE_DOCS_ROUTE_SEO[pageKey].canonicalPath),
   ...getIntentPages().map((page) => page.path),
   BLOG_INDEX_SEO.canonicalPath,
@@ -290,6 +319,7 @@ export const INDEXABLE_PUBLIC_ROUTE_PATHS: string[] = [
 export const resolveRouteSeo = (target: PublicRouteSeoTarget): RouteSeoMetadata => {
   if (target.kind === 'app') return HOME_ROUTE_SEO;
   if (target.kind === 'legal') return LEGAL_ROUTE_SEO[target.legalKind];
+  if (target.kind === 'intent-hub') return INTENT_HUB_ROUTE_SEO[target.hubKey];
   if (target.kind === 'intent') return INTENT_ROUTE_SEO[target.intentKey];
   if (target.kind === 'blog-index') return BLOG_INDEX_SEO;
   if (target.kind === 'blog-post') {

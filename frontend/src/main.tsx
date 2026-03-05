@@ -14,6 +14,7 @@ const LegalPage = lazy(() => import('./components/pages/LegalPage'));
 const UsageDocsPage = lazy(() => import('./components/pages/UsageDocsPage'));
 const UsageDocsNotFoundPage = lazy(() => import('./components/pages/UsageDocsNotFoundPage'));
 const IntentLandingPage = lazy(() => import('./components/pages/IntentLandingPage'));
+const IntentHubPage = lazy(() => import('./components/pages/IntentHubPage'));
 const BlogIndexPage = lazy(() => import('./components/pages/BlogIndexPage'));
 const BlogPostPage = lazy(() => import('./components/pages/BlogPostPage'));
 
@@ -21,6 +22,7 @@ type AppRoute =
   | { kind: 'app' }
   | { kind: 'legal'; legalKind: LegalPageKind }
   | { kind: 'intent'; intentKey: IntentPageKey }
+  | { kind: 'intent-hub'; hubKey: 'workflows' | 'industries' }
   | { kind: 'usage-docs'; pageKey: UsageDocsPageKey }
   | { kind: 'usage-docs-not-found'; requestedPath: string }
   | { kind: 'blog-index' }
@@ -54,6 +56,14 @@ const resolveRoute = (): AppRoute => {
       if (path !== normalizedPath) replaceBrowserPath(normalizedPath);
       return { kind: 'blog-post', slug };
     }
+  }
+
+  if (normalizedPath === '/workflows' || normalizedPath === '/industries') {
+    if (path !== normalizedPath) replaceBrowserPath(normalizedPath);
+    return {
+      kind: 'intent-hub',
+      hubKey: normalizedPath === '/workflows' ? 'workflows' : 'industries',
+    };
   }
 
   const intentKey = resolveIntentPath(normalizedPath);
@@ -110,6 +120,8 @@ createRoot(document.getElementById('root')!).render(
     <Suspense fallback={null}>
       {route.kind === 'legal' ? (
         <LegalPage kind={route.legalKind} />
+      ) : route.kind === 'intent-hub' ? (
+        <IntentHubPage hubKey={route.hubKey} />
       ) : route.kind === 'intent' ? (
         <IntentLandingPage pageKey={route.intentKey} />
       ) : route.kind === 'usage-docs' ? (

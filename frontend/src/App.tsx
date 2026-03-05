@@ -93,8 +93,8 @@ function App() {
   }, [authReady, launchWorkspace, runtimeMounted]);
 
   const handleStartWorkflow = useCallback(() => {
-    launchWorkspace('workflow');
-  }, [launchWorkspace]);
+    launchWorkspace(verifiedUser ? 'workflow' : 'signin');
+  }, [launchWorkspace, verifiedUser]);
 
   const handleStartDemo = useCallback(() => {
     launchWorkspace('demo');

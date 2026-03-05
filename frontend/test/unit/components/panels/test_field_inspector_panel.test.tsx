@@ -24,11 +24,12 @@ function createProps(overrides: Partial<FieldInspectorPanelProps> = {}): FieldIn
   return {
     fields: [SAMPLE_FIELD],
     selectedFieldId: SAMPLE_FIELD.id,
-    currentPage: 2,
+    activeCreateTool: null,
     onUpdateField: vi.fn(),
+    onSetFieldType: vi.fn(),
     onUpdateFieldDraft: vi.fn(),
     onDeleteField: vi.fn(),
-    onCreateField: vi.fn(),
+    onCreateToolChange: vi.fn(),
     onBeginFieldChange: vi.fn(),
     onCommitFieldChange: vi.fn(),
     canUndo: true,
@@ -50,6 +51,7 @@ describe('FieldInspectorPanel', () => {
   it('updates selected field name/type/page/rect and emits begin/commit callbacks', async () => {
     const user = userEvent.setup();
     const onUpdateField = vi.fn();
+    const onSetFieldType = vi.fn();
     const onUpdateFieldDraft = vi.fn();
     const onBeginFieldChange = vi.fn();
     const onCommitFieldChange = vi.fn();
@@ -58,6 +60,7 @@ describe('FieldInspectorPanel', () => {
       <FieldInspectorPanel
         {...createProps({
           onUpdateField,
+          onSetFieldType,
           onUpdateFieldDraft,
           onBeginFieldChange,
           onCommitFieldChange,
@@ -78,7 +81,7 @@ describe('FieldInspectorPanel', () => {
     expect(onCommitFieldChange).toHaveBeenCalledTimes(1);
 
     await user.selectOptions(screen.getByLabelText('Type'), 'date');
-    expect(onUpdateField).toHaveBeenLastCalledWith('field-1', { type: 'date' });
+    expect(onSetFieldType).toHaveBeenLastCalledWith('field-1', 'date');
 
     const pageInput = screen.getByLabelText('Page');
     await user.click(pageInput);
@@ -126,37 +129,34 @@ describe('FieldInspectorPanel', () => {
   });
 
   it('enforces minimum width and height when resizing', async () => {
-    const user = userEvent.setup();
     const onUpdateField = vi.fn();
 
     render(<FieldInspectorPanel {...createProps({ onUpdateField })} />);
 
     const widthInput = screen.getByLabelText('Width');
-    await user.click(widthInput);
-    await user.type(widthInput, '-');
+    fireEvent.change(widthInput, { target: { value: '-5' } });
     expect(onUpdateField).toHaveBeenLastCalledWith('field-1', {
-      rect: { x: 14, y: 22, width: 6, height: 30 },
+      rect: { x: 14, y: 22, width: 12, height: 30 },
     });
 
     onUpdateField.mockClear();
     const heightInput = screen.getByLabelText('Height');
-    await user.click(heightInput);
-    await user.type(heightInput, '-');
+    fireEvent.change(heightInput, { target: { value: '-2' } });
     expect(onUpdateField).toHaveBeenLastCalledWith('field-1', {
-      rect: { x: 14, y: 22, width: 120, height: 6 },
+      rect: { x: 14, y: 22, width: 120, height: 12 },
     });
   });
 
   it('wires create/delete callbacks and undo/redo disabled states', async () => {
     const user = userEvent.setup();
-    const onCreateField = vi.fn();
+    const onCreateToolChange = vi.fn();
     const onDeleteField = vi.fn();
     const onUndo = vi.fn();
     const onRedo = vi.fn();
     const { rerender } = render(
       <FieldInspectorPanel
         {...createProps({
-          onCreateField,
+          onCreateToolChange,
           onDeleteField,
           onUndo,
           onRedo,
@@ -169,16 +169,18 @@ describe('FieldInspectorPanel', () => {
     await user.click(screen.getByRole('button', { name: 'Delete field' }));
     expect(onDeleteField).toHaveBeenCalledWith('field-1');
 
-    await user.click(screen.getByRole('button', { name: 'Add Text' }));
-    await user.click(screen.getByRole('button', { name: 'Add Date' }));
-    await user.click(screen.getByRole('button', { name: 'Add Signature' }));
-    await user.click(screen.getByRole('button', { name: 'Add Checkbox' }));
+    await user.click(screen.getByRole('button', { name: 'Text' }));
+    await user.click(screen.getByRole('button', { name: 'Date' }));
+    await user.click(screen.getByRole('button', { name: 'Signature' }));
+    await user.click(screen.getByRole('button', { name: 'Checkbox' }));
+    await user.click(screen.getByRole('button', { name: 'Off' }));
 
-    expect(onCreateField).toHaveBeenCalledTimes(4);
-    expect(onCreateField).toHaveBeenNthCalledWith(1, 'text');
-    expect(onCreateField).toHaveBeenNthCalledWith(2, 'date');
-    expect(onCreateField).toHaveBeenNthCalledWith(3, 'signature');
-    expect(onCreateField).toHaveBeenNthCalledWith(4, 'checkbox');
+    expect(onCreateToolChange).toHaveBeenCalledTimes(5);
+    expect(onCreateToolChange).toHaveBeenNthCalledWith(1, 'text');
+    expect(onCreateToolChange).toHaveBeenNthCalledWith(2, 'date');
+    expect(onCreateToolChange).toHaveBeenNthCalledWith(3, 'signature');
+    expect(onCreateToolChange).toHaveBeenNthCalledWith(4, 'checkbox');
+    expect(onCreateToolChange).toHaveBeenNthCalledWith(5, null);
 
     const undoButtonBefore = screen.getByRole('button', { name: 'Undo' }) as HTMLButtonElement;
     const redoButtonBefore = screen.getByRole('button', { name: 'Redo' }) as HTMLButtonElement;
@@ -188,7 +190,7 @@ describe('FieldInspectorPanel', () => {
     rerender(
       <FieldInspectorPanel
         {...createProps({
-          onCreateField,
+          onCreateToolChange,
           onDeleteField,
           onUndo,
           onRedo,

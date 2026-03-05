@@ -183,7 +183,14 @@ const Homepage: React.FC<HomepageProps> = ({
     const leftRatio = leftContent.scrollHeight > 0 ? leftTargetHeight / leftContent.scrollHeight : 1;
     const rightRatio = rightContent.scrollHeight > 0 ? rightTargetHeight / rightContent.scrollHeight : 1;
 
-    const minScale = window.innerHeight <= 700 ? 0.76 : window.innerHeight <= 760 ? 0.84 : 0.9;
+    const minScale =
+      window.innerHeight <= 680
+        ? 0.72
+        : window.innerHeight <= 760
+          ? 0.78
+          : window.innerHeight <= 900
+            ? 0.84
+            : 0.9;
     let nextScale = Math.max(minScale, Math.min(1, leftRatio, rightRatio));
     if (nextScale >= 0.993 && window.innerWidth >= 1536 && window.innerHeight <= 1020) {
       nextScale = 0.988;
@@ -367,10 +374,11 @@ const Homepage: React.FC<HomepageProps> = ({
           </p>
           <p className="mobile-description">
             If you are searching for ways to fill information in PDF files, generate PDF database templates, or clean
-            fillable form field names before auto-fill, these workflows are supported in one pipeline.
-          </p>
-          <p className="mobile-credit">
-            Shoutout to <CommonFormsAttribution /> for field detection.
+            fillable form field names before auto-fill, these workflows are supported in one pipeline with
+            {' '}
+            <CommonFormsAttribution />
+            {' '}
+            for field detections.
           </p>
         </div>
 
@@ -470,16 +478,17 @@ const Homepage: React.FC<HomepageProps> = ({
           {/* Left Panel - Project Description */}
           <div className="description-panel" ref={descriptionPanelRef}>
             <div className="description-content" ref={descriptionContentRef}>
-              <h1 className="homepage-main-title">PDF to Fillable Form Converter and Database Template Mapping</h1>
+              <h1 className="homepage-main-title">Automatic PDF to Fillable Form and Database Template Mapping</h1>
 
               <div className="description-text">
                 <p className="lead-description">
-                  This software converts raw PDFs into fillable forms with writable areas at all input fields.
-                  Once you have your fillable form, you can upload a CSV, Excel, JSON, or TXT schema file locally and map
-                  field names to the PDF. CSV/Excel/JSON rows stay in the browser for Search &amp; Fill.
-                </p>
-                <p className="homepage-credit">
-                  Shoutout to <CommonFormsAttribution /> for field detection.
+                  This software converts raw PDFs into fillable forms with writable areas at input fields.
+                  Once your fillable form is ready, you can upload a CSV, Excel, JSON, or TXT schema file locally and map
+                  field names to the PDF. CSV/Excel/JSON rows stay in the browser for Search &amp; Fill, with
+                  {' '}
+                  <CommonFormsAttribution />
+                  {' '}
+                  for field detections.
                 </p>
 
                 <div className="features-section">
@@ -542,9 +551,9 @@ const Homepage: React.FC<HomepageProps> = ({
               <div className="cta-section">
                 <h3>Ready to Get Started?</h3>
                 <p className="cta-description">
-                  Click <strong>Try Now</strong> to upload your PDF document and experience the power of AI-driven
-                  form field detection and generation, <strong>Demo</strong> to see live DullyPDF capabilities,
-                  and <strong>Contact</strong> with any questions or concerns. Bug reports get a free month of premium.
+                  Click <strong>Try Now</strong> to upload your PDF document and experience AI-driven
+                  form field detection, generation and database mapping, pdf to fillable form is <strong>free</strong>! The <strong>Demo</strong> is interactive 
+                  and live, <strong>Contact</strong> to send me a message.
                 </p>
 
                 <div className="cta-buttons">

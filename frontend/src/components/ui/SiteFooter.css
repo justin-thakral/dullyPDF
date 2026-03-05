@@ -1,83 +1,170 @@
 .site-footer {
+  margin-top: 0;
   border-top: 1px solid #e2e8f0;
   background: #f8fafc;
-  padding: 2rem 2.2rem 1.5rem;
-  margin-top: 2rem;
+  padding: 0.34rem 0.78rem;
 }
 
-.site-footer__grid {
+.site-footer__bar {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 1.5rem;
-  margin-bottom: 1.5rem;
-}
-
-.site-footer__column-title {
-  font-family: 'Space Grotesk', sans-serif;
-  font-size: 0.82rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: #475569;
-  margin: 0 0 0.6rem;
-}
-
-.site-footer__link-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-
-.site-footer__link-list li {
-  margin-bottom: 0.3rem;
-}
-
-.site-footer__link-list a {
-  font-size: 0.85rem;
-  color: #64748b;
-  text-decoration: none;
-  transition: color 0.15s;
-}
-
-.site-footer__link-list a:hover {
-  color: #4f46e5;
-}
-
-.site-footer__bottom {
-  display: flex;
-  justify-content: space-between;
+  grid-template-columns:
+    minmax(0, 1fr) max-content
+    minmax(0, 1fr) max-content
+    minmax(0, 1fr) max-content
+    minmax(0, 1fr) max-content
+    minmax(0, 1fr) max-content
+    minmax(0, 1fr);
   align-items: center;
-  padding-top: 1rem;
-  border-top: 1px solid #e2e8f0;
-  font-size: 0.82rem;
-  color: #94a3b8;
+  max-width: 1800px;
+  margin: 0 auto;
 }
 
-.site-footer__contact {
+.site-footer__group--product {
+  grid-column: 2;
+}
+
+.site-footer__group--resources {
+  grid-column: 4;
+}
+
+.site-footer__center {
+  grid-column: 6;
+}
+
+.site-footer__group--legal {
+  grid-column: 8;
+}
+
+.site-footer__group--solutions {
+  grid-column: 10;
+}
+
+.site-footer__link-group {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.3rem;
+  white-space: nowrap;
+}
+
+.site-footer__label {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.69rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #0f172a;
+}
+
+.site-footer__links {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0;
+  white-space: nowrap;
+}
+
+.site-footer__links a {
+  position: relative;
   color: #64748b;
   text-decoration: none;
+  font-size: 0.69rem;
+  line-height: 1.15;
+  font-weight: 600;
 }
 
-.site-footer__contact:hover {
-  color: #4f46e5;
+.site-footer__links a + a {
+  margin-left: 0.58rem;
+  padding-left: 0.58rem;
 }
 
-@media (max-width: 980px) {
-  .site-footer__grid {
-    grid-template-columns: repeat(3, 1fr);
+.site-footer__links a + a::before {
+  content: '\00B7';
+  position: absolute;
+  left: -0.03rem;
+  color: #94a3b8;
+  font-weight: 700;
+}
+
+.site-footer__links a:hover {
+  color: #1d4ed8;
+}
+
+.site-footer__center {
+  justify-self: center;
+  text-align: center;
+  font-size: 0.69rem;
+  line-height: 1.15;
+  color: #64748b;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+@media (max-width: 1180px) {
+  .site-footer {
+    padding: 0.45rem 0.72rem;
+  }
+
+  .site-footer__bar {
+    grid-template-columns: 1fr;
+    gap: 0.34rem;
+  }
+
+  .site-footer__group--product,
+  .site-footer__group--resources,
+  .site-footer__center,
+  .site-footer__group--legal,
+  .site-footer__group--solutions {
+    grid-column: 1;
+    justify-self: center;
+  }
+
+  .site-footer__group--product {
+    order: 1;
+  }
+
+  .site-footer__group--resources {
+    order: 2;
+  }
+
+  .site-footer__center {
+    order: 3;
+  }
+
+  .site-footer__group--legal {
+    order: 4;
+  }
+
+  .site-footer__group--solutions {
+    order: 5;
+  }
+
+  .site-footer__link-group,
+  .site-footer__links {
+    justify-content: center;
+    white-space: normal;
+    flex-wrap: wrap;
   }
 }
 
 @media (max-width: 640px) {
-  .site-footer__grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
   .site-footer {
-    padding: 1.5rem 1.2rem 1rem;
+    padding: 0.42rem 0.56rem;
   }
-  .site-footer__bottom {
-    flex-direction: column;
-    gap: 0.5rem;
-    text-align: center;
+
+  .site-footer__bar {
+    gap: 0.28rem;
+  }
+
+  .site-footer__link-group {
+    gap: 0.22rem;
+  }
+
+  .site-footer__links {
+    gap: 0.24rem 0.42rem;
+  }
+
+  .site-footer__label,
+  .site-footer__links a,
+  .site-footer__center {
+    font-size: 0.67rem;
   }
 }

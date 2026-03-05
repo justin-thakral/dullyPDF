@@ -126,10 +126,15 @@ function buildProps(overrides: Partial<ComponentProps<typeof PdfViewer>> = {}) {
     showFields: false,
     showFieldNames: false,
     showFieldInfo: false,
+    moveEnabled: true,
+    resizeEnabled: true,
+    createEnabled: true,
+    activeCreateTool: null,
     selectedFieldId: null,
     onSelectField: vi.fn(),
     onUpdateField: vi.fn(),
     onUpdateFieldGeometry: vi.fn(),
+    onCreateFieldWithRect: vi.fn(),
     onBeginFieldChange: vi.fn(),
     onCommitFieldChange: vi.fn(),
     onPageChange: vi.fn(),
@@ -214,7 +219,7 @@ describe('PdfViewer', () => {
     });
   });
 
-  it('auto-scrolls selected field in both field and info overlay modes', async () => {
+  it('does not auto-scroll selected field in either overlay mode', async () => {
     const selectedField = makeField({
       id: 'selected-field',
       name: 'Selected',
@@ -233,24 +238,12 @@ describe('PdfViewer', () => {
     });
     const { rerender } = render(<PdfViewer {...props} />);
 
-    await waitFor(() => {
-      expect(Element.prototype.scrollIntoView).toHaveBeenCalled();
-    });
-    const firstCall = (Element.prototype.scrollIntoView as any).mock.calls
-      .map((call: any[]) => call[0])
-      .find((value: Record<string, unknown>) => value?.block === 'center');
-    expect(firstCall).toEqual({ behavior: 'smooth', block: 'center' });
+    expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
 
     (Element.prototype.scrollIntoView as any).mockClear();
     rerender(<PdfViewer {...props} showFields={false} showFieldInfo />);
 
-    await waitFor(() => {
-      expect(Element.prototype.scrollIntoView).toHaveBeenCalled();
-    });
-    const secondCall = (Element.prototype.scrollIntoView as any).mock.calls
-      .map((call: any[]) => call[0])
-      .find((value: Record<string, unknown>) => value?.block === 'center');
-    expect(secondCall).toEqual({ behavior: 'smooth', block: 'center' });
+    expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
   });
 
   it('updates current page from intersection observer visibility changes', () => {

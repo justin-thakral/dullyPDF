@@ -12,6 +12,13 @@ const DEFAULT_SIZES: Record<FieldType, FieldRect> = {
   checkbox: { x: 0, y: 0, width: 14, height: 14 },
 };
 
+const MIN_SIZES: Record<FieldType, number> = {
+  text: 12,
+  date: 12,
+  signature: 16,
+  checkbox: 12,
+};
+
 // Base naming keeps field lists readable while still ensuring unique identifiers.
 const NAME_BASES: Record<FieldType, string> = {
   text: 'text_field',
@@ -39,19 +46,73 @@ export function ensureUniqueFieldName(baseName: string, existing: Set<string>) {
   return unique;
 }
 
+export function getDefaultFieldRect(type: FieldType): FieldRect {
+  const template = DEFAULT_SIZES[type] ?? DEFAULT_SIZES.text;
+  return { ...template };
+}
+
+export function getMinFieldSize(type: FieldType): number {
+  return MIN_SIZES[type] ?? MIN_SIZES.text;
+}
+
+export function normalizeRectForFieldType(rect: FieldRect, type: FieldType, pageSize: PageSize): FieldRect {
+  const minSize = getMinFieldSize(type);
+  if (type === 'checkbox') {
+    const side = Math.max(rect.width, rect.height, getDefaultFieldRect('checkbox').width, minSize);
+    return clampRectToPage(
+      {
+        x: rect.x,
+        y: rect.y,
+        width: side,
+        height: side,
+      },
+      pageSize,
+      minSize,
+    );
+  }
+
+  return clampRectToPage(
+    {
+      x: rect.x,
+      y: rect.y,
+      width: Math.max(rect.width, minSize),
+      height: Math.max(rect.height, minSize),
+    },
+    pageSize,
+    minSize,
+  );
+}
+
+export function createFieldWithRect(
+  type: FieldType,
+  page: number,
+  pageSize: PageSize,
+  existingFields: PdfField[],
+  rect: FieldRect,
+): PdfField {
+  const existingNames = new Set(existingFields.map((field) => field.name));
+  const base = NAME_BASES[type] || 'field';
+  const name = ensureUniqueFieldName(base, existingNames);
+  const normalizedRect = normalizeRectForFieldType(rect, type, pageSize);
+
+  return {
+    id: makeId(),
+    name,
+    type,
+    page,
+    rect: normalizedRect,
+  };
+}
+
 export function createField(
   type: FieldType,
   page: number,
   pageSize: PageSize,
   existingFields: PdfField[],
 ): PdfField {
-  // Names are generated from existing fields to avoid collisions on import or manual creation.
-  const existingNames = new Set(existingFields.map((field) => field.name));
-  const base = NAME_BASES[type] || 'field';
-  const name = ensureUniqueFieldName(base, existingNames);
-  const template = DEFAULT_SIZES[type];
+  const template = getDefaultFieldRect(type);
   // Start fields near the page center and clamp to the page bounds to avoid off-page geometry.
-  const rect = clampRectToPage(
+  const centeredRect = clampRectToPage(
     {
       x: Math.max(0, pageSize.width / 2 - template.width / 2),
       y: Math.max(0, pageSize.height / 2 - template.height / 2),
@@ -60,13 +121,7 @@ export function createField(
     },
     pageSize,
   );
-  return {
-    id: makeId(),
-    name,
-    type,
-    page,
-    rect,
-  };
+  return createFieldWithRect(type, page, pageSize, existingFields, centeredRect);
 }
 
 export function makeId() {

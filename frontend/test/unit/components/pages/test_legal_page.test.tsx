@@ -12,13 +12,12 @@ describe('LegalPage', () => {
 
     const privacyLink = screen.getByRole('link', { name: 'Privacy' });
     const termsLink = screen.getByRole('link', { name: 'Terms' });
-    const usageDocsLink = screen.getByRole('link', { name: 'Usage Docs' });
+    const usageDocsLinks = screen.getAllByRole('link', { name: 'Usage Docs' });
     expect(privacyLink.className.includes('legal-nav__link--active')).toBe(true);
     expect(termsLink.className.includes('legal-nav__link--active')).toBe(false);
-    expect(usageDocsLink.getAttribute('href')).toBe('/usage-docs');
+    expect(usageDocsLinks.some((link) => link.getAttribute('href') === '/usage-docs')).toBe(true);
 
-    const supportLink = screen.getByRole('link', { name: 'justin@ttcommercial.com' });
-    expect(supportLink.getAttribute('href')).toBe('mailto:justin@ttcommercial.com');
+    expect(screen.getByText(/justin@ttcommercial\.com/i)).toBeTruthy();
   });
 
   it('renders terms copy with active terms navigation', () => {
@@ -29,10 +28,10 @@ describe('LegalPage', () => {
 
     const privacyLink = screen.getByRole('link', { name: 'Privacy' });
     const termsLink = screen.getByRole('link', { name: 'Terms' });
-    const usageDocsLink = screen.getByRole('link', { name: 'Usage Docs' });
+    const usageDocsLinks = screen.getAllByRole('link', { name: 'Usage Docs' });
     expect(privacyLink.className.includes('legal-nav__link--active')).toBe(false);
     expect(termsLink.className.includes('legal-nav__link--active')).toBe(true);
-    expect(usageDocsLink.getAttribute('href')).toBe('/usage-docs');
+    expect(usageDocsLinks.some((link) => link.getAttribute('href') === '/usage-docs')).toBe(true);
   });
 
   it('updates document title per legal page kind', () => {

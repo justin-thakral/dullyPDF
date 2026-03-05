@@ -102,7 +102,7 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
             <li>CSV/XLSX/JSON parsing caps rows at 5000 records per import.</li>
             <li>Schema inference samples up to 200 rows when inferring field types.</li>
             <li>Field edit history depth is 10 snapshots (undo/redo).</li>
-            <li>Minimum overlay field geometry is 6 PDF points for width/height.</li>
+            <li>Minimum overlay geometry is type-based: text/date/checkbox = 12 points, signature = 16 points.</li>
           </ul>
         ),
       },
@@ -238,7 +238,7 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
         body: (
           <ul>
             <li>Rectangles are clamped to page bounds during drag/resize.</li>
-            <li>Minimum field width/height is 6 points.</li>
+            <li>Minimum field geometry is type-based: text/date/checkbox = 12 points, signature = 16 points.</li>
             <li>All geometry edits in inspector and overlay are applied in the same coordinate system.</li>
           </ul>
         ),
@@ -380,14 +380,19 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
         title: 'Editing actions',
         body: (
           <ul>
+            <li>Enable <code>Transform</code> mode to show resize handles while editing fields on the PDF.</li>
+            <li><code>Transform</code> and <code>Info</code> are mutually exclusive to prevent drag/input conflicts.</li>
+            <li><code>Edit</code> preset is the default when a form opens.</li>
+            <li>Moving is available whenever <code>Info</code> is off.</li>
             <li>Drag fields to move and use handles to resize.</li>
             <li>Corner handles follow standard freeform resize behavior by default (independent width/height).</li>
             <li>Hold <code>Shift</code> while dragging a corner to preserve aspect ratio for that drag.</li>
-            <li>All four corners and all four edges provide resize handles for direct geometry control.</li>
+            <li>Standard fields expose four corners plus middle edge handles; small fields (for example tiny checkboxes) use a single bottom-right handle.</li>
+            <li>Small fields also include a larger move hit area to reduce missed drag attempts.</li>
+            <li>Use inspector create tools to draw text, date, signature, and checkbox fields directly on-canvas.</li>
             <li>Use inspector inputs for exact x/y/width/height updates.</li>
-            <li>Add text, date, signature, and checkbox fields for missing regions.</li>
             <li>Delete invalid candidates to keep templates clean.</li>
-            <li>Geometry is clamped to page bounds and minimum 6-point width/height.</li>
+            <li>Geometry is clamped to page bounds and type-based minimum sizes.</li>
             <li>If a selected field is hidden by active filters, use <code>Reveal selected</code> in the list panel.</li>
           </ul>
         ),
@@ -424,6 +429,8 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
             <li><code>Ctrl/Cmd+Z</code>: undo</li>
             <li><code>Ctrl/Cmd+Shift+Z</code> or <code>Ctrl/Cmd+Y</code>: redo</li>
             <li><code>Delete</code>, <code>Backspace</code>, or <code>Ctrl/Cmd+X</code>: delete selected field</li>
+            <li><code>T</code> / <code>D</code> / <code>S</code> / <code>C</code>: activate Text/Date/Signature/Checkbox create tools</li>
+            <li><code>Esc</code>: clear active create tool</li>
             <li><code>Ctrl/Cmd+F</code> or <code>/</code>: focus field search</li>
             <li><code>[</code> and <code>]</code>: previous/next page</li>
             <li><code>Alt+Arrow</code>: nudge selected field by 1 point</li>

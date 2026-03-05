@@ -2,18 +2,22 @@
  * Field inspector panel for editing geometry and metadata.
  */
 import type { FieldRect, FieldType, PdfField } from '../../types';
+import { getMinFieldSize } from '../../utils/fields';
 import { FIELD_TYPES, fieldTypeLabel } from '../../utils/fieldUi';
-
-const MIN_FIELD_SIZE = 6;
 
 type FieldInspectorPanelProps = {
   fields: PdfField[];
   selectedFieldId: string | null;
-  currentPage: number;
+  activeCreateTool: FieldType | null;
   onUpdateField: (fieldId: string, updates: Partial<PdfField>) => void;
+  onSetFieldType: (fieldId: string, type: FieldType) => void;
   onUpdateFieldDraft: (fieldId: string, updates: Partial<PdfField>) => void;
   onDeleteField: (fieldId: string) => void;
-  onCreateField: (type: FieldType) => void;
+  onCreateToolChange: (type: FieldType | null) => void;
+  onUndo: () => void;
+  onRedo: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
   onBeginFieldChange: () => void;
   onCommitFieldChange: () => void;
 };
@@ -24,15 +28,21 @@ type FieldInspectorPanelProps = {
 export function FieldInspectorPanel({
   fields,
   selectedFieldId,
-  currentPage,
+  activeCreateTool,
   onUpdateField,
+  onSetFieldType,
   onUpdateFieldDraft,
   onDeleteField,
-  onCreateField,
+  onCreateToolChange,
+  onUndo,
+  onRedo,
+  canUndo,
+  canRedo,
   onBeginFieldChange,
   onCommitFieldChange,
 }: FieldInspectorPanelProps) {
   const selected = fields.find((field) => field.id === selectedFieldId) || null;
+  const selectedMinSize = selected ? getMinFieldSize(selected.type) : getMinFieldSize('text');
 
   /**
    * Patch rect properties while keeping the rest of the geometry intact.
@@ -84,7 +94,7 @@ export function FieldInspectorPanel({
                   name="field-type"
                   className="panel__select"
                   value={selected.type}
-                  onChange={(event) => onUpdateField(selected.id, { type: event.target.value as FieldType })}
+                  onChange={(event) => onSetFieldType(selected.id, event.target.value as FieldType)}
                 >
                   {FIELD_TYPES.map((type) => (
                     <option key={type} value={type}>
@@ -148,7 +158,7 @@ export function FieldInspectorPanel({
                     type="number"
                     value={Math.round(selected.rect.width)}
                     onChange={(event) =>
-                      updateRect(selected.id, { width: Math.max(MIN_FIELD_SIZE, Number(event.target.value) || 0) })
+                      updateRect(selected.id, { width: Math.max(selectedMinSize, Number(event.target.value) || 0) })
                     }
                   />
                 </div>
@@ -163,7 +173,7 @@ export function FieldInspectorPanel({
                     type="number"
                     value={Math.round(selected.rect.height)}
                     onChange={(event) =>
-                      updateRect(selected.id, { height: Math.max(MIN_FIELD_SIZE, Number(event.target.value) || 0) })
+                      updateRect(selected.id, { height: Math.max(selectedMinSize, Number(event.target.value) || 0) })
                     }
                   />
                 </div>
@@ -183,27 +193,58 @@ export function FieldInspectorPanel({
 
         <div className="panel__section panel__section--divider">
           <h3>Create field</h3>
-          <div className="panel__action-grid">
+          <label className="panel__label">Create tool</label>
+          <div className="panel-display-modes" role="group" aria-label="Create tool">
             {FIELD_TYPES.map((type) => (
               <button
                 key={type}
-                className="ui-button ui-button--ghost ui-button--compact"
                 type="button"
-                onClick={() => onCreateField(type)}
+                className={`panel-mode-chip${activeCreateTool === type ? ' panel-mode-chip--active' : ''}`}
+                onClick={() => onCreateToolChange(activeCreateTool === type ? null : type)}
               >
-                Add {fieldTypeLabel(type)}
+                {fieldTypeLabel(type)}
               </button>
             ))}
+            <button
+              type="button"
+              className={`panel-mode-chip${activeCreateTool === null ? ' panel-mode-chip--active' : ''}`}
+              onClick={() => onCreateToolChange(null)}
+            >
+              Off
+            </button>
           </div>
-          <p className="panel__micro">New fields are placed on page {currentPage}.</p>
+          <p className="panel__micro">
+            Draw fields on the page while a tool is active. Press Esc to exit the active tool.
+          </p>
+          <label className="panel__label">History</label>
+          <div className="panel__action-grid">
+            <button
+              className="ui-button ui-button--ghost ui-button--compact"
+              type="button"
+              onClick={onUndo}
+              disabled={!canUndo}
+            >
+              Undo
+            </button>
+            <button
+              className="ui-button ui-button--ghost ui-button--compact"
+              type="button"
+              onClick={onRedo}
+              disabled={!canRedo}
+            >
+              Redo
+            </button>
+          </div>
+          <p className="panel__micro">Undo or redo the last 10 field edits.</p>
         </div>
 
         <div className="panel__section panel__section--divider">
           <h3>Shortcuts</h3>
           <p className="panel__micro">
-            Shortcuts: Delete/Backspace delete selected, Ctrl/Cmd+Z undo, Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y redo,
-            Ctrl/Cmd+F or / focus search, [ and ] change pages, Alt+Arrow nudge (Shift+Alt for 10), and hold Shift
-            during corner-resize to lock aspect ratio.
+            Shortcuts: T/D/S/C set create tool, Esc clears active create tool,
+            Delete/Backspace delete selected, Ctrl/Cmd+Z undo, Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y redo, Ctrl/Cmd+F or /
+            focus search, [ and ] change pages, Alt+Arrow nudge (Shift+Alt for 10), and hold Shift during corner-resize
+            to lock aspect ratio.
           </p>
         </div>
       </div>

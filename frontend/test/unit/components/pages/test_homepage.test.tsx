@@ -110,7 +110,7 @@ describe('Homepage', () => {
     expect(
       screen.getByRole('heading', {
         level: 1,
-        name: 'PDF to Fillable Form Converter and Database Template Mapping',
+        name: 'Automatic PDF to Fillable Form and Database Template Mapping',
       }),
     ).toBeTruthy();
 
@@ -204,12 +204,26 @@ describe('Homepage', () => {
     expect(ctaLinks.map((link) => link.textContent?.trim())).toEqual(['Docs & Privacy & Terms']);
   });
 
-  it('renders footer link to workflow landing pages', () => {
+  it('hides Try DullyPDF footer link on mobile footer layout', () => {
+    installMatchMedia({
+      '(max-width: 1020px)': true,
+      '(max-width: 900px)': true,
+      '(max-height: 749px)': false,
+    });
+
     render(<Homepage onStartWorkflow={vi.fn()} />);
 
-    expect(screen.getByRole('link', { name: 'Explore workflow pages' }).getAttribute('href')).toBe(
-      '/pdf-to-fillable-form',
+    expect(screen.queryByRole('link', { name: 'Try DullyPDF' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'Getting Started' }).getAttribute('href')).toBe(
+      '/usage-docs/getting-started',
     );
+  });
+
+  it('renders footer hub links for workflows and industries', () => {
+    render(<Homepage onStartWorkflow={vi.fn()} />);
+
+    expect(screen.getByRole('link', { name: 'Workflow Library' }).getAttribute('href')).toBe('/workflows');
+    expect(screen.getByRole('link', { name: 'Industry Solutions' }).getAttribute('href')).toBe('/industries');
   });
 
   it('does not render visible SEO intent sections on homepage', () => {

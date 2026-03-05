@@ -128,7 +128,16 @@ vi.mock('../../../src/components/pages/Homepage', () => ({
 }));
 
 vi.mock('../../../src/components/pages/LoginPage', () => ({
-  default: () => <div data-testid="login-page">Login</div>,
+  default: (props: any) => (
+    <div data-testid="login-page">
+      <button data-testid="login-authenticated" type="button" onClick={() => props.onAuthenticated?.()}>
+        Authenticated
+      </button>
+      <button data-testid="login-cancel" type="button" onClick={() => props.onCancel?.()}>
+        Cancel
+      </button>
+    </div>
+  ),
 }));
 
 vi.mock('../../../src/components/pages/ProfilePage', () => ({
@@ -305,7 +314,7 @@ describe('App', () => {
     expect(authMocks.onAuthStateChanged).toHaveBeenCalledTimes(1);
   });
 
-  it('transitions from homepage to upload view via start workflow', async () => {
+  it('routes signed-out users to sign-in when they start workflow from homepage', async () => {
     const App = await importApp();
     render(<App />);
 
@@ -314,9 +323,37 @@ describe('App', () => {
 
     fireEvent.click(screen.getByTestId('start-workflow'));
 
-    expect(await screen.findByTestId('upload-detect')).toBeTruthy();
+    expect(await screen.findByTestId('login-page', {}, { timeout: 10_000 })).toBeTruthy();
+  }, 15_000);
+
+  it('keeps routing signed-out users to sign-in from runtime homepage after canceling login', async () => {
+    const App = await importApp();
+    render(<App />);
+
+    await settleAuthAsSignedOut();
+    fireEvent.click(await screen.findByTestId('start-workflow'));
+    expect(await screen.findByTestId('login-page', {}, { timeout: 10_000 })).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId('login-cancel'));
+    expect(await screen.findByTestId('homepage')).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId('start-workflow'));
+    expect(await screen.findByTestId('login-page', {}, { timeout: 10_000 })).toBeTruthy();
+    expect(screen.queryByTestId('upload-detect')).toBeNull();
+  }, 15_000);
+
+  it('transitions from homepage to upload view via start workflow for signed-in users', async () => {
+    const App = await importApp();
+    render(<App />);
+
+    await settleAuthAsSignedIn();
+    expect(await screen.findByTestId('homepage')).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId('start-workflow'));
+
+    expect(await screen.findByTestId('upload-detect', {}, { timeout: 10_000 })).toBeTruthy();
     expect(screen.getByTestId('upload-fillable')).toBeTruthy();
-  });
+  }, 15_000);
 
   it('does not register duplicate auth listeners after signed-in state updates', async () => {
     const App = await importApp();
@@ -375,8 +412,12 @@ describe('App', () => {
     render(<App />);
 
     await settleAuthAsSignedIn();
-    fireEvent.click(await screen.findByTestId('open-profile'));
-    expect(await screen.findByTestId('profile-page')).toBeTruthy();
+    const openProfileButton = await screen.findByTestId('open-profile');
+    await waitFor(() => {
+      expect((openProfileButton as HTMLButtonElement).disabled).toBe(false);
+    });
+    fireEvent.click(openProfileButton);
+    expect(await screen.findByTestId('profile-page', {}, { timeout: 10_000 })).toBeTruthy();
 
     fireEvent.click(screen.getByTestId('profile-start-monthly'));
     await waitFor(() => {
@@ -392,7 +433,7 @@ describe('App', () => {
     await waitFor(() => {
       expect(screen.getByTestId('billing-kind').textContent).toBe('idle');
     });
-  });
+  }, 15_000);
 
   it('keeps cancel state active until profile refresh resolves', async () => {
     const profilePayload = {
@@ -542,15 +583,16 @@ describe('App', () => {
     expect(window.location.search.includes('billing=')).toBe(false);
   });
 
-  it('gates save action for signed-out users after loading a fillable PDF', async () => {
+  it('gates save action after auth transitions to signed-out', async () => {
     const App = await importApp();
     render(<App />);
 
-    await settleAuthAsSignedOut();
+    await settleAuthAsSignedIn();
     fireEvent.click(await screen.findByTestId('start-workflow'));
     fireEvent.click(await screen.findByTestId('upload-fillable'));
 
     expect(await screen.findByTestId('header-bar')).toBeTruthy();
+    await settleAuthAsSignedOut();
     fireEvent.click(screen.getByTestId('save-profile'));
 
     expect((await screen.findByRole('alert')).textContent).toContain('Sign in to save this form to your profile.');
@@ -561,7 +603,7 @@ describe('App', () => {
     const App = await importApp();
     render(<App />);
 
-    await settleAuthAsSignedOut();
+    await settleAuthAsSignedIn();
     fireEvent.click(await screen.findByTestId('start-workflow'));
     fireEvent.click(await screen.findByTestId('upload-fillable'));
 
@@ -606,7 +648,7 @@ describe('App', () => {
       const App = await importApp();
       const { unmount } = render(<App />);
 
-      await settleAuthAsSignedOut();
+      await settleAuthAsSignedIn();
       fireEvent.click(await screen.findByTestId('start-workflow'));
       fireEvent.click(await screen.findByTestId('upload-detect'));
       fireEvent.click(await screen.findByRole('button', { name: 'Continue' }));

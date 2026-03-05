@@ -1,12 +1,14 @@
 /**
  * Overlay layer for draggable/resizable field boxes.
  */
-import { type PointerEvent as ReactPointerEvent, useEffect, useRef } from 'react';
-import type { FieldRect, PdfField, PageSize } from '../../types';
+import { type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from 'react';
+import type { FieldRect, FieldType, PdfField, PageSize } from '../../types';
 import { fieldConfidenceTierForField, nameConfidenceTierForField } from '../../utils/confidence';
 import { clamp, clampRectToPage, toViewportRect } from '../../utils/coords';
+import { getDefaultFieldRect, getMinFieldSize } from '../../utils/fields';
 
-const MIN_FIELD_SIZE = 6;
+const SMALL_FIELD_THRESHOLD_PDF = 24;
+const CREATE_CLICK_THRESHOLD = 2;
 
 type CornerResizeMode = 'resize-tl' | 'resize-tr' | 'resize-bl' | 'resize-br';
 type DragMode =
@@ -19,6 +21,7 @@ type DragMode =
 
 type DragState = {
   fieldId: string;
+  fieldType: FieldType;
   mode: DragMode;
   startX: number;
   startY: number;
@@ -27,21 +30,29 @@ type DragState = {
   pointerTarget: HTMLElement | null;
 };
 
+type CreateState = {
+  pointerId: number;
+  pointerTarget: HTMLElement | null;
+  start: { x: number; y: number };
+  current: { x: number; y: number };
+};
+
 type FieldOverlayProps = {
   fields: PdfField[];
   pageSize: PageSize;
   scale: number;
+  moveEnabled: boolean;
+  resizeEnabled: boolean;
+  createEnabled: boolean;
+  activeCreateTool: FieldType | null;
   showFieldNames: boolean;
   selectedFieldId: string | null;
   onSelectField: (fieldId: string) => void;
   onUpdateField: (fieldId: string, updates: Partial<PdfField>) => void;
+  onCreateFieldWithRect: (type: FieldType, rect: FieldRect) => void;
   onBeginFieldChange: () => void;
   onCommitFieldChange: () => void;
 };
-
-function isCornerResizeMode(mode: DragMode): mode is CornerResizeMode {
-  return mode === 'resize-tl' || mode === 'resize-tr' || mode === 'resize-bl' || mode === 'resize-br';
-}
 
 function resizeCornerFreeform(
   base: FieldRect,
@@ -49,6 +60,7 @@ function resizeCornerFreeform(
   dx: number,
   dy: number,
   pageSize: PageSize,
+  minSize: number,
 ): FieldRect {
   const left = base.x;
   const top = base.y;
@@ -56,40 +68,40 @@ function resizeCornerFreeform(
   const bottom = base.y + base.height;
 
   if (mode === 'resize-br') {
-    const maxWidth = Math.max(MIN_FIELD_SIZE, pageSize.width - left);
-    const maxHeight = Math.max(MIN_FIELD_SIZE, pageSize.height - top);
+    const maxWidth = Math.max(minSize, pageSize.width - left);
+    const maxHeight = Math.max(minSize, pageSize.height - top);
     return {
       x: left,
       y: top,
-      width: clamp(base.width + dx, MIN_FIELD_SIZE, maxWidth),
-      height: clamp(base.height + dy, MIN_FIELD_SIZE, maxHeight),
+      width: clamp(base.width + dx, minSize, maxWidth),
+      height: clamp(base.height + dy, minSize, maxHeight),
     };
   }
 
   if (mode === 'resize-tr') {
-    const maxWidth = Math.max(MIN_FIELD_SIZE, pageSize.width - left);
-    const nextY = clamp(top + dy, 0, bottom - MIN_FIELD_SIZE);
+    const maxWidth = Math.max(minSize, pageSize.width - left);
+    const nextY = clamp(top + dy, 0, bottom - minSize);
     return {
       x: left,
       y: nextY,
-      width: clamp(base.width + dx, MIN_FIELD_SIZE, maxWidth),
+      width: clamp(base.width + dx, minSize, maxWidth),
       height: bottom - nextY,
     };
   }
 
   if (mode === 'resize-bl') {
-    const maxHeight = Math.max(MIN_FIELD_SIZE, pageSize.height - top);
-    const nextX = clamp(left + dx, 0, right - MIN_FIELD_SIZE);
+    const maxHeight = Math.max(minSize, pageSize.height - top);
+    const nextX = clamp(left + dx, 0, right - minSize);
     return {
       x: nextX,
       y: top,
       width: right - nextX,
-      height: clamp(base.height + dy, MIN_FIELD_SIZE, maxHeight),
+      height: clamp(base.height + dy, minSize, maxHeight),
     };
   }
 
-  const nextX = clamp(left + dx, 0, right - MIN_FIELD_SIZE);
-  const nextY = clamp(top + dy, 0, bottom - MIN_FIELD_SIZE);
+  const nextX = clamp(left + dx, 0, right - minSize);
+  const nextY = clamp(top + dy, 0, bottom - minSize);
   return {
     x: nextX,
     y: nextY,
@@ -104,9 +116,10 @@ function resizeCornerWithAspectRatio(
   dx: number,
   dy: number,
   pageSize: PageSize,
+  minSize: number,
 ): FieldRect {
-  const safeWidth = Math.max(base.width, MIN_FIELD_SIZE);
-  const safeHeight = Math.max(base.height, MIN_FIELD_SIZE);
+  const safeWidth = Math.max(base.width, minSize);
+  const safeHeight = Math.max(base.height, minSize);
   const left = base.x;
   const top = base.y;
   const right = left + safeWidth;
@@ -118,7 +131,7 @@ function resizeCornerWithAspectRatio(
   // Project pointer movement onto the aspect-ratio diagonal (O(1) each pointer move) to avoid axis-flip jumps.
   const diagonalDot = (safeWidth * safeWidth) + (safeHeight * safeHeight);
   const projected = ((sizeDx * safeWidth) + (sizeDy * safeHeight)) / diagonalDot;
-  const minScale = Math.max(MIN_FIELD_SIZE / safeWidth, MIN_FIELD_SIZE / safeHeight);
+  const minScale = Math.max(minSize / safeWidth, minSize / safeHeight);
 
   const maxWidth = mode === 'resize-br' || mode === 'resize-tr'
     ? pageSize.width - left
@@ -127,8 +140,8 @@ function resizeCornerWithAspectRatio(
     ? pageSize.height - top
     : bottom;
   const maxScale = Math.min(
-    Math.max(MIN_FIELD_SIZE, maxWidth) / safeWidth,
-    Math.max(MIN_FIELD_SIZE, maxHeight) / safeHeight,
+    Math.max(minSize, maxWidth) / safeWidth,
+    Math.max(minSize, maxHeight) / safeHeight,
   );
   const scale = clamp(1 + projected, minScale, Math.max(minScale, maxScale));
 
@@ -147,6 +160,58 @@ function resizeCornerWithAspectRatio(
   return { x: right - width, y: bottom - height, width, height };
 }
 
+function toDragRect(
+  start: { x: number; y: number },
+  current: { x: number; y: number },
+  type: FieldType,
+  page: PageSize,
+): FieldRect {
+  const defaultRect = getDefaultFieldRect(type);
+  const minSize = getMinFieldSize(type);
+  const dx = current.x - start.x;
+  const dy = current.y - start.y;
+  const width = Math.abs(dx);
+  const height = Math.abs(dy);
+
+  if (width <= CREATE_CLICK_THRESHOLD && height <= CREATE_CLICK_THRESHOLD) {
+    return clampRectToPage(
+      {
+        x: start.x - defaultRect.width / 2,
+        y: start.y - defaultRect.height / 2,
+        width: defaultRect.width,
+        height: defaultRect.height,
+      },
+      page,
+      minSize,
+    );
+  }
+
+  if (type === 'checkbox') {
+    const side = Math.max(width, height, minSize);
+    return clampRectToPage(
+      {
+        x: dx >= 0 ? start.x : start.x - side,
+        y: dy >= 0 ? start.y : start.y - side,
+        width: side,
+        height: side,
+      },
+      page,
+      minSize,
+    );
+  }
+
+  return clampRectToPage(
+    {
+      x: Math.min(start.x, current.x),
+      y: Math.min(start.y, current.y),
+      width: Math.max(width, minSize),
+      height: Math.max(height, minSize),
+    },
+    page,
+    minSize,
+  );
+}
+
 /**
  * Render editable field boxes and pointer-driven geometry updates.
  */
@@ -154,18 +219,27 @@ export function FieldOverlay({
   fields,
   pageSize,
   scale,
+  moveEnabled,
+  resizeEnabled,
+  createEnabled,
+  activeCreateTool,
   showFieldNames,
   selectedFieldId,
   onSelectField,
   onUpdateField,
+  onCreateFieldWithRect,
   onBeginFieldChange,
   onCommitFieldChange,
 }: FieldOverlayProps) {
   // Drag state is kept in a ref so pointer events can mutate geometry without rerendering mid-drag.
   const dragStateRef = useRef<DragState | null>(null);
+  const createStateRef = useRef<CreateState | null>(null);
+  const layerRef = useRef<HTMLDivElement | null>(null);
   // Store latest scale and page size to avoid stale closures in the global pointer listeners.
   const scaleRef = useRef(scale);
   const pageRef = useRef(pageSize);
+  const createToolRef = useRef<FieldType | null>(activeCreateTool);
+  const [draftCreateRect, setDraftCreateRect] = useState<FieldRect | null>(null);
 
   useEffect(() => {
     scaleRef.current = scale;
@@ -176,8 +250,39 @@ export function FieldOverlay({
   }, [pageSize]);
 
   useEffect(() => {
+    createToolRef.current = activeCreateTool;
+    if (!activeCreateTool) {
+      createStateRef.current = null;
+      setDraftCreateRect(null);
+    }
+  }, [activeCreateTool]);
+
+  const clientPointToPdfPoint = (clientX: number, clientY: number) => {
+    const layer = layerRef.current;
+    if (!layer) return null;
+    const bounds = layer.getBoundingClientRect();
+    const scaleValue = scaleRef.current || 1;
+    const page = pageRef.current;
+    return {
+      x: clamp((clientX - bounds.left) / scaleValue, 0, page.width),
+      y: clamp((clientY - bounds.top) / scaleValue, 0, page.height),
+    };
+  };
+
+  useEffect(() => {
     // Global listeners keep drag and resize responsive even if the cursor leaves the box.
     const handlePointerMove = (event: PointerEvent) => {
+      const createState = createStateRef.current;
+      if (createState && event.pointerId === createState.pointerId) {
+        const type = createToolRef.current;
+        const point = clientPointToPdfPoint(event.clientX, event.clientY);
+        if (!type || !point) return;
+        createState.current = point;
+        const nextDraft = toDragRect(createState.start, point, type, pageRef.current);
+        setDraftCreateRect(nextDraft);
+        return;
+      }
+
       const dragState = dragStateRef.current;
       if (!dragState) return;
       if (event.pointerId !== dragState.pointerId) return;
@@ -187,7 +292,8 @@ export function FieldOverlay({
       const dy = (event.clientY - dragState.startY) / scaleValue;
 
       const page = pageRef.current;
-      const base = clampRectToPage(dragState.startRect, page, MIN_FIELD_SIZE);
+      const minSize = getMinFieldSize(dragState.fieldType);
+      const base = clampRectToPage(dragState.startRect, page, minSize);
       let nextRect: FieldRect = base;
 
       if (dragState.mode === 'move') {
@@ -196,12 +302,13 @@ export function FieldOverlay({
           x: base.x + dx,
           y: base.y + dy,
         };
-        nextRect = clampRectToPage(nextRect, page, MIN_FIELD_SIZE);
+        nextRect = clampRectToPage(nextRect, page, minSize);
       } else {
         const rightEdge = base.x + base.width;
         const bottomEdge = base.y + base.height;
+
         if (dragState.mode === 'resize-left') {
-          const nextX = clamp(base.x + dx, 0, rightEdge - MIN_FIELD_SIZE);
+          const nextX = clamp(base.x + dx, 0, rightEdge - minSize);
           nextRect = {
             x: nextX,
             y: base.y,
@@ -209,13 +316,13 @@ export function FieldOverlay({
             height: base.height,
           };
         } else if (dragState.mode === 'resize-right') {
-          const maxWidth = Math.max(MIN_FIELD_SIZE, page.width - base.x);
+          const maxWidth = Math.max(minSize, page.width - base.x);
           nextRect = {
             ...base,
-            width: clamp(base.width + dx, MIN_FIELD_SIZE, maxWidth),
+            width: clamp(base.width + dx, minSize, maxWidth),
           };
         } else if (dragState.mode === 'resize-top') {
-          const nextY = clamp(base.y + dy, 0, bottomEdge - MIN_FIELD_SIZE);
+          const nextY = clamp(base.y + dy, 0, bottomEdge - minSize);
           nextRect = {
             x: base.x,
             y: nextY,
@@ -223,16 +330,30 @@ export function FieldOverlay({
             height: bottomEdge - nextY,
           };
         } else if (dragState.mode === 'resize-bottom') {
-          const maxHeight = Math.max(MIN_FIELD_SIZE, page.height - base.y);
+          const maxHeight = Math.max(minSize, page.height - base.y);
           nextRect = {
             ...base,
-            height: clamp(base.height + dy, MIN_FIELD_SIZE, maxHeight),
+            height: clamp(base.height + dy, minSize, maxHeight),
           };
-        } else if (isCornerResizeMode(dragState.mode)) {
+        } else {
           const shouldLockAspect = event.shiftKey;
           nextRect = shouldLockAspect
-            ? resizeCornerWithAspectRatio(base, dragState.mode, dx, dy, page)
-            : resizeCornerFreeform(base, dragState.mode, dx, dy, page);
+            ? resizeCornerWithAspectRatio(base, dragState.mode, dx, dy, page, minSize)
+            : resizeCornerFreeform(base, dragState.mode, dx, dy, page, minSize);
+        }
+
+        if (dragState.fieldType === 'checkbox') {
+          const side = Math.max(nextRect.width, nextRect.height, minSize);
+          nextRect = clampRectToPage(
+            {
+              x: nextRect.x,
+              y: nextRect.y,
+              width: side,
+              height: side,
+            },
+            page,
+            minSize,
+          );
         }
       }
 
@@ -240,6 +361,25 @@ export function FieldOverlay({
     };
 
     const endDrag = (pointerId: number) => {
+      const createState = createStateRef.current;
+      if (createState && pointerId === createState.pointerId) {
+        const type = createToolRef.current;
+        if (createState.pointerTarget) {
+          try {
+            createState.pointerTarget.releasePointerCapture(createState.pointerId);
+          } catch {
+            // Ignore release errors when capture is already lost.
+          }
+        }
+        if (type) {
+          const rect = toDragRect(createState.start, createState.current, type, pageRef.current);
+          onCreateFieldWithRect(type, rect);
+        }
+        createStateRef.current = null;
+        setDraftCreateRect(null);
+        return;
+      }
+
       const dragState = dragStateRef.current;
       if (!dragState || pointerId !== dragState.pointerId) return;
 
@@ -264,7 +404,7 @@ export function FieldOverlay({
       window.removeEventListener('pointerup', handlePointerUp);
       window.removeEventListener('pointercancel', handlePointerCancel);
     };
-  }, [onCommitFieldChange, onUpdateField]);
+  }, [onCommitFieldChange, onCreateFieldWithRect, onUpdateField]);
 
   /**
    * Capture initial drag state and signal change start.
@@ -274,6 +414,9 @@ export function FieldOverlay({
     field: PdfField,
     mode: DragMode,
   ) => {
+    if (!moveEnabled) return;
+    if (createToolRef.current) return;
+    if (mode !== 'move' && !resizeEnabled) return;
     event.preventDefault();
     event.stopPropagation();
     const pointerTarget = event.currentTarget;
@@ -286,6 +429,7 @@ export function FieldOverlay({
     }
     dragStateRef.current = {
       fieldId: field.id,
+      fieldType: field.type,
       mode,
       startX: event.clientX,
       startY: event.clientY,
@@ -297,23 +441,73 @@ export function FieldOverlay({
     onSelectField(field.id);
   };
 
+  const startCreateDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!createEnabled) return;
+    const type = activeCreateTool;
+    if (!type) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const pointerTarget = event.currentTarget;
+    if (pointerTarget) {
+      try {
+        pointerTarget.setPointerCapture(event.pointerId);
+      } catch {
+        // Pointer capture can fail in synthetic/multi-pointer scenarios; keep creation functional via window listeners.
+      }
+    }
+    const start = clientPointToPdfPoint(event.clientX, event.clientY);
+    if (!start) return;
+    createStateRef.current = {
+      pointerId: event.pointerId,
+      pointerTarget,
+      start,
+      current: start,
+    };
+    setDraftCreateRect(toDragRect(start, start, type, pageRef.current));
+  };
+
   return (
     <div
       className="field-layer"
+      ref={layerRef}
       style={{
         width: pageSize.width * scale,
         height: pageSize.height * scale,
       }}
     >
+      {createEnabled && activeCreateTool ? (
+        <div
+          className="field-create-surface"
+          onPointerDown={startCreateDrag}
+          aria-label={`Draw ${activeCreateTool} field`}
+        />
+      ) : null}
+      {draftCreateRect ? (
+        <div
+          className={`field-create-draft field-create-draft--${activeCreateTool || 'text'}`}
+          style={{
+            left: draftCreateRect.x * scale,
+            top: draftCreateRect.y * scale,
+            width: draftCreateRect.width * scale,
+            height: draftCreateRect.height * scale,
+          }}
+        />
+      ) : null}
       {fields.map((field) => {
         const rect = toViewportRect(field.rect, scale);
         const selected = field.id === selectedFieldId;
+        const isSmallField =
+          field.type === 'checkbox' ||
+          (field.rect.width <= SMALL_FIELD_THRESHOLD_PDF && field.rect.height <= SMALL_FIELD_THRESHOLD_PDF);
+        // Keep labels readable while preventing oversized names on large fields.
+        const labelFontSize = Math.max(8, Math.min(14, Math.min(rect.width, rect.height) * 0.24));
         const confidenceTier = fieldConfidenceTierForField(field);
         const nameTier = nameConfidenceTierForField(field);
         const className = [
           'field-box',
           `field-box--${field.type}`,
           `field-box--conf-${confidenceTier}`,
+          !moveEnabled ? 'field-box--static' : '',
           selected ? 'field-box--active' : '',
         ]
           .filter(Boolean)
@@ -338,45 +532,75 @@ export function FieldOverlay({
               width: rect.width,
               height: rect.height,
             }}
-            onPointerDown={(event) => startDrag(event, field, 'move')}
+            onPointerDown={(event) => {
+              if (moveEnabled) {
+                startDrag(event, field, 'move');
+              } else {
+                event.preventDefault();
+                event.stopPropagation();
+                onSelectField(field.id);
+              }
+            }}
           >
             {showLabel ? (
-              <span className={labelClassName} title={field.name}>
+              <span
+                className={labelClassName}
+                title={field.name}
+                style={{ ['--field-label-font-size' as string]: `${labelFontSize}px` }}
+              >
                 {field.name}
               </span>
             ) : null}
-            <span
-              className="field-handle field-handle--tl"
-              onPointerDown={(event) => startDrag(event, field, 'resize-tl')}
-            />
-            <span
-              className="field-handle field-handle--tr"
-              onPointerDown={(event) => startDrag(event, field, 'resize-tr')}
-            />
-            <span
-              className="field-handle field-handle--bl"
-              onPointerDown={(event) => startDrag(event, field, 'resize-bl')}
-            />
-            <span
-              className="field-handle field-handle--left"
-              onPointerDown={(event) => startDrag(event, field, 'resize-left')}
-            />
-            <span
-              className="field-handle field-handle--top"
-              onPointerDown={(event) => startDrag(event, field, 'resize-top')}
-            />
-            <span
-              className="field-handle field-handle--right"
-              onPointerDown={(event) => startDrag(event, field, 'resize-right')}
-            />
-            <span
-              className="field-handle field-handle--bottom"
-              onPointerDown={(event) => startDrag(event, field, 'resize-bottom')}
-            />
-            <span
-              className="field-handle field-handle--br"
-              onPointerDown={(event) => startDrag(event, field, 'resize-br')}
-            />
+            {moveEnabled && isSmallField ? (
+              <span
+                className="field-move-proxy"
+                onPointerDown={(event) => startDrag(event, field, 'move')}
+                aria-hidden="true"
+              />
+            ) : null}
+            {resizeEnabled ? (
+              isSmallField ? (
+                <span
+                  className="field-handle field-handle--br"
+                  onPointerDown={(event) => startDrag(event, field, 'resize-br')}
+                />
+              ) : (
+                <>
+                  <span
+                    className="field-handle field-handle--tl"
+                    onPointerDown={(event) => startDrag(event, field, 'resize-tl')}
+                  />
+                  <span
+                    className="field-handle field-handle--tr"
+                    onPointerDown={(event) => startDrag(event, field, 'resize-tr')}
+                  />
+                  <span
+                    className="field-handle field-handle--bl"
+                    onPointerDown={(event) => startDrag(event, field, 'resize-bl')}
+                  />
+                  <span
+                    className="field-handle field-handle--left"
+                    onPointerDown={(event) => startDrag(event, field, 'resize-left')}
+                  />
+                  <span
+                    className="field-handle field-handle--top"
+                    onPointerDown={(event) => startDrag(event, field, 'resize-top')}
+                  />
+                  <span
+                    className="field-handle field-handle--right"
+                    onPointerDown={(event) => startDrag(event, field, 'resize-right')}
+                  />
+                  <span
+                    className="field-handle field-handle--bottom"
+                    onPointerDown={(event) => startDrag(event, field, 'resize-bottom')}
+                  />
+                  <span
+                    className="field-handle field-handle--br"
+                    onPointerDown={(event) => startDrag(event, field, 'resize-br')}
+                  />
+                </>
+              )
+            ) : null}
           </div>
         );
       })}

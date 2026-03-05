@@ -390,7 +390,14 @@
   border: 1px solid rgba(148, 163, 184, 0.35);
 }
 
+.ui-header .header-logo picture {
+  display: flex;
+  align-items: center;
+  line-height: 0;
+}
+
 .ui-header .logo-image {
+  display: block;
   width: var(--header-logo-size);
   height: var(--header-logo-size);
   object-fit: contain;

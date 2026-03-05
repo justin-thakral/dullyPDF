@@ -50,6 +50,7 @@ import { useDemo } from './hooks/useDemo';
 import { ApiService, type BillingCheckoutKind } from './services/api';
 import { applyRouteSeo } from './utils/seo';
 import { clampRectToPage } from './utils/coords';
+import { createFieldWithRect, getMinFieldSize, normalizeRectForFieldType } from './utils/fields';
 
 /**
  * Launch actions that can be requested by the lightweight homepage shell.
@@ -137,6 +138,8 @@ function WorkspaceRuntime({
   const [showHomepage, setShowHomepage] = useState(initialShowHomepage);
   const [isMobileView, setIsMobileView] = useState(false);
   const [showSearchFill, setShowSearchFill] = useState(false);
+  const [transformMode, setTransformMode] = useState(false);
+  const [activeCreateTool, setActiveCreateTool] = useState<FieldType | null>(null);
   const [searchFillSessionId, setSearchFillSessionId] = useState(0);
   const [sourceFile, setSourceFile] = useState<File | null>(null);
   const [sourceFileName, setSourceFileName] = useState<string | null>(null);
@@ -295,6 +298,7 @@ function WorkspaceRuntime({
     pipeline.reset();
     // App-level UI state
     setShowSearchFill(false); setSearchFillSessionId((prev) => prev + 1);
+    setTransformMode(false); setActiveCreateTool(null);
     setSourceFile(null); setSourceFileName(null); setSourceFileIsDemo(false);
   }, [fieldHistory, fieldState, detection, openAi, dataSource, savedForms, dialog, pipeline]);
   clearWorkspaceRef.current = clearWorkspace;
@@ -538,30 +542,91 @@ function WorkspaceRuntime({
 
   const handlePageJumpComplete = useCallback(() => { setPendingPageJump(null); }, []);
 
-  const handleCreateField = useCallback(
-    (type: FieldType) => fieldState.handleCreateField(type, currentPage, pageSizes),
-    [currentPage, fieldState, pageSizes],
+  const handleSetTransformMode = useCallback(
+    (enabled: boolean) => {
+      setTransformMode(enabled);
+      if (enabled) {
+        fieldState.setShowFields(true);
+        fieldState.setShowFieldInfo(false);
+      }
+    },
+    [fieldState],
+  );
+
+  const handleSetCreateTool = useCallback(
+    (type: FieldType | null) => {
+      setActiveCreateTool(type);
+      if (type) {
+        fieldState.setShowFields(true);
+        fieldState.setShowFieldInfo(false);
+      }
+    },
+    [fieldState],
+  );
+
+  const handleCreateFieldWithRect = useCallback(
+    (page: number, type: FieldType, rect: { x: number; y: number; width: number; height: number }) => {
+      const pageSize = pageSizes[page];
+      if (!pageSize) return;
+      let createdFieldId: string | null = null;
+      fieldHistory.updateFieldsWith((prev) => {
+        const created = createFieldWithRect(type, page, pageSize, prev, rect);
+        createdFieldId = created.id;
+        return [...prev, created];
+      });
+      if (createdFieldId) {
+        fieldState.setSelectedFieldId(createdFieldId);
+      }
+    },
+    [fieldHistory, fieldState, pageSizes],
+  );
+
+  const handleSetFieldType = useCallback(
+    (fieldId: string, type: FieldType) => {
+      const current = fieldHistory.fieldsRef.current.find((field) => field.id === fieldId);
+      if (!current) return;
+      const pageSize = pageSizes[current.page];
+      const nextRect = pageSize
+        ? normalizeRectForFieldType(current.rect, type, pageSize)
+        : current.rect;
+      fieldState.handleUpdateField(fieldId, { type, rect: nextRect });
+    },
+    [fieldHistory.fieldsRef, fieldState, pageSizes],
   );
 
   const handleApplyDisplayPreset = useCallback(
     (preset: Exclude<FieldListDisplayPreset, 'custom'>) => {
       if (preset === 'review') {
+        handleSetTransformMode(false);
         fieldState.setShowFields(true);
         fieldState.setShowFieldNames(true);
         fieldState.setShowFieldInfo(false);
         return;
       }
       if (preset === 'edit') {
+        handleSetTransformMode(true);
         fieldState.setShowFields(true);
         fieldState.setShowFieldNames(false);
         fieldState.setShowFieldInfo(false);
         return;
       }
+      handleSetTransformMode(false);
       fieldState.setShowFields(true);
       fieldState.setShowFieldNames(false);
       fieldState.setShowFieldInfo(true);
     },
-    [fieldState],
+    [fieldState, handleSetTransformMode],
+  );
+
+  const handleShowFieldInfoChange = useCallback(
+    (enabled: boolean) => {
+      if (enabled) {
+        handleSetTransformMode(false);
+        setActiveCreateTool(null);
+      }
+      fieldState.handleShowFieldInfoChange(enabled);
+    },
+    [fieldState, handleSetTransformMode],
   );
 
   const handleResetConfidenceFilters = useCallback(() => {
@@ -577,6 +642,19 @@ function WorkspaceRuntime({
     () => fieldHistory.handleRedo((updater) => fieldState.setSelectedFieldId(updater)),
     [fieldHistory, fieldState],
   );
+
+  const initializedEditorDocRef = useRef<PDFDocumentProxy | null>(null);
+  useEffect(() => {
+    if (!pdfDoc) {
+      initializedEditorDocRef.current = null;
+      return;
+    }
+    if (initializedEditorDocRef.current === pdfDoc) {
+      return;
+    }
+    initializedEditorDocRef.current = pdfDoc;
+    handleApplyDisplayPreset('edit');
+  }, [handleApplyDisplayPreset, pdfDoc]);
 
   const handleDismissBanner = useCallback(() => {
     if (openAi.openAiError || dataSource.schemaError) {
@@ -739,7 +817,7 @@ function WorkspaceRuntime({
           y: selectedField.rect.y + deltaY * step,
         },
         pageSize,
-        6,
+        getMinFieldSize(selectedField.type),
       );
       fieldState.handleUpdateField(selectedId, { rect: nextRect });
     },
@@ -764,6 +842,33 @@ function WorkspaceRuntime({
       const key = event.key.toLowerCase();
 
       if (!modifier && !event.altKey) {
+        if (key === 'escape') {
+          if (activeCreateTool) {
+            event.preventDefault();
+            handleSetCreateTool(null);
+          }
+          return;
+        }
+        if (key === 't') {
+          event.preventDefault();
+          handleSetCreateTool('text');
+          return;
+        }
+        if (key === 'd') {
+          event.preventDefault();
+          handleSetCreateTool('date');
+          return;
+        }
+        if (key === 's') {
+          event.preventDefault();
+          handleSetCreateTool('signature');
+          return;
+        }
+        if (key === 'c') {
+          event.preventDefault();
+          handleSetCreateTool('checkbox');
+          return;
+        }
         if (key === 'delete' || key === 'backspace') {
           if (!fieldState.selectedFieldId) return;
           event.preventDefault();
@@ -841,10 +946,12 @@ function WorkspaceRuntime({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [
+    activeCreateTool,
     currentPage,
     fieldState,
     focusFieldSearch,
     handlePageJump,
+    handleSetCreateTool,
     handleRedo,
     handleUndo,
     nudgeSelectedField,
@@ -883,11 +990,11 @@ function WorkspaceRuntime({
     [fields, selectedFieldId],
   );
   const displayPreset = useMemo<FieldListDisplayPreset>(() => {
-    if (showFields && showFieldNames && !showFieldInfo) return 'review';
-    if (showFields && !showFieldNames && !showFieldInfo) return 'edit';
-    if (showFields && !showFieldNames && showFieldInfo) return 'fill';
+    if (showFields && showFieldNames && !showFieldInfo && !transformMode) return 'review';
+    if (showFields && !showFieldNames && !showFieldInfo && transformMode) return 'edit';
+    if (showFields && !showFieldNames && showFieldInfo && !transformMode) return 'fill';
     return 'custom';
-  }, [showFieldInfo, showFieldNames, showFields]);
+  }, [showFieldInfo, showFieldNames, showFields, transformMode]);
 
   const bootstrapAuthSyncedRef = useRef(false);
   useEffect(() => {
@@ -1046,7 +1153,15 @@ function WorkspaceRuntime({
           onSignIn={!verifiedUser ? () => auth.setShowLogin(true) : undefined} />
         <main className="landing-main">
           {currentView === 'homepage' && (
-            <Homepage onStartWorkflow={() => setShowHomepage(false)} onStartDemo={demo.startDemo}
+            <Homepage
+              onStartWorkflow={() => {
+                if (verifiedUser) {
+                  setShowHomepage(false);
+                  return;
+                }
+                auth.setShowLogin(true);
+              }}
+              onStartDemo={demo.startDemo}
               userEmail={userEmail ?? null} onSignIn={!verifiedUser ? () => auth.setShowLogin(true) : undefined}
               onOpenProfile={verifiedUser ? auth.handleOpenProfile : undefined} />
           )}
@@ -1108,10 +1223,12 @@ function WorkspaceRuntime({
           selectedFieldId={selectedFieldId} selectedField={selectedField}
           currentPage={currentPage} pageCount={pageCount} showFields={showFields}
           showFieldNames={showFieldNames} showFieldInfo={showFieldInfo}
+          transformMode={transformMode}
           displayPreset={displayPreset} onApplyDisplayPreset={handleApplyDisplayPreset}
           onShowFieldsChange={fieldState.handleShowFieldsChange}
           onShowFieldNamesChange={fieldState.handleShowFieldNamesChange}
-          onShowFieldInfoChange={fieldState.handleShowFieldInfoChange}
+          onShowFieldInfoChange={handleShowFieldInfoChange}
+          onTransformModeChange={handleSetTransformMode}
           canClearInputs={hasFieldValues} onClearInputs={fieldState.handleClearFieldValues}
           confidenceFilter={confidenceFilter} onConfidenceFilterChange={fieldState.handleConfidenceFilterChange}
           onResetConfidenceFilters={handleResetConfidenceFilters}
@@ -1127,9 +1244,15 @@ function WorkspaceRuntime({
             <PdfViewer pdfDoc={pdfDoc} pageNumber={currentPage} scale={scale}
               pageSizes={pageSizes}
               fields={visibleFields} showFields={showFields} showFieldNames={showFieldNames}
-              showFieldInfo={showFieldInfo} selectedFieldId={selectedFieldId}
+              showFieldInfo={showFieldInfo}
+              moveEnabled={!showFieldInfo}
+              resizeEnabled={transformMode && !showFieldInfo}
+              createEnabled={Boolean(activeCreateTool) && !showFieldInfo}
+              activeCreateTool={activeCreateTool}
+              selectedFieldId={selectedFieldId}
               onSelectField={handleSelectField} onUpdateField={fieldState.handleUpdateField}
               onUpdateFieldGeometry={fieldState.handleUpdateFieldGeometry}
+              onCreateFieldWithRect={handleCreateFieldWithRect}
               onBeginFieldChange={fieldHistory.beginFieldHistory}
               onCommitFieldChange={fieldHistory.commitFieldHistory}
               onPageChange={handlePageScroll} pendingPageJump={pendingPageJump}
@@ -1137,9 +1260,16 @@ function WorkspaceRuntime({
           )}
         </main>
         <FieldInspectorPanel fields={fields} selectedFieldId={selectedFieldId}
-          currentPage={currentPage} onUpdateField={fieldState.handleUpdateField}
+          activeCreateTool={activeCreateTool}
+          onUpdateField={fieldState.handleUpdateField}
+          onSetFieldType={handleSetFieldType}
           onUpdateFieldDraft={fieldState.handleUpdateFieldDraft}
-          onDeleteField={fieldState.handleDeleteField} onCreateField={handleCreateField}
+          onDeleteField={fieldState.handleDeleteField}
+          onCreateToolChange={handleSetCreateTool}
+          onUndo={handleUndo}
+          onRedo={handleRedo}
+          canUndo={fieldHistory.canUndo}
+          canRedo={fieldHistory.canRedo}
           onBeginFieldChange={fieldHistory.beginFieldHistory}
           onCommitFieldChange={fieldHistory.commitFieldHistory} />
       </div>
@@ -1152,6 +1282,8 @@ function WorkspaceRuntime({
           textTransformRules={textTransformRules}
           onFieldsChange={fieldState.handleFieldsChange} onClearFields={fieldState.handleClearFieldValues}
           onAfterFill={() => {
+            handleSetTransformMode(false);
+            setActiveCreateTool(null);
             fieldState.setShowFieldInfo(true); fieldState.setShowFieldNames(false);
             fieldState.setShowFields(true);
             if (demoActive && DEMO_STEPS[demoStepIndex ?? -1]?.id === 'search-fill') demo.handleDemoCompletion();

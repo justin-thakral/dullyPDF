@@ -1,9 +1,6 @@
-import { useMemo } from 'react';
-import { getIntentPages } from '../../config/intentPages';
 import './SiteFooter.css';
 
 const PRODUCT_LINKS = [
-  { label: 'Try DullyPDF', href: '/' },
   { label: 'Getting Started', href: '/usage-docs/getting-started' },
   { label: 'Usage Docs', href: '/usage-docs' },
 ];
@@ -18,44 +15,48 @@ const LEGAL_LINKS = [
   { label: 'Terms of Service', href: '/terms' },
 ];
 
-const FooterColumn = ({ title, links }: { title: string; links: { label: string; href: string }[] }) => (
-  <div className="site-footer__column">
-    <h3 className="site-footer__column-title">{title}</h3>
-    <ul className="site-footer__link-list">
+const SOLUTION_LINKS = [
+  { label: 'Workflow Library', href: '/workflows' },
+  { label: 'Industry Solutions', href: '/industries' },
+];
+
+type FooterLink = {
+  label: string;
+  href: string;
+};
+
+const InlineLinkGroup = ({
+  title,
+  links,
+  className,
+}: {
+  title: string;
+  links: FooterLink[];
+  className?: string;
+}) => (
+  <div className={`site-footer__link-group${className ? ` ${className}` : ''}`}>
+    <span className="site-footer__label">{title}:</span>
+    <div className="site-footer__links">
       {links.map((link) => (
-        <li key={link.href}>
-          <a href={link.href}>{link.label}</a>
-        </li>
+        <a key={link.href} href={link.href}>
+          {link.label}
+        </a>
       ))}
-    </ul>
+    </div>
   </div>
 );
 
 export const SiteFooter = () => {
-  const intentPages = useMemo(() => getIntentPages(), []);
-  const workflowLinks = useMemo(
-    () => intentPages.filter((p) => p.category === 'workflow').map((p) => ({ label: p.navLabel, href: p.path })),
-    [intentPages],
-  );
-  const industryLinks = useMemo(
-    () => intentPages.filter((p) => p.category === 'industry').map((p) => ({ label: p.navLabel, href: p.path })),
-    [intentPages],
-  );
-
   return (
     <footer className="site-footer">
-      <div className="site-footer__grid">
-        <FooterColumn title="Product" links={PRODUCT_LINKS} />
-        <FooterColumn title="Workflows" links={workflowLinks} />
-        <FooterColumn title="Industries" links={industryLinks} />
-        <FooterColumn title="Resources" links={RESOURCE_LINKS} />
-        <FooterColumn title="Legal" links={LEGAL_LINKS} />
-      </div>
-      <div className="site-footer__bottom">
-        <span>&copy; {new Date().getFullYear()} DullyPDF</span>
-        <a href="mailto:justin@ttcommercial.com" className="site-footer__contact">
-          justin@ttcommercial.com
-        </a>
+      <div className="site-footer__bar">
+        <InlineLinkGroup className="site-footer__group--product" title="Product" links={PRODUCT_LINKS} />
+        <InlineLinkGroup className="site-footer__group--resources" title="Resources" links={RESOURCE_LINKS} />
+        <div className="site-footer__center">
+          &copy; {new Date().getFullYear()} DullyPDF
+        </div>
+        <InlineLinkGroup className="site-footer__group--legal" title="Legal" links={LEGAL_LINKS} />
+        <InlineLinkGroup className="site-footer__group--solutions" title="Solutions" links={SOLUTION_LINKS} />
       </div>
     </footer>
   );

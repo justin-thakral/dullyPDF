@@ -5,14 +5,14 @@ describe('SEO metadata utility', () => {
   it('applies title, canonical, and social tags for homepage route', () => {
     applyRouteSeo({ kind: 'app' });
 
-    expect(document.title).toBe('PDF to Fillable Form Converter and Database Mapping | DullyPDF');
+    expect(document.title).toBe('DullyPDF — Convert PDFs to Fillable Forms & Map to Database');
     expect(document.querySelector('meta[name="description"]')?.getAttribute('content')).toContain(
-      'Convert raw PDFs into fillable form templates',
+      'DullyPDF converts PDFs into fillable templates',
     );
     expect(document.querySelector('link[rel="canonical"]')?.getAttribute('href')).toBe('https://dullypdf.com/');
     expect(document.querySelector('meta[property="og:url"]')?.getAttribute('content')).toBe('https://dullypdf.com/');
     expect(document.querySelector('meta[name="twitter:title"]')?.getAttribute('content')).toBe(
-      'PDF to Fillable Form Converter and Database Mapping | DullyPDF',
+      'DullyPDF — Convert PDFs to Fillable Forms & Map to Database',
     );
     expect(document.querySelectorAll('script[data-seo-jsonld="true"]').length).toBeGreaterThan(0);
   });

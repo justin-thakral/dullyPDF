@@ -10,7 +10,7 @@ describe('routeSeo config', () => {
   it('resolves canonical homepage metadata', () => {
     const metadata = resolveRouteSeo({ kind: 'app' });
     expect(metadata.canonicalPath).toBe('/');
-    expect(metadata.title).toContain('PDF to Fillable Form');
+    expect(metadata.title).toContain('PDFs to Fillable Forms');
   });
 
   it('resolves canonical usage docs metadata by page key', () => {
@@ -23,5 +23,11 @@ describe('routeSeo config', () => {
     const metadata = resolveRouteSeo({ kind: 'intent', intentKey: 'healthcare-pdf-automation' });
     expect(metadata.canonicalPath).toBe('/healthcare-pdf-automation');
     expect(metadata.title).toContain('Healthcare');
+  });
+
+  it('resolves canonical hub metadata by key', () => {
+    const metadata = resolveRouteSeo({ kind: 'intent-hub', hubKey: 'workflows' });
+    expect(metadata.canonicalPath).toBe('/workflows');
+    expect(metadata.title).toContain('Workflow Library');
   });
 });

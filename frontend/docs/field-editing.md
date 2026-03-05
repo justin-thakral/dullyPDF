@@ -6,29 +6,35 @@ Field editing is centered around three coordinated areas: overlay (PDF), field l
 
 - `Display mode` presets:
   - `Review`: overlays + names
-  - `Edit`: overlays only
+  - `Edit`: overlays + transform resize controls (default when a form opens)
   - `Fill`: interactive input controls
+- `Transform`: enables resize handles for geometry editing.
 - `Fields`: show/hide overlay boxes.
 - `Names`: show/hide overlay labels.
 - `Info`: show/hide input controls on the PDF for entering values.
+- `Transform` and `Info` are mutually exclusive to avoid drag/edit conflicts (enabling one disables the other).
 - `All`: list fields from all pages in the left panel.
 - `Clear`: clear current field values in the session.
 
 ## Creating and selecting fields
 
-- Use inspector "Add" buttons to create `text`, `date`, `signature`, and `checkbox` fields.
+- Use inspector create tools (`Text`, `Date`, `Signature`, `Checkbox`) to draw fields directly on the PDF.
 - New fields are added to the current page.
+- Press `Esc` to exit an active create tool.
 - Select fields from the overlay or the left field list.
 - Selecting a field in the list can jump pages when needed.
 - If the selected field is outside active list filters, the panel shows a `Reveal selected` action.
 
 ## Moving, resizing, and geometry
 
+- Move is enabled whenever `Info` is off.
+- Transform mode controls resize handles.
 - Drag a field to move it.
-- Drag edge/corner handles to resize.
+- Drag corner or edge handles to resize standard fields.
 - Corner resizing defaults to standard freeform behavior (width and height change independently).
 - Hold `Shift` while corner-resizing to preserve aspect ratio for that drag.
-- All four corners (`TL`, `TR`, `BL`, `BR`) and all four edges are available as handles.
+- Standard fields expose four corners (`TL`, `TR`, `BL`, `BR`) plus edge handles (`left`, `right`, `top`, `bottom`).
+- Small fields (for example tiny checkboxes) use a single bottom-right handle and a larger move hit area.
 - Geometry is clamped to page bounds with a minimum size.
 - Inspector geometry inputs edit `x`, `y`, `width`, and `height` directly.
 - Coordinates are PDF points measured from the page top-left.
@@ -74,6 +80,8 @@ Field editing is centered around three coordinated areas: overlay (PDF), field l
 - `Ctrl/Cmd+Z`: undo
 - `Ctrl/Cmd+Shift+Z` or `Ctrl/Cmd+Y`: redo
 - `Ctrl/Cmd+X`, `Delete`, or `Backspace`: delete selected field
+- `T` / `D` / `S` / `C`: set active create tool (`Text` / `Date` / `Signature` / `Checkbox`)
+- `Esc`: clear active create tool
 - `Ctrl/Cmd+F` or `/`: focus field search
 - `[` and `]`: previous/next page
 - `Alt+Arrow`: nudge selected field by 1 point

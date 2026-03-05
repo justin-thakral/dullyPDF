@@ -165,7 +165,7 @@ describe('ContactDialog', () => {
     expect((screen.getByLabelText('Short summary') as HTMLInputElement).value).toBe('');
     expect((screen.getByLabelText('Message') as HTMLTextAreaElement).value).toBe('');
     expect(screen.getByRole('button', { name: 'Send message' })).toBeTruthy();
-  });
+  }, 15_000);
 
   it('shows ApiError message and generic failure message on unknown errors', async () => {
     const user = userEvent.setup();

@@ -41,6 +41,9 @@ The frontend is a React + TypeScript app for loading PDFs, editing fields, and f
   - `/nonprofit-pdf-form-automation`
   - `/logistics-pdf-automation`
 - Each route has unique canonical metadata and FAQ structured data.
+- Two hub routes aggregate intent pages for cleaner global navigation:
+  - `/workflows` lists workflow-intent pages.
+  - `/industries` lists industry-intent pages.
 
 ## Data source behavior
 

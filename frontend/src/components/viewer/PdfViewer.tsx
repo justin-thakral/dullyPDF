@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AnnotationMode } from 'pdfjs-dist';
 import type { PDFDocumentProxy, RenderTask } from 'pdfjs-dist/types/src/display/api';
-import type { PageSize, PdfField } from '../../types';
+import type { FieldRect, FieldType, PageSize, PdfField } from '../../types';
 import { FieldOverlay } from './FieldOverlay';
 import { FieldInputOverlay } from './FieldInputOverlay';
 import { Alert } from '../ui/Alert';
@@ -21,10 +21,15 @@ type PdfViewerProps = {
   showFields: boolean;
   showFieldNames: boolean;
   showFieldInfo: boolean;
+  moveEnabled: boolean;
+  resizeEnabled: boolean;
+  createEnabled: boolean;
+  activeCreateTool: FieldType | null;
   selectedFieldId: string | null;
   onSelectField: (fieldId: string) => void;
   onUpdateField: (fieldId: string, updates: Partial<PdfField>) => void;
   onUpdateFieldGeometry: (fieldId: string, updates: Partial<PdfField>) => void;
+  onCreateFieldWithRect: (pageNumber: number, type: FieldType, rect: FieldRect) => void;
   onBeginFieldChange: () => void;
   onCommitFieldChange: () => void;
   onPageChange: (page: number) => void;
@@ -41,10 +46,15 @@ type PdfPageProps = {
   showFields: boolean;
   showFieldNames: boolean;
   showFieldInfo: boolean;
+  moveEnabled: boolean;
+  resizeEnabled: boolean;
+  createEnabled: boolean;
+  activeCreateTool: FieldType | null;
   selectedFieldId: string | null;
   onSelectField: (fieldId: string) => void;
   onUpdateField: (fieldId: string, updates: Partial<PdfField>) => void;
   onUpdateFieldGeometry: (fieldId: string, updates: Partial<PdfField>) => void;
+  onCreateFieldWithRect: (pageNumber: number, type: FieldType, rect: FieldRect) => void;
   onBeginFieldChange: () => void;
   onCommitFieldChange: () => void;
   registerRef: (node: HTMLDivElement | null) => void;
@@ -63,10 +73,15 @@ function PdfPage({
   showFields,
   showFieldNames,
   showFieldInfo,
+  moveEnabled,
+  resizeEnabled,
+  createEnabled,
+  activeCreateTool,
   selectedFieldId,
   onSelectField,
   onUpdateField,
   onUpdateFieldGeometry,
+  onCreateFieldWithRect,
   onBeginFieldChange,
   onCommitFieldChange,
   registerRef,
@@ -159,10 +174,15 @@ function PdfPage({
               fields={fields}
               pageSize={pageSize}
               scale={scale}
+              moveEnabled={moveEnabled}
+              resizeEnabled={resizeEnabled}
+              createEnabled={createEnabled}
+              activeCreateTool={activeCreateTool}
               showFieldNames={showFieldNames}
               selectedFieldId={selectedFieldId}
               onSelectField={onSelectField}
               onUpdateField={onUpdateFieldGeometry}
+              onCreateFieldWithRect={(type, rect) => onCreateFieldWithRect(pageNumber, type, rect)}
               onBeginFieldChange={onBeginFieldChange}
               onCommitFieldChange={onCommitFieldChange}
             />
@@ -205,10 +225,15 @@ export function PdfViewer({
   showFields,
   showFieldNames,
   showFieldInfo,
+  moveEnabled,
+  resizeEnabled,
+  createEnabled,
+  activeCreateTool,
   selectedFieldId,
   onSelectField,
   onUpdateField,
   onUpdateFieldGeometry,
+  onCreateFieldWithRect,
   onBeginFieldChange,
   onCommitFieldChange,
   onPageChange,
@@ -302,30 +327,6 @@ export function PdfViewer({
 
     return () => window.clearTimeout(timeout);
   }, [pendingPageJump, onPageJumpComplete]);
-
-  useEffect(() => {
-    if (!scrollRef.current) return;
-    if (!selectedFieldId) return;
-    if (pendingPageJump) return;
-    const field = fields.find((entry) => entry.id === selectedFieldId);
-    if (!field) return;
-
-    const safeId =
-      typeof CSS !== 'undefined' && typeof CSS.escape === 'function'
-        ? CSS.escape(selectedFieldId)
-        : selectedFieldId.replace(/["\\]/g, '\\$&');
-    const container = scrollRef.current;
-    const node = container.querySelector<HTMLElement>(`[data-field-id="${safeId}"]`);
-    const target = node || pageRefs.current.get(field.page);
-    if (!target) return;
-
-    scrollLockRef.current = true;
-    target.scrollIntoView({ behavior: 'smooth', block: node ? 'center' : 'start' });
-    const timeout = window.setTimeout(() => {
-      scrollLockRef.current = false;
-    }, 250);
-    return () => window.clearTimeout(timeout);
-  }, [fields, pendingPageJump, selectedFieldId, showFieldInfo, showFields]);
 
   useEffect(() => {
     if (!scrollRef.current || pages.length === 0) return;
@@ -434,10 +435,15 @@ export function PdfViewer({
             showFields={showFields}
             showFieldNames={showFieldNames}
             showFieldInfo={showFieldInfo}
+            moveEnabled={moveEnabled}
+            resizeEnabled={resizeEnabled}
+            createEnabled={createEnabled}
+            activeCreateTool={activeCreateTool}
             selectedFieldId={selectedFieldId}
             onSelectField={onSelectField}
             onUpdateField={onUpdateField}
             onUpdateFieldGeometry={onUpdateFieldGeometry}
+            onCreateFieldWithRect={onCreateFieldWithRect}
             onBeginFieldChange={onBeginFieldChange}
             onCommitFieldChange={onCommitFieldChange}
             registerRef={registerPageRef(page)}

@@ -1,7 +1,7 @@
 /**
  * Side panel that lists fields and controls visibility/filtering.
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
+import { useCallback, useMemo, useState, type ChangeEvent } from 'react';
 import type { ConfidenceFilter, ConfidenceTier, FieldType, PdfField } from '../../types';
 import {
   fieldConfidenceForField,
@@ -28,11 +28,13 @@ type FieldListPanelProps = {
   showFields: boolean;
   showFieldNames: boolean;
   showFieldInfo: boolean;
+  transformMode: boolean;
   displayPreset: FieldListDisplayPreset;
   onApplyDisplayPreset: (preset: Exclude<FieldListDisplayPreset, 'custom'>) => void;
   onShowFieldsChange: (enabled: boolean) => void;
   onShowFieldNamesChange: (enabled: boolean) => void;
   onShowFieldInfoChange: (enabled: boolean) => void;
+  onTransformModeChange: (enabled: boolean) => void;
   canClearInputs: boolean;
   onClearInputs: () => void;
   confidenceFilter: ConfidenceFilter;
@@ -94,11 +96,13 @@ export function FieldListPanel({
   showFields,
   showFieldNames,
   showFieldInfo,
+  transformMode,
   displayPreset,
   onApplyDisplayPreset,
   onShowFieldsChange,
   onShowFieldNamesChange,
   onShowFieldInfoChange,
+  onTransformModeChange,
   canClearInputs,
   onClearInputs,
   confidenceFilter,
@@ -111,7 +115,6 @@ export function FieldListPanel({
   const [filterType, setFilterType] = useState<FieldType | 'all'>('all');
   const [sortMode, setSortMode] = useState<SortMode>('page');
   const [showAllPages, setShowAllPages] = useState(false);
-  const rowRefs = useRef(new Map<string, HTMLButtonElement | null>());
 
   const baseFields = useMemo(
     () => (showAllPages ? fields : fields.filter((field) => field.page === currentPage)),
@@ -159,15 +162,6 @@ export function FieldListPanel({
     sortMode !== 'page' ||
     showAllPages ||
     Boolean(confidenceChipLabel);
-
-  useEffect(() => {
-    if (!selectedFieldId) return;
-    const node = rowRefs.current.get(selectedFieldId);
-    if (!node) return;
-    requestAnimationFrame(() => {
-      node.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-    });
-  }, [selectedFieldId, sorted]);
 
   const handlePageInput = (event: ChangeEvent<HTMLInputElement>) => {
     const raw = Number(event.target.value);
@@ -335,6 +329,19 @@ export function FieldListPanel({
               />
               <span>Info</span>
             </label>
+            <label
+              className={`panel-pill-toggle${transformMode ? ' panel-pill-toggle--active' : ''}`}
+              title="Transform mode enables resize handles; moving stays available when Info is off"
+            >
+              <input
+                id="panel-toggle-transform"
+                name="panel-toggle-transform"
+                type="checkbox"
+                checked={transformMode}
+                onChange={(event) => onTransformModeChange(event.target.checked)}
+              />
+              <span>Transform</span>
+            </label>
             <button
               className="panel-pill-toggle panel-pill-toggle--action"
               type="button"
@@ -487,13 +494,6 @@ export function FieldListPanel({
                     key={field.id}
                     className={rowClassName}
                     type="button"
-                    ref={(node) => {
-                      if (node) {
-                        rowRefs.current.set(field.id, node);
-                      } else {
-                        rowRefs.current.delete(field.id);
-                      }
-                    }}
                     onClick={() => {
                       if (showAllPages && field.page !== currentPage) {
                         onPageChange(field.page);
