@@ -6,6 +6,7 @@ export type IntentPageKey =
   | 'fillable-form-field-name'
   | 'healthcare-pdf-automation'
   | 'acord-form-automation'
+  | 'insurance-pdf-automation'
   | 'real-estate-pdf-automation'
   | 'government-form-automation'
   | 'finance-loan-pdf-automation'
@@ -316,26 +317,31 @@ const INTENT_PAGES: IntentPage[] = [
     navLabel: 'ACORD Form Automation',
     heroTitle: 'Automate ACORD Insurance PDF Forms With Mapped Data',
     heroSummary:
-      'Handle ACORD workflows such as ACORD 25, 24, 27, 126, and 140 by mapping form fields to structured data and reducing repetitive manual entry.',
-    seoTitle: 'ACORD Form Automation and Auto-Fill Workflows | DullyPDF',
+      'Handle ACORD workflows such as ACORD 25, 24, 27, 28, 126, and 140 by mapping form fields to structured data and reducing repetitive manual entry.',
+    seoTitle: 'ACORD Form Automation for Insurance Certificate Workflows | DullyPDF',
     seoDescription:
-      'Automate ACORD form workflows, auto-fill ACORD 25 PDFs, and map insurance certificate PDFs to structured database templates.',
+      'Automate ACORD forms (25, 24, 27, 28, 126, and 140), auto-fill certificate of insurance PDFs, and map insurance data to structured templates.',
     seoKeywords: [
       'acord form automation',
       'auto fill acord 25 pdf',
-      'insurance certificate pdf to database',
+      'certificate of insurance automation',
+      'acord certificate automation',
+      'insurance pdf automation',
       'acord 24 automation',
+      'acord 27 automation',
+      'acord 28 automation',
       'acord 126 automation',
+      'acord 140 automation',
     ],
     valuePoints: [
       'Standardize repetitive ACORD field naming across brokers and account teams.',
-      'Map ACORD certificate and liability forms to shared schema headers.',
+      'Map ACORD certificate and liability forms to shared schema headers from AMS exports.',
       'Reduce rekeying errors for policy, insured, and coverage blocks.',
     ],
     proofPoints: [
       'Template workflows support repeat filling from CSV, XLSX, and JSON records.',
       'Field confidence and inspector-based QA provide pre-fill verification.',
-      'Docs include rename/mapping and Search & Fill validation guidance.',
+      'Docs include rename/mapping and Search & Fill validation guidance for ACORD packets.',
     ],
     faqs: [
       {
@@ -349,9 +355,56 @@ const INTENT_PAGES: IntentPage[] = [
           'Yes. Schema mapping aligns PDF fields with your preferred naming and column structure.',
       },
       {
-        question: 'Does this help reduce certificate processing time?',
+        question: 'Does this support ACORD renewals and recurring certificate requests?',
         answer:
-          'Yes. Teams can map once and fill repeatedly instead of manually retyping common form data.',
+          'Yes. Teams can map once and fill repeatedly instead of retyping policy and certificate data every cycle.',
+      },
+    ],
+  },
+  {
+    key: 'insurance-pdf-automation',
+    category: 'industry',
+    path: '/insurance-pdf-automation',
+    navLabel: 'Insurance PDF Automation',
+    heroTitle: 'Insurance PDF Automation for ACORD and Certificate Workflows',
+    heroSummary:
+      'Automate certificate of insurance, policy summary, endorsement, and claims intake PDFs by mapping form fields to structured insurance data exports.',
+    seoTitle: 'Insurance PDF Automation for ACORD and Certificate Forms | DullyPDF',
+    seoDescription:
+      'Automate insurance PDF forms, including ACORD workflows and certificate of insurance documents, by mapping fields to structured agency or broker data.',
+    seoKeywords: [
+      'insurance pdf automation',
+      'insurance form automation',
+      'certificate of insurance automation',
+      'insurance certificate pdf automation',
+      'auto fill insurance forms',
+      'acord form automation',
+    ],
+    valuePoints: [
+      'Build reusable templates for ACORD packets and carrier-specific insurance forms.',
+      'Map insured, producer, policy, and coverage fields to AMS or broker export columns.',
+      'Standardize field naming across renewal cycles and form revisions.',
+    ],
+    proofPoints: [
+      'Works with CSV, XLSX, and JSON exports from insurance operations systems.',
+      'Supports checkbox, date, and text cleanup for carrier-specific PDF variants.',
+      'Saved templates accelerate recurring certificate and renewal workflows.',
+    ],
+    faqs: [
+      {
+        question: 'Can DullyPDF automate insurance PDFs beyond ACORD 25?',
+        answer:
+          'Yes. Teams use it for ACORD 24/27/28/126/140 and carrier-specific insurance PDFs that require repeat filling.',
+      },
+      {
+        question: 'Can insurance teams map form fields to agency management exports?',
+        answer:
+          'Yes. Map once to your export schema, then run repeat fills from structured records in Search & Fill.',
+      },
+      {
+        question: 'Is this useful for certificate of insurance turnaround speed?',
+        answer:
+          'Yes. Reusable mapped templates reduce manual retyping and help teams produce certificates faster with fewer entry errors.',
       },
     ],
   },

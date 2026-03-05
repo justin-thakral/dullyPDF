@@ -113,7 +113,14 @@ const BLOG_POSTS: BlogPost[] = [
     seoTitle: 'Fill ACORD 25 Certificate of Insurance Faster | DullyPDF Blog',
     seoDescription:
       'Speed up ACORD 25 certificate of insurance processing with mapped templates. Detect fields, map to your data, and fill in seconds.',
-    seoKeywords: ['acord 25 fillable', 'fill acord form automatically', 'acord certificate of insurance automation', 'acord 25 template'],
+    seoKeywords: [
+      'acord 25 fillable',
+      'fill acord form automatically',
+      'acord certificate of insurance automation',
+      'acord 25 template',
+      'insurance pdf automation',
+      'certificate of insurance automation',
+    ],
     publishedDate: '2026-03-04',
     updatedDate: '2026-03-04',
     author: 'DullyPDF Team',
@@ -143,6 +150,54 @@ const BLOG_POSTS: BlogPost[] = [
     ],
     relatedIntentPages: ['acord-form-automation'],
     relatedDocs: ['getting-started', 'search-fill'],
+  },
+  {
+    slug: 'insurance-pdf-automation-acord-and-coi-workflows',
+    title: 'Insurance PDF Automation: ACORD and Certificate Workflows',
+    seoTitle: 'Insurance PDF Automation for ACORD and COI Workflows | DullyPDF Blog',
+    seoDescription:
+      'Learn how insurance teams automate ACORD forms and certificate of insurance PDFs with mapped templates tied to agency data exports.',
+    seoKeywords: [
+      'insurance pdf automation',
+      'insurance form automation',
+      'certificate of insurance automation',
+      'acord form automation software',
+      'auto fill insurance forms',
+    ],
+    publishedDate: '2026-03-04',
+    updatedDate: '2026-03-04',
+    author: 'DullyPDF Team',
+    summary:
+      'If your team handles recurring ACORD packets and COI requests, this workflow shows how to map once and fill insurance PDFs from AMS exports in seconds.',
+    sections: [
+      {
+        id: 'why-insurance-pdfs-stay-manual',
+        title: 'Why insurance PDF workflows stay manual',
+        body: 'Insurance operations teams still process many carrier and ACORD forms as PDFs, not APIs. Producers and account managers repeatedly retype the same insured, policy, and coverage values for renewals, certificates, and endorsements. The bottleneck is not data availability. The bottleneck is mapping that data reliably into fixed PDF layouts.',
+      },
+      {
+        id: 'acord-and-carrier-forms',
+        title: 'ACORD plus carrier-specific form variants',
+        body: 'ACORD 25 is common, but most agencies also touch ACORD 24, 27, 28, 126, and carrier-specific supplements. A practical setup treats each recurring form as a reusable template: detect fields, clean geometry, normalize names, and save. This prevents repeated setup work each time a carrier changes spacing or a field label.',
+      },
+      {
+        id: 'map-from-ams-exports',
+        title: 'Map once from AMS or broker exports',
+        body: 'Export policy data from your agency management system as CSV or Excel. Map insured name, producer details, policy numbers, limits, effective dates, and holder data once. After mapping, Search & Fill can locate an insured record and populate the entire form in one pass, reducing rekeying mistakes.',
+      },
+      {
+        id: 'coi-turnaround',
+        title: 'Speed up certificate of insurance turnaround',
+        body: 'Certificate requests often arrive with tight deadlines. With a mapped template, account teams can search a policy record, fill the certificate, validate key fields, and deliver quickly. The workflow is especially useful for high-volume COI operations where consistency and speed matter more than custom one-off editing.',
+      },
+      {
+        id: 'implementation-checklist',
+        title: 'Implementation checklist for insurance teams',
+        body: 'Start with your highest-volume ACORD or COI form. Build one template, validate with five real records, and lock naming conventions for policy and coverage fields. Then duplicate the pattern across your next forms. This phased rollout builds trust and minimizes disruption to current servicing workflows.',
+      },
+    ],
+    relatedIntentPages: ['insurance-pdf-automation', 'acord-form-automation'],
+    relatedDocs: ['getting-started', 'rename-mapping', 'search-fill'],
   },
   {
     slug: 'pdf-form-field-detection-how-ai-finds-fields',

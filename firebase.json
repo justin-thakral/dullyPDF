@@ -32,6 +32,16 @@
         "source": "/insurance-acord-form-automation",
         "destination": "/acord-form-automation",
         "type": 301
+      },
+      {
+        "source": "/insurance-form-automation",
+        "destination": "/insurance-pdf-automation",
+        "type": 301
+      },
+      {
+        "source": "/insurance-pdf-form-automation",
+        "destination": "/insurance-pdf-automation",
+        "type": 301
       }
     ],
     "headers": [

@@ -2,6 +2,30 @@
 
 This playbook covers ongoing work that complements route-level SEO implementation.
 
+## Canonical URL and slash policy
+
+- Canonical public URLs use non-trailing slash style for all non-root routes (for example `/usage-docs`, `/fill-pdf-from-csv`).
+- Firebase Hosting must keep `trailingSlash: false` in `firebase.json`.
+- Keep redirects one-way only (legacy path -> canonical path). Do not add paired slash redirects that can create `/path` <-> `/path/` loops.
+- Current expected production behavior:
+  - `GET /path` -> `200`
+  - `GET /path/` -> single `301` to `/path`
+
+## Canonical redirect regression check
+
+Run this before SEO content releases and after hosting config changes:
+
+```bash
+curl -sI https://dullypdf.com/fill-pdf-from-csv | sed -n '1,12p'
+curl -sI https://dullypdf.com/fill-pdf-from-csv/ | sed -n '1,16p'
+curl -sIL --max-redirs 5 https://dullypdf.com/fill-pdf-from-csv/ | sed -n '1,40p'
+```
+
+Pass criteria:
+- Non-slash URL responds directly (`200`) with no redirect hop.
+- Slash URL redirects exactly once to the non-slash canonical URL.
+- `curl -L` completes inside max redirects (no redirect loop).
+
 ## Weekly Search Console workflow
 
 Run this every week for the previous 7 days:
@@ -16,6 +40,8 @@ Run this every week for the previous 7 days:
    - `fillable form field name`
    - `automate medical intake forms`
    - `acord form automation`
+   - `insurance pdf automation`
+   - `certificate of insurance automation`
    - `automate rental application pdf`
    - `government form automation`
    - `loan application pdf automation`
@@ -54,6 +80,12 @@ Authority growth is not a one-time code change. Use this recurring plan:
    - intent pages -> docs sections,
    - docs sections -> matching intent pages.
 
+## Release checklist add-on (technical SEO)
+
+- Confirm `firebase.json` redirect rules only contain legacy alias redirects (not slash-to-slash ping-pong rules).
+- Spot-check 3-5 SEO routes with and without trailing slash and verify one canonical hop at most.
+- Validate `sitemap.xml` entries resolve to canonical non-trailing slash URLs.
+
 ## Query-to-page mapping
 
 - `/pdf-to-fillable-form`: convert raw PDFs to fillable templates.
@@ -62,7 +94,8 @@ Authority growth is not a one-time code change. Use this recurring plan:
 - `/fill-information-in-pdf`: broad informational fill intent.
 - `/fillable-form-field-name`: field naming normalization and mapping quality.
 - `/healthcare-pdf-automation`: healthcare intake, registration, and HIPAA/consent forms.
-- `/acord-form-automation`: insurance workflows including ACORD-style form automation.
+- `/acord-form-automation`: ACORD-first workflows (ACORD 25/24/27/28/126/140) and certificate processing.
+- `/insurance-pdf-automation`: broader insurance PDF automation for ACORD plus carrier-specific forms.
 - `/real-estate-pdf-automation`: rental, lease, and mortgage packet workflows.
 - `/government-form-automation`: permit, tax, and licensing form workflows.
 - `/finance-loan-pdf-automation`: loan application and financial disclosure workflows.

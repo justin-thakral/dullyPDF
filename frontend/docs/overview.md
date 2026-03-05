@@ -16,6 +16,7 @@ The frontend is a React + TypeScript app for loading PDFs, editing fields, and f
 
 - End-user documentation is available at canonical `/usage-docs/*` URLs.
 - Legacy `/docs/*` URLs are compatibility redirects (HTTP 301) to `/usage-docs/*`.
+- Canonical style is non-trailing slash for non-root routes; `/path/` should only 301 once to `/path` (never loop).
 - The docs include dedicated pages for detection, rename/mapping, editor workflow, Search & Fill, and troubleshooting.
 - Route handling lives in `frontend/src/main.tsx` alongside legal page route handling.
 
@@ -30,6 +31,7 @@ The frontend is a React + TypeScript app for loading PDFs, editing fields, and f
 - Industry-specific SEO routes are available for:
   - `/healthcare-pdf-automation`
   - `/acord-form-automation`
+  - `/insurance-pdf-automation`
   - `/real-estate-pdf-automation`
   - `/government-form-automation`
   - `/finance-loan-pdf-automation`

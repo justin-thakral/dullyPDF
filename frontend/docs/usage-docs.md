@@ -3,6 +3,8 @@
 The frontend exposes public usage documentation under `/usage-docs/*` as the canonical docs URL
 family. Legacy `/docs/*` URLs are retained only for compatibility and redirect to `/usage-docs/*`
 with HTTP 301 on Firebase hosting.
+Canonical route style is non-trailing slash for non-root docs URLs (`/usage-docs/...`), and
+slash variants should only perform a single redirect to the non-slash URL.
 
 These routes are handled in `src/main.tsx` without React Router so they remain lightweight and
 consistent with existing legal-page routing.
@@ -18,6 +20,7 @@ consistent with existing legal-page routing.
 - `/usage-docs/save-download-profile`
 - `/usage-docs/troubleshooting`
 - `/docs/*` permanently redirects to the matching `/usage-docs/*` path
+- `/usage-docs/:slug/` redirects once to `/usage-docs/:slug`
 
 Unknown slugs (for example `/usage-docs/typo`) are treated as not found:
 - Firebase hosting returns a true 404 page (`frontend/public/404.html`) for unknown `/usage-docs/*` paths.
