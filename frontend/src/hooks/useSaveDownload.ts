@@ -37,6 +37,7 @@ export interface UseSaveDownloadDeps {
   setActiveSavedFormId: (id: string | null) => void;
   setActiveSavedFormName: (name: string | null) => void;
   queueSaveAfterLimit: (action: () => Promise<void>) => void;
+  allowAnonymousDownload?: boolean;
 }
 
 export function useSaveDownload(deps: UseSaveDownloadDeps) {
@@ -140,7 +141,10 @@ export function useSaveDownload(deps: UseSaveDownloadDeps) {
 
   const handleDownload = useCallback(async () => {
     if (!deps.pdfDoc) { deps.setLoadError('No PDF is loaded to download.'); return; }
-    if (!deps.verifiedUser) { deps.setLoadError('Sign in to download this form.'); return; }
+    if (!deps.verifiedUser && !deps.allowAnonymousDownload) {
+      deps.setLoadError('Sign in to download this form.');
+      return;
+    }
     deps.setLoadError(null);
     setDownloadInProgress(true);
     try {

@@ -150,7 +150,7 @@ describe('HeaderBar', () => {
     expect(screen.getByText('Requires CSV/Excel/JSON rows')).toBeTruthy();
   });
 
-  it('routes locked demo actions through onDemoLockedAction', async () => {
+  it('keeps demo-locked actions blocked except download', async () => {
     const user = userEvent.setup();
     const onDemoLockedAction = vi.fn();
     const onRename = vi.fn();
@@ -198,12 +198,12 @@ describe('HeaderBar', () => {
     await user.click(downloadButton);
     await user.click(saveButton);
 
-    expect(onDemoLockedAction).toHaveBeenCalledTimes(6);
+    expect(onDemoLockedAction).toHaveBeenCalledTimes(5);
     expect(screen.queryByRole('menu', { name: 'Choose data source' })).toBeNull();
     expect(onRename).not.toHaveBeenCalled();
     expect(onMapSchema).not.toHaveBeenCalled();
     expect(onRenameAndMap).not.toHaveBeenCalled();
-    expect(onDownload).not.toHaveBeenCalled();
+    expect(onDownload).toHaveBeenCalledTimes(1);
     expect(onSaveToProfile).not.toHaveBeenCalled();
   });
 

@@ -61,6 +61,7 @@ The frontend is a React + TypeScript app for loading PDFs, editing fields, and f
 ## Demo and fixtures
 
 - Demo assets are served from `frontend/public/demo`.
+- Demo sessions allow downloading the generated PDF without signing in; saving to profile remains sign-in only.
 - Small tracked fixtures live in `quickTestFiles/`; larger local datasets live in `samples/`.
 - Regenerate demo rename/remap name maps from the repo root with `npm run demo:generate-name-maps`.
 

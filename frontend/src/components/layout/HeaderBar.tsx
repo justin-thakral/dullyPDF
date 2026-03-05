@@ -449,10 +449,6 @@ export function HeaderBar({
                   className="ui-button ui-button--primary ui-button--compact ui-header__save"
                   type="button"
                   onClick={() => {
-                    if (demoOverride) {
-                      onDemoLockedAction?.();
-                      return;
-                    }
                     onDownload?.();
                   }}
                   disabled={disableDownload}
