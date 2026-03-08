@@ -636,11 +636,13 @@ describe('App', () => {
           status: 'queued',
           detectionProfile: 'light',
           detectionQueuedAt: new Date().toISOString(),
+          detectionServiceUrl: 'https://dullypdf-detector-light-abc.a.run.app',
         });
         window.setTimeout(() => {
           options?.onStatus?.({
             status: 'running',
             detectionProfile: 'light',
+            detectionServiceUrl: 'https://dullypdf-detector-light-abc.a.run.app',
           });
         }, 50);
         return pendingDetection;
@@ -667,6 +669,44 @@ describe('App', () => {
       });
       expect(screen.queryByText('Warming up rename detector')).toBeNull();
       expect(await screen.findByText('Detecting fields on the standard CPU...')).toBeTruthy();
+      unmount();
+    },
+    25_000,
+  );
+
+  it(
+    'shows GPU detection messaging when the active detector service is GPU-backed',
+    async () => {
+      const pendingDetection = new Promise<never>(() => {});
+      detectionApiMocks.detectFields.mockImplementation(async (_file, options) => {
+        options?.onStatus?.({
+          status: 'queued',
+          detectionProfile: 'light',
+          detectionQueuedAt: new Date().toISOString(),
+          detectionServiceUrl: 'https://dullypdf-detector-light-gpu-abc.a.run.app',
+        });
+        window.setTimeout(() => {
+          options?.onStatus?.({
+            status: 'running',
+            detectionProfile: 'light',
+            detectionServiceUrl: 'https://dullypdf-detector-light-gpu-abc.a.run.app',
+          });
+        }, 50);
+        return pendingDetection;
+      });
+      const App = await importApp();
+      const { unmount } = render(<App />);
+
+      await settleAuthAsSignedIn();
+      fireEvent.click(await screen.findByTestId('start-workflow'));
+      fireEvent.click(await screen.findByTestId('upload-detect'));
+      fireEvent.click(await screen.findByRole('button', { name: 'Continue' }));
+
+      expect(await screen.findByText('Waiting for GPU detector to start...')).toBeTruthy();
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      });
+      expect(await screen.findByText('Detecting fields on the GPU...')).toBeTruthy();
       unmount();
     },
     25_000,

@@ -55,8 +55,8 @@ from .vision_utils import image_bgr_to_data_url
 logger = get_logger(__name__)
 
 DEFAULT_RENAME_MODEL = os.getenv("SANDBOX_RENAME_MODEL", "gpt-5-mini")
-COMMONFORMS_CONFIDENCE_GREEN = float(os.getenv("COMMONFORMS_CONFIDENCE_GREEN", "0.8"))
-COMMONFORMS_CONFIDENCE_YELLOW = float(os.getenv("COMMONFORMS_CONFIDENCE_YELLOW", "0.65"))
+COMMONFORMS_CONFIDENCE_GREEN = float(os.getenv("COMMONFORMS_CONFIDENCE_GREEN", "0.6"))
+COMMONFORMS_CONFIDENCE_YELLOW = float(os.getenv("COMMONFORMS_CONFIDENCE_YELLOW", "0.3"))
 
 BASE32_TAG_ALPHABET = "23456789abcdefghjkmnpqrstuvwxyz"
 # Precompute all 3-character tags for deterministic sampling per page.

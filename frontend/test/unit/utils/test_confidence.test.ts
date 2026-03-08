@@ -83,11 +83,11 @@ describe('confidence utils', () => {
 
   describe('tier helpers', () => {
     it('uses configured thresholds for direct confidence values', () => {
-      expect(CONFIDENCE_THRESHOLDS).toEqual({ high: 0.8, low: 0.65 });
-      expect(confidenceTierForConfidence(0.8)).toBe('high');
-      expect(confidenceTierForConfidence(0.7999)).toBe('medium');
-      expect(confidenceTierForConfidence(0.65)).toBe('medium');
-      expect(confidenceTierForConfidence(0.6499)).toBe('low');
+      expect(CONFIDENCE_THRESHOLDS).toEqual({ high: 0.6, low: 0.3 });
+      expect(confidenceTierForConfidence(0.6)).toBe('high');
+      expect(confidenceTierForConfidence(0.5999)).toBe('medium');
+      expect(confidenceTierForConfidence(0.3)).toBe('medium');
+      expect(confidenceTierForConfidence(0.2999)).toBe('low');
     });
 
     it('returns high by default when effective or field confidence is missing', () => {
@@ -101,12 +101,12 @@ describe('confidence utils', () => {
         mappingConfidence: 0.95,
       });
 
-      expect(confidenceTierForField(field)).toBe('low');
-      expect(fieldConfidenceTierForField(field)).toBe('low');
+      expect(confidenceTierForField(field)).toBe('high');
+      expect(fieldConfidenceTierForField(field)).toBe('high');
       expect(nameConfidenceTierForField(field)).toBe('high');
 
       expect(nameConfidenceTierForField(makeField())).toBeNull();
-      expect(nameConfidenceTierForField(makeField({ renameConfidence: 0.7 }))).toBe('medium');
+      expect(nameConfidenceTierForField(makeField({ renameConfidence: 0.7 }))).toBe('high');
     });
   });
 });

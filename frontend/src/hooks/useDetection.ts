@@ -12,8 +12,7 @@ import type {
   TextTransformRule,
 } from '../types';
 import {
-  DETECTION_RUNNING_STANDARD_CPU_MESSAGE,
-  DETECTION_WAITING_STANDARD_CPU_MESSAGE,
+  DETECTION_WAITING_DETECTOR_MESSAGE,
   mapDetectionFields,
   resolveDetectionStatusMessage,
 } from '../utils/detection';
@@ -493,6 +492,7 @@ export function useDetection(deps: UseDetectionDeps) {
       let warmupStartTimer: number | null = null;
       let warmupEndTimer: number | null = null;
       let shouldShowRenameWarmup = false;
+      let latestDetectionStatusMessage: string | null = null;
       const clearWarmupTimers = () => {
         if (warmupStartTimer !== null) {
           window.clearTimeout(warmupStartTimer);
@@ -515,7 +515,7 @@ export function useDetection(deps: UseDetectionDeps) {
             if (loadTokenRef.current !== loadToken) return;
             warmupActive = false;
             warmupCompleted = true;
-            setProcessingDetail(DETECTION_POST_WARMUP_MESSAGE);
+            setProcessingDetail(latestDetectionStatusMessage || DETECTION_POST_WARMUP_MESSAGE);
           }, DETECTION_WARMUP_DURATION_MS);
         }, DETECTION_WARMUP_DELAY_MS);
       };
@@ -533,7 +533,7 @@ export function useDetection(deps: UseDetectionDeps) {
         if (loadTokenRef.current !== loadToken) return;
         shouldShowRenameWarmup = openAiActionsRequested && doc.numPages < DETECTION_WARMUP_PAGE_THRESHOLD;
         if (shouldShowRenameWarmup) {
-          setProcessingDetail(DETECTION_WAITING_STANDARD_CPU_MESSAGE);
+          setProcessingDetail(DETECTION_WAITING_DETECTOR_MESSAGE);
         }
         const activeSchemaId = options.schemaIdOverride ?? deps.schemaId;
 
@@ -552,11 +552,11 @@ export function useDetection(deps: UseDetectionDeps) {
               if (loadTokenRef.current !== loadToken) return;
               const message = resolveDetectionStatusMessage(payload, QUEUE_WAIT_THRESHOLD_MS);
               if (!message) return;
+              latestDetectionStatusMessage = message;
               if (warmupActive) return;
               const status = String(payload?.status || '').toLowerCase();
-              const profile = String(payload?.detectionProfile || '').toLowerCase();
-              if (shouldShowRenameWarmup && status === 'running' && profile === 'light') {
-                setProcessingDetail(DETECTION_RUNNING_STANDARD_CPU_MESSAGE);
+              if (shouldShowRenameWarmup && status === 'running') {
+                setProcessingDetail(message);
                 scheduleRenameWarmup();
                 return;
               }

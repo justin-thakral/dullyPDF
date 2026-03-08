@@ -6,9 +6,22 @@ import { parseConfidence } from './confidence';
 import { makeId } from './fields';
 import { rectToBox } from './coords';
 
+export const DETECTION_WAITING_DETECTOR_MESSAGE = 'Waiting for detector to start...';
+export const DETECTION_RUNNING_DETECTOR_MESSAGE = 'Detecting fields...';
 export const DETECTION_WAITING_STANDARD_CPU_MESSAGE = 'Waiting for standard CPU to start...';
 export const DETECTION_RUNNING_STANDARD_CPU_MESSAGE = 'Detecting fields on the standard CPU...';
 export const DETECTION_RUNNING_HEAVY_CPU_MESSAGE = 'Detecting fields on the high-capacity CPU...';
+export const DETECTION_WAITING_GPU_MESSAGE = 'Waiting for GPU detector to start...';
+export const DETECTION_RUNNING_GPU_MESSAGE = 'Detecting fields on the GPU...';
+
+type DetectionRuntime = 'cpu' | 'gpu' | 'unknown';
+
+function resolveDetectionRuntime(payload: any): DetectionRuntime {
+  const serviceUrl = String(payload?.detectionServiceUrl || '').trim().toLowerCase();
+  if (!serviceUrl) return 'unknown';
+  if (serviceUrl.includes('-gpu')) return 'gpu';
+  return 'cpu';
+}
 
 /**
  * Normalize backend field types into UI field categories.
@@ -62,8 +75,17 @@ export function resolveDetectionStatusMessage(
   const status = String(payload?.status || '').toLowerCase();
   if (!status) return null;
   const profile = String(payload?.detectionProfile || '').toLowerCase();
+  const runtime = resolveDetectionRuntime(payload);
   const profileLabel =
-    profile === 'heavy' ? 'high-capacity CPU' : profile === 'light' ? 'standard CPU' : 'CPU';
+    runtime === 'gpu'
+      ? 'GPU'
+      : runtime === 'cpu'
+        ? profile === 'heavy'
+          ? 'high-capacity CPU'
+          : profile === 'light'
+            ? 'standard CPU'
+            : 'CPU'
+        : 'detector';
   if (status === 'queued') {
     const startedAt = parseIsoTimestamp(payload?.detectionStartedAt);
     if (!startedAt) {
@@ -71,14 +93,18 @@ export function resolveDetectionStatusMessage(
       if (queuedAt && Date.now() - queuedAt > queueWaitThresholdMs) {
         return `Waiting for an available ${profileLabel}...`;
       }
-      if (profile === 'light') return DETECTION_WAITING_STANDARD_CPU_MESSAGE;
+      if (runtime === 'gpu') return DETECTION_WAITING_GPU_MESSAGE;
+      if (runtime === 'cpu' && profile === 'light') return DETECTION_WAITING_STANDARD_CPU_MESSAGE;
+      if (runtime === 'unknown') return DETECTION_WAITING_DETECTOR_MESSAGE;
       return `Waiting for ${profileLabel} to start...`;
     }
   }
   if (status === 'running') {
-    if (profile === 'light') return DETECTION_RUNNING_STANDARD_CPU_MESSAGE;
-    if (profile === 'heavy') return DETECTION_RUNNING_HEAVY_CPU_MESSAGE;
-    return 'Detecting fields on the CPU...';
+    if (runtime === 'gpu') return DETECTION_RUNNING_GPU_MESSAGE;
+    if (runtime === 'cpu' && profile === 'light') return DETECTION_RUNNING_STANDARD_CPU_MESSAGE;
+    if (runtime === 'cpu' && profile === 'heavy') return DETECTION_RUNNING_HEAVY_CPU_MESSAGE;
+    if (runtime === 'cpu') return 'Detecting fields on the CPU...';
+    return DETECTION_RUNNING_DETECTOR_MESSAGE;
   }
   return null;
 }

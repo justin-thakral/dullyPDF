@@ -107,9 +107,9 @@ Important:
 
 When category recalculation is enabled (`adjust_field_confidence=True` path), category is derived from `isItAfieldConfidence` using:
 
-- green: `>= COMMONFORMS_CONFIDENCE_GREEN` (default `0.80`)
-- yellow: `>= COMMONFORMS_CONFIDENCE_YELLOW` and `< green` (default `0.65..0.79`)
-- red: `< COMMONFORMS_CONFIDENCE_YELLOW` (default `<0.65`)
+- green: `>= COMMONFORMS_CONFIDENCE_GREEN` (default `0.60`)
+- yellow: `>= COMMONFORMS_CONFIDENCE_YELLOW` and `< green` (default `0.30..0.59`)
+- red: `< COMMONFORMS_CONFIDENCE_YELLOW` (default `<0.30`)
 
 Notes:
 - API rename currently keeps returning confidence numbers regardless of category refresh.
@@ -119,9 +119,9 @@ Notes:
 
 Frontend UI (`frontend/src/utils/confidence.ts`) uses:
 
-- high: `>= 0.80`
-- medium: `>= 0.65 and < 0.80`
-- low: `< 0.65`
+- high: `>= 0.60`
+- medium: `>= 0.30 and < 0.60`
+- low: `< 0.30`
 
 Field list confidence filtering uses `fieldConfidence` first (mapped from `isItAfieldConfidence` when present), then falls back to naming confidence when needed.
 

@@ -275,9 +275,9 @@ def build_prompt(
         "- If a database field exists that clearly matches the label, use it exactly (avoid inventing new synonyms).\n"
         "- For repeated lines or list entries, use a stable base name with numeric suffixes that matches the database list when possible.\n\n"
         "Confidence tiers:\n"
-        "- Green (>= 0.80) = confident.\n"
-        "- Yellow (0.65–0.79) = double-check alignment and labels.\n"
-        "- Red (< 0.65) = uncertain; avoid renaming unless the label is obvious.\n"
+        "- Green (>= 0.60) = confident.\n"
+        "- Yellow (0.30–0.59) = double-check alignment and labels.\n"
+        "- Red (< 0.30) = uncertain; avoid renaming unless the label is obvious.\n"
         "- If CommonForms thresholds are provided below, use those values instead.\n\n"
         "Field-ness rules:\n"
         "- Real fields have an empty box/underline or a checkbox aligned with nearby option text.\n"
@@ -304,7 +304,7 @@ def build_prompt(
         "- Reject legend markers, bullets, table headers, or column labels that are not fillable."
     )
     if confidence_profile == "commonforms":
-        high, medium = commonforms_thresholds if commonforms_thresholds else (0.80, 0.65)
+        high, medium = commonforms_thresholds if commonforms_thresholds else (0.60, 0.30)
         system_message += (
             "\n\nCommonForms confidence guidance:\n"
             "- You may adjust isItAfieldConfidence to reflect detection quality; it replaces field confidence.\n"

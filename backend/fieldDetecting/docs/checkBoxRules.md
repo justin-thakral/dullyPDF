@@ -202,9 +202,9 @@ Checkbox rule confidence and rename confidence are separate signals:
   - Default field drop threshold is `SANDBOX_RENAME_MIN_FIELD_CONF=0.30`.
 
 - Category tiers used across backend/frontend:
-  - High / green: `>= 0.80`
-  - Medium / yellow: `>= 0.65 and < 0.80`
-  - Low / red: `< 0.65`
+  - High / green: `>= 0.60`
+  - Medium / yellow: `>= 0.30 and < 0.60`
+  - Low / red: `< 0.30`
   - Backend CommonForms thresholds can be overridden with `COMMONFORMS_CONFIDENCE_GREEN` and `COMMONFORMS_CONFIDENCE_YELLOW`.
 
 ## Practical debugging checklist
