@@ -35,6 +35,9 @@ Run this every week for the previous 7 days:
 2. Export top queries, pages, clicks, impressions, CTR, and average position.
 3. Segment by intent buckets:
    - `pdf to fillable form`
+   - `pdf form builder`
+   - `fillable pdf builder`
+   - `build fillable form from pdf`
    - `pdf to database template`
    - `fill pdf from csv`
    - `fill information in pdf`
@@ -92,7 +95,7 @@ Authority growth is not a one-time code change. Use this recurring plan:
 
 ## Query-to-page mapping
 
-- `/pdf-to-fillable-form`: convert raw PDFs to fillable templates.
+- `/pdf-to-fillable-form`: convert raw PDFs to fillable templates and absorb existing-PDF builder intent (`pdf form builder`, `fillable pdf builder`, `build fillable form from pdf`) until a dedicated builder page is warranted.
 - `/pdf-to-database-template`: map fields to database/schema columns.
 - `/fill-pdf-from-csv`: row-based PDF filling from CSV/XLSX/JSON.
 - `/fill-information-in-pdf`: broad informational fill intent.

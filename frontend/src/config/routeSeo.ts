@@ -34,10 +34,12 @@ export const DEFAULT_SOCIAL_IMAGE_ALT = 'DullyPDF logo';
 const HOME_ROUTE_SEO: RouteSeoMetadata = {
   title: 'DullyPDF \u2014 Convert PDFs to Fillable Forms & Map to Database',
   description:
-    'DullyPDF converts PDFs into fillable templates with AI field detection. Map fields to database columns and auto-fill from CSV, Excel, or JSON. Free to start.',
+    'DullyPDF is a PDF form builder for existing documents. Convert PDFs into fillable templates with AI field detection, map fields to database columns, and auto-fill from CSV, Excel, or JSON. Free to start.',
   canonicalPath: '/',
   keywords: [
     'pdf to fillable form',
+    'pdf form builder',
+    'fillable pdf builder',
     'pdf to database template',
     'fillable pdf template generator',
     'map pdf fields to database columns',
@@ -52,13 +54,14 @@ const HOME_ROUTE_SEO: RouteSeoMetadata = {
       operatingSystem: 'Web',
       url: 'https://dullypdf.com/',
       description:
-        'DullyPDF converts PDFs into fillable templates, maps fields to schema headers, and fills mapped fields from structured data rows.',
+        'DullyPDF is a PDF form builder for existing documents. It converts PDFs into fillable templates, maps fields to schema headers, and fills mapped fields from structured data rows.',
       offers: {
         '@type': 'Offer',
         price: '0',
         priceCurrency: 'USD',
       },
       featureList: [
+        'PDF form builder for existing PDFs',
         'PDF field detection',
         'Fillable form template editing',
         'Schema mapping for CSV/XLSX/JSON',

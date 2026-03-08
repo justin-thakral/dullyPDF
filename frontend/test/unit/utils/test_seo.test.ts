@@ -7,7 +7,7 @@ describe('SEO metadata utility', () => {
 
     expect(document.title).toBe('DullyPDF — Convert PDFs to Fillable Forms & Map to Database');
     expect(document.querySelector('meta[name="description"]')?.getAttribute('content')).toContain(
-      'DullyPDF converts PDFs into fillable templates',
+      'DullyPDF is a PDF form builder for existing documents',
     );
     expect(document.querySelector('link[rel="canonical"]')?.getAttribute('href')).toBe('https://dullypdf.com/');
     expect(document.querySelector('meta[property="og:url"]')?.getAttribute('content')).toBe('https://dullypdf.com/');

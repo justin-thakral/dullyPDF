@@ -54,9 +54,12 @@ const INTENT_PAGES: IntentPage[] = [
       'Upload a raw PDF, detect candidate fields, clean geometry in the editor, and save a reusable fillable template for repeat workflows.',
     seoTitle: 'PDF to Fillable Form Workflow for Reusable Templates | DullyPDF',
     seoDescription:
-      'Convert PDF files into fillable form templates, validate field geometry, and reuse saved forms for repeat workflows in DullyPDF.',
+      'Convert PDF files into fillable form templates with a PDF form builder workflow built for existing documents, validate field geometry, and reuse saved forms for repeat workflows in DullyPDF.',
     seoKeywords: [
       'pdf to fillable form',
+      'pdf form builder',
+      'build fillable form from pdf',
+      'fillable pdf builder',
       'convert pdf to fillable template',
       'fillable form template workflow',
     ],

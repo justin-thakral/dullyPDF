@@ -28,6 +28,43 @@ set -a
 source "$ENV_FILE"
 set +a
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/_detector_routing.sh"
+
+DETECTOR_SERVICE_REGION="${DETECTOR_SERVICE_REGION:-$REGION}"
+detector_set_active_routing_vars
+DETECTOR_ROUTING_MODE="$DETECTOR_ROUTING_MODE_RESOLVED"
+
+if [[ -z "${DETECTOR_SERVICE_URL_LIGHT_ACTIVE:-}" ]]; then
+  DETECTOR_SERVICE_URL_LIGHT_ACTIVE="$(
+    gcloud run services describe "$DETECTOR_SERVICE_NAME_LIGHT_ACTIVE" \
+      --region "$DETECTOR_SERVICE_REGION_LIGHT_ACTIVE" \
+      --project "$PROJECT_ID" \
+      --format='value(status.url)' 2>/dev/null || true
+  )"
+fi
+if [[ -z "${DETECTOR_SERVICE_URL_HEAVY_ACTIVE:-}" ]]; then
+  DETECTOR_SERVICE_URL_HEAVY_ACTIVE="$(
+    gcloud run services describe "$DETECTOR_SERVICE_NAME_HEAVY_ACTIVE" \
+      --region "$DETECTOR_SERVICE_REGION_HEAVY_ACTIVE" \
+      --project "$PROJECT_ID" \
+      --format='value(status.url)' 2>/dev/null || true
+  )"
+fi
+
+DETECTOR_TASKS_AUDIENCE_LIGHT_ACTIVE="$(
+  detector_tasks_audience_for_target \
+    "$DETECTOR_TARGET_LIGHT_ACTIVE" \
+    "light" \
+    "$DETECTOR_SERVICE_URL_LIGHT_ACTIVE"
+)"
+DETECTOR_TASKS_AUDIENCE_HEAVY_ACTIVE="$(
+  detector_tasks_audience_for_target \
+    "$DETECTOR_TARGET_HEAVY_ACTIVE" \
+    "heavy" \
+    "$DETECTOR_SERVICE_URL_HEAVY_ACTIVE"
+)"
+
 require_exact() {
   local name="$1"
   local expected="$2"
@@ -118,6 +155,9 @@ require_value_or_secret GMAIL_REFRESH_TOKEN GMAIL_REFRESH_TOKEN_SECRET
 require_value_or_secret STRIPE_SECRET_KEY STRIPE_SECRET_KEY_SECRET
 require_value_or_secret STRIPE_WEBHOOK_SECRET STRIPE_WEBHOOK_SECRET_SECRET
 
+require_nonempty DETECTOR_SERVICE_URL_LIGHT_ACTIVE
+require_nonempty DETECTOR_SERVICE_URL_HEAVY_ACTIVE
+
 if [[ -n "${STRIPE_SECRET_KEY:-}" || -n "${STRIPE_WEBHOOK_SECRET:-}" ]]; then
   echo "Use STRIPE_SECRET_KEY_SECRET and STRIPE_WEBHOOK_SECRET_SECRET for prod; literal STRIPE_* values are not allowed." >&2
   exit 1
@@ -157,6 +197,13 @@ env_path = sys.argv[1]
 out_path = sys.argv[2]
 script_only = {
     "PORT",
+    "DETECTOR_ROUTING_MODE",
+    "DETECTOR_SERVICE_URL",
+    "DETECTOR_SERVICE_URL_LIGHT",
+    "DETECTOR_SERVICE_URL_HEAVY",
+    "DETECTOR_TASKS_AUDIENCE",
+    "DETECTOR_TASKS_AUDIENCE_LIGHT",
+    "DETECTOR_TASKS_AUDIENCE_HEAVY",
 }
 
 # If a Secret Manager binding is configured, do not also emit the literal env var
@@ -211,6 +258,32 @@ data = {key: value for key, value in raw_values.items() if key not in omit_keys}
 with open(out_path, "w", encoding="utf-8") as handle:
     for key in sorted(data.keys()):
         handle.write(f"{key}: {json.dumps(data[key])}\n")
+PY
+
+python3 - "$TMP_ENV_FILE" \
+  "$DETECTOR_ROUTING_MODE" \
+  "$DETECTOR_SERVICE_URL_LIGHT_ACTIVE" \
+  "$DETECTOR_SERVICE_URL_HEAVY_ACTIVE" \
+  "$DETECTOR_TASKS_AUDIENCE_LIGHT_ACTIVE" \
+  "$DETECTOR_TASKS_AUDIENCE_HEAVY_ACTIVE" <<'PY'
+import json
+import sys
+
+out_path = sys.argv[1]
+routing_mode = sys.argv[2]
+light_url = sys.argv[3]
+heavy_url = sys.argv[4]
+light_audience = sys.argv[5]
+heavy_audience = sys.argv[6]
+
+with open(out_path, "a", encoding="utf-8") as handle:
+    handle.write(f"DETECTOR_ROUTING_MODE: {json.dumps(routing_mode)}\n")
+    handle.write(f"DETECTOR_SERVICE_URL: {json.dumps(light_url)}\n")
+    handle.write(f"DETECTOR_SERVICE_URL_LIGHT: {json.dumps(light_url)}\n")
+    handle.write(f"DETECTOR_SERVICE_URL_HEAVY: {json.dumps(heavy_url)}\n")
+    handle.write(f"DETECTOR_TASKS_AUDIENCE: {json.dumps(light_audience)}\n")
+    handle.write(f"DETECTOR_TASKS_AUDIENCE_LIGHT: {json.dumps(light_audience)}\n")
+    handle.write(f"DETECTOR_TASKS_AUDIENCE_HEAVY: {json.dumps(heavy_audience)}\n")
 PY
 
 TAG="$(date +%Y%m%d-%H%M%S)"

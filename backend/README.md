@@ -91,9 +91,12 @@ See `frontend/docs/api-routing.md` for the current rewrite list and frontend cal
 - `DETECTOR_TASKS_QUEUE` or `DETECTOR_TASKS_QUEUE_LIGHT`
 - `DETECTOR_SERVICE_URL` or `DETECTOR_SERVICE_URL_LIGHT`
 - `DETECTOR_TASKS_QUEUE_HEAVY`, `DETECTOR_SERVICE_URL_HEAVY` (optional; for 10+ page PDFs)
+- `DETECTOR_ROUTING_MODE` (optional; `cpu`, `split`, or `gpu` when backend env files keep both CPU and GPU detector URLs)
+- `DETECTOR_SERVICE_URL_LIGHT_GPU`, `DETECTOR_SERVICE_URL_HEAVY_GPU` (optional; used by `split`/`gpu` routing)
 - `DETECTOR_TASKS_HEAVY_PAGE_THRESHOLD` (default 10)
 - `DETECTOR_TASKS_SERVICE_ACCOUNT`
 - `DETECTOR_TASKS_AUDIENCE`, `DETECTOR_TASKS_AUDIENCE_LIGHT`, `DETECTOR_TASKS_AUDIENCE_HEAVY` (optional)
+- `DETECTOR_TASKS_AUDIENCE_LIGHT_GPU`, `DETECTOR_TASKS_AUDIENCE_HEAVY_GPU` (optional)
 - `DETECTOR_TASKS_DISPATCH_DEADLINE_SECONDS_LIGHT`, `DETECTOR_TASKS_DISPATCH_DEADLINE_SECONDS_HEAVY` (optional)
 - `DETECTOR_TASKS_FORCE_IMMEDIATE` (optional; schedule tasks in the past to bypass host clock skew)
 - `OPENAI_RENAME_MODE` (`tasks` for production async rename workers)
@@ -227,6 +230,15 @@ detector in `dullypdf-dev`. The stack forces prod-mode backend behavior
 dev resources. It only reads the stack env file, so export `OPENAI_API_KEY`
 separately if you want rename/mapping enabled. In task mode, it also resolves
 OpenAI rename/remap worker URLs (`dullypdf-openai-rename-*`, `dullypdf-openai-remap-*`).
+Set `DETECTOR_ROUTING_MODE=cpu|split|gpu` in the stack env to switch detector
+traffic between CPU-only, CPU-light/GPU-heavy, and GPU-only routing. The CPU
+services keep the existing names (`dullypdf-detector-light`, `...-heavy`); GPU
+services default to `dullypdf-detector-light-gpu` / `...-heavy-gpu`. The legacy
+`DEV_STACK_DETECTOR_GPU=true` flag still maps to `DETECTOR_ROUTING_MODE=gpu`
+when the new routing mode is unset. If GPU quota is only available in a
+different Cloud Run region than the Cloud Tasks queues, set `DETECTOR_GPU_REGION`
+in the stack env. In `dullypdf-dev`, the current working example is
+`DETECTOR_GPU_REGION=us-east4`.
 When `DEV_STACK_BUILD=1` is set, `npm run dev:stack` now rebuilds the local
 backend image and redeploys detector + OpenAI worker Cloud Run services using
 `scripts/deploy-detector-services.sh` and `scripts/deploy-openai-workers.sh`
@@ -237,6 +249,18 @@ run:
 ```
 npm run dev:stack:stop
 ```
+
+To run a CPU vs GPU detector benchmark (same PDF set, detection duration, Cloud
+Run request latency, billable-second cost estimate), use:
+
+```
+scripts/benchmark-detector-cpu-gpu.sh env/backend.dev.stack.env
+```
+
+The benchmark script deploys CPU and GPU detector services in separate regions
+when `BENCH_GPU_REGION` or `DETECTOR_GPU_REGION` is set. That lets the local
+backend keep using the existing Cloud Tasks queues while GPU detector services
+live in the region that actually has L4 quota.
 
 Detector service entrypoint (for Cloud Run or local dev):
 
@@ -285,7 +309,9 @@ For prod deploys, `scripts/deploy-backend.sh` requires Stripe keys to come from
 Secret Manager bindings (`STRIPE_SECRET_KEY_SECRET`, `STRIPE_WEBHOOK_SECRET_SECRET`)
 and rejects literal `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` values. The deploy
 script also hard-fails unless `backend/test/integration/test_billing_webhook_integration.py`
-passes.
+passes. The same deploy step also resolves the active detector URLs/audiences from
+`DETECTOR_ROUTING_MODE`, so switching detector traffic between CPU, split, and GPU
+is an env-file change plus backend redeploy.
 
 Webhook fulfillment and checkout guardrails:
 - Refill checkout fulfillment (`checkout.session.completed` for `refill_500`) is applied only when the user is currently Pro at fulfillment time.
@@ -358,7 +384,11 @@ Detector deploy script (Cloud Run):
 npm run deploy:detector-services
 ```
 
-`scripts/deploy-detector-services.sh` deploys detector light+heavy services with `--no-allow-unauthenticated`, enforces caller service-account invoker IAM, and refreshes detector audience/service URL env vars from each deployed Cloud Run URL.
+`scripts/deploy-detector-services.sh` now supports `DETECTOR_ROUTING_MODE=cpu|split|gpu`
+plus `DETECTOR_DEPLOY_VARIANTS=active|cpu|gpu|both`. `active` deploys the services
+used by the selected routing mode, while `both` predeploys CPU and GPU detector
+stacks so later backend flips only require changing `DETECTOR_ROUTING_MODE` and
+redeploying the backend.
 
 Full prod deploy (backend + detector + OpenAI workers + frontend):
 

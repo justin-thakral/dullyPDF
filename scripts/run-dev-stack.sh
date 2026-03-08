@@ -21,7 +21,15 @@ set +a
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/_load_firebase_secret.sh"
+source "${SCRIPT_DIR}/_detector_routing.sh"
 load_firebase_secret
+
+DEV_STACK_DETECTOR_GPU="${DEV_STACK_DETECTOR_GPU:-false}"
+if detector_is_truthy "$DEV_STACK_DETECTOR_GPU"; then
+  DEV_STACK_DETECTOR_GPU=true
+else
+  DEV_STACK_DETECTOR_GPU=false
+fi
 
 DETECTOR_TASKS_PROJECT="${DETECTOR_TASKS_PROJECT:-${FIREBASE_PROJECT_ID:-}}"
 DETECTOR_TASKS_LOCATION="${DETECTOR_TASKS_LOCATION:-us-central1}"
@@ -29,40 +37,56 @@ DETECTOR_TASKS_QUEUE="${DETECTOR_TASKS_QUEUE:-commonforms-detect-light}"
 DETECTOR_TASKS_QUEUE_LIGHT="${DETECTOR_TASKS_QUEUE_LIGHT:-$DETECTOR_TASKS_QUEUE}"
 DETECTOR_TASKS_QUEUE_HEAVY="${DETECTOR_TASKS_QUEUE_HEAVY:-commonforms-detect-heavy}"
 DETECTOR_TASKS_SERVICE_ACCOUNT="${DETECTOR_TASKS_SERVICE_ACCOUNT:-dullypdf-backend-runtime@dullypdf-dev.iam.gserviceaccount.com}"
+DETECTOR_SERVICE_REGION="${DETECTOR_SERVICE_REGION:-${DETECTOR_TASKS_LOCATION}}"
+detector_set_active_routing_vars
+DETECTOR_ROUTING_MODE="${DETECTOR_ROUTING_MODE_RESOLVED}"
 
 if command -v gcloud >/dev/null 2>&1; then
-  if [[ ("${DEV_STACK_BUILD:-}" == "1" || -z "${DETECTOR_SERVICE_URL_LIGHT:-}") && -n "${DETECTOR_TASKS_PROJECT:-}" ]]; then
-    DETECTOR_SERVICE_URL_LIGHT="$(
-      gcloud run services describe dullypdf-detector-light \
-        --region "$DETECTOR_TASKS_LOCATION" \
+  if [[ ("${DEV_STACK_BUILD:-}" == "1" || -z "${DETECTOR_SERVICE_URL_LIGHT_ACTIVE:-}") && -n "${DETECTOR_TASKS_PROJECT:-}" ]]; then
+    DETECTOR_SERVICE_URL_LIGHT_ACTIVE="$(
+      gcloud run services describe "$DETECTOR_SERVICE_NAME_LIGHT_ACTIVE" \
+        --region "$DETECTOR_SERVICE_REGION_LIGHT_ACTIVE" \
         --project "$DETECTOR_TASKS_PROJECT" \
         --format='value(status.url)' 2>/dev/null || true
     )"
   fi
-  if [[ ("${DEV_STACK_BUILD:-}" == "1" || -z "${DETECTOR_SERVICE_URL_HEAVY:-}") && -n "${DETECTOR_TASKS_PROJECT:-}" ]]; then
-    DETECTOR_SERVICE_URL_HEAVY="$(
-      gcloud run services describe dullypdf-detector-heavy \
-        --region "$DETECTOR_TASKS_LOCATION" \
+  if [[ ("${DEV_STACK_BUILD:-}" == "1" || -z "${DETECTOR_SERVICE_URL_HEAVY_ACTIVE:-}") && -n "${DETECTOR_TASKS_PROJECT:-}" ]]; then
+    DETECTOR_SERVICE_URL_HEAVY_ACTIVE="$(
+      gcloud run services describe "$DETECTOR_SERVICE_NAME_HEAVY_ACTIVE" \
+        --region "$DETECTOR_SERVICE_REGION_HEAVY_ACTIVE" \
         --project "$DETECTOR_TASKS_PROJECT" \
         --format='value(status.url)' 2>/dev/null || true
     )"
   fi
 fi
 
-if [[ -z "${DETECTOR_SERVICE_URL_LIGHT:-}" ]]; then
-  echo "Missing DETECTOR_SERVICE_URL_LIGHT. Deploy dullypdf-detector-light or set it in $ENV_FILE." >&2
+if [[ -z "${DETECTOR_SERVICE_URL_LIGHT_ACTIVE:-}" ]]; then
+  echo "Missing detector URL for ${DETECTOR_SERVICE_NAME_LIGHT_ACTIVE}. Deploy it or set the matching URL in $ENV_FILE." >&2
   exit 1
 fi
 
-if [[ -z "${DETECTOR_SERVICE_URL_HEAVY:-}" ]]; then
-  echo "Missing DETECTOR_SERVICE_URL_HEAVY. Deploy dullypdf-detector-heavy or set it in $ENV_FILE." >&2
+if [[ -z "${DETECTOR_SERVICE_URL_HEAVY_ACTIVE:-}" ]]; then
+  echo "Missing detector URL for ${DETECTOR_SERVICE_NAME_HEAVY_ACTIVE}. Deploy it or set the matching URL in $ENV_FILE." >&2
   exit 1
 fi
 
-DETECTOR_SERVICE_URL="${DETECTOR_SERVICE_URL:-$DETECTOR_SERVICE_URL_LIGHT}"
-DETECTOR_TASKS_AUDIENCE="${DETECTOR_TASKS_AUDIENCE:-$DETECTOR_SERVICE_URL}"
-DETECTOR_TASKS_AUDIENCE_LIGHT="${DETECTOR_TASKS_AUDIENCE_LIGHT:-$DETECTOR_SERVICE_URL_LIGHT}"
-DETECTOR_TASKS_AUDIENCE_HEAVY="${DETECTOR_TASKS_AUDIENCE_HEAVY:-$DETECTOR_SERVICE_URL_HEAVY}"
+DETECTOR_SERVICE_URL_LIGHT="$DETECTOR_SERVICE_URL_LIGHT_ACTIVE"
+DETECTOR_SERVICE_URL_HEAVY="$DETECTOR_SERVICE_URL_HEAVY_ACTIVE"
+DETECTOR_SERVICE_URL="$DETECTOR_SERVICE_URL_LIGHT"
+DETECTOR_TASKS_AUDIENCE_LIGHT="$(
+  detector_tasks_audience_for_target \
+    "$DETECTOR_TARGET_LIGHT_ACTIVE" \
+    "light" \
+    "$DETECTOR_SERVICE_URL_LIGHT"
+)"
+DETECTOR_TASKS_AUDIENCE_HEAVY="$(
+  detector_tasks_audience_for_target \
+    "$DETECTOR_TARGET_HEAVY_ACTIVE" \
+    "heavy" \
+    "$DETECTOR_SERVICE_URL_HEAVY"
+)"
+DETECTOR_TASKS_AUDIENCE="$DETECTOR_TASKS_AUDIENCE_LIGHT"
+echo "Detector routing mode: ${DETECTOR_ROUTING_MODE} (light=${DETECTOR_TARGET_LIGHT_ACTIVE}:${DETECTOR_SERVICE_NAME_LIGHT_ACTIVE}@${DETECTOR_SERVICE_REGION_LIGHT_ACTIVE}, heavy=${DETECTOR_TARGET_HEAVY_ACTIVE}:${DETECTOR_SERVICE_NAME_HEAVY_ACTIVE}@${DETECTOR_SERVICE_REGION_HEAVY_ACTIVE})"
 
 # Default to local OpenAI execution for dev stack unless task mode is explicitly enabled.
 OPENAI_RENAME_MODE="${OPENAI_RENAME_MODE:-local}"
@@ -180,8 +204,11 @@ fi
 
 if [[ "${DEV_STACK_BUILD:-}" == "1" ]]; then
   if [[ "${DETECTOR_MODE}" == "tasks" ]]; then
-    echo "DEV_STACK_BUILD=1 -> deploying detector Cloud Run services to keep stack config in sync..."
-    bash scripts/deploy-detector-services.sh "$ENV_FILE"
+    echo "DEV_STACK_BUILD=1 -> deploying detector Cloud Run services (${DETECTOR_SERVICE_NAME_LIGHT_ACTIVE}, ${DETECTOR_SERVICE_NAME_HEAVY_ACTIVE}) to keep stack config in sync..."
+    DETECTOR_ROUTING_MODE="$DETECTOR_ROUTING_MODE" \
+    DETECTOR_SERVICE_REGION="$DETECTOR_SERVICE_REGION" \
+    DETECTOR_GPU_REGION="${DETECTOR_GPU_REGION:-$(detector_gpu_region)}" \
+      bash scripts/deploy-detector-services.sh "$ENV_FILE"
   fi
   if [[ "${OPENAI_RENAME_MODE}" == "tasks" || "${OPENAI_REMAP_MODE}" == "tasks" ]]; then
     echo "DEV_STACK_BUILD=1 -> deploying OpenAI worker Cloud Run services to keep stack config in sync..."

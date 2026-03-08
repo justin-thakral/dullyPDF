@@ -26,8 +26,8 @@ const INTENT_PAGES = [
       'Upload a raw PDF, detect candidate fields, clean geometry in the editor, and save a reusable fillable template for repeat workflows.',
     seoTitle: 'PDF to Fillable Form Workflow for Reusable Templates | DullyPDF',
     seoDescription:
-      'Convert PDF files into fillable form templates, validate field geometry, and reuse saved forms for repeat workflows in DullyPDF.',
-    seoKeywords: ['pdf to fillable form', 'convert pdf to fillable template', 'fillable form template workflow'],
+      'Convert PDF files into fillable form templates with a PDF form builder workflow built for existing documents, validate field geometry, and reuse saved forms for repeat workflows in DullyPDF.',
+    seoKeywords: ['pdf to fillable form', 'pdf form builder', 'build fillable form from pdf', 'fillable pdf builder', 'convert pdf to fillable template', 'fillable form template workflow'],
     valuePoints: [
       'Convert scanned or native PDFs into editable fillable templates.',
       'Review field candidates with confidence scoring before finalizing.',
@@ -652,9 +652,9 @@ const toFaqSchema = (faqs) => [{
 const HOME_ROUTE_SEO = {
   title: 'DullyPDF \u2014 Convert PDFs to Fillable Forms & Map to Database',
   description:
-    'DullyPDF converts PDFs into fillable templates with AI field detection. Map fields to database columns and auto-fill from CSV, Excel, or JSON. Free to start.',
+    'DullyPDF is a PDF form builder for existing documents. Convert PDFs into fillable templates with AI field detection, map fields to database columns, and auto-fill from CSV, Excel, or JSON. Free to start.',
   canonicalPath: '/',
-  keywords: ['pdf to fillable form', 'pdf to database template', 'fillable pdf template generator', 'map pdf fields to database columns', 'auto fill pdf from csv'],
+  keywords: ['pdf to fillable form', 'pdf form builder', 'fillable pdf builder', 'pdf to database template', 'fillable pdf template generator', 'map pdf fields to database columns', 'auto fill pdf from csv'],
   structuredData: [
     {
       '@context': 'https://schema.org',
@@ -663,9 +663,9 @@ const HOME_ROUTE_SEO = {
       applicationCategory: 'BusinessApplication',
       operatingSystem: 'Web',
       url: 'https://dullypdf.com/',
-      description: 'DullyPDF converts PDFs into fillable templates, maps fields to schema headers, and fills mapped fields from structured data rows.',
+      description: 'DullyPDF is a PDF form builder for existing documents. It converts PDFs into fillable templates, maps fields to schema headers, and fills mapped fields from structured data rows.',
       offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
-      featureList: ['PDF field detection', 'Fillable form template editing', 'Schema mapping for CSV/XLSX/JSON', 'Search and fill workflows'],
+      featureList: ['PDF form builder for existing PDFs', 'PDF field detection', 'Fillable form template editing', 'Schema mapping for CSV/XLSX/JSON', 'Search and fill workflows'],
     },
     {
       '@context': 'https://schema.org',

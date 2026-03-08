@@ -12,6 +12,7 @@ describe('routeSeo config', () => {
     const metadata = resolveRouteSeo({ kind: 'app' });
     expect(metadata.canonicalPath).toBe('/');
     expect(metadata.title).toContain('PDFs to Fillable Forms');
+    expect(metadata.keywords).toContain('pdf form builder');
   });
 
   it('resolves canonical usage docs metadata by page key', () => {
