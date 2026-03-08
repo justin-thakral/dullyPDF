@@ -551,9 +551,9 @@ const Homepage: React.FC<HomepageProps> = ({
               <div className="cta-section">
                 <h3>Ready to Get Started?</h3>
                 <p className="cta-description">
-                  Click <strong>Try Now</strong> to upload your PDF document and experience AI-driven
-                  form field detection, generation and database mapping, pdf to fillable form is <strong>free</strong>! The <strong>Demo</strong> is interactive 
-                  and live, <strong>Contact</strong> to send me a message.
+                  Click <strong>Try Now</strong> to upload your PDF document and use AI-driven
+                  form field detection, the form builder, and database mapping. PDF to fillable form is <strong>free</strong>.
+                  The <strong>Demo</strong> is interactive and live. Use <strong>Contact</strong> to send me a message.
                 </p>
 
                 <div className="cta-buttons">
