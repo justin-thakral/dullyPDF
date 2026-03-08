@@ -3,7 +3,7 @@ import { getBlogPost } from '../../config/blogPosts';
 import { getBlogPostSeo } from '../../config/blogSeo';
 import { getIntentPage } from '../../config/intentPages';
 import { getUsageDocsPage, usageDocsHref } from './usageDocsContent';
-import { applySeoMetadata } from '../../utils/seo';
+import { applyNoIndexSeo, applySeoMetadata } from '../../utils/seo';
 import { Breadcrumbs } from '../ui/Breadcrumbs';
 import { SiteFooter } from '../ui/SiteFooter';
 import './BlogPostPage.css';
@@ -24,7 +24,13 @@ const BlogPostPage = ({ slug }: BlogPostPageProps) => {
   useEffect(() => {
     if (post) {
       applySeoMetadata(getBlogPostSeo(post));
+      return;
     }
+    applyNoIndexSeo({
+      title: 'Blog Post Not Found (404) | DullyPDF',
+      description: 'The requested DullyPDF blog post was not found. Use the blog index to continue browsing guides.',
+      canonicalPath: '/blog',
+    });
   }, [post]);
 
   if (!post) {
@@ -32,9 +38,10 @@ const BlogPostPage = ({ slug }: BlogPostPageProps) => {
       <div className="blog-post">
         <div className="blog-post__card">
           <main className="blog-post__content">
+            <p className="blog-post__not-found-code">404</p>
             <h1>Post not found</h1>
             <p>
-              The blog post you are looking for does not exist. <a href="/blog">Back to blog</a>.
+              No DullyPDF blog post exists at <code>/blog/{slug}</code>. <a href="/blog">Back to blog</a>.
             </p>
           </main>
         </div>

@@ -819,6 +819,49 @@ for (const page of INTENT_PAGES) {
   };
 }
 
+const INTENT_HUB_ROUTE_SEO = {
+  workflows: {
+    title: 'Workflow Library for PDF Automation | DullyPDF',
+    description:
+      'Explore DullyPDF workflow pages for converting PDFs to fillable templates, mapping fields to schemas, and auto-filling from structured data.',
+    canonicalPath: '/workflows',
+    keywords: [
+      'pdf workflow library',
+      'pdf to fillable form workflow',
+      'pdf mapping and autofill workflows',
+    ],
+    bodyContent: {
+      heading: 'Workflow Library for PDF Automation',
+      paragraphs: [
+        'Browse workflow-first landing pages for converting PDFs to fillable templates, mapping fields to structured schemas, and filling forms from repeat records.',
+      ],
+      sections: INTENT_PAGES
+        .filter((page) => page.category === 'workflow')
+        .map((page) => ({ title: page.navLabel, description: page.heroSummary })),
+    },
+  },
+  industries: {
+    title: 'Industry PDF Automation Solutions | DullyPDF',
+    description:
+      'Explore DullyPDF industry pages for healthcare, insurance, legal, HR, finance, and other repeat PDF automation workflows.',
+    canonicalPath: '/industries',
+    keywords: [
+      'industry pdf automation',
+      'healthcare insurance legal pdf workflows',
+      'pdf form automation by industry',
+    ],
+    bodyContent: {
+      heading: 'Industry Solutions for Repeat PDF Workflows',
+      paragraphs: [
+        'Browse industry-specific landing pages for healthcare, insurance, legal, HR, finance, logistics, and other document-heavy operations that still rely on recurring PDF packets.',
+      ],
+      sections: INTENT_PAGES
+        .filter((page) => page.category === 'industry')
+        .map((page) => ({ title: page.navLabel, description: page.heroSummary })),
+    },
+  },
+};
+
 // ---------------------------------------------------------------------------
 // All routes consolidated
 // ---------------------------------------------------------------------------
@@ -828,6 +871,8 @@ export const ALL_ROUTES = [
   { path: '/', seo: HOME_ROUTE_SEO, kind: 'home' },
   { path: '/privacy', seo: LEGAL_ROUTE_SEO.privacy, kind: 'legal', pageKey: 'privacy' },
   { path: '/terms', seo: LEGAL_ROUTE_SEO.terms, kind: 'legal', pageKey: 'terms' },
+  { path: '/workflows', seo: INTENT_HUB_ROUTE_SEO.workflows, kind: 'intent-hub', pageKey: 'workflows' },
+  { path: '/industries', seo: INTENT_HUB_ROUTE_SEO.industries, kind: 'intent-hub', pageKey: 'industries' },
   ...USAGE_DOCS_PAGES.map((page) => ({
     path: page.path,
     seo: USAGE_DOCS_ROUTE_SEO[page.key],

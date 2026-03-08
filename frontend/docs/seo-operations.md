@@ -6,6 +6,7 @@ This playbook covers ongoing work that complements route-level SEO implementatio
 
 - Canonical public URLs use non-trailing slash style for all non-root routes (for example `/usage-docs`, `/fill-pdf-from-csv`).
 - Firebase Hosting must keep `trailingSlash: false` in `firebase.json`.
+- Unknown public URLs must fall through to hosting `404.html`. Do not reintroduce a catch-all `** -> /index.html` rewrite, or Google will see soft 404s.
 - Keep redirects one-way only (legacy path -> canonical path). Do not add paired slash redirects that can create `/path` <-> `/path/` loops.
 - Current expected production behavior:
   - `GET /path` -> `200`
@@ -85,6 +86,8 @@ Authority growth is not a one-time code change. Use this recurring plan:
 
 - Confirm `firebase.json` redirect rules only contain legacy alias redirects (not slash-to-slash ping-pong rules).
 - Spot-check 3-5 SEO routes with and without trailing slash and verify one canonical hop at most.
+- Spot-check an invalid public path (for example `/this-path-should-not-exist`) and confirm hosting serves the 404 page instead of homepage HTML.
+- Validate `/workflows` and `/industries` are present in `sitemap.xml` and serve route-specific static HTML on direct requests.
 - Validate `sitemap.xml` entries resolve to canonical non-trailing slash URLs.
 
 ## Query-to-page mapping

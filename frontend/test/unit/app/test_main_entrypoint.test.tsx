@@ -11,6 +11,10 @@ const entrypointMocks = vi.hoisted(() => {
     })),
     App: vi.fn(() => <div data-testid="app-view">App shell</div>),
     LegalPage: vi.fn(({ kind }: { kind: string }) => <div data-testid={`legal-${kind}`}>Legal {kind}</div>),
+    PublicNotFoundPage: vi.fn(({ requestedPath }: { requestedPath: string }) => (
+      <div data-testid="public-not-found">Public not found {requestedPath}</div>
+    )),
+    IntentHubPage: vi.fn(({ hubKey }: { hubKey: string }) => <div data-testid={`intent-hub-${hubKey}`}>Hub {hubKey}</div>),
     IntentLandingPage: vi.fn(({ pageKey }: { pageKey: string }) => (
       <div data-testid={`intent-${pageKey}`}>Intent {pageKey}</div>
     )),
@@ -33,6 +37,14 @@ vi.mock('../../../src/App', () => ({
 
 vi.mock('../../../src/components/pages/LegalPage', () => ({
   default: entrypointMocks.LegalPage,
+}));
+
+vi.mock('../../../src/components/pages/PublicNotFoundPage', () => ({
+  default: entrypointMocks.PublicNotFoundPage,
+}));
+
+vi.mock('../../../src/components/pages/IntentHubPage', () => ({
+  default: entrypointMocks.IntentHubPage,
 }));
 
 vi.mock('../../../src/components/pages/IntentLandingPage', () => ({
@@ -66,6 +78,8 @@ describe('main entrypoint', () => {
     entrypointMocks.createRoot.mockClear();
     entrypointMocks.App.mockClear();
     entrypointMocks.LegalPage.mockClear();
+    entrypointMocks.PublicNotFoundPage.mockClear();
+    entrypointMocks.IntentHubPage.mockClear();
     entrypointMocks.IntentLandingPage.mockClear();
     entrypointMocks.UsageDocsPage.mockClear();
     entrypointMocks.UsageDocsNotFoundPage.mockClear();
@@ -75,7 +89,7 @@ describe('main entrypoint', () => {
     vi.unstubAllGlobals();
   });
 
-  it('renders App on non-legal routes and performs best-effort health warmup', async () => {
+  it('renders App on the root route and performs best-effort health warmup', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response('', { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);
 
@@ -87,6 +101,21 @@ describe('main entrypoint', () => {
     expect(screen.queryByTestId('legal-privacy')).toBeNull();
     expect(screen.queryByTestId('legal-terms')).toBeNull();
     expect(screen.queryByTestId('usage-docs-index')).toBeNull();
+  });
+
+  it.each([
+    ['/workflows', 'workflows'],
+    ['/industries', 'industries'],
+  ])('renders intent hub route %s', async (pathname, hubKey) => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response('', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await importEntrypoint(pathname);
+    await renderCapturedTree();
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(await screen.findByTestId(`intent-hub-${hubKey}`)).toBeTruthy();
+    expect(screen.queryByTestId('app-view')).toBeNull();
   });
 
   it.each([
@@ -172,6 +201,18 @@ describe('main entrypoint', () => {
     await renderCapturedTree();
 
     expect(await screen.findByTestId('usage-docs-not-found')).toBeTruthy();
+    expect(screen.queryByTestId('app-view')).toBeNull();
+  });
+
+  it('renders PublicNotFoundPage for unknown public routes', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response('', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await importEntrypoint('/this-path-does-not-exist');
+    await renderCapturedTree();
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(await screen.findByTestId('public-not-found')).toBeTruthy();
     expect(screen.queryByTestId('app-view')).toBeNull();
   });
 

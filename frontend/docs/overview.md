@@ -19,6 +19,7 @@ The frontend is a React + TypeScript app for loading PDFs, editing fields, and f
 - Canonical style is non-trailing slash for non-root routes; `/path/` should only 301 once to `/path` (never loop).
 - The docs include dedicated pages for detection, rename/mapping, editor workflow, Search & Fill, and troubleshooting.
 - Route handling lives in `frontend/src/main.tsx` alongside legal page route handling.
+- Unknown public URLs should resolve to a noindex 404 experience instead of falling back to the app homepage.
 
 ## SEO landing routes
 
@@ -44,6 +45,7 @@ The frontend is a React + TypeScript app for loading PDFs, editing fields, and f
 - Two hub routes aggregate intent pages for cleaner global navigation:
   - `/workflows` lists workflow-intent pages.
   - `/industries` lists industry-intent pages.
+- Hub routes are part of the build-time static HTML and sitemap generation, so direct requests should serve route-specific HTML before React loads.
 
 ## Data source behavior
 
