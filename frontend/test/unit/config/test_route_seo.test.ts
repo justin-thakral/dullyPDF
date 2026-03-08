@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { INDEXABLE_PUBLIC_ROUTE_PATHS, resolveRouteSeo } from '../../../src/config/routeSeo';
+import { ALL_ROUTES } from '../../../../scripts/seo-route-data.mjs';
 
 describe('routeSeo config', () => {
   it('keeps indexable canonical paths unique', () => {
@@ -29,5 +30,11 @@ describe('routeSeo config', () => {
     const metadata = resolveRouteSeo({ kind: 'intent-hub', hubKey: 'workflows' });
     expect(metadata.canonicalPath).toBe('/workflows');
     expect(metadata.title).toContain('Workflow Library');
+  });
+
+  it('keeps build-time static routes aligned with the runtime indexable route list', () => {
+    const runtimePaths = [...INDEXABLE_PUBLIC_ROUTE_PATHS].sort();
+    const staticPaths = ALL_ROUTES.map((route) => route.path).sort();
+    expect(staticPaths).toEqual(runtimePaths);
   });
 });

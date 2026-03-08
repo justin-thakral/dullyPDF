@@ -39,10 +39,12 @@ frontend/
 - `frontend/src/components/features/SearchFillModal.tsx`: Record search and field fill logic.
 - `frontend/src/components/features/UploadView.tsx`: Upload + saved-form selection UI and OpenAI preflight modal entry.
 - `frontend/src/components/pages/*.tsx`: Homepage, auth pages, profile page, legal pages, public usage docs pages (`/usage-docs/*`), and intent landing pages.
+- `frontend/src/components/pages/PublicNotFoundPage.tsx`: Generic noindex 404 page for unknown public routes that should never fall back to the editor shell.
 - `frontend/src/components/pages/IntentHubPage.tsx`: Hub directory pages for `/workflows` and `/industries` that aggregate intent routes.
 - `frontend/src/components/pages/IntentPageShell.tsx`: Shared shell for intent marketing pages (global header nav, breadcrumb + hero/CTA block, and footer).
 - `frontend/src/config/appConstants.tsx`: Shared app-level constants (history limits, demo assets/steps, processing copy).
 - `frontend/src/utils/pdf.ts`: PDF.js loading, page size extraction, and AcroForm field extraction.
 - `frontend/src/styles/*.css` + `frontend/src/components/**/*.css`: Shared shell styles and component-scoped styles.
+- `scripts/seo-route-data.mjs`: Build-time mirror of public SEO routes used by the static HTML and sitemap generators. Keep it aligned with `routeSeo.ts`.
 
 For the hook interaction map, see `frontend/docs/app-hooks.md`.

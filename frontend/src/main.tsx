@@ -11,6 +11,7 @@ import { resolveIntentPath, type IntentPageKey } from './config/intentPages';
 
 const App = lazy(() => import('./App'));
 const LegalPage = lazy(() => import('./components/pages/LegalPage'));
+const PublicNotFoundPage = lazy(() => import('./components/pages/PublicNotFoundPage'));
 const UsageDocsPage = lazy(() => import('./components/pages/UsageDocsPage'));
 const UsageDocsNotFoundPage = lazy(() => import('./components/pages/UsageDocsNotFoundPage'));
 const IntentLandingPage = lazy(() => import('./components/pages/IntentLandingPage'));
@@ -26,7 +27,8 @@ type AppRoute =
   | { kind: 'usage-docs'; pageKey: UsageDocsPageKey }
   | { kind: 'usage-docs-not-found'; requestedPath: string }
   | { kind: 'blog-index' }
-  | { kind: 'blog-post'; slug: string };
+  | { kind: 'blog-post'; slug: string }
+  | { kind: 'not-found'; requestedPath: string };
 
 const replaceBrowserPath = (targetPath: string): void => {
   if (typeof window === 'undefined') return;
@@ -104,7 +106,9 @@ const resolveRoute = (): AppRoute => {
     };
   }
 
-  return { kind: 'app' };
+  if (normalizedPath === '/') return { kind: 'app' };
+
+  return { kind: 'not-found', requestedPath: normalizedPath };
 };
 
 const route = resolveRoute();
@@ -132,6 +136,8 @@ createRoot(document.getElementById('root')!).render(
         <BlogIndexPage />
       ) : route.kind === 'blog-post' ? (
         <BlogPostPage slug={route.slug} />
+      ) : route.kind === 'not-found' ? (
+        <PublicNotFoundPage requestedPath={route.requestedPath} />
       ) : (
         <App />
       )}
