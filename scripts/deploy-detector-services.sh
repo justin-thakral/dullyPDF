@@ -322,6 +322,9 @@ deploy_detector() {
   local cpu_limit="$DETECTOR_CPU_LIGHT"
   local memory_limit="$DETECTOR_MEMORY_LIGHT"
   local stable_audience=""
+  local runtime_audience=""
+  local profile_upper=""
+  local sync_env_vars=""
   local service_env_file
   if [[ "$profile" == "heavy" ]]; then
     timeout_seconds="$DETECTOR_TIMEOUT_SECONDS_HEAVY"
@@ -401,6 +404,23 @@ PY
     echo "Failed to resolve Cloud Run URL for ${service_name}." >&2
     exit 1
   fi
+
+  runtime_audience="$service_url"
+  if [[ -n "$stable_audience" ]]; then
+    runtime_audience="$stable_audience"
+  fi
+  profile_upper="${profile^^}"
+  sync_env_vars="DETECTOR_SERVICE_URL=${service_url},DETECTOR_TASKS_AUDIENCE=${runtime_audience},DETECTOR_SERVICE_URL_${profile_upper}=${service_url},DETECTOR_TASKS_AUDIENCE_${profile_upper}=${runtime_audience}"
+
+  # The detector verifies its incoming OIDC token against the generic
+  # DETECTOR_TASKS_AUDIENCE / DETECTOR_SERVICE_URL keys. Those must match the
+  # deployed service's own URL (or stable audience), not the backend routing
+  # env copied in from the shared env file.
+  gcloud run services update "$service_name" \
+    --region "$DEPLOY_REGION" \
+    --project "$PROJECT_ID" \
+    --quiet \
+    --update-env-vars "$sync_env_vars" >/dev/null
 
   if [[ "$DETECTOR_DEPLOY_ALLOW_UNAUTHENTICATED" == "true" ]]; then
     gcloud run services add-iam-policy-binding "$service_name" \
