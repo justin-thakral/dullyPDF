@@ -97,7 +97,7 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
         title: 'Hard numbers used by the app',
         body: (
           <ul>
-            <li>Confidence tiers: high &gt;= 0.80, medium &gt;= 0.65, low &lt; 0.65.</li>
+            <li>Confidence tiers: high &gt;= 0.60, medium &gt;= 0.30, low &lt; 0.30.</li>
             <li>Search results are capped at 25 rows per query.</li>
             <li>CSV/XLSX/JSON parsing caps rows at 5000 records per import.</li>
             <li>Schema inference samples up to 200 rows when inferring field types.</li>
@@ -209,9 +209,9 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
         title: 'Confidence review',
         body: (
           <ul>
-            <li>High: confidence &gt;= 0.80</li>
-            <li>Medium: confidence &gt;= 0.65 and &lt; 0.80</li>
-            <li>Low: confidence &lt; 0.65</li>
+            <li>High: confidence &gt;= 0.60</li>
+            <li>Medium: confidence &gt;= 0.30 and &lt; 0.60</li>
+            <li>Low: confidence &lt; 0.30</li>
             <li>
               Numeric confidence parser accepts either 0..1 values or 0..100 percentages (for example <code>82</code>
               becomes <code>0.82</code>).

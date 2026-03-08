@@ -4,8 +4,8 @@
 import type { ConfidenceTier, PdfField } from '../types';
 
 export const CONFIDENCE_THRESHOLDS = {
-  high: 0.8,
-  low: 0.65,
+  high: 0.6,
+  low: 0.3,
 } as const;
 
 function clamp01(value: number) {

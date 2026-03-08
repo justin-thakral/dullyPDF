@@ -49,9 +49,9 @@ Field editing is centered around three coordinated areas: overlay (PDF), field l
 
 - The field list supports high/medium/low confidence filtering.
 - Tier thresholds are:
-  - high: `>= 0.80`
-  - medium: `>= 0.65` and `< 0.80`
-  - low: `< 0.65`
+  - high: `>= 0.60`
+  - medium: `>= 0.30` and `< 0.60`
+  - low: `< 0.30`
 - Field confidence (`fieldConfidence`) comes from detection, or from OpenAI rename `isItAfieldConfidence` when available.
 - Name confidence comes from OpenAI rename (`renameConfidence`) and/or schema alignment (`mappingConfidence`).
 - Filtering primarily uses field confidence tiers.
