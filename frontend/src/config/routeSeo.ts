@@ -32,7 +32,7 @@ export const DEFAULT_SOCIAL_IMAGE_PATH = '/DullyPDFLogoImproved.png';
 export const DEFAULT_SOCIAL_IMAGE_ALT = 'DullyPDF logo';
 
 const HOME_ROUTE_SEO: RouteSeoMetadata = {
-  title: 'DullyPDF \u2014 Convert PDFs to Fillable Forms & Map to Database',
+  title: 'DullyPDF | Convert PDFs to Fillable Forms & Map to Database',
   description:
     'DullyPDF is a PDF form builder for existing documents. Convert PDFs into fillable templates with AI field detection, map fields to database columns, and auto-fill from CSV, Excel, or JSON. Free to start.',
   canonicalPath: '/',

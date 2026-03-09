@@ -46,6 +46,7 @@ The dev scripts source env vars via `scripts/use-frontend-env.sh`. Common entrie
 - `VITE_API_URL` / `VITE_DETECTION_API_URL` for backend base URLs.
 - `VITE_DETECTION_POLL_TIMEOUT_MS` to cap how long detection polling waits before returning.
 - Firebase Identity Platform keys (`VITE_FIREBASE_*`).
+- `VITE_GOOGLE_ADS_TAG_ID` to inject the Google Ads `gtag.js` base tag in prod builds.
 - `VITE_DISABLE_ADMIN_OVERRIDE=1` to force-disable admin overrides in dev (prod-like runs).
 
 Committed frontend env sources live in:

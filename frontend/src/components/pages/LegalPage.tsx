@@ -19,7 +19,7 @@ type LegalCopy = {
   sections: LegalSection[];
 };
 
-const LAST_UPDATED = 'February 24, 2026';
+const LAST_UPDATED = 'March 9, 2026';
 const SUPPORT_EMAIL = 'justin@dullypdf.com';
 
 const PRIVACY_COPY: LegalCopy = {
@@ -53,6 +53,11 @@ const PRIVACY_COPY: LegalCopy = {
               Usage and diagnostic metadata like request timestamps, session identifiers, and rate-limit signals.
             </li>
             <li>
+              Limited website measurement data such as page views, referrer information, browser/device metadata, and
+              conversion attribution signals collected through Google tagging and similar abuse-prevention or analytics
+              integrations.
+            </li>
+            <li>
               Billing metadata required for subscriptions and credit refills, such as Stripe customer and
               subscription identifiers, plan identifiers, checkout/payment status, and cancellation schedule fields.
             </li>
@@ -74,6 +79,7 @@ const PRIVACY_COPY: LegalCopy = {
             <li>Authenticate users, enforce usage limits, and keep your saved forms tied to your account.</li>
             <li>Process Stripe-backed subscriptions, credit refill purchases, and related billing state synchronization.</li>
             <li>Run optional AI rename and schema mapping workflows when you enable them.</li>
+            <li>Measure product usage, page performance, and marketing conversions.</li>
             <li>Respond to support requests and communicate about your account.</li>
             <li>Protect the service against abuse, fraud, and automated traffic.</li>
           </ul>
@@ -109,8 +115,8 @@ const PRIVACY_COPY: LegalCopy = {
           </p>
           <p>
             DullyPDF uses service providers such as Firebase (authentication), Google Cloud Storage and Firestore
-            (data storage), Stripe (payment processing), Google reCAPTCHA (abuse protection), and email delivery
-            services for the contact form.
+            (data storage), Stripe (payment processing), Google reCAPTCHA (abuse protection), Google Ads / Google tag
+            (conversion measurement), and email delivery services for the contact form.
           </p>
         </>
       ),

@@ -650,7 +650,7 @@ const toFaqSchema = (faqs) => [{
 }];
 
 const HOME_ROUTE_SEO = {
-  title: 'DullyPDF \u2014 Convert PDFs to Fillable Forms & Map to Database',
+  title: 'DullyPDF | Convert PDFs to Fillable Forms & Map to Database',
   description:
     'DullyPDF is a PDF form builder for existing documents. Convert PDFs into fillable templates with AI field detection, map fields to database columns, and auto-fill from CSV, Excel, or JSON. Free to start.',
   canonicalPath: '/',
@@ -677,7 +677,7 @@ const HOME_ROUTE_SEO = {
     },
   ],
   bodyContent: {
-    heading: 'DullyPDF \u2014 Convert PDFs to Fillable Forms & Map to Database',
+    heading: 'DullyPDF | Convert PDFs to Fillable Forms & Map to Database',
     paragraphs: [
       'DullyPDF converts raw PDFs into fillable templates with AI field detection. Map fields to database columns and auto-fill from CSV, Excel, or JSON. Free to start.',
       'Upload a PDF, detect form fields automatically, refine in the visual editor, map to your schema, and fill from structured data in seconds.',

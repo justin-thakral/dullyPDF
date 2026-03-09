@@ -19,6 +19,17 @@ const DIST_DIR = resolve(process.cwd(), 'frontend/dist');
 // ---------------------------------------------------------------------------
 
 function extractViteAssetTags(indexHtml) {
+  const headMatch = indexHtml.match(/<head>([\s\S]*?)<\/head>/i);
+  const headHtml = headMatch ? headMatch[1] : '';
+
+  const headScriptTags = [];
+  const headScriptRegex = /<script\b[^>]*>[\s\S]*?<\/script>/gi;
+  let scriptMatch;
+  while ((scriptMatch = headScriptRegex.exec(headHtml)) !== null) {
+    if (scriptMatch[0].includes('type="module"')) continue;
+    headScriptTags.push(scriptMatch[0]);
+  }
+
   // Extract <link> tags (stylesheets, modulepreload) from <head>
   const linkTags = [];
   const linkRegex = /<link\s[^>]*(?:rel="(?:stylesheet|modulepreload)")[^>]*\/?>/gi;
@@ -36,7 +47,7 @@ function extractViteAssetTags(indexHtml) {
     scriptTags.push(match[0]);
   }
 
-  return { linkTags, scriptTags };
+  return { headScriptTags, linkTags, scriptTags };
 }
 
 // ---------------------------------------------------------------------------
@@ -168,6 +179,7 @@ function generatePageHtml(route, viteAssets) {
   return `<!doctype html>
 <html lang="en">
   <head>
+    ${viteAssets.headScriptTags.join('\n    ')}
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" href="/DullyPDFLogoImproved.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
