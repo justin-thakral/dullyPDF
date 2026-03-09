@@ -14,6 +14,7 @@ const entrypointMocks = vi.hoisted(() => {
     PublicNotFoundPage: vi.fn(({ requestedPath }: { requestedPath: string }) => (
       <div data-testid="public-not-found">Public not found {requestedPath}</div>
     )),
+    AccountActionPage: vi.fn(() => <div data-testid="account-action-page">Account action</div>),
     IntentHubPage: vi.fn(({ hubKey }: { hubKey: string }) => <div data-testid={`intent-hub-${hubKey}`}>Hub {hubKey}</div>),
     IntentLandingPage: vi.fn(({ pageKey }: { pageKey: string }) => (
       <div data-testid={`intent-${pageKey}`}>Intent {pageKey}</div>
@@ -41,6 +42,10 @@ vi.mock('../../../src/components/pages/LegalPage', () => ({
 
 vi.mock('../../../src/components/pages/PublicNotFoundPage', () => ({
   default: entrypointMocks.PublicNotFoundPage,
+}));
+
+vi.mock('../../../src/components/pages/AccountActionPage', () => ({
+  default: entrypointMocks.AccountActionPage,
 }));
 
 vi.mock('../../../src/components/pages/IntentHubPage', () => ({
@@ -79,6 +84,7 @@ describe('main entrypoint', () => {
     entrypointMocks.App.mockClear();
     entrypointMocks.LegalPage.mockClear();
     entrypointMocks.PublicNotFoundPage.mockClear();
+    entrypointMocks.AccountActionPage.mockClear();
     entrypointMocks.IntentHubPage.mockClear();
     entrypointMocks.IntentLandingPage.mockClear();
     entrypointMocks.UsageDocsPage.mockClear();
@@ -116,6 +122,30 @@ describe('main entrypoint', () => {
     expect(fetchMock).not.toHaveBeenCalled();
     expect(await screen.findByTestId(`intent-hub-${hubKey}`)).toBeTruthy();
     expect(screen.queryByTestId('app-view')).toBeNull();
+  });
+
+  it('renders the branded account-action route without warmup fetch', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response('', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await importEntrypoint('/account-action?mode=verifyEmail&oobCode=abc123');
+    await renderCapturedTree();
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(await screen.findByTestId('account-action-page')).toBeTruthy();
+    expect(screen.queryByTestId('app-view')).toBeNull();
+  });
+
+  it('normalizes legacy /verify-email links to /account-action before rendering', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response('', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await importEntrypoint('/verify-email?mode=verifyEmail&oobCode=abc123');
+    await renderCapturedTree();
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(await screen.findByTestId('account-action-page')).toBeTruthy();
+    expect(window.location.pathname).toBe('/account-action');
   });
 
   it.each([

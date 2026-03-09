@@ -72,7 +72,7 @@ describe('VerifyEmailPage', () => {
 
     render(<VerifyEmailPage email="refresh@example.com" onRefresh={onRefresh} />);
 
-    await user.click(screen.getByRole('button', { name: 'I have verified' }));
+    await user.click(screen.getByRole('button', { name: 'I have verified my email' }));
 
     const checkingButton = screen.getByRole('button', { name: 'Checking…' }) as HTMLButtonElement;
     expect(checkingButton.disabled).toBe(true);
@@ -81,7 +81,7 @@ describe('VerifyEmailPage', () => {
     deferred.resolve();
 
     await waitFor(() => {
-      const readyButton = screen.getByRole('button', { name: 'I have verified' }) as HTMLButtonElement;
+      const readyButton = screen.getByRole('button', { name: 'I have verified my email' }) as HTMLButtonElement;
       expect(readyButton.disabled).toBe(false);
     });
   });
@@ -92,7 +92,7 @@ describe('VerifyEmailPage', () => {
 
     render(<VerifyEmailPage email="refresh@example.com" onRefresh={onRefresh} />);
 
-    await user.click(screen.getByRole('button', { name: 'I have verified' }));
+    await user.click(screen.getByRole('button', { name: 'I have verified my email' }));
 
     await waitFor(() => {
       expect(screen.getByText('We could not confirm verification yet. Please try again.')).toBeTruthy();
@@ -110,5 +110,15 @@ describe('VerifyEmailPage', () => {
 
     rerender(<VerifyEmailPage email="real@example.com" onSignOut={onSignOut} />);
     expect(screen.getByText('real@example.com')).toBeTruthy();
+  });
+
+  it('shows the setup guide link and updated resend guidance', () => {
+    render(<VerifyEmailPage email="verify@example.com" />);
+
+    const helpLink = screen.getByRole('link', { name: 'Need help? Open the setup guide' }) as HTMLAnchorElement;
+    expect(helpLink.getAttribute('href')).toBe('/usage-docs/getting-started');
+    expect(
+      screen.getByText('You can resend up to 5 verification emails per day from this browser.'),
+    ).toBeTruthy();
   });
 });

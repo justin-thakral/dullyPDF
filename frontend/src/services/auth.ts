@@ -2,6 +2,8 @@
  * Firebase auth wrappers used across the UI.
  */
 import {
+  applyActionCode,
+  confirmPasswordReset,
   createUserWithEmailAndPassword,
   onAuthStateChanged,
   onIdTokenChanged,
@@ -10,6 +12,7 @@ import {
   signInWithEmailAndPassword,
   signOut as firebaseSignOut,
   updateProfile,
+  verifyPasswordResetCode,
 } from 'firebase/auth';
 import type { User } from 'firebase/auth';
 import { firebaseAuth } from './firebaseClient';
@@ -144,6 +147,38 @@ export const Auth = {
     } else {
       await sendEmailVerification(user);
     }
+  },
+
+  /**
+   * Complete an out-of-band email verification action code.
+   */
+  async applyEmailVerificationCode(oobCode: string): Promise<void> {
+    await applyActionCode(firebaseAuth, oobCode);
+    const user = firebaseAuth.currentUser;
+    if (!user) {
+      return;
+    }
+    try {
+      await user.reload();
+      const token = await user.getIdToken(true);
+      setAuthToken(token);
+    } catch (error) {
+      console.error('[auth] Failed to refresh user after email verification', error);
+    }
+  },
+
+  /**
+   * Validate a password-reset action code and return the target email.
+   */
+  async verifyPasswordResetActionCode(oobCode: string): Promise<string> {
+    return verifyPasswordResetCode(firebaseAuth, oobCode);
+  },
+
+  /**
+   * Complete a password reset with a validated action code.
+   */
+  async confirmPasswordReset(oobCode: string, newPassword: string): Promise<void> {
+    await confirmPasswordReset(firebaseAuth, oobCode, newPassword);
   },
 
   /**

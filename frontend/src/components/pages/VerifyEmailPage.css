@@ -41,16 +41,6 @@
   line-height: 1.6;
 }
 
-.verify-spam-note {
-  padding: 0.85rem 1rem;
-  border-radius: 14px;
-  border: 1px solid var(--alert-warning-border);
-  background: var(--alert-warning-bg);
-  color: var(--alert-warning-ink);
-  font-weight: 700;
-  line-height: 1.45;
-}
-
 .verify-badge {
   align-self: flex-start;
   padding: 0.4rem 0.8rem;
@@ -75,23 +65,37 @@
   gap: 0.75rem;
 }
 
-.verify-actions .ui-button {
+.verify-page-actions .ui-button {
   width: 100%;
   justify-content: center;
 }
 
-.verify-signout {
-  background: none;
-  border: none;
-  padding: 0;
-  font-size: 0.9rem;
-  font-weight: 600;
-  color: var(--ink-500);
-  cursor: pointer;
-  align-self: center;
+.verify-page-button {
+  min-height: 3rem;
 }
 
-.verify-signout:hover {
+.verify-page-meta {
+  display: flex;
+  justify-content: center;
+}
+
+.verify-page-meta-note {
+  margin: 0;
+  color: var(--ink-500);
+  font-size: 0.9rem;
+  line-height: 1.55;
+  text-align: center;
+}
+
+.verify-page-footer {
+  align-items: center;
+}
+
+.verify-page-signout {
+  min-width: 140px;
+}
+
+.verify-page-signout:hover {
   color: var(--ink-900);
 }
 
@@ -102,5 +106,14 @@
 
   .verify-header h1 {
     font-size: 1.65rem;
+  }
+
+  .verify-page-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .verify-page-signout {
+    width: 100%;
   }
 }

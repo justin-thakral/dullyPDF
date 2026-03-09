@@ -2,6 +2,10 @@
 import { StrictMode, Suspense, lazy } from 'react';
 import { createRoot } from 'react-dom/client';
 import './index.css';
+import {
+  ACCOUNT_ACTION_ROUTE_PATH,
+  LEGACY_ACCOUNT_ACTION_ROUTE_PATH,
+} from './utils/emailActions';
 import type { LegalPageKind } from './components/pages/LegalPage';
 import {
   resolveUsageDocsPath,
@@ -12,6 +16,7 @@ import { resolveIntentPath, type IntentPageKey } from './config/intentPages';
 const App = lazy(() => import('./App'));
 const LegalPage = lazy(() => import('./components/pages/LegalPage'));
 const PublicNotFoundPage = lazy(() => import('./components/pages/PublicNotFoundPage'));
+const AccountActionPage = lazy(() => import('./components/pages/AccountActionPage'));
 const UsageDocsPage = lazy(() => import('./components/pages/UsageDocsPage'));
 const UsageDocsNotFoundPage = lazy(() => import('./components/pages/UsageDocsNotFoundPage'));
 const IntentLandingPage = lazy(() => import('./components/pages/IntentLandingPage'));
@@ -24,6 +29,7 @@ type AppRoute =
   | { kind: 'legal'; legalKind: LegalPageKind }
   | { kind: 'intent'; intentKey: IntentPageKey }
   | { kind: 'intent-hub'; hubKey: 'workflows' | 'industries' }
+  | { kind: 'account-action' }
   | { kind: 'usage-docs'; pageKey: UsageDocsPageKey }
   | { kind: 'usage-docs-not-found'; requestedPath: string }
   | { kind: 'blog-index' }
@@ -46,6 +52,12 @@ const resolveRoute = (): AppRoute => {
   }
   if (normalizedPath === '/terms' || normalizedPath === '/terms-of-service') {
     return { kind: 'legal', legalKind: 'terms' };
+  }
+  if (normalizedPath === ACCOUNT_ACTION_ROUTE_PATH || normalizedPath === LEGACY_ACCOUNT_ACTION_ROUTE_PATH) {
+    if (normalizedPath === LEGACY_ACCOUNT_ACTION_ROUTE_PATH || path !== ACCOUNT_ACTION_ROUTE_PATH) {
+      replaceBrowserPath(ACCOUNT_ACTION_ROUTE_PATH);
+    }
+    return { kind: 'account-action' };
   }
 
   if (normalizedPath === '/blog') {
@@ -124,6 +136,8 @@ createRoot(document.getElementById('root')!).render(
     <Suspense fallback={null}>
       {route.kind === 'legal' ? (
         <LegalPage kind={route.legalKind} />
+      ) : route.kind === 'account-action' ? (
+        <AccountActionPage />
       ) : route.kind === 'intent-hub' ? (
         <IntentHubPage hubKey={route.hubKey} />
       ) : route.kind === 'intent' ? (

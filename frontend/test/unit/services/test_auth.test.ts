@@ -5,6 +5,8 @@ const firebaseAuthRef = vi.hoisted(() => ({
 }));
 
 const firebaseMocks = vi.hoisted(() => ({
+  applyActionCode: vi.fn(),
+  confirmPasswordReset: vi.fn(),
   createUserWithEmailAndPassword: vi.fn(),
   onAuthStateChanged: vi.fn(),
   onIdTokenChanged: vi.fn(),
@@ -13,6 +15,7 @@ const firebaseMocks = vi.hoisted(() => ({
   signInWithEmailAndPassword: vi.fn(),
   signOut: vi.fn(),
   updateProfile: vi.fn(),
+  verifyPasswordResetCode: vi.fn(),
 }));
 
 const tokenStoreMocks = vi.hoisted(() => ({
@@ -28,6 +31,8 @@ vi.mock('../../../src/services/authTokenStore', () => ({
 }));
 
 vi.mock('firebase/auth', () => ({
+  applyActionCode: firebaseMocks.applyActionCode,
+  confirmPasswordReset: firebaseMocks.confirmPasswordReset,
   createUserWithEmailAndPassword: firebaseMocks.createUserWithEmailAndPassword,
   onAuthStateChanged: firebaseMocks.onAuthStateChanged,
   onIdTokenChanged: firebaseMocks.onIdTokenChanged,
@@ -36,6 +41,7 @@ vi.mock('firebase/auth', () => ({
   signInWithEmailAndPassword: firebaseMocks.signInWithEmailAndPassword,
   signOut: firebaseMocks.signOut,
   updateProfile: firebaseMocks.updateProfile,
+  verifyPasswordResetCode: firebaseMocks.verifyPasswordResetCode,
 }));
 
 const importAuthModule = async () => {
@@ -60,6 +66,9 @@ describe('auth service', () => {
     firebaseMocks.sendPasswordResetEmail.mockResolvedValue(undefined);
     firebaseMocks.sendEmailVerification.mockResolvedValue(undefined);
     firebaseMocks.updateProfile.mockResolvedValue(undefined);
+    firebaseMocks.applyActionCode.mockResolvedValue(undefined);
+    firebaseMocks.verifyPasswordResetCode.mockResolvedValue('reset@example.com');
+    firebaseMocks.confirmPasswordReset.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -164,7 +173,7 @@ describe('auth service', () => {
     expect(firebaseMocks.sendEmailVerification).toHaveBeenCalledWith(signUpUser);
   });
 
-  it('supports password reset, sign-out, verification resend, and refresh helpers', async () => {
+  it('supports password reset, sign-out, verification resend, reset helpers, action-code apply, and refresh helpers', async () => {
     const { Auth } = await importAuthModule();
 
     await Auth.sendPasswordReset('reset@example.com');
@@ -176,6 +185,17 @@ describe('auth service', () => {
 
     firebaseAuthRef.currentUser = null;
     await expect(Auth.sendVerificationEmail()).rejects.toThrow('No authenticated user found.');
+    await expect(Auth.verifyPasswordResetActionCode('reset-code')).resolves.toBe('reset@example.com');
+    expect(firebaseMocks.verifyPasswordResetCode).toHaveBeenCalledWith(firebaseAuthRef, 'reset-code');
+    await Auth.confirmPasswordReset('reset-code', 'new-secret-123');
+    expect(firebaseMocks.confirmPasswordReset).toHaveBeenCalledWith(
+      firebaseAuthRef,
+      'reset-code',
+      'new-secret-123',
+    );
+
+    await Auth.applyEmailVerificationCode('verify-code');
+    expect(firebaseMocks.applyActionCode).toHaveBeenCalledWith(firebaseAuthRef, 'verify-code');
 
     const verifiedUser = {
       reload: vi.fn().mockResolvedValue(undefined),
@@ -189,10 +209,15 @@ describe('auth service', () => {
       handleCodeInApp: false,
     });
 
-    const refreshed = await Auth.refreshCurrentUser();
-    expect(refreshed).toBe(verifiedUser);
+    await Auth.applyEmailVerificationCode('verify-code-2');
+    expect(firebaseMocks.applyActionCode).toHaveBeenCalledWith(firebaseAuthRef, 'verify-code-2');
     expect(verifiedUser.reload).toHaveBeenCalledTimes(1);
     expect(verifiedUser.getIdToken).toHaveBeenCalledWith(true);
+
+    const refreshed = await Auth.refreshCurrentUser();
+    expect(refreshed).toBe(verifiedUser);
+    expect(verifiedUser.reload).toHaveBeenCalledTimes(2);
+    expect(verifiedUser.getIdToken).toHaveBeenLastCalledWith(true);
     expect(tokenStoreMocks.setAuthToken).toHaveBeenCalledWith('refresh-token');
 
     firebaseAuthRef.currentUser = null;

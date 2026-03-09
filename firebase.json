@@ -120,6 +120,14 @@
     ],
     "rewrites": [
       {
+        "source": "/account-action",
+        "destination": "/index.html"
+      },
+      {
+        "source": "/verify-email",
+        "destination": "/index.html"
+      },
+      {
         "source": "/api/health",
         "run": {
           "serviceId": "dullypdf-backend",
