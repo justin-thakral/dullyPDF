@@ -152,6 +152,15 @@ def _resolve_checkout_session_price_id(session_obj: Dict[str, Any], *, metadata_
     return first_nonempty([str(price or "")])
 
 
+def _resolve_checkout_attempt_id(metadata_dict: Dict[str, Any]) -> Optional[str]:
+    return first_nonempty(
+        [
+            str(metadata_dict.get("checkoutAttemptId") or ""),
+            str(metadata_dict.get("checkout_attempt_id") or ""),
+        ]
+    )
+
+
 def _resolve_refill_checkout_credits(session_obj: Dict[str, Any], *, metadata_dict: Dict[str, Any]) -> int:
     # Recent checkout sessions include both the Stripe price id and explicit refill
     # credit count in metadata. We validate the metadata against the configured
@@ -525,6 +534,8 @@ async def create_checkout(
         "kind": checkout_kind,
         "sessionId": session["sessionId"],
         "checkoutUrl": session["url"],
+        "attemptId": first_nonempty([str(session.get("checkoutAttemptId") or "")]),
+        "checkoutPriceId": first_nonempty([str(session.get("checkoutPriceId") or "")]),
     }
 
 
@@ -577,6 +588,7 @@ async def reconcile_recent_checkout_events(
         raise HTTPException(status_code=500, detail="Failed to list Stripe checkout events for reconciliation.") from exc
 
     candidates: list[Dict[str, Any]] = []
+    response_events: list[Dict[str, Any]] = []
     skipped_for_user = 0
     already_processed = 0
     processing = 0
@@ -603,30 +615,34 @@ async def reconcile_recent_checkout_events(
             skipped_for_user += 1
             continue
 
+        metadata_dict = session_obj.get("metadata") if isinstance(session_obj.get("metadata"), dict) else {}
         existing = get_billing_event(event_id)
         existing_status = str(existing.get("status") or "").strip().lower() if isinstance(existing, dict) else ""
-        if existing_status == "processed":
-            already_processed += 1
-            continue
-
-        pending_reconciliation += 1
         candidate_row = {
             "eventId": event_id,
             "eventType": event_type,
             "eventUserId": event_user_id,
             "created": event_payload.get("created"),
             "checkoutSessionId": str(session_obj.get("id") or "").strip() or None,
+            "checkoutAttemptId": _resolve_checkout_attempt_id(metadata_dict),
             "checkoutKind": str(
                 (
-                    session_obj.get("metadata").get("checkoutKind")
-                    if isinstance(session_obj.get("metadata"), dict)
+                    metadata_dict.get("checkoutKind")
+                    if isinstance(metadata_dict, dict)
                     else ""
                 )
                 or ""
             ).strip()
             or None,
+            "checkoutPriceId": _resolve_checkout_session_price_id(session_obj, metadata_dict=metadata_dict),
             "billingEventStatus": existing_status or None,
         }
+        response_events.append(candidate_row)
+        if existing_status == "processed":
+            already_processed += 1
+            continue
+
+        pending_reconciliation += 1
         candidates.append(candidate_row)
         if payload.dry_run:
             continue
@@ -659,7 +675,7 @@ async def reconcile_recent_checkout_events(
         "failedCount": failed,
         "invalidCount": invalid,
         "skippedForUserCount": skipped_for_user,
-        "events": candidates,
+        "events": response_events,
     }
 
 

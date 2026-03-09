@@ -470,12 +470,15 @@ def test_create_checkout_session_builds_subscription_payload_with_metadata(
         user_id="user_123",
         user_email="user@example.com",
         checkout_kind="pro_monthly",
+        checkout_attempt_id="attempt_pro_123",
     )
 
     assert session == {
         "sessionId": "cs_test_123",
         "url": "https://checkout.stripe.test/session",
         "customerId": "cus_existing_123",
+        "checkoutAttemptId": "attempt_pro_123",
+        "checkoutPriceId": "price_monthly_123",
     }
     assert _FakeStripe.api_key == "sk_test_checkout"
     assert list_captured == {
@@ -493,12 +496,14 @@ def test_create_checkout_session_builds_subscription_payload_with_metadata(
         "userId": "user_123",
         "checkoutKind": "pro_monthly",
         "checkoutPriceId": "price_monthly_123",
+        "checkoutAttemptId": "attempt_pro_123",
     }
     assert captured["subscription_data"] == {
         "metadata": {
             "userId": "user_123",
             "checkoutKind": "pro_monthly",
             "checkoutPriceId": "price_monthly_123",
+            "checkoutAttemptId": "attempt_pro_123",
         }
     }
     assert isinstance(captured.get("idempotency_key"), str) and bool(captured.get("idempotency_key"))
@@ -564,12 +569,15 @@ def test_create_checkout_session_builds_refill_payment_payload_without_subscript
         user_id="user_123",
         user_email=None,
         checkout_kind="refill_500",
+        checkout_attempt_id="attempt_refill_123",
     )
 
     assert session == {
         "sessionId": "cs_test_refill",
         "url": "https://checkout.stripe.test/refill",
         "customerId": "cus_refill_123",
+        "checkoutAttemptId": "attempt_refill_123",
+        "checkoutPriceId": "price_refill_123",
     }
     assert captured["mode"] == "payment"
     assert captured["line_items"] == [{"price": "price_refill_123", "quantity": 1}]
@@ -579,6 +587,7 @@ def test_create_checkout_session_builds_refill_payment_payload_without_subscript
         "userId": "user_123",
         "checkoutKind": "refill_500",
         "checkoutPriceId": "price_refill_123",
+        "checkoutAttemptId": "attempt_refill_123",
         "refillCredits": "650",
     }
     assert captured["customer"] == "cus_refill_123"
@@ -659,6 +668,8 @@ def test_create_checkout_session_reuses_existing_open_pro_checkout(
                         "metadata": {
                             "userId": "user_123",
                             "checkoutKind": "pro_monthly",
+                            "checkoutPriceId": "price_monthly_123",
+                            "checkoutAttemptId": "attempt_existing_123",
                         },
                     }
                 ]
@@ -696,6 +707,8 @@ def test_create_checkout_session_reuses_existing_open_pro_checkout(
         "sessionId": "cs_open_existing",
         "url": "https://checkout.stripe.test/open-existing",
         "customerId": "cus_123",
+        "checkoutAttemptId": "attempt_existing_123",
+        "checkoutPriceId": "price_monthly_123",
     }
     assert create_calls == []
 

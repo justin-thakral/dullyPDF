@@ -8,7 +8,7 @@ This directory contains committed frontend environment files for each mode:
 
 These files may contain public browser config (`VITE_*`) such as Firebase web config and API base URLs.
 Do not store backend secrets here.
-Google Ads / analytics browser tag IDs are acceptable here because they are public client-side identifiers.
+Google Ads / analytics browser tag IDs and conversion labels are acceptable here because they are public client-side identifiers.
 
 ## Local overrides (gitignored)
 

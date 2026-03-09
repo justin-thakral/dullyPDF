@@ -24,6 +24,8 @@ def _build_checkout_session_completed_event(
     payment_status: str,
     card_number: str,
     user_id: str = "user-1",
+    checkout_session_id: str = "cs_test_123",
+    checkout_attempt_id: str | None = None,
 ) -> dict:
     metadata = {
         "userId": user_id,
@@ -34,12 +36,19 @@ def _build_checkout_session_completed_event(
     if checkout_kind == "refill_500":
         metadata["checkoutPriceId"] = "price_refill_500"
         metadata["refillCredits"] = "500"
+    elif checkout_kind == "pro_monthly":
+        metadata["checkoutPriceId"] = "price_pro_monthly"
+    elif checkout_kind == "pro_yearly":
+        metadata["checkoutPriceId"] = "price_pro_yearly"
+    if checkout_attempt_id:
+        metadata["checkoutAttemptId"] = checkout_attempt_id
 
     return {
         "id": event_id,
         "type": "checkout.session.completed",
         "data": {
             "object": {
+                "id": checkout_session_id,
                 "client_reference_id": user_id,
                 "metadata": metadata,
                 "subscription": "sub_123",
@@ -258,7 +267,12 @@ def test_checkout_session_creates_refill_session_for_pro_with_active_subscriptio
     checkout_mock = mocker.patch.object(
         app_main,
         "create_checkout_session",
-        return_value={"sessionId": "cs_refill", "url": "https://checkout/refill"},
+        return_value={
+            "sessionId": "cs_refill",
+            "url": "https://checkout/refill",
+            "checkoutAttemptId": "attempt_refill_123",
+            "checkoutPriceId": "price_refill_500",
+        },
     )
     persist_customer_mock = mocker.patch.object(app_main, "set_user_billing_subscription")
 
@@ -273,6 +287,8 @@ def test_checkout_session_creates_refill_session_for_pro_with_active_subscriptio
     assert payload["success"] is True
     assert payload["kind"] == "refill_500"
     assert payload["checkoutUrl"] == "https://checkout/refill"
+    assert payload["attemptId"] == "attempt_refill_123"
+    assert payload["checkoutPriceId"] == "price_refill_500"
     checkout_mock.assert_called_once_with(
         user_id=base_user.app_user_id,
         user_email=base_user.email,
@@ -317,7 +333,12 @@ def test_checkout_session_forwards_checkout_attempt_id_for_refill(
     checkout_mock = mocker.patch.object(
         app_main,
         "create_checkout_session",
-        return_value={"sessionId": "cs_refill", "url": "https://checkout/refill"},
+        return_value={
+            "sessionId": "cs_refill",
+            "url": "https://checkout/refill",
+            "checkoutAttemptId": "attempt_abc_123",
+            "checkoutPriceId": "price_refill_500",
+        },
     )
 
     response = client.post(
@@ -1125,6 +1146,8 @@ def test_billing_reconcile_dry_run_reports_missing_events_without_processing(
                 payment_status="paid",
                 card_number=STRIPE_TEST_CARD_SUCCESS,
                 user_id=base_user.app_user_id,
+                checkout_session_id="cs_refill_123",
+                checkout_attempt_id="attempt_refill_123",
             )
         ],
     )
@@ -1144,6 +1167,19 @@ def test_billing_reconcile_dry_run_reports_missing_events_without_processing(
     assert payload["candidateEventCount"] == 1
     assert payload["pendingReconciliationCount"] == 1
     assert payload["reconciledCount"] == 0
+    assert payload["events"] == [
+        {
+            "eventId": "evt_reconcile_1",
+            "eventType": "checkout.session.completed",
+            "eventUserId": base_user.app_user_id,
+            "created": None,
+            "checkoutSessionId": "cs_refill_123",
+            "checkoutAttemptId": "attempt_refill_123",
+            "checkoutKind": "refill_500",
+            "checkoutPriceId": "price_refill_500",
+            "billingEventStatus": None,
+        }
+    ]
     start_mock.assert_not_called()
 
 
@@ -1177,6 +1213,8 @@ def test_billing_reconcile_processes_missing_checkout_events(
                 payment_status="paid",
                 card_number=STRIPE_TEST_CARD_SUCCESS,
                 user_id=base_user.app_user_id,
+                checkout_session_id="cs_refill_apply",
+                checkout_attempt_id="attempt_refill_apply",
             )
         ],
     )
@@ -1197,8 +1235,76 @@ def test_billing_reconcile_processes_missing_checkout_events(
     assert payload["candidateEventCount"] == 1
     assert payload["pendingReconciliationCount"] == 1
     assert payload["reconciledCount"] == 1
+    assert payload["events"][0]["checkoutSessionId"] == "cs_refill_apply"
+    assert payload["events"][0]["checkoutAttemptId"] == "attempt_refill_apply"
+    assert payload["events"][0]["checkoutPriceId"] == "price_refill_500"
     handle_mock.assert_called_once()
     complete_mock.assert_called_once_with("evt_reconcile_apply")
+
+
+def test_billing_reconcile_returns_processed_events_for_frontend_matching(
+    client,
+    app_main,
+    base_user,
+    mocker,
+    auth_headers,
+) -> None:
+    _patch_auth(mocker, app_main, base_user)
+    mocker.patch.object(app_main, "billing_enabled", return_value=True)
+    mocker.patch.object(
+        app_main,
+        "get_user_profile",
+        return_value=UserProfileRecord(
+            uid=base_user.app_user_id,
+            email=base_user.email,
+            display_name=base_user.display_name,
+            role="pro",
+            openai_credits_remaining=500,
+        ),
+    )
+    mocker.patch.object(
+        app_main,
+        "list_recent_checkout_completion_events",
+        return_value=[
+            _build_checkout_session_completed_event(
+                event_id="evt_processed",
+                checkout_kind="pro_monthly",
+                payment_status="paid",
+                card_number=STRIPE_TEST_CARD_SUCCESS,
+                user_id=base_user.app_user_id,
+                checkout_session_id="cs_processed_123",
+                checkout_attempt_id="attempt_processed_123",
+            )
+        ],
+    )
+    mocker.patch.object(app_main, "get_billing_event", return_value={"status": "processed"})
+    start_mock = mocker.patch.object(app_main, "start_billing_event")
+
+    response = client.post(
+        "/api/billing/reconcile",
+        json={"dryRun": False, "lookbackHours": 24, "maxEvents": 20},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["success"] is True
+    assert payload["candidateEventCount"] == 0
+    assert payload["alreadyProcessedCount"] == 1
+    assert payload["events"] == [
+        {
+            "eventId": "evt_processed",
+            "eventType": "checkout.session.completed",
+            "eventUserId": base_user.app_user_id,
+            "created": None,
+            "checkoutSessionId": "cs_processed_123",
+            "checkoutAttemptId": "attempt_processed_123",
+            "checkoutKind": "pro_monthly",
+            "checkoutPriceId": "price_pro_monthly",
+            "billingEventStatus": "processed",
+        }
+    ]
+    start_mock.assert_not_called()
 
 
 def test_billing_webhook_rejects_invalid_signature(client, app_main, mocker) -> None:

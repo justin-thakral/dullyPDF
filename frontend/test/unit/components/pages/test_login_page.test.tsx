@@ -6,6 +6,8 @@ const loginMocks = vi.hoisted(() => ({
   signIn: vi.fn(),
   signUp: vi.fn(),
   sendPasswordReset: vi.fn(),
+  trackGoogleAdsSignup: vi.fn(),
+  getAdditionalUserInfo: vi.fn(),
   verifyRecaptcha: vi.fn(),
   loadRecaptcha: vi.fn(),
   getRecaptchaToken: vi.fn(),
@@ -42,7 +44,12 @@ vi.mock('../../../../src/services/firebaseClient', () => ({
   firebaseAuth: {},
 }));
 
+vi.mock('../../../../src/utils/googleAds', () => ({
+  trackGoogleAdsSignup: loginMocks.trackGoogleAdsSignup,
+}));
+
 vi.mock('firebase/auth', () => ({
+  getAdditionalUserInfo: loginMocks.getAdditionalUserInfo,
   GithubAuthProvider: { PROVIDER_ID: 'github.com' },
   GoogleAuthProvider: { PROVIDER_ID: 'google.com' },
 }));
@@ -79,8 +86,10 @@ describe('LoginPage', () => {
     vi.stubEnv('VITE_SIGNUP_REQUIRE_RECAPTCHA', 'true');
 
     loginMocks.signIn.mockResolvedValue({});
-    loginMocks.signUp.mockResolvedValue({});
+    loginMocks.signUp.mockResolvedValue({ uid: 'user-signup-123' });
     loginMocks.sendPasswordReset.mockResolvedValue(undefined);
+    loginMocks.trackGoogleAdsSignup.mockReset();
+    loginMocks.getAdditionalUserInfo.mockReset().mockReturnValue({ isNewUser: false });
     loginMocks.verifyRecaptcha.mockResolvedValue({ success: true });
     loginMocks.loadRecaptcha.mockResolvedValue(undefined);
     loginMocks.getRecaptchaToken.mockResolvedValue('token-123');
@@ -147,6 +156,7 @@ describe('LoginPage', () => {
         action: 'signup',
       });
       expect(loginMocks.signUp).toHaveBeenCalledWith('new@example.com', 'password123');
+      expect(loginMocks.trackGoogleAdsSignup).toHaveBeenCalledWith('user-signup-123');
     });
 
     expect(screen.getByText('Verification email sent. Check your inbox before continuing.')).toBeTruthy();
@@ -236,5 +246,26 @@ describe('LoginPage', () => {
 
     unmount();
     expect(existingUi.reset.mock.calls.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it('tracks native OAuth signup conversions only for new FirebaseUI users', async () => {
+    const onAuthenticated = vi.fn();
+    render(<LoginPage onAuthenticated={onAuthenticated} />);
+
+    const firebaseUiConfig = loginMocks.uiStart.mock.calls[0]?.[1];
+    const signInSuccess = firebaseUiConfig?.callbacks?.signInSuccessWithAuthResult;
+    expect(typeof signInSuccess).toBe('function');
+
+    loginMocks.getAdditionalUserInfo.mockReturnValueOnce({ isNewUser: true });
+    const firstResult = signInSuccess({ user: { uid: 'oauth-new-user' } });
+    expect(firstResult).toBe(false);
+    expect(loginMocks.trackGoogleAdsSignup).toHaveBeenCalledWith('oauth-new-user');
+    expect(onAuthenticated).toHaveBeenCalledTimes(1);
+
+    loginMocks.getAdditionalUserInfo.mockReturnValueOnce({ isNewUser: false });
+    const secondResult = signInSuccess({ user: { uid: 'oauth-existing-user' } });
+    expect(secondResult).toBe(false);
+    expect(loginMocks.trackGoogleAdsSignup).toHaveBeenCalledTimes(1);
+    expect(onAuthenticated).toHaveBeenCalledTimes(2);
   });
 });
