@@ -39,6 +39,8 @@ frontend/
 - `frontend/src/components/features/SearchFillModal.tsx`: Record search and field fill logic.
 - `frontend/src/components/features/UploadView.tsx`: Upload + saved-form selection UI and OpenAI preflight modal entry.
 - `frontend/src/components/pages/*.tsx`: Homepage, auth pages, profile page, legal pages, public usage docs pages (`/usage-docs/*`), and intent landing pages.
+- `frontend/src/components/pages/AccountActionPage.tsx`: Public branded Firebase email action handler for verification and password reset links (`/account-action`, with legacy `/verify-email` compatibility).
+- `frontend/src/components/pages/AuthActionShell.tsx`: Shared branded shell used by the public account-action route and the signed-in verification gate.
 - `frontend/src/components/pages/PublicNotFoundPage.tsx`: Generic noindex 404 page for unknown public routes that should never fall back to the editor shell.
 - `frontend/src/components/pages/IntentHubPage.tsx`: Hub directory pages for `/workflows` and `/industries` that aggregate intent routes.
 - `frontend/src/components/pages/IntentPageShell.tsx`: Shared shell for intent marketing pages (global header nav, breadcrumb + hero/CTA block, and footer).

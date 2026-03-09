@@ -2,9 +2,12 @@
  * Verification gate for password users awaiting email confirmation.
  */
 import React, { useState } from 'react';
+import '../../styles/ui-buttons.css';
 import './VerifyEmailPage.css';
+import './AccountActionPage.css';
 import { Auth } from '../../services/auth';
 import { Alert } from '../ui/Alert';
+import AuthActionShell from './AuthActionShell';
 
 interface VerifyEmailPageProps {
   email?: string | null;
@@ -84,6 +87,16 @@ const VerifyEmailPage: React.FC<VerifyEmailPageProps> = ({ email, onRefresh, onS
   const cooldownRemainingSeconds = Math.ceil(cooldownRemainingMs / 1000);
   const dailyLimitReached = resendThrottle.sentCount >= RESEND_DAILY_LIMIT;
   const resendBlocked = dailyLimitReached || cooldownRemainingMs > 0;
+  const summaryItems = [
+    'Open the message from DullyPDF and follow the secure verification link.',
+    'If the message does not appear in your inbox right away, check spam or promotions.',
+    'After verification, return here and confirm so the workspace can refresh your session.',
+  ];
+  const resendStatusMessage = dailyLimitReached
+    ? 'Daily resend limit reached on this browser. Try again tomorrow.'
+    : cooldownRemainingMs > 0
+      ? `You can request another verification email in ${cooldownRemainingSeconds}s.`
+      : `You can resend up to ${RESEND_DAILY_LIMIT} verification emails per day from this browser.`;
 
   React.useEffect(() => {
     setResendThrottle(loadResendThrottle(email));
@@ -142,59 +155,75 @@ const VerifyEmailPage: React.FC<VerifyEmailPageProps> = ({ email, onRefresh, onS
   };
 
   return (
-    <div className="verify-page">
-      <div className="verify-card">
-        <div className="verify-header">
-          <div className="verify-badge">Email verification required</div>
-          <h1>Confirm your email</h1>
-          <p>
-            We sent a verification link to <strong>{email || 'your email address'}</strong>. Please
-            verify your email before accessing the workspace.
-          </p>
-          <p className="verify-spam-note">
-            Email might be sent to spam please check there if you don&apos;t see email in inbox
-          </p>
-        </div>
+    <AuthActionShell
+      toneClass="verify-action-card--processing"
+      supportLabel="Workspace access pending"
+      badge="Email verification required"
+      title="Confirm your email"
+      description={
+        <>
+          We sent a verification link to <strong>{email || 'your email address'}</strong>. Verify the address before
+          entering the workspace.
+        </>
+      }
+      summaryTitle="Before you continue"
+      summaryItems={summaryItems}
+      body={
+        <>
+          {error || info ? (
+            <div className="verify-alerts">
+              {error ? <Alert tone="error" variant="inline" message={error} /> : null}
+              {info ? <Alert tone="info" variant="inline" message={info} /> : null}
+            </div>
+          ) : null}
 
-        {error || info ? (
-          <div className="verify-alerts">
-            {error ? <Alert tone="error" variant="inline" message={error} /> : null}
-            {info ? <Alert tone="info" variant="inline" message={info} /> : null}
+          <div className="verify-actions verify-page-actions">
+            <button
+              type="button"
+              className="ui-button ui-button--primary verify-page-button"
+              onClick={handleRefresh}
+              disabled={isChecking}
+            >
+              {isChecking ? 'Checking…' : 'I have verified my email'}
+            </button>
+            <button
+              type="button"
+              className="ui-button ui-button--ghost verify-page-button"
+              onClick={handleResend}
+              disabled={isSending || resendBlocked}
+            >
+              {isSending
+                ? 'Sending…'
+                : dailyLimitReached
+                  ? 'Resend limit reached'
+                  : cooldownRemainingMs > 0
+                    ? `Resend in ${cooldownRemainingSeconds}s`
+                    : 'Resend verification email'}
+            </button>
           </div>
-        ) : null}
 
-        <div className="verify-actions">
-          <button
-            type="button"
-            className="ui-button ui-button--primary"
-            onClick={handleRefresh}
-            disabled={isChecking}
-          >
-            {isChecking ? 'Checking…' : 'I have verified'}
-          </button>
-          <button
-            type="button"
-            className="ui-button ui-button--ghost"
-            onClick={handleResend}
-            disabled={isSending || resendBlocked}
-          >
-            {isSending
-              ? 'Sending…'
-              : dailyLimitReached
-                ? 'Resend limit reached'
-                : cooldownRemainingMs > 0
-                  ? `Resend in ${cooldownRemainingSeconds}s`
-                  : 'Resend verification email'}
-          </button>
+          <div className="verify-page-meta">
+            <p className="verify-page-meta-note">{resendStatusMessage}</p>
+          </div>
+        </>
+      }
+      footer={
+        <div className="verify-action-footer verify-page-footer">
+          {onSignOut ? (
+            <button type="button" className="ui-button ui-button--ghost verify-page-signout" onClick={onSignOut}>
+              Sign out
+            </button>
+          ) : (
+            <span className="verify-action-footer-note">
+              Secure Firebase verification handled on your branded DullyPDF domain.
+            </span>
+          )}
+          <a className="verify-action-footer-link" href="/usage-docs/getting-started">
+            Need help? Open the setup guide
+          </a>
         </div>
-
-        {onSignOut ? (
-          <button type="button" className="verify-signout" onClick={onSignOut}>
-            Sign out
-          </button>
-        ) : null}
-      </div>
-    </div>
+      }
+    />
   );
 };
 
