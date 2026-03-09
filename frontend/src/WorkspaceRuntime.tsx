@@ -47,10 +47,16 @@ import { useDetection } from './hooks/useDetection';
 import { usePipelineModal } from './hooks/usePipelineModal';
 import { useSaveDownload } from './hooks/useSaveDownload';
 import { useDemo } from './hooks/useDemo';
-import { ApiService, type BillingCheckoutKind } from './services/api';
+import {
+  ApiService,
+  type BillingCheckoutKind,
+  type BillingPlanCatalogItem,
+  type UserProfile,
+} from './services/api';
 import { applyRouteSeo } from './utils/seo';
 import { clampRectToPage } from './utils/coords';
 import { createFieldWithRect, getMinFieldSize, normalizeRectForFieldType } from './utils/fields';
+import { trackGoogleAdsBillingPurchase } from './utils/googleAds';
 
 /**
  * Launch actions that can be requested by the lightweight homepage shell.
@@ -64,6 +70,133 @@ type WorkspaceRuntimeProps = {
   bootstrapHasVerifiedUser?: boolean;
   bootstrapAuthUser?: User | null;
 };
+
+const PENDING_BILLING_CHECKOUT_STORAGE_KEY = 'dullypdf.pendingBillingCheckout';
+const ZERO_DECIMAL_CURRENCIES = new Set([
+  'BIF',
+  'CLP',
+  'DJF',
+  'GNF',
+  'JPY',
+  'KMF',
+  'KRW',
+  'MGA',
+  'PYG',
+  'RWF',
+  'UGX',
+  'VND',
+  'VUV',
+  'XAF',
+  'XOF',
+  'XPF',
+]);
+
+type PendingBillingCheckout = {
+  requestedKind: BillingCheckoutKind;
+  sessionId: string;
+  attemptId?: string | null;
+  checkoutPriceId?: string | null;
+  startedAt: number;
+};
+
+type BillingReconcileEvent = Awaited<ReturnType<typeof ApiService.reconcileBillingCheckoutFulfillment>>['events'][number];
+
+function getSessionStorage(): Storage | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    return window.sessionStorage;
+  } catch {
+    return null;
+  }
+}
+
+function persistPendingBillingCheckout(payload: PendingBillingCheckout): void {
+  const storage = getSessionStorage();
+  if (!storage) return;
+  storage.setItem(PENDING_BILLING_CHECKOUT_STORAGE_KEY, JSON.stringify(payload));
+}
+
+function readPendingBillingCheckout(): PendingBillingCheckout | null {
+  const storage = getSessionStorage();
+  if (!storage) return null;
+  const raw = storage.getItem(PENDING_BILLING_CHECKOUT_STORAGE_KEY);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as Partial<PendingBillingCheckout> | null;
+    const sessionId = typeof parsed?.sessionId === 'string' ? parsed.sessionId.trim() : '';
+    const requestedKind = typeof parsed?.requestedKind === 'string' ? parsed.requestedKind.trim() : '';
+    if (!sessionId || !requestedKind) return null;
+    if (!['pro_monthly', 'pro_yearly', 'refill_500'].includes(requestedKind)) return null;
+    return {
+      requestedKind: requestedKind as BillingCheckoutKind,
+      sessionId,
+      attemptId: typeof parsed?.attemptId === 'string' ? parsed.attemptId.trim() || null : null,
+      checkoutPriceId: typeof parsed?.checkoutPriceId === 'string' ? parsed.checkoutPriceId.trim() || null : null,
+      startedAt: typeof parsed?.startedAt === 'number' && Number.isFinite(parsed.startedAt) ? parsed.startedAt : Date.now(),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function clearPendingBillingCheckout(): void {
+  const storage = getSessionStorage();
+  if (!storage) return;
+  storage.removeItem(PENDING_BILLING_CHECKOUT_STORAGE_KEY);
+}
+
+function findMatchingBillingCheckoutEvent(
+  events: BillingReconcileEvent[],
+  pendingCheckout: PendingBillingCheckout | null,
+): BillingReconcileEvent | null {
+  if (!pendingCheckout) return null;
+  const normalizedSessionId = pendingCheckout.sessionId.trim();
+  const normalizedAttemptId = (pendingCheckout.attemptId || '').trim();
+  return events.find((event) => {
+    const eventSessionId = (event.checkoutSessionId || '').trim();
+    if (normalizedSessionId && eventSessionId && eventSessionId === normalizedSessionId) {
+      return true;
+    }
+    const eventAttemptId = (event.checkoutAttemptId || '').trim();
+    return Boolean(normalizedAttemptId && eventAttemptId && eventAttemptId === normalizedAttemptId);
+  }) ?? null;
+}
+
+function resolveTrackedBillingKind(
+  event: BillingReconcileEvent | null,
+  pendingCheckout: PendingBillingCheckout | null,
+): BillingCheckoutKind | null {
+  const eventKind = (event?.checkoutKind || '').trim();
+  if (eventKind === 'pro_monthly' || eventKind === 'pro_yearly' || eventKind === 'refill_500') {
+    return eventKind;
+  }
+  return pendingCheckout?.requestedKind ?? null;
+}
+
+function resolveBillingPlanForTracking(
+  profile: UserProfile | null,
+  event: BillingReconcileEvent | null,
+  pendingCheckout: PendingBillingCheckout | null,
+): BillingPlanCatalogItem | null {
+  const plans = profile?.billing?.plans;
+  if (!plans) return null;
+  const trackedKind = resolveTrackedBillingKind(event, pendingCheckout);
+  if (trackedKind && plans[trackedKind]) {
+    return plans[trackedKind] ?? null;
+  }
+  const targetPriceId = (event?.checkoutPriceId || pendingCheckout?.checkoutPriceId || '').trim();
+  if (!targetPriceId) return null;
+  return Object.values(plans).find((plan) => plan?.priceId === targetPriceId) ?? null;
+}
+
+function resolveGoogleAdsPurchaseValue(plan: BillingPlanCatalogItem | null): number | null {
+  if (typeof plan?.unitAmount !== 'number' || !Number.isFinite(plan.unitAmount) || plan.unitAmount <= 0) {
+    return null;
+  }
+  const normalizedCurrency = (plan.currency || '').trim().toUpperCase();
+  const divisor = ZERO_DECIMAL_CURRENCIES.has(normalizedCurrency) ? 1 : 100;
+  return Number((plan.unitAmount / divisor).toFixed(divisor === 1 ? 0 : 2));
+}
 
 /**
  * Main workspace runtime component that coordinates auth, detection, and editing.
@@ -382,8 +515,16 @@ function WorkspaceRuntime({
         if (!checkoutUrl) {
           throw new Error('Stripe checkout URL is missing.');
         }
+        persistPendingBillingCheckout({
+          requestedKind: kind,
+          sessionId: payload.sessionId,
+          attemptId: payload.attemptId ?? null,
+          checkoutPriceId: payload.checkoutPriceId ?? null,
+          startedAt: Date.now(),
+        });
         window.location.assign(checkoutUrl);
       } catch (error) {
+        clearPendingBillingCheckout();
         const message = error instanceof Error ? error.message : 'Failed to start checkout.';
         dialog.setBannerNotice({ tone: 'error', message, autoDismissMs: 8000 });
       } finally {
@@ -728,6 +869,7 @@ function WorkspaceRuntime({
     const billingState = (url.searchParams.get('billing') || '').toLowerCase();
     if (!billingState) return;
     if (billingState === 'success') {
+      const pendingCheckout = readPendingBillingCheckout();
       dialog.setBannerNotice({
         tone: 'info',
         message: 'Checkout completed. Syncing your profile credits…',
@@ -736,6 +878,7 @@ function WorkspaceRuntime({
       void (async () => {
         let reconciledCount = 0;
         let reconcileFailed = false;
+        let matchedBillingEvent: BillingReconcileEvent | null = null;
         try {
           const reconciliation = await ApiService.reconcileBillingCheckoutFulfillment({
             lookbackHours: 72,
@@ -743,6 +886,7 @@ function WorkspaceRuntime({
             dryRun: false,
           });
           reconciledCount = typeof reconciliation?.reconciledCount === 'number' ? reconciliation.reconciledCount : 0;
+          matchedBillingEvent = findMatchingBillingCheckoutEvent(reconciliation?.events ?? [], pendingCheckout);
         } catch (error) {
           reconcileFailed = true;
           debugLog('Billing checkout reconciliation failed', error);
@@ -751,6 +895,23 @@ function WorkspaceRuntime({
           attempts: 3,
           retryDelayMs: 1200,
         });
+        if (matchedBillingEvent && pendingCheckout) {
+          const trackedKind = resolveTrackedBillingKind(matchedBillingEvent, pendingCheckout);
+          const trackedPlan = resolveBillingPlanForTracking(
+            refreshedProfile ?? auth.userProfile,
+            matchedBillingEvent,
+            pendingCheckout,
+          );
+          if (trackedKind) {
+            trackGoogleAdsBillingPurchase({
+              kind: trackedKind,
+              transactionId: matchedBillingEvent.checkoutSessionId ?? pendingCheckout.sessionId,
+              value: resolveGoogleAdsPurchaseValue(trackedPlan),
+              currency: trackedPlan?.currency ?? null,
+            });
+          }
+        }
+        clearPendingBillingCheckout();
         if (refreshedProfile) {
           const message = reconciledCount > 0
             ? `Checkout completed. Recovered ${reconciledCount} missed billing event${reconciledCount === 1 ? '' : 's'} and refreshed your profile.`
@@ -771,6 +932,7 @@ function WorkspaceRuntime({
         }
       })();
     } else if (billingState === 'cancel') {
+      clearPendingBillingCheckout();
       dialog.setBannerNotice({
         tone: 'info',
         message: 'Checkout was canceled.',
@@ -779,7 +941,7 @@ function WorkspaceRuntime({
     }
     url.searchParams.delete('billing');
     window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
-  }, [assumeAuthReady, auth.authReady, dialog.setBannerNotice, refreshProfileAfterBillingAction]);
+  }, [assumeAuthReady, auth.authReady, auth.userProfile, dialog.setBannerNotice, refreshProfileAfterBillingAction]);
 
   useEffect(() => {
     if (!dialog.bannerNotice?.autoDismissMs) return undefined;

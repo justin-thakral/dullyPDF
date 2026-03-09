@@ -47,6 +47,10 @@ const apiServiceMocks = vi.hoisted(() => ({
   touchSession: vi.fn(),
 }));
 
+const analyticsMocks = vi.hoisted(() => ({
+  trackGoogleAdsBillingPurchase: vi.fn(),
+}));
+
 const detectionApiMocks = vi.hoisted(() => ({
   detectFields: vi.fn(),
   fetchDetectionStatus: vi.fn(),
@@ -103,6 +107,10 @@ vi.mock('../../../src/services/authTokenStore', () => ({
 
 vi.mock('../../../src/services/api', () => ({
   ApiService: apiServiceMocks,
+}));
+
+vi.mock('../../../src/utils/googleAds', () => ({
+  trackGoogleAdsBillingPurchase: analyticsMocks.trackGoogleAdsBillingPurchase,
 }));
 
 vi.mock('../../../src/services/detectionApi', () => ({
@@ -284,9 +292,11 @@ describe('App', () => {
   beforeEach(() => {
     window.history.replaceState({}, '', '/');
     window.scrollTo = vi.fn();
+    window.sessionStorage.clear();
     appState.authStateCallback = null;
     authMocks.onAuthStateChanged.mockClear();
     authMocks.signOut.mockClear();
+    analyticsMocks.trackGoogleAdsBillingPurchase.mockClear();
     for (const mock of Object.values(apiServiceMocks)) {
       if ('mockClear' in mock) {
         (mock as unknown as { mockClear: () => void }).mockClear();
@@ -580,6 +590,104 @@ describe('App', () => {
 
     await settleAuthAsSignedOut();
     expect((await screen.findByRole('alert')).textContent || '').toContain('Checkout was canceled.');
+    expect(window.location.search.includes('billing=')).toBe(false);
+  });
+
+  it('tracks successful Stripe billing returns against the matched checkout session', async () => {
+    window.history.replaceState({}, '', '/?billing=success');
+    window.sessionStorage.setItem(
+      'dullypdf.pendingBillingCheckout',
+      JSON.stringify({
+        requestedKind: 'pro_yearly',
+        sessionId: 'cs_completed_123',
+        attemptId: 'attempt_completed_123',
+        checkoutPriceId: 'price_monthly',
+        startedAt: 1700000000000,
+      }),
+    );
+    apiServiceMocks.getProfile.mockResolvedValue({
+      email: 'qa@example.com',
+      role: 'pro',
+      creditsRemaining: 100,
+      availableCredits: 100,
+      monthlyCreditsRemaining: 100,
+      refillCreditsRemaining: 0,
+      refillCreditsLocked: false,
+      creditPricing: {
+        pageBucketSize: 5,
+        renameBaseCost: 1,
+        remapBaseCost: 1,
+        renameRemapBaseCost: 2,
+      },
+      billing: {
+        enabled: true,
+        hasSubscription: true,
+        plans: {
+          pro_monthly: {
+            kind: 'pro_monthly',
+            mode: 'subscription',
+            priceId: 'price_monthly',
+            label: 'Pro Monthly',
+            currency: 'usd',
+            unitAmount: 1000,
+            interval: 'month',
+            refillCredits: null,
+          },
+          pro_yearly: {
+            kind: 'pro_yearly',
+            mode: 'subscription',
+            priceId: 'price_yearly',
+            label: 'Pro Yearly',
+            currency: 'usd',
+            unitAmount: 10000,
+            interval: 'year',
+            refillCredits: null,
+          },
+        },
+      },
+      limits: { detectMaxPages: 10, fillableMaxPages: 20, savedFormsMax: 5 },
+    });
+    apiServiceMocks.reconcileBillingCheckoutFulfillment.mockResolvedValue({
+      success: true,
+      dryRun: false,
+      scope: 'self',
+      auditedEventCount: 1,
+      candidateEventCount: 0,
+      pendingReconciliationCount: 0,
+      reconciledCount: 0,
+      alreadyProcessedCount: 1,
+      processingCount: 0,
+      retryableCount: 0,
+      failedCount: 0,
+      invalidCount: 0,
+      skippedForUserCount: 0,
+      events: [
+        {
+          eventId: 'evt_completed_123',
+          checkoutSessionId: 'cs_completed_123',
+          checkoutAttemptId: 'attempt_completed_123',
+          checkoutKind: 'pro_monthly',
+          checkoutPriceId: 'price_monthly',
+          billingEventStatus: 'processed',
+        },
+      ],
+    });
+
+    const App = await importApp();
+    render(<App />);
+
+    await settleAuthAsSignedIn();
+
+    await waitFor(() => {
+      expect(apiServiceMocks.reconcileBillingCheckoutFulfillment).toHaveBeenCalledTimes(1);
+      expect(analyticsMocks.trackGoogleAdsBillingPurchase).toHaveBeenCalledWith({
+        kind: 'pro_monthly',
+        transactionId: 'cs_completed_123',
+        value: 10,
+        currency: 'usd',
+      });
+    });
+    expect(window.sessionStorage.getItem('dullypdf.pendingBillingCheckout')).toBeNull();
     expect(window.location.search.includes('billing=')).toBe(false);
   });
 

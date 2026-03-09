@@ -67,6 +67,8 @@ describe('ApiService', () => {
       kind: 'pro_yearly',
       sessionId: 'cs_123',
       checkoutUrl: 'https://checkout.local/session',
+      attemptId: 'attempt_123',
+      checkoutPriceId: 'price_yearly_123',
     }).mockResolvedValueOnce({
       success: true,
       dryRun: false,
@@ -81,7 +83,13 @@ describe('ApiService', () => {
       failedCount: 0,
       invalidCount: 0,
       skippedForUserCount: 0,
-      events: [{ eventId: 'evt_1' }],
+      events: [{
+        eventId: 'evt_1',
+        checkoutSessionId: 'cs_123',
+        checkoutAttemptId: 'attempt_123',
+        checkoutKind: 'pro_yearly',
+        checkoutPriceId: 'price_yearly_123',
+      }],
     }).mockResolvedValueOnce({
       success: true,
       subscriptionId: 'sub_123',
@@ -96,8 +104,11 @@ describe('ApiService', () => {
     expect(response.success).toBe(true);
     expect(response.kind).toBe('pro_yearly');
     expect(response.checkoutUrl).toBe('https://checkout.local/session');
+    expect(response.attemptId).toBe('attempt_123');
+    expect(response.checkoutPriceId).toBe('price_yearly_123');
     expect(reconcileResponse.success).toBe(true);
     expect(reconcileResponse.reconciledCount).toBe(1);
+    expect(reconcileResponse.events[0].checkoutAttemptId).toBe('attempt_123');
     expect(cancelResponse.success).toBe(true);
     expect(cancelResponse.subscriptionId).toBe('sub_123');
     expect(cancelResponse.cancelAtPeriodEnd).toBe(true);

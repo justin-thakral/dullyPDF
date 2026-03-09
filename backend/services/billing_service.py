@@ -353,7 +353,7 @@ def _find_open_checkout_session(
     user_id: str,
     customer_id: Optional[str],
     allowed_checkout_kinds: set[str],
-) -> Optional[Dict[str, str]]:
+) -> Optional[Dict[str, Optional[str]]]:
     normalized_customer_id = (customer_id or "").strip()
     normalized_user_id = (user_id or "").strip()
     if not normalized_customer_id or not normalized_user_id:
@@ -388,6 +388,18 @@ def _find_open_checkout_session(
             "sessionId": session_id,
             "url": session_url,
             "customerId": normalized_customer_id,
+            "checkoutAttemptId": first_nonempty(
+                [
+                    str(metadata.get("checkoutAttemptId") or ""),
+                    str(metadata.get("checkout_attempt_id") or ""),
+                ]
+            ),
+            "checkoutPriceId": first_nonempty(
+                [
+                    str(metadata.get("checkoutPriceId") or ""),
+                    str(metadata.get("checkout_price_id") or ""),
+                ]
+            ),
         }
     return None
 
@@ -397,7 +409,7 @@ def _find_open_pro_checkout_session(
     stripe: Any,
     user_id: str,
     customer_id: Optional[str],
-) -> Optional[Dict[str, str]]:
+) -> Optional[Dict[str, Optional[str]]]:
     return _find_open_checkout_session(
         stripe=stripe,
         user_id=user_id,
@@ -411,7 +423,7 @@ def _find_open_refill_checkout_session(
     stripe: Any,
     user_id: str,
     customer_id: Optional[str],
-) -> Optional[Dict[str, str]]:
+) -> Optional[Dict[str, Optional[str]]]:
     return _find_open_checkout_session(
         stripe=stripe,
         user_id=user_id,
@@ -916,13 +928,13 @@ def create_checkout_session(
     normalized_checkout_attempt_id = (checkout_attempt_id or "").strip() or None
     if not metadata["userId"]:
         raise BillingConfigError("Missing user id for checkout session.")
+    if normalized_checkout_attempt_id:
+        metadata["checkoutAttemptId"] = normalized_checkout_attempt_id
     if plan.kind == CHECKOUT_KIND_REFILL_500:
         refill_credits = resolve_refill_credit_pack_size_for_price(plan.price_id)
         if refill_credits is None:
             raise BillingConfigError("Missing refill credit configuration for STRIPE_PRICE_REFILL_500.")
         metadata["refillCredits"] = str(refill_credits)
-        if normalized_checkout_attempt_id:
-            metadata["checkoutAttemptId"] = normalized_checkout_attempt_id
 
     resolved_customer_id: Optional[str] = None
 
@@ -1030,7 +1042,13 @@ def create_checkout_session(
             resolved_customer_id,
         ]
     )
-    return {"sessionId": session_id, "url": session_url, "customerId": resolved_customer_id}
+    return {
+        "sessionId": session_id,
+        "url": session_url,
+        "customerId": resolved_customer_id,
+        "checkoutAttemptId": normalized_checkout_attempt_id,
+        "checkoutPriceId": plan.price_id,
+    }
 
 
 def _extract_subscription_price_id(subscription_obj: Dict[str, Any]) -> Optional[str]:

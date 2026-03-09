@@ -3,7 +3,12 @@
  */
 import React, { useEffect, useRef, useState } from 'react';
 import type { FirebaseError } from 'firebase/app';
-import { GithubAuthProvider, GoogleAuthProvider } from 'firebase/auth';
+import {
+  getAdditionalUserInfo,
+  GithubAuthProvider,
+  GoogleAuthProvider,
+  type UserCredential,
+} from 'firebase/auth';
 import * as firebaseui from 'firebaseui';
 import 'firebaseui/dist/firebaseui.css';
 import './LoginPage.css';
@@ -17,6 +22,7 @@ import {
   getRecaptchaToken,
   loadRecaptcha,
 } from '../../utils/recaptcha';
+import { trackGoogleAdsSignup } from '../../utils/googleAds';
 import { Alert } from '../ui/Alert';
 
 interface LoginPageProps {
@@ -98,9 +104,13 @@ const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated, onCancel }) => {
         },
       ],
       callbacks: {
-        signInSuccessWithAuthResult: () => {
+        signInSuccessWithAuthResult: (authResult: UserCredential) => {
           setError(null);
           setInfo(null);
+          const additionalInfo = getAdditionalUserInfo(authResult);
+          if (additionalInfo?.isNewUser) {
+            trackGoogleAdsSignup(authResult.user?.uid);
+          }
           onAuthenticated?.();
           return false;
         },
@@ -170,7 +180,8 @@ const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated, onCancel }) => {
       if (mode === 'signin') {
         await Auth.signIn(email, password);
       } else {
-        await Auth.signUp(email, password);
+        const user = await Auth.signUp(email, password);
+        trackGoogleAdsSignup(user.uid);
         setInfo('Verification email sent. Check your inbox before continuing.');
       }
       onAuthenticated?.();

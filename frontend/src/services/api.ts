@@ -168,7 +168,14 @@ export class ApiService {
    */
   static async createBillingCheckoutSession(
     kind: BillingCheckoutKind,
-  ): Promise<{ success: boolean; kind: BillingCheckoutKind; sessionId: string; checkoutUrl: string }> {
+  ): Promise<{
+      success: boolean;
+      kind: BillingCheckoutKind;
+      sessionId: string;
+      checkoutUrl: string;
+      attemptId?: string | null;
+      checkoutPriceId?: string | null;
+    }> {
     const attemptId = buildBillingCheckoutAttemptId();
     const response = await apiFetch('POST', '/api/billing/checkout-session', {
       headers: {
@@ -176,7 +183,19 @@ export class ApiService {
       },
       body: JSON.stringify({ kind, attemptId }),
     });
-    return apiJsonFetch(response);
+    const payload = await apiJsonFetch<{
+      success: boolean;
+      kind: BillingCheckoutKind;
+      sessionId: string;
+      checkoutUrl: string;
+      attemptId?: string | null;
+      checkoutPriceId?: string | null;
+    }>(response);
+    return {
+      ...payload,
+      attemptId: typeof payload?.attemptId === 'string' ? payload.attemptId : null,
+      checkoutPriceId: typeof payload?.checkoutPriceId === 'string' ? payload.checkoutPriceId : null,
+    };
   }
 
   /**
@@ -204,7 +223,9 @@ export class ApiService {
         eventUserId?: string | null;
         created?: number | null;
         checkoutSessionId?: string | null;
+        checkoutAttemptId?: string | null;
         checkoutKind?: string | null;
+        checkoutPriceId?: string | null;
         billingEventStatus?: string | null;
       }>;
     }> {
