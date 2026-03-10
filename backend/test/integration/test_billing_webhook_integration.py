@@ -55,6 +55,16 @@ def _install_fake_stripe_module(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(billing_service, "_load_stripe_module", lambda: _FakeStripe)
 
 
+def _active_pro_billing_record(uid: str = "integration-user") -> user_database.UserBillingRecord:
+    return user_database.UserBillingRecord(
+        uid=uid,
+        customer_id="cus_integration",
+        subscription_id="sub_integration",
+        subscription_status="active",
+        subscription_price_id="price_pro_monthly",
+    )
+
+
 @pytest.fixture
 def client() -> TestClient:
     return TestClient(main.app)
@@ -105,7 +115,11 @@ def test_webhook_accepts_valid_signature_and_dispatches_refill(
             openai_credits_remaining=500,
         ),
     )
-    mocker.patch.object(billing_routes, "get_user_billing_record", return_value=None)
+    mocker.patch.object(
+        billing_routes,
+        "get_user_billing_record",
+        return_value=_active_pro_billing_record(),
+    )
     mocker.patch.object(billing_routes, "resolve_refill_credit_pack_size_for_price", return_value=500)
     refill_mock = mocker.patch.object(billing_routes, "add_refill_openai_credits", return_value=500)
     complete_mock = mocker.patch.object(billing_routes, "complete_billing_event", return_value=None)
@@ -359,7 +373,11 @@ def test_webhook_invoice_paid_dispatches_pro_activation(
         "find_user_id_by_subscription_id",
         return_value="integration-user",
     )
-    mocker.patch.object(billing_routes, "get_user_billing_record", return_value=None)
+    mocker.patch.object(
+        billing_routes,
+        "get_user_billing_record",
+        return_value=_active_pro_billing_record(),
+    )
     activate_mock = mocker.patch.object(
         billing_routes,
         "activate_pro_membership_with_subscription",
@@ -510,7 +528,11 @@ def test_webhook_subscription_updated_ignores_non_pro_price_events(
 
     mocker.patch.object(billing_routes, "start_billing_event", return_value=True)
     mocker.patch.object(billing_routes, "is_pro_price_id", return_value=False)
-    mocker.patch.object(billing_routes, "get_user_billing_record", return_value=None)
+    mocker.patch.object(
+        billing_routes,
+        "get_user_billing_record",
+        return_value=_active_pro_billing_record(),
+    )
     set_subscription_mock = mocker.patch.object(billing_routes, "set_user_billing_subscription", return_value=None)
     set_role_mock = mocker.patch.object(billing_routes, "set_user_role", return_value=None)
     downgrade_mock = mocker.patch.object(billing_routes, "downgrade_to_base_membership", return_value=None)
@@ -561,7 +583,11 @@ def test_webhook_persists_and_deduplicates_billing_events(
             openai_credits_remaining=500,
         ),
     )
-    mocker.patch.object(billing_routes, "get_user_billing_record", return_value=None)
+    mocker.patch.object(
+        billing_routes,
+        "get_user_billing_record",
+        return_value=_active_pro_billing_record(),
+    )
     mocker.patch.object(billing_routes, "resolve_refill_credit_pack_size_for_price", return_value=500)
     refill_mock = mocker.patch.object(billing_routes, "add_refill_openai_credits", return_value=500)
 
@@ -644,6 +670,11 @@ def test_webhook_retry_after_partial_failure_does_not_double_refill_credits(
         user_database.firebase_firestore,
         "transactional",
         lambda fn: fn,
+    )
+    monkeypatch.setattr(
+        billing_routes,
+        "get_user_billing_record",
+        lambda *_args, **_kwargs: _active_pro_billing_record(),
     )
 
     complete_calls = {"count": 0}
