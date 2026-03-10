@@ -39,6 +39,10 @@ through Hosting rewrites so the browser can call them as same-origin `/api/...` 
 primarily to remove CORS preflights (OPTIONS) from fast JSON endpoints (notably reCAPTCHA verification
 and profile fetches) so Cloud Run scale-to-zero cold starts feel less blocking.
 
+Given the current signed-in startup flow, production should keep `BACKEND_MIN_INSTANCES=1` in
+`env/backend.prod.env` so the backend stays warm for same-origin `/api/profile`, `/api/groups`, and
+`/api/saved-forms` bootstrap requests. A future warm-shell split could relax that requirement.
+
 Some endpoints are intentionally not proxied (OpenAI routes, detection routes, and large upload/stream
 routes) to avoid Firebase Hosting's Cloud Run rewrite timeout (approximately 60 seconds) and to keep
 large transfers direct-to-Cloud-Run.
