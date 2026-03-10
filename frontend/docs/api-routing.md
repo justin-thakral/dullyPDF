@@ -27,6 +27,8 @@ The split is implemented in `frontend/src/services/api.ts`, `frontend/src/servic
 These calls are made with relative `/api/...` paths:
 
 - `GET /api/profile`
+- `PATCH /api/profile/downgrade-retention`
+- `POST /api/profile/downgrade-retention/delete-now`
 - `POST /api/contact`
 - `POST /api/recaptcha/assess`
 - `POST /api/billing/checkout-session`
@@ -37,6 +39,12 @@ These calls are made with relative `/api/...` paths:
 - `GET /api/saved-forms/{formId}`
 - `DELETE /api/saved-forms/{formId}`
 - `POST /api/saved-forms/{formId}/session`
+- `PATCH /api/saved-forms/{formId}/editor-snapshot`
+- `GET /api/groups`
+- `POST /api/groups`
+- `GET /api/groups/{groupId}`
+- `PATCH /api/groups/{groupId}`
+- `DELETE /api/groups/{groupId}`
 - `GET /api/fill-links`
 - `POST /api/fill-links`
 - `PATCH /api/fill-links/{linkId}`
@@ -67,7 +75,7 @@ These calls are made with absolute URLs (via `buildApiUrl(...)` or detection bas
 
 ## Production behavior
 
-`firebase.json` includes Hosting rewrites for selected `/api/...` routes (for example `/api/profile`, `/api/contact`, `/api/recaptcha/assess`, billing endpoints under `/api/billing/*`, `/api/saved-forms` patterns, `/api/fill-links*`, and `/api/health`). A final SPA rewrite sends public routes such as `/respond/:token`, usage docs, blog pages, and intent pages to `index.html`.
+`firebase.json` must rewrite the backend-owned same-origin path families to Cloud Run before the final SPA rewrite. In practice that means `/api/profile` plus `/api/profile/**`, `/api/saved-forms` plus `/api/saved-forms/**`, `/api/groups` plus `/api/groups/**`, `/api/fill-links` plus `/api/fill-links/**`, along with the exact health/contact/recaptcha/billing/schema routes. If a same-origin API path is missing from Hosting rewrites, Firebase serves `index.html` and the frontend will fail when it tries to parse HTML as JSON.
 
 ## Local development behavior
 
