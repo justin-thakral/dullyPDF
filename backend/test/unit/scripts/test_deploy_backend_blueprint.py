@@ -65,6 +65,13 @@ def test_deploy_backend_requires_adc_only_firebase_auth_in_prod() -> None:
     assert '--service-account "$BACKEND_RUNTIME_SERVICE_ACCOUNT"' in text
 
 
+def test_deploy_backend_pins_prod_min_instances() -> None:
+    text = _script_text()
+    assert 'BACKEND_MIN_INSTANCES="${BACKEND_MIN_INSTANCES:-1}"' in text
+    assert "require_integer_ge BACKEND_MIN_INSTANCES 1" in text
+    assert '--min "$BACKEND_MIN_INSTANCES"' in text
+
+
 def test_backend_prod_env_example_documents_stripe_as_required() -> None:
     stripe_heading = next(
         line.strip()
@@ -86,5 +93,7 @@ def test_backend_prod_env_example_documents_adc_only_and_fill_link_placeholder_r
     assert "at least 32 characters" in text
     assert "must use ADC" in text
     assert "BACKEND_RUNTIME_SERVICE_ACCOUNT=dullypdf-backend-runtime@dullypdf.iam.gserviceaccount.com" in text
+    assert "BACKEND_MIN_INSTANCES=1" in text
+    assert 'Keep one backend instance warm in prod' in text
     assert "# FIREBASE_CREDENTIALS_SECRET=" in text
     assert "GOOGLE_APPLICATION_CREDENTIALS unset" in text

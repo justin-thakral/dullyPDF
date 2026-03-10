@@ -29,6 +29,8 @@ set -a
 source "$ENV_FILE"
 set +a
 
+BACKEND_MIN_INSTANCES="${BACKEND_MIN_INSTANCES:-1}"
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/_detector_routing.sh"
 
@@ -94,6 +96,20 @@ require_empty() {
   fi
 }
 
+require_integer_ge() {
+  local name="$1"
+  local min_value="$2"
+  local actual="${!name:-}"
+  if [[ ! "$actual" =~ ^[0-9]+$ ]]; then
+    echo "Expected $name to be an integer >= ${min_value} (got '${actual}')." >&2
+    exit 1
+  fi
+  if (( actual < min_value )); then
+    echo "Expected $name to be >= ${min_value} (got '${actual}')." >&2
+    exit 1
+  fi
+}
+
 require_fill_link_secret_quality() {
   local name="$1"
   local actual="${!name:-}"
@@ -148,6 +164,7 @@ require_nonempty OPENAI_REMAP_TASKS_QUEUE_HEAVY
 require_nonempty OPENAI_REMAP_SERVICE_URL_LIGHT
 require_nonempty OPENAI_REMAP_SERVICE_URL_HEAVY
 require_nonempty OPENAI_REMAP_TASKS_SERVICE_ACCOUNT
+require_integer_ge BACKEND_MIN_INSTANCES 1
 
 if [[ "${SANDBOX_CORS_ORIGINS}" == "*" ]]; then
   echo "SANDBOX_CORS_ORIGINS cannot be '*'" >&2
@@ -388,6 +405,7 @@ gcloud run deploy "$SERVICE_NAME" \
   --image "$BACKEND_IMAGE" \
   --region "$REGION" \
   --project "$PROJECT_ID" \
+  --min "$BACKEND_MIN_INSTANCES" \
   --service-account "$BACKEND_RUNTIME_SERVICE_ACCOUNT" \
   --allow-unauthenticated \
   --env-vars-file "$TMP_ENV_FILE" \
