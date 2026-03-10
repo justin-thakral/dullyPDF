@@ -177,6 +177,13 @@
         }
       },
       {
+        "source": "/api/profile/**",
+        "run": {
+          "serviceId": "dullypdf-backend",
+          "region": "us-central1"
+        }
+      },
+      {
         "source": "/api/billing/checkout-session",
         "run": {
           "serviceId": "dullypdf-backend",
@@ -226,14 +233,21 @@
         }
       },
       {
-        "source": "/api/saved-forms/*",
+        "source": "/api/saved-forms/**",
         "run": {
           "serviceId": "dullypdf-backend",
           "region": "us-central1"
         }
       },
       {
-        "source": "/api/saved-forms/*/session",
+        "source": "/api/groups",
+        "run": {
+          "serviceId": "dullypdf-backend",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/groups/**",
         "run": {
           "serviceId": "dullypdf-backend",
           "region": "us-central1"
