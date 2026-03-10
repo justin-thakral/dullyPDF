@@ -49,6 +49,10 @@ class BillingCheckoutConflictError(RuntimeError):
     """Raised when checkout cannot proceed due to an existing billing state."""
 
 
+class BillingCheckoutSessionNotFoundError(RuntimeError):
+    """Raised when a targeted Stripe checkout session no longer exists."""
+
+
 @dataclass(frozen=True)
 class CheckoutPlan:
     kind: str
@@ -286,7 +290,6 @@ def _list_existing_customer_ids_for_user(
     customers = stripe.Customer.list(email=normalized_email, limit=25)
     normalized_user_id = (user_id or "").strip()
     matching_user_ids: list[str] = []
-    email_fallback_ids: list[str] = []
     seen_ids: set[str] = set()
     for customer in _extract_list_data(customers):
         customer_id = str(customer.get("id") or "").strip()
@@ -302,9 +305,7 @@ def _list_existing_customer_ids_for_user(
         )
         if customer_user_id and customer_user_id == normalized_user_id:
             matching_user_ids.append(customer_id)
-            continue
-        email_fallback_ids.append(customer_id)
-    return [*matching_user_ids, *email_fallback_ids]
+    return matching_user_ids
 
 
 def _resolve_or_create_customer_id(
@@ -353,9 +354,13 @@ def _find_open_checkout_session(
     user_id: str,
     customer_id: Optional[str],
     allowed_checkout_kinds: set[str],
+    expected_checkout_attempt_id: Optional[str] = None,
+    expected_checkout_price_id: Optional[str] = None,
 ) -> Optional[Dict[str, Optional[str]]]:
     normalized_customer_id = (customer_id or "").strip()
     normalized_user_id = (user_id or "").strip()
+    normalized_expected_attempt_id = (expected_checkout_attempt_id or "").strip() or None
+    normalized_expected_price_id = (expected_checkout_price_id or "").strip() or None
     if not normalized_customer_id or not normalized_user_id:
         return None
     normalized_allowed_kinds = {(value or "").strip().lower() for value in allowed_checkout_kinds if value}
@@ -380,6 +385,22 @@ def _find_open_checkout_session(
         )
         if session_user_id != normalized_user_id:
             continue
+        session_attempt_id = first_nonempty(
+            [
+                str(metadata.get("checkoutAttemptId") or ""),
+                str(metadata.get("checkout_attempt_id") or ""),
+            ]
+        )
+        if normalized_expected_attempt_id and session_attempt_id != normalized_expected_attempt_id:
+            continue
+        session_price_id = first_nonempty(
+            [
+                str(metadata.get("checkoutPriceId") or ""),
+                str(metadata.get("checkout_price_id") or ""),
+            ]
+        )
+        if normalized_expected_price_id and session_price_id != normalized_expected_price_id:
+            continue
         session_id = str(session.get("id") or "").strip()
         session_url = str(session.get("url") or "").strip()
         if not session_id or not session_url:
@@ -388,18 +409,8 @@ def _find_open_checkout_session(
             "sessionId": session_id,
             "url": session_url,
             "customerId": normalized_customer_id,
-            "checkoutAttemptId": first_nonempty(
-                [
-                    str(metadata.get("checkoutAttemptId") or ""),
-                    str(metadata.get("checkout_attempt_id") or ""),
-                ]
-            ),
-            "checkoutPriceId": first_nonempty(
-                [
-                    str(metadata.get("checkoutPriceId") or ""),
-                    str(metadata.get("checkout_price_id") or ""),
-                ]
-            ),
+            "checkoutAttemptId": session_attempt_id,
+            "checkoutPriceId": session_price_id,
         }
     return None
 
@@ -409,12 +420,16 @@ def _find_open_pro_checkout_session(
     stripe: Any,
     user_id: str,
     customer_id: Optional[str],
+    checkout_attempt_id: Optional[str] = None,
+    checkout_price_id: Optional[str] = None,
 ) -> Optional[Dict[str, Optional[str]]]:
     return _find_open_checkout_session(
         stripe=stripe,
         user_id=user_id,
         customer_id=customer_id,
         allowed_checkout_kinds={CHECKOUT_KIND_PRO_MONTHLY, CHECKOUT_KIND_PRO_YEARLY},
+        expected_checkout_attempt_id=checkout_attempt_id,
+        expected_checkout_price_id=checkout_price_id,
     )
 
 
@@ -423,12 +438,16 @@ def _find_open_refill_checkout_session(
     stripe: Any,
     user_id: str,
     customer_id: Optional[str],
+    checkout_attempt_id: Optional[str] = None,
+    checkout_price_id: Optional[str] = None,
 ) -> Optional[Dict[str, Optional[str]]]:
     return _find_open_checkout_session(
         stripe=stripe,
         user_id=user_id,
         customer_id=customer_id,
         allowed_checkout_kinds={CHECKOUT_KIND_REFILL_500},
+        expected_checkout_attempt_id=checkout_attempt_id,
+        expected_checkout_price_id=checkout_price_id,
     )
 
 
@@ -850,6 +869,47 @@ def list_recent_checkout_completion_events(
     return collected[:resolved_limit]
 
 
+def retrieve_checkout_session(*, session_id: str) -> Dict[str, Any]:
+    """Fetch a specific Stripe Checkout session for targeted self reconciliation."""
+    stripe = _load_stripe_module()
+    secret_key = env_value("STRIPE_SECRET_KEY")
+    normalized_session_id = (session_id or "").strip()
+    if not secret_key:
+        raise BillingConfigError("Missing STRIPE_SECRET_KEY.")
+    if not normalized_session_id:
+        raise BillingConfigError("Missing Stripe checkout session id.")
+    stripe.api_key = secret_key
+
+    checkout_api = getattr(stripe, "checkout", None)
+    session_api = getattr(checkout_api, "Session", None)
+    retrieve_session_fn = getattr(session_api, "retrieve", None)
+    if not callable(retrieve_session_fn):
+        raise BillingConfigError("Stripe SDK does not expose checkout.Session.retrieve for reconciliation.")
+
+    try:
+        session = retrieve_session_fn(normalized_session_id)
+    except Exception as exc:
+        exc_name = exc.__class__.__name__.strip().lower()
+        exc_code = str(getattr(exc, "code", "") or "").strip().lower()
+        exc_message = str(exc).strip().lower()
+        exc_status = getattr(exc, "http_status", None)
+        if (
+            exc_name == "invalidrequesterror"
+            and (
+                exc_code == "resource_missing"
+                or exc_status == 404
+                or "no such checkout.session" in exc_message
+                or "no such checkout session" in exc_message
+            )
+        ):
+            raise BillingCheckoutSessionNotFoundError("Stripe checkout session was not found.") from exc
+        raise
+    payload = _stripe_object_to_dict(session)
+    if not payload:
+        raise BillingCheckoutSessionNotFoundError("Stripe checkout session was not found.")
+    return payload
+
+
 def resolve_refill_credit_pack_size() -> int:
     raw = env_value("STRIPE_REFILL_CREDITS")
     if not raw:
@@ -950,6 +1010,7 @@ def create_checkout_session(
             stripe=stripe,
             user_id=metadata["userId"],
             customer_id=resolved_customer_id,
+            checkout_price_id=plan.price_id,
         )
         if existing_open_refill_checkout:
             return existing_open_refill_checkout
@@ -964,6 +1025,7 @@ def create_checkout_session(
             stripe=stripe,
             user_id=metadata["userId"],
             customer_id=resolved_customer_id,
+            checkout_price_id=plan.price_id,
         )
         if existing_open_pro_checkout:
             return existing_open_pro_checkout
@@ -983,24 +1045,22 @@ def create_checkout_session(
                 stripe=stripe,
                 user_id=metadata["userId"],
                 customer_id=existing_customer_id,
+                checkout_price_id=plan.price_id,
             )
             if existing_open_pro_checkout:
                 return existing_open_pro_checkout
 
         active_subscription_id: Optional[str] = None
-        active_subscription_customer_id: Optional[str] = None
         for existing_customer_id in customer_ids_to_check:
             active_subscription_id = _find_active_pro_subscription_for_customer(
                 stripe=stripe,
                 customer_id=existing_customer_id,
             )
             if active_subscription_id:
-                active_subscription_customer_id = existing_customer_id
                 break
         if active_subscription_id:
-            customer_suffix = active_subscription_customer_id or resolved_customer_id
             raise BillingCheckoutConflictError(
-                f"An active Pro subscription already exists for this customer ({active_subscription_id}, {customer_suffix})."
+                "An active Pro subscription already exists for this user. Manage the existing subscription or contact support."
             )
 
     create_payload: Dict[str, Any] = {

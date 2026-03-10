@@ -13,11 +13,12 @@ import type {
 import { deriveMappingConfidence, parseConfidence } from '../utils/confidence';
 import { normaliseDataKey } from '../utils/dataSource';
 import { computeCheckboxMeta, type CheckboxMeta } from '../utils/checkboxMeta';
-import { applyFieldNameUpdatesToList, enqueueByName, takeNextByName } from '../utils/fieldUpdates';
+import { applyFieldNameUpdatesToList, enqueueByName } from '../utils/fieldUpdates';
 import { ALERT_MESSAGES } from '../utils/alertMessages';
 import { resolveIdentifierKey } from '../utils/dataSource';
 import { buildTemplateFields } from '../utils/fields';
 import { debugLog } from '../utils/debug';
+import { applyRenamePayloadToFields } from '../utils/openAiFields';
 import { ApiService } from '../services/api';
 import { ApiError } from '../services/apiConfig';
 import { fetchDetectionStatus } from '../services/detectionApi';
@@ -28,7 +29,10 @@ export interface UseOpenAiPipelineDeps {
   fieldsRef: React.MutableRefObject<PdfField[]>;
   loadTokenRef: React.MutableRefObject<number>;
   detectSessionId: string | null;
+  setDetectSessionId: (sessionId: string | null) => void;
+  setMappingSessionId: (sessionId: string | null) => void;
   activeSavedFormId: string | null;
+  pageCount: number;
   dataColumns: string[];
   schemaId: string | null;
   pendingAutoActionsRef: React.MutableRefObject<PendingAutoActions | null>;
@@ -146,43 +150,8 @@ export function useOpenAiPipeline(deps: UseOpenAiPipelineDeps) {
 
   const applyRenameResults = useCallback(
     (renamedFieldsPayload?: Array<Record<string, any>>): PdfField[] | null => {
-      if (!Array.isArray(renamedFieldsPayload) || !renamedFieldsPayload.length) return null;
-      const renamesByOriginal = new Map<string, NameQueue<Record<string, any>>>();
-      for (const entry of renamedFieldsPayload) {
-        const original =
-          entry.originalName || entry.original_name || entry.originalFieldName || entry.name;
-        if (typeof original === 'string' && original.trim()) {
-          enqueueByName(renamesByOriginal, original.trim(), entry);
-        }
-      }
-      if (!renamesByOriginal.size) return null;
-
-      const updated: PdfField[] = [];
-      for (const field of deps.fieldsRef.current) {
-        const rename = takeNextByName(renamesByOriginal, field.name);
-        if (!rename) {
-          updated.push(field);
-          continue;
-        }
-        const renameConfidence = parseConfidence(rename.renameConfidence ?? rename.rename_confidence);
-        const fieldConfidence = parseConfidence(rename.isItAfieldConfidence ?? rename.is_it_a_field_confidence);
-        const hasMappingConf =
-          Object.prototype.hasOwnProperty.call(rename, 'mappingConfidence') ||
-          Object.prototype.hasOwnProperty.call(rename, 'mapping_confidence');
-        const mappingConfidence = parseConfidence(rename.mappingConfidence ?? rename.mapping_confidence);
-        const nextName = String(rename.name || rename.suggestedRename || field.name).trim() || field.name;
-        updated.push({
-          ...field,
-          name: nextName,
-          mappingConfidence: hasMappingConf ? mappingConfidence : field.mappingConfidence,
-          renameConfidence: renameConfidence ?? field.renameConfidence,
-          fieldConfidence: fieldConfidence ?? field.fieldConfidence,
-          groupKey: rename.groupKey ?? field.groupKey,
-          optionKey: rename.optionKey ?? field.optionKey,
-          optionLabel: rename.optionLabel ?? field.optionLabel,
-          groupLabel: rename.groupLabel ?? field.groupLabel,
-        });
-      }
+      const updated = applyRenamePayloadToFields(deps.fieldsRef.current, renamedFieldsPayload);
+      if (!updated || updated.length === 0) return null;
       deps.resetFieldHistory(updated);
       return updated;
     },
@@ -244,6 +213,26 @@ export function useOpenAiPipeline(deps: UseOpenAiPipelineDeps) {
     [applyMappingResults, clearPendingAutoActions, deps, resolveCreditExhaustionMessage],
   );
 
+  const ensureRenameSessionId = useCallback(async (): Promise<string | null> => {
+    if (deps.detectSessionId) {
+      return deps.detectSessionId;
+    }
+    if (!deps.activeSavedFormId) {
+      return null;
+    }
+    const activeFields = deps.fieldsRef.current;
+    if (!activeFields.length) {
+      return null;
+    }
+    const sessionPayload = await ApiService.createSavedFormSession(deps.activeSavedFormId, {
+      fields: buildTemplateFields(activeFields),
+      pageCount: deps.pageCount || undefined,
+    });
+    deps.setDetectSessionId(sessionPayload.sessionId);
+    deps.setMappingSessionId(sessionPayload.sessionId);
+    return sessionPayload.sessionId;
+  }, [deps]);
+
   const handleMappingSuccess = useCallback(() => {
     setHasMappedSchema(true);
     deps.setBannerNotice({
@@ -270,7 +259,17 @@ export function useOpenAiPipeline(deps: UseOpenAiPipelineDeps) {
         return null;
       }
       clearPendingAutoActions();
-      const activeSessionId = sessionId || deps.detectSessionId;
+      let activeSessionId = sessionId || deps.detectSessionId;
+      if (!activeSessionId && deps.activeSavedFormId && deps.fieldsRef.current.length) {
+        try {
+          activeSessionId = await ensureRenameSessionId();
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Failed to prepare this saved form for rename.';
+          setOpenAiError(message);
+          debugLog('Failed to prepare saved form rename session', message);
+          return null;
+        }
+      }
       if (!activeSessionId) {
         setOpenAiError(ALERT_MESSAGES.uploadPdfForRename);
         return null;
@@ -362,7 +361,7 @@ export function useOpenAiPipeline(deps: UseOpenAiPipelineDeps) {
         if (hasSchemaForMap) setMapSchemaInProgress(false);
       }
     },
-    [applyRenameResults, clearPendingAutoActions, deps, resolveCreditExhaustionMessage],
+    [applyRenameResults, clearPendingAutoActions, deps, ensureRenameSessionId, resolveCreditExhaustionMessage],
   );
 
   const confirmRemap = useCallback(async () => {
@@ -434,9 +433,12 @@ export function useOpenAiPipeline(deps: UseOpenAiPipelineDeps) {
     if (!deps.verifiedUser) return 'Sign in to run Rename.';
     if (!deps.hasDocument) return 'Upload a PDF first.';
     if (deps.fieldsCount === 0) return 'Detect fields or add at least one field before Rename.';
-    if (!deps.detectSessionId) return 'Template session is still initializing. Try again in a moment.';
+    if (!deps.detectSessionId && !deps.activeSavedFormId) {
+      return 'Template session is still initializing. Try again in a moment.';
+    }
     return null;
   }, [
+    deps.activeSavedFormId,
     deps.detectSessionId,
     deps.fieldsCount,
     deps.hasDocument,

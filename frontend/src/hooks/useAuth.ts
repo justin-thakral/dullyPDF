@@ -10,7 +10,7 @@ import { debugLog } from '../utils/debug';
 export function useAuth(deps: {
   clearSavedFormsRetry: () => void;
   clearSavedForms: () => void;
-  refreshSavedForms: (options?: { allowRetry?: boolean }) => Promise<void>;
+  refreshSavedForms: (options?: { allowRetry?: boolean; throwOnError?: boolean }) => Promise<unknown>;
 }) {
   const [authReady, setAuthReady] = useState(false);
   const [authUser, setAuthUser] = useState<User | null>(null);
@@ -64,6 +64,10 @@ export function useAuth(deps: {
     } finally {
       setProfileLoading(false);
     }
+  }, []);
+
+  const mutateUserProfile = useCallback((updater: (previous: UserProfile | null) => UserProfile | null) => {
+    setUserProfile((previous) => updater(previous));
   }, []);
 
   const syncAuthSession = useCallback(
@@ -172,6 +176,7 @@ export function useAuth(deps: {
     profileLimits,
     userEmail,
     loadUserProfile,
+    mutateUserProfile,
     syncAuthSession,
     handleSignOut,
     handleRefreshVerification,

@@ -7,6 +7,8 @@ export type UsageDocsPageKey =
   | 'rename-mapping'
   | 'editor-workflow'
   | 'search-fill'
+  | 'fill-by-link'
+  | 'create-group'
   | 'save-download-profile'
   | 'troubleshooting';
 
@@ -46,11 +48,13 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
           <>
             <p>
               DullyPDF runs a fixed sequence: PDF upload -&gt; CommonForms detection -&gt; optional OpenAI Rename
-              and/or Map -&gt; editor cleanup -&gt; Search &amp; Fill -&gt; download/save.
+              and/or Map -&gt; editor cleanup -&gt; saved template -&gt; Search &amp; Fill or Fill By Link respondent
+              selection -&gt; download/save.
             </p>
             <p>
               Route-level behavior: `/detect-fields` creates the detection session, `/api/renames/ai` performs rename,
-              `/api/schema-mappings/ai` performs mapping, and Search &amp; Fill runs client-side over your local rows.
+              `/api/schema-mappings/ai` performs mapping, and Search &amp; Fill runs over your local rows or stored
+              Fill By Link respondent records.
             </p>
           </>
         ),
@@ -62,10 +66,12 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
           <ul>
             <li>PDF upload limit is 50MB (`UploadComponent` validation).</li>
             <li>Desktop is required for full editor usage. Mobile is walkthrough-only.</li>
-            <li>Search &amp; Fill record rows require CSV, XLSX, or JSON. TXT is schema-only.</li>
+            <li>Search &amp; Fill record rows can come from CSV, XLSX, JSON, or stored Fill By Link respondents. TXT is schema-only.</li>
+            <li>Fill By Link can be published from the active saved form or from an open group. Owners can optionally require every question before a respondent submission is accepted.</li>
             <li>OpenAI actions require sign-in and credits. Pricing is bucketed by page count (default 5 pages per bucket).</li>
             <li>Credits formula: total = baseCost x ceil(pageCount / bucketSize). Base costs: Rename=1, Remap=1, Rename+Map=2.</li>
             <li>Billing runs through Stripe from Profile: Pro Monthly, Pro Yearly, and a Pro-only 500-credit refill pack.</li>
+            <li>Public plan explainers live at <a href="/free-features">/free-features</a> and <a href="/premium-features">/premium-features</a>.</li>
           </ul>
         ),
       },
@@ -84,7 +90,13 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
               Use <a href="/usage-docs/editor-workflow">Editor Workflow</a> for drag/resize constraints and edit-history behavior.
             </li>
             <li>
-              Use <a href="/usage-docs/search-fill">Search &amp; Fill</a> for row caps, query modes, and field resolution heuristics.
+              Use <a href="/usage-docs/search-fill">Search &amp; Fill</a> for row caps, query modes, Fill By Link respondent use, and field resolution heuristics.
+            </li>
+            <li>
+              Use <a href="/usage-docs/fill-by-link">Fill By Link</a> for published link creation, respondent expectations, and response review.
+            </li>
+            <li>
+              Use <a href="/usage-docs/create-group">Create Group</a> for packet workflows, group Search &amp; Fill, and batch Rename + Map behavior.
             </li>
             <li>
               Use <a href="/usage-docs/troubleshooting">Troubleshooting</a> for exact validation/error messages and fast diagnosis steps.
@@ -114,7 +126,7 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
     navLabel: 'Getting Started',
     title: 'Getting Started',
     summary:
-      'A practical quick-start from upload to filled output, including when to pause and review results.',
+      'A practical quick-start from upload to filled output, including when to pause, publish a Fill By Link, and review results.',
     sections: [
       {
         id: 'quick-start-path',
@@ -125,7 +137,8 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
             <li>Wait for detection results, then check low-confidence items first.</li>
             <li>If naming is inconsistent, run Rename or Rename + Map (with schema ready).</li>
             <li>Clean geometry in the editor, then verify field types.</li>
-            <li>Load CSV/XLSX/JSON rows and run one controlled Search &amp; Fill test.</li>
+            <li>Save the template, then either publish Fill By Link or load CSV/XLSX/JSON rows for Search &amp; Fill.</li>
+            <li>Run one controlled Search &amp; Fill or respondent-selection test before production use.</li>
           </ol>
         ),
       },
@@ -157,6 +170,7 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
             <li>Verify page assignment for fields spanning multiple pages.</li>
             <li>Check checkbox groups/options (`groupKey`, `optionKey`) before filling.</li>
             <li>Run one test record through Search &amp; Fill before saving templates.</li>
+            <li>If using Fill By Link, verify the public form questions read clearly on a phone before sharing.</li>
             <li>Validate one date field and one checkbox group in the final output PDF.</li>
           </ul>
         ),
@@ -383,8 +397,8 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
             <li>Enable <code>Transform</code> mode to show resize handles while editing fields on the PDF.</li>
             <li><code>Transform</code> and <code>Info</code> are mutually exclusive to prevent drag/input conflicts.</li>
             <li><code>Edit</code> preset is the default when a form opens.</li>
-            <li>Moving is available whenever <code>Info</code> is off.</li>
-            <li>Drag fields to move and use handles to resize.</li>
+            <li>Moving and resizing are only available while <code>Transform</code> is on.</li>
+            <li>Drag fields to move and use handles to resize while <code>Transform</code> is enabled.</li>
             <li>Corner handles follow standard freeform resize behavior by default (independent width/height).</li>
             <li>Hold <code>Shift</code> while dragging a corner to preserve aspect ratio for that drag.</li>
             <li>Standard fields expose four corners plus middle edge handles; small fields (for example tiny checkboxes) use a single bottom-right handle.</li>
@@ -433,6 +447,7 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
             <li><code>Esc</code>: clear active create tool</li>
             <li><code>Ctrl/Cmd+F</code> or <code>/</code>: focus field search</li>
             <li><code>[</code> and <code>]</code>: previous/next page</li>
+            <li><code>Arrow</code>: move selected field by the configured step when <code>Arrow keys</code> movement is enabled</li>
             <li><code>Alt+Arrow</code>: nudge selected field by 1 point</li>
             <li><code>Shift+Alt+Arrow</code>: nudge selected field by 10 points</li>
             <li><code>Ctrl/Cmd+0</code>: reset zoom to 100%</li>
@@ -448,7 +463,7 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
     navLabel: 'Search & Fill',
     title: 'Search & Fill',
     summary:
-      'Connect local data sources, search a record, and populate mapped fields with predictable behavior.',
+      'Connect local data sources or Fill By Link respondent records, search a record, and populate mapped fields with predictable behavior.',
     sections: [
       {
         id: 'data-source-support',
@@ -456,6 +471,7 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
         body: (
           <ul>
             <li>CSV, XLS, and JSON include headers and rows for record-based filling.</li>
+            <li>Fill By Link respondent submissions are stored as structured records and can be selected from the workspace.</li>
             <li>TXT is schema-only and supports mapping but not row-based fill.</li>
             <li>CSV/XLSX/JSON parsers cap records at 5000 rows per import.</li>
             <li>Duplicate headers are auto-renamed (`name`, `name_2`, `name_3`, ...).</li>
@@ -469,6 +485,7 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
         title: 'Fill flow',
         body: (
           <ol>
+            <li>If you published Fill By Link, open the respondent list for that saved template and select a saved submission.</li>
             <li>Choose a column (`Any column` is available) and match mode (`contains` or `equals`).</li>
             <li>Search is case-insensitive and returns at most 25 results per query.</li>
             <li>Click `Fill PDF` on a result row to write values to current fields.</li>
@@ -484,7 +501,8 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
             <li>If mapping is incomplete, fill coverage will be partial.</li>
             <li>Clear and refill when testing mapping revisions.</li>
             <li>Validate at least one full record before saving templates for teams.</li>
-            <li>Search &amp; Fill is enabled only for CSV/XLSX/JSON with at least one row and a loaded document.</li>
+            <li>Search &amp; Fill is enabled only for CSV/XLSX/JSON with at least one row, stored respondent records, and a loaded document.</li>
+            <li>Public Fill By Link forms close automatically when their response cap is reached: free closes at 5 responses and premium closes at 10,000 responses.</li>
           </ul>
         ),
       },
@@ -522,12 +540,155 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
     ],
   },
   {
+    key: 'fill-by-link',
+    slug: 'fill-by-link',
+    navLabel: 'Fill By Link',
+    title: 'Fill By Link',
+    summary:
+      'Publish a DullyPDF-hosted form from a saved template or open group, share the generated link, and turn stored respondent answers into PDFs when needed, with optional post-submit downloads for template respondents.',
+    sections: [
+      {
+        id: 'what-gets-published',
+        title: 'What gets published',
+        body: (
+          <ul>
+            <li>Fill By Link starts from a saved template or an open group. Unsaved work cannot be published.</li>
+            <li>The generated link points to a DullyPDF-hosted HTML form, not the PDF file itself.</li>
+            <li>Template links publish one saved form. Group links publish one merged form built from every distinct respondent-facing field in the open group.</li>
+            <li>Changing group membership closes the current group link so the next publish reflects the updated schema.</li>
+          </ul>
+        ),
+      },
+      {
+        id: 'owner-publishing-flow',
+        title: 'Owner publishing flow',
+        body: (
+          <ol>
+            <li>Open the saved template or saved group you want to publish.</li>
+            <li>Use Fill By Link to generate the public URL and decide whether every public question is required.</li>
+            <li>Open the generated URL yourself first to confirm question wording and mobile layout.</li>
+            <li>Copy the link and send it to respondents. Their answers are stored in DullyPDF under the owner account.</li>
+          </ol>
+        ),
+      },
+      {
+        id: 'what-respondents-see',
+        title: 'What respondents see',
+        body: (
+          <>
+            <p>
+              Respondents fill a mock-form style HTML experience with the fields you chose to publish. They do not
+              edit the live PDF directly.
+            </p>
+            <p>
+              This separation keeps the PDF template stable while still letting teams collect answers from phones,
+              tablets, and desktops.
+            </p>
+            <p>
+              For template links only, owners can optionally expose a post-submit button that lets respondents
+              download a PDF copy of what they just submitted.
+            </p>
+          </>
+        ),
+      },
+      {
+        id: 'reviewing-responses',
+        title: 'Reviewing responses and generating PDFs',
+        body: (
+          <ol>
+            <li>Open the saved respondent list in the workspace.</li>
+            <li>Select one submission and hand it to Search &amp; Fill just like a local CSV/XLSX/JSON row.</li>
+            <li>Generate the PDF only when you are ready to materialize that response into the active template or group.</li>
+            <li>Download the output immediately or keep working with the stored respondent record later.</li>
+          </ol>
+        ),
+      },
+      {
+        id: 'limits-and-sharing',
+        title: 'Limits and sharing guidance',
+        body: (
+          <ul>
+            <li>Free accounts get 1 active Fill By Link and up to 5 accepted responses.</li>
+            <li>Premium accounts can publish a shareable link for every saved template and accept up to 10,000 responses per link.</li>
+            <li>Preview the public form before you share it so required fields and labels match what respondents should submit.</li>
+          </ul>
+        ),
+      },
+    ],
+  },
+  {
+    key: 'create-group',
+    slug: 'create-group',
+    navLabel: 'Create Group',
+    title: 'Create Group and Group Workflows',
+    summary:
+      'Use groups to organize multi-document packets, switch between saved templates quickly, and run full document workflows across the group.',
+    sections: [
+      {
+        id: 'what-a-group-is',
+        title: 'What a group is',
+        body: (
+          <ul>
+            <li>A group is a named collection of saved templates that belong to one packet or workflow.</li>
+            <li>Opening a group loads the alphabetically first template first, then lets you switch between member templates from the header.</li>
+            <li>Groups are best for packets that share respondents, schema expectations, or repeat end-to-end processing steps.</li>
+          </ul>
+        ),
+      },
+      {
+        id: 'create-and-open-groups',
+        title: 'Create and open groups',
+        body: (
+          <ol>
+            <li>Create a group from the upload screen or while organizing saved templates.</li>
+            <li>Add the templates that belong together in one workflow.</li>
+            <li>Open the group to work inside a packet context instead of reopening templates one at a time.</li>
+            <li>Use the header selector to move between member templates while keeping the group context active.</li>
+          </ol>
+        ),
+      },
+      {
+        id: 'group-search-fill',
+        title: 'Search and fill full groups',
+        body: (
+          <ul>
+            <li>When a group is open, Search &amp; Fill can apply one selected record across the packet instead of just one template.</li>
+            <li>This is the fastest way to populate full document sets that share a respondent or client record.</li>
+            <li>Group workflows keep the current template snapshots aligned so you can switch documents without losing the packet context.</li>
+          </ul>
+        ),
+      },
+      {
+        id: 'group-rename-map',
+        title: 'Rename and remap entire groups',
+        body: (
+          <ul>
+            <li>`Rename + Map Group` runs batch Rename + Map across every saved template in the open group.</li>
+            <li>Use this when a full packet needs standardized field names and schema alignment together.</li>
+            <li>The run overwrites each saved template on success, so test the packet once before using it in production.</li>
+          </ul>
+        ),
+      },
+      {
+        id: 'group-fill-by-link',
+        title: 'Group Fill By Link and packet publishing',
+        body: (
+          <ul>
+            <li>Open a group to publish one merged Fill By Link that asks for every distinct respondent-facing field across the packet.</li>
+            <li>Owners can still review stored responses in the workspace and generate the final PDFs only when needed.</li>
+            <li>If group membership changes, republish the group link so the public form matches the new packet schema.</li>
+          </ul>
+        ),
+      },
+    ],
+  },
+  {
     key: 'save-download-profile',
     slug: 'save-download-profile',
     navLabel: 'Save / Download',
     title: 'Save, Download, and Profile',
     summary:
-      'Understand when to download immediately versus saving templates to your profile for reuse.',
+      'Understand when to download immediately versus saving templates to your profile for reuse, Fill By Link publishing, and respondent management.',
     sections: [
       {
         id: 'download-vs-save',
@@ -537,6 +698,7 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
             <li>Download when you need a one-off generated output immediately.</li>
             <li>Save to profile when the template will be reused or shared within your account context.</li>
             <li>Saved forms persist template metadata including checkbox rules and hints.</li>
+            <li>Fill By Link starts from a saved form or an open group because the public respondent link is tied to the owner account and saved template set.</li>
           </ul>
         ),
       },
@@ -550,9 +712,26 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
               without re-detecting from scratch.
             </p>
             <p>
-              Use overwrite intentionally when replacing an existing template baseline.
+              Saved forms are also the publication point for Fill By Link. You can publish one link for the active
+              template or, when a group is open, publish one merged link that asks for every distinct field across that
+              group. Respondent records stay attached to the owner account and the published template/group snapshot.
             </p>
           </>
+        ),
+      },
+      {
+        id: 'fill-by-link-owner-flow',
+        title: 'Fill By Link owner flow',
+        body: (
+          <ol>
+            <li>Open a saved template to publish a template link, or open a group to publish one merged group link.</li>
+            <li>Open your own generated public link to preview the respondent form before you send it out.</li>
+            <li>Share the public DullyPDF-hosted HTML form with respondents.</li>
+            <li>DullyPDF always requires each respondent to provide a name or ID before a submission is accepted.</li>
+            <li>Review stored respondent submissions in the workspace.</li>
+            <li>Select one respondent and run the existing Search &amp; Fill materialization flow against the active template or group targets.</li>
+            <li>Download the final PDF only when it is needed.</li>
+          </ol>
         ),
       },
       {
@@ -572,6 +751,15 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
               Base profile fallback limits used by the frontend are detect pages=5, fillable pages=50, and saved forms=3.
               Effective limits may differ by server role/config.
             </p>
+            <p>
+              Fill By Link tier limits are separate from credits: free includes 1 active published link with 5 accepted
+              responses, while premium supports a shareable link on every saved template with up to 10,000 accepted
+              responses per link.
+            </p>
+            <p>
+              For the marketing-facing summary of those tiers, use the public <a href="/free-features">Free Features</a> and{' '}
+              <a href="/premium-features">Premium Features</a> pages.
+            </p>
           </>
         ),
       },
@@ -586,6 +774,11 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
               <li>Refill 500 (`refill_500`) is a Pro-only one-time credit pack and uses backend-provided Stripe plan metadata.</li>
               <li>Payments are handled through Stripe Checkout for secure transaction processing.</li>
               <li>Canceling Pro schedules cancellation at period end; Pro access remains active until that date.</li>
+              <li>
+                If an account downgrades to free while holding more saved forms than the free tier allows, DullyPDF keeps
+                the default oldest set, opens a 30-day grace period, and shows a retention dialog on each site visit so
+                the owner can swap which saved forms stay, delete the queued set immediately, or reactivate Pro.
+              </li>
             </ul>
             <p>
               If a user downgrades, stored refill credits stay on the account and become usable again after re-upgrading to Pro.
@@ -601,6 +794,7 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
             <li>Use overwrite when you intentionally replace an existing template baseline.</li>
             <li>Create a new saved form when testing alternate mappings or field sets.</li>
             <li>Run one Search &amp; Fill verification before overwriting production templates.</li>
+            <li>If a template already has active Fill By Link traffic, publish replacement versions intentionally so response ownership remains clear.</li>
           </ul>
         ),
       },

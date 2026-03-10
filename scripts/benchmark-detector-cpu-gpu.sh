@@ -1,6 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+is_truthy() {
+  local raw="${1:-}"
+  case "${raw,,}" in
+    1|true|yes|on)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
 ENV_FILE="${1:-env/backend.dev.stack.env}"
 shift || true
 
@@ -38,6 +50,15 @@ PROJECT_ID="${PROJECT_ID:-${DETECTOR_TASKS_PROJECT:-${FIREBASE_PROJECT_ID:-dully
 REGION="${REGION:-${DETECTOR_TASKS_LOCATION:-us-central1}}"
 CPU_REGION="${BENCH_CPU_REGION:-${REGION}}"
 GPU_REGION="${BENCH_GPU_REGION:-${DETECTOR_GPU_REGION:-us-east4}}"
+BENCH_ALLOW_UNAUTHENTICATED="${BENCH_ALLOW_UNAUTHENTICATED:-false}"
+BENCH_ALLOW_PROD_PROJECT="${BENCH_ALLOW_PROD_PROJECT:-false}"
+
+if [[ "${PROJECT_ID}" == "dullypdf" || "${ENV:-}" == "prod" ]]; then
+  if ! is_truthy "$BENCH_ALLOW_PROD_PROJECT"; then
+    echo "Refusing to run detector benchmark against prod without BENCH_ALLOW_PROD_PROJECT=true." >&2
+    exit 1
+  fi
+fi
 
 CPU_SERVICE_LIGHT="${BENCH_CPU_SERVICE_LIGHT:-dullypdf-detector-light-bench-cpu}"
 CPU_SERVICE_HEAVY="${BENCH_CPU_SERVICE_HEAVY:-dullypdf-detector-heavy-bench-cpu}"
@@ -67,11 +88,15 @@ deploy_detector_mode() {
   local image_tag="$5"
   local service_region="$6"
   local skip_build="$7"
+  local allow_unauthenticated="false"
+  if is_truthy "$BENCH_ALLOW_UNAUTHENTICATED"; then
+    allow_unauthenticated="true"
+  fi
   echo "Deploying ${mode} detector services (${service_light}, ${service_heavy}) in ${service_region}..."
   REGION="$service_region" \
   DETECTOR_SKIP_BUILD="$skip_build" \
   DETECTOR_USE_STABLE_AUDIENCE="true" \
-  DETECTOR_DEPLOY_ALLOW_UNAUTHENTICATED="true" \
+  DETECTOR_DEPLOY_ALLOW_UNAUTHENTICATED="$allow_unauthenticated" \
   DETECTOR_GPU_ENABLED="$gpu_enabled" \
     DETECTOR_GPU_REGION="$service_region" \
     DETECTOR_SERVICE_NAME_LIGHT="$service_light" \

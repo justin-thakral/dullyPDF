@@ -39,6 +39,7 @@ describe('FieldOverlay', () => {
         id: 'text-field',
         name: 'Patient Name',
         type: 'text',
+        rect: { x: 10, y: 10, width: 100, height: 40 },
         fieldConfidence: 0.6,
         mappingConfidence: 0.7,
       }),
@@ -69,12 +70,15 @@ describe('FieldOverlay', () => {
 
     const selectedBox = container.querySelector('[data-field-id="text-field"]') as HTMLDivElement;
     expect(selectedBox.className).toContain('field-box--text');
-    expect(selectedBox.className).toContain('field-box--conf-low');
+    expect(selectedBox.className).toContain('field-box--conf-high');
     expect(selectedBox.className).toContain('field-box--active');
 
     const label = selectedBox.querySelector('.field-label') as HTMLSpanElement;
     expect(label.textContent).toBe('Patient Name');
-    expect(label.className).toContain('field-label--conf-medium');
+    expect(label.className).not.toContain('field-label--conf-medium');
+    expect(label.style.getPropertyValue('--field-label-max-width')).toBe('75px');
+    expect(label.style.getPropertyValue('--field-label-max-height')).toBe('30px');
+    expect(Number.parseFloat(label.style.getPropertyValue('--field-label-font-size'))).toBeLessThanOrEqual(11);
 
     const checkboxBox = container.querySelector('[data-field-id="checkbox-field"]') as HTMLDivElement;
     expect(checkboxBox.querySelector('.field-label')).toBeNull();
@@ -132,6 +136,47 @@ describe('FieldOverlay', () => {
       },
     ]);
     expect(onCommitFieldChange).toHaveBeenCalledTimes(1);
+  });
+
+  it('locks field movement when moveEnabled is false', () => {
+    const onUpdateField = vi.fn();
+    const onBeginFieldChange = vi.fn();
+    const onCommitFieldChange = vi.fn();
+    const onSelectField = vi.fn();
+    const field = makeField({
+      id: 'static-field',
+      name: 'static-field',
+      type: 'text',
+      rect: { x: 10, y: 10, width: 30, height: 20 },
+    });
+    const { container } = render(
+      <FieldOverlay
+        fields={[field]}
+        pageSize={{ width: 100, height: 80 }}
+        scale={1}
+        moveEnabled={false}
+        resizeEnabled
+        createEnabled={false}
+        activeCreateTool={null}
+        showFieldNames={false}
+        selectedFieldId={null}
+        onSelectField={onSelectField}
+        onUpdateField={onUpdateField}
+        onCreateFieldWithRect={vi.fn()}
+        onBeginFieldChange={onBeginFieldChange}
+        onCommitFieldChange={onCommitFieldChange}
+      />,
+    );
+
+    const box = container.querySelector('[data-field-id="static-field"]') as HTMLDivElement;
+    fireEvent.pointerDown(box, { clientX: 20, clientY: 20, pointerId: 1 });
+    pointerMove(220, 220, 1);
+    pointerUp(1);
+
+    expect(onSelectField).toHaveBeenCalledWith('static-field');
+    expect(onBeginFieldChange).not.toHaveBeenCalled();
+    expect(onUpdateField).not.toHaveBeenCalled();
+    expect(onCommitFieldChange).not.toHaveBeenCalled();
   });
 
   it('updates geometry for each resize handle and enforces minimum size', () => {

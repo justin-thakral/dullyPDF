@@ -7,8 +7,6 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from fastapi import FastAPI, Header, HTTPException
-from google.auth.transport import requests as google_requests
-from google.oauth2 import id_token
 from pydantic import BaseModel, Field
 
 from ..ai.prewarm import prewarm_openai_services
@@ -25,6 +23,7 @@ from ..firebaseDB.session_database import get_session_metadata, upsert_session_m
 from ..firebaseDB.storage_service import download_pdf_bytes, is_gcs_path
 from .pdf_validation import PdfValidationError, preflight_pdf_bytes
 from ..sessions.session_store import update_session_entry
+from ..services.task_auth_service import resolve_task_audiences, verify_internal_oidc_token
 from ..time_utils import now_iso
 
 
@@ -116,6 +115,10 @@ def _finish_detection_failure(session_id: str, error_message: str) -> Dict[str, 
     }
 
 
+def _reject_detection_request(session_id: str, error_message: str) -> Dict[str, Any]:
+    return _finish_detection_failure(session_id, error_message)
+
+
 def _require_internal_auth(authorization: Optional[str]) -> Dict[str, Any]:
     if _ALLOW_UNAUTHENTICATED:
         return {}
@@ -123,13 +126,27 @@ def _require_internal_auth(authorization: Optional[str]) -> Dict[str, Any]:
     if not raw.lower().startswith("bearer "):
         raise HTTPException(status_code=401, detail="Missing detector auth token")
     token = raw.split(" ", 1)[1].strip()
-    audience = env_value("DETECTOR_TASKS_AUDIENCE") or env_value("DETECTOR_SERVICE_URL")
-    if not audience:
-        raise HTTPException(status_code=500, detail="Detector audience is not configured")
-    try:
-        payload = id_token.verify_oauth2_token(token, google_requests.Request(), audience=audience)
-    except Exception as exc:
-        raise HTTPException(status_code=401, detail="Invalid detector auth token") from exc
+    payload = verify_internal_oidc_token(
+        token,
+        audiences=resolve_task_audiences(
+            audience_envs=[
+                "DETECTOR_TASKS_AUDIENCE",
+                "DETECTOR_TASKS_AUDIENCE_LIGHT",
+                "DETECTOR_TASKS_AUDIENCE_HEAVY",
+                "DETECTOR_TASKS_AUDIENCE_LIGHT_GPU",
+                "DETECTOR_TASKS_AUDIENCE_HEAVY_GPU",
+            ],
+            service_url_envs=[
+                "DETECTOR_SERVICE_URL",
+                "DETECTOR_SERVICE_URL_LIGHT",
+                "DETECTOR_SERVICE_URL_HEAVY",
+                "DETECTOR_SERVICE_URL_LIGHT_GPU",
+                "DETECTOR_SERVICE_URL_HEAVY_GPU",
+            ],
+        ),
+        missing_audience_detail="Detector audience is not configured",
+        invalid_token_detail="Invalid detector auth token",
+    )
     allowed_email = env_value("DETECTOR_CALLER_SERVICE_ACCOUNT")
     if _is_prod() and not allowed_email:
         raise HTTPException(
@@ -185,10 +202,10 @@ async def run_detection(
     except HTTPException as exc:
         detail = exc.detail if isinstance(exc.detail, str) else "Detector request rejected"
         if exc.status_code in {401, 403}:
-            logger.warning("Detector auth rejected: %s", detail)
-            raise
-        logger.warning("Detector session %s rejected: %s", payload.sessionId, detail)
-        return _finish_detection_failure(payload.sessionId, str(detail))
+            logger.warning("Detector auth rejected for session %s: %s", payload.sessionId, detail)
+        else:
+            logger.warning("Detector session %s rejected: %s", payload.sessionId, detail)
+        return _reject_detection_request(payload.sessionId, str(detail))
 
     try:
         detect_started = time.monotonic()

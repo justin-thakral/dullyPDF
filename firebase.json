@@ -46,6 +46,27 @@
     ],
     "headers": [
       {
+        "source": "**",
+        "headers": [
+          {
+            "key": "Content-Security-Policy",
+            "value": "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; object-src 'none'; form-action 'self'; script-src 'self' https://www.googletagmanager.com https://www.google.com https://www.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https: wss:; frame-src https://www.google.com https://recaptcha.google.com; worker-src 'self' blob:; media-src 'self' data: blob: https:"
+          },
+          {
+            "key": "X-Frame-Options",
+            "value": "DENY"
+          },
+          {
+            "key": "X-Content-Type-Options",
+            "value": "nosniff"
+          },
+          {
+            "key": "Referrer-Policy",
+            "value": "strict-origin-when-cross-origin"
+          }
+        ]
+      },
+      {
         "source": "/assets/**",
         "headers": [
           {
@@ -217,6 +238,24 @@
           "serviceId": "dullypdf-backend",
           "region": "us-central1"
         }
+      },
+      {
+        "source": "/api/fill-links",
+        "run": {
+          "serviceId": "dullypdf-backend",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/fill-links/**",
+        "run": {
+          "serviceId": "dullypdf-backend",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "**",
+        "destination": "/index.html"
       }
     ]
   }

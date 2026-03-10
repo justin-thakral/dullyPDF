@@ -124,10 +124,47 @@ async def test_verify_recaptcha_token_missing_config_required_vs_optional(app_ma
 
 
 @pytest.mark.anyio
+async def test_verify_recaptcha_token_requires_hostname_allowlist_for_prod_required_checks(
+    app_main,
+    mocker,
+    scope_builder,
+) -> None:
+    request = Request(scope_builder())
+    mocker.patch.object(app_main, "_env_value", side_effect=lambda key: "site" if key == "RECAPTCHA_SITE_KEY" else "")
+    mocker.patch.object(app_main, "_resolve_recaptcha_project_id", return_value="proj")
+    mocker.patch.object(app_main, "_is_prod", return_value=True)
+    mocker.patch.object(app_main, "_resolve_recaptcha_allowed_hostnames", return_value=[])
+
+    with pytest.raises(HTTPException) as ctx:
+        await app_main._verify_recaptcha_token("tok", "signup", request, required=True)
+    assert ctx.value.status_code == 500
+    assert "allowed hostnames" in str(ctx.value.detail).lower()
+
+
+@pytest.mark.anyio
+async def test_verify_recaptcha_token_requires_hostname_allowlist_for_prod_optional_checks_when_token_present(
+    app_main,
+    mocker,
+    scope_builder,
+) -> None:
+    request = Request(scope_builder())
+    mocker.patch.object(app_main, "_env_value", side_effect=lambda key: "site" if key == "RECAPTCHA_SITE_KEY" else "")
+    mocker.patch.object(app_main, "_resolve_recaptcha_project_id", return_value="proj")
+    mocker.patch.object(app_main, "_is_prod", return_value=True)
+    mocker.patch.object(app_main, "_resolve_recaptcha_allowed_hostnames", return_value=[])
+
+    with pytest.raises(HTTPException) as ctx:
+        await app_main._verify_recaptcha_token("tok", "signup", request, required=False)
+    assert ctx.value.status_code == 500
+    assert "allowed hostnames" in str(ctx.value.detail).lower()
+
+
+@pytest.mark.anyio
 async def test_verify_recaptcha_token_error_paths(app_main, mocker, scope_builder) -> None:
     request = Request(scope_builder())
     mocker.patch.object(app_main, "_env_value", side_effect=lambda key: "site" if key == "RECAPTCHA_SITE_KEY" else "")
     mocker.patch.object(app_main, "_resolve_recaptcha_project_id", return_value="proj")
+    mocker.patch.object(app_main, "_is_prod", return_value=False)
     mocker.patch.object(app_main, "_resolve_recaptcha_allowed_hostnames", return_value=[])
     mocker.patch.object(app_main, "_resolve_recaptcha_min_score", return_value=0.5)
     mocker.patch.object(app_main, "_get_google_access_token", return_value="access-token")
@@ -186,6 +223,7 @@ async def test_verify_recaptcha_token_success_includes_public_ip(app_main, mocke
     request = Request(scope_builder(headers={"user-agent": "pytest-agent"}))
     mocker.patch.object(app_main, "_env_value", side_effect=lambda key: "site" if key == "RECAPTCHA_SITE_KEY" else "")
     mocker.patch.object(app_main, "_resolve_recaptcha_project_id", return_value="proj")
+    mocker.patch.object(app_main, "_is_prod", return_value=True)
     mocker.patch.object(app_main, "_resolve_recaptcha_allowed_hostnames", return_value=["example.com"])
     mocker.patch.object(app_main, "_resolve_recaptcha_min_score", return_value=0.5)
     mocker.patch.object(app_main, "_get_google_access_token", return_value="access-token")

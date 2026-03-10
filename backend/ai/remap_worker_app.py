@@ -6,8 +6,6 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, Header, HTTPException
-from google.auth.transport import requests as google_requests
-from google.oauth2 import id_token
 from pydantic import BaseModel, Field
 
 from backend.ai.openai_client import resolve_openai_worker_max_retries
@@ -34,6 +32,7 @@ from backend.firebaseDB.template_database import get_template
 from backend.logging_config import get_logger
 from backend.services.credit_refund_service import attempt_credit_refund
 from backend.services.mapping_service import build_schema_mapping_payload
+from backend.services.task_auth_service import resolve_task_audiences, verify_internal_oidc_token
 from backend.sessions.session_store import (
     get_session_entry as _get_session_entry,
     update_session_entry as _update_session_entry,
@@ -123,6 +122,64 @@ def _worker_openai_max_retries() -> int:
     return resolve_openai_worker_max_retries()
 
 
+def _reject_job_request(job_id: str, message: str) -> Dict[str, Any]:
+    job = get_openai_job(job_id)
+    job_status = str((job or {}).get("status") or "").strip().lower()
+    if job and job_status not in {OPENAI_JOB_STATUS_COMPLETE, OPENAI_JOB_STATUS_FAILED}:
+        _refund_stored_job(job, job_id=job_id)
+        update_openai_job(
+            job_id=job_id,
+            status=OPENAI_JOB_STATUS_FAILED,
+            error=message,
+            completed_at=now_iso(),
+        )
+    return {
+        "jobId": job_id,
+        "status": OPENAI_JOB_STATUS_FAILED,
+        "error": message,
+    }
+
+
+def _bind_payload_to_job(payload: RemapJobRequest, job: Dict[str, Any]) -> RemapJobRequest:
+    trusted_user_id = str(job.get("user_id") or "").strip()
+    if not trusted_user_id:
+        raise ValueError("Schema mapping job metadata is incomplete")
+    if payload.userId != trusted_user_id:
+        raise ValueError("Schema mapping job user mismatch")
+
+    stored_schema_id = str(job.get("schema_id") or "").strip()
+    if not stored_schema_id:
+        raise ValueError("Schema mapping job metadata is incomplete")
+    if payload.schemaId != stored_schema_id:
+        raise ValueError("Schema mapping job schema mismatch")
+
+    stored_session_id = str(job.get("session_id") or "").strip() or None
+    if stored_session_id and payload.sessionId and payload.sessionId != stored_session_id:
+        raise ValueError("Schema mapping job session mismatch")
+
+    stored_template_id = str(job.get("template_id") or "").strip() or None
+    if stored_template_id and payload.templateId and payload.templateId != stored_template_id:
+        raise ValueError("Schema mapping job template mismatch")
+
+    stored_credit_breakdown = job.get("credit_breakdown")
+    if not isinstance(stored_credit_breakdown, dict):
+        stored_credit_breakdown = payload.creditBreakdown
+
+    return payload.model_copy(
+        update={
+            "requestId": str(job.get("request_id") or "").strip() or payload.requestId or payload.jobId,
+            "schemaId": stored_schema_id,
+            "templateId": stored_template_id or payload.templateId,
+            "sessionId": stored_session_id or payload.sessionId,
+            "userId": trusted_user_id,
+            "userRole": str(job.get("user_role") or "").strip() or payload.userRole,
+            "credits": int(job.get("credits") or payload.credits or 0),
+            "creditsCharged": bool(job.get("credits_charged")) if "credits_charged" in job else payload.creditsCharged,
+            "creditBreakdown": stored_credit_breakdown,
+        }
+    )
+
+
 def _refund_credits(payload: RemapJobRequest) -> None:
     if not payload.creditsCharged:
         return
@@ -137,6 +194,30 @@ def _refund_credits(payload: RemapJobRequest) -> None:
         request_id=payload.requestId,
         job_id=payload.jobId,
         credit_breakdown=payload.creditBreakdown,
+    )
+
+
+def _refund_stored_job(job: Dict[str, Any], *, job_id: str) -> None:
+    if not bool(job.get("credits_charged")):
+        return
+    user_id = str(job.get("user_id") or "").strip()
+    if not user_id:
+        return
+    try:
+        credits = int(job.get("credits") or 0)
+    except (TypeError, ValueError):
+        credits = 0
+    if credits <= 0:
+        return
+    credit_breakdown = job.get("credit_breakdown") if isinstance(job.get("credit_breakdown"), dict) else None
+    attempt_credit_refund(
+        user_id=user_id,
+        role=str(job.get("user_role") or "").strip() or None,
+        credits=credits,
+        source="remap.worker",
+        request_id=str(job.get("request_id") or "").strip() or job_id,
+        job_id=job_id,
+        credit_breakdown=credit_breakdown,
     )
 
 
@@ -181,13 +262,23 @@ def _require_internal_auth(authorization: Optional[str]) -> Dict[str, Any]:
     if not raw.lower().startswith("bearer "):
         raise HTTPException(status_code=401, detail="Missing remap worker auth token")
     token = raw.split(" ", 1)[1].strip()
-    audience = env_value("OPENAI_REMAP_TASKS_AUDIENCE") or env_value("OPENAI_REMAP_SERVICE_URL")
-    if not audience:
-        raise HTTPException(status_code=500, detail="Remap worker audience is not configured")
-    try:
-        decoded = id_token.verify_oauth2_token(token, google_requests.Request(), audience=audience)
-    except Exception as exc:
-        raise HTTPException(status_code=401, detail="Invalid remap worker auth token") from exc
+    decoded = verify_internal_oidc_token(
+        token,
+        audiences=resolve_task_audiences(
+            audience_envs=[
+                "OPENAI_REMAP_TASKS_AUDIENCE",
+                "OPENAI_REMAP_TASKS_AUDIENCE_LIGHT",
+                "OPENAI_REMAP_TASKS_AUDIENCE_HEAVY",
+            ],
+            service_url_envs=[
+                "OPENAI_REMAP_SERVICE_URL",
+                "OPENAI_REMAP_SERVICE_URL_LIGHT",
+                "OPENAI_REMAP_SERVICE_URL_HEAVY",
+            ],
+        ),
+        missing_audience_detail="Remap worker audience is not configured",
+        invalid_token_detail="Invalid remap worker auth token",
+    )
 
     allowed_email = env_value("OPENAI_REMAP_CALLER_SERVICE_ACCOUNT")
     if _is_prod() and not allowed_email:
@@ -223,12 +314,15 @@ async def run_remap_job(
 ) -> Dict[str, Any]:
     try:
         _require_internal_auth(authorization)
-    except HTTPException:
-        raise
+    except HTTPException as exc:
+        detail = exc.detail if isinstance(exc.detail, str) else "Schema mapping worker request rejected"
+        logger.warning("Schema mapping job %s rejected before start: %s", payload.jobId, detail)
+        return _reject_job_request(payload.jobId, str(detail))
 
     job = get_openai_job(payload.jobId)
     if not job:
-        return _finish_failure(payload, "Schema mapping job metadata not found")
+        logger.warning("Schema mapping job %s rejected: metadata not found", payload.jobId)
+        return _reject_job_request(payload.jobId, "Schema mapping job metadata not found")
 
     status = str(job.get("status") or "").strip().lower()
     if status == OPENAI_JOB_STATUS_COMPLETE:
@@ -240,8 +334,11 @@ async def run_remap_job(
             "error": job.get("error") or "Schema mapping job failed",
         }
 
-    if str(job.get("user_id") or payload.userId) != payload.userId:
-        return _finish_failure(payload, "Schema mapping job user mismatch")
+    try:
+        payload = _bind_payload_to_job(payload, job)
+    except ValueError as exc:
+        logger.warning("Schema mapping job %s rejected: %s", payload.jobId, exc)
+        return _reject_job_request(payload.jobId, str(exc))
 
     retry_count = _parse_retry_count(x_cloud_tasks_taskretrycount)
     attempt_count = retry_count + 1

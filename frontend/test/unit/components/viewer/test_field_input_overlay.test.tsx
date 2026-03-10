@@ -150,11 +150,12 @@ describe('FieldInputOverlay', () => {
     expect(onSelectField).toHaveBeenCalledWith('text');
 
     await user.type(textInput, 'Ada');
+    expect((textInput as HTMLInputElement).value).toBe('Ada');
+    await user.tab();
     const lastTextUpdate = onUpdateField.mock.calls
       .filter((call) => call[0] === 'text')
       .slice(-1)[0];
     expect(lastTextUpdate).toEqual(['text', { value: 'Ada' }]);
-    expect((textInput as HTMLInputElement).value).toBe('Ada');
 
     await user.click(checkboxInput);
     expect(onSelectField).toHaveBeenCalledWith('checkbox');
@@ -183,7 +184,6 @@ describe('FieldInputOverlay', () => {
     await user.clear(dateInput);
     await user.tab();
 
-    expect(onUpdateField).toHaveBeenCalledWith('date', { value: '' });
     expect(onUpdateField).toHaveBeenCalledWith('date', { value: null });
   });
 });

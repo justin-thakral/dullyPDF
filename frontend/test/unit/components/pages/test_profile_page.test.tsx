@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import ProfilePage from '../../../../src/components/pages/ProfilePage';
 import type {
   BillingProfileConfig,
+  DowngradeRetentionSummary,
   ProfileLimits,
   SavedFormSummary,
 } from '../../../../src/services/api';
@@ -12,12 +13,15 @@ const limits: ProfileLimits = {
   detectMaxPages: 10,
   fillableMaxPages: 20,
   savedFormsMax: 5,
+  fillLinksActiveMax: 1,
+  fillLinkResponsesMax: 5,
 };
 
 const savedForms: SavedFormSummary[] = [
   { id: 'form-alpha', name: 'Intake Form Alpha', createdAt: '2026-01-01T00:00:00Z' },
   { id: 'form-beta', name: 'Consent Form Beta', createdAt: '2026-01-02T00:00:00Z' },
   { id: 'form-gamma', name: 'Referral Gamma', createdAt: '2026-01-03T00:00:00Z' },
+  { id: 'form-delta', name: 'Follow Up Delta', createdAt: '2026-01-04T00:00:00Z' },
 ];
 
 const billingConfig: BillingProfileConfig = {
@@ -56,6 +60,34 @@ const billingConfig: BillingProfileConfig = {
   },
 };
 
+const retentionSummary: DowngradeRetentionSummary = {
+  status: 'grace_period',
+  policyVersion: 1,
+  downgradedAt: '2026-03-01T00:00:00Z',
+  graceEndsAt: '2026-03-31T00:00:00Z',
+  daysRemaining: 21,
+  savedFormsLimit: 3,
+  fillLinksActiveLimit: 1,
+  keptTemplateIds: ['form-alpha', 'form-beta', 'form-gamma'],
+  pendingDeleteTemplateIds: ['form-delta'],
+  pendingDeleteLinkIds: ['link-delta'],
+  counts: {
+    keptTemplates: 3,
+    pendingTemplates: 1,
+    affectedGroups: 1,
+    pendingLinks: 1,
+    closedLinks: 1,
+  },
+  templates: [
+    { id: 'form-alpha', name: 'Intake Form Alpha', createdAt: '2026-01-01T00:00:00Z', status: 'kept' },
+    { id: 'form-beta', name: 'Consent Form Beta', createdAt: '2026-01-02T00:00:00Z', status: 'kept' },
+    { id: 'form-gamma', name: 'Referral Gamma', createdAt: '2026-01-03T00:00:00Z', status: 'kept' },
+    { id: 'form-delta', name: 'Follow Up Delta', createdAt: '2026-01-04T00:00:00Z', status: 'pending_delete' },
+  ],
+  groups: [{ id: 'group-1', name: 'Admissions', templateCount: 4, pendingTemplateCount: 1, willDelete: false }],
+  links: [{ id: 'link-delta', title: 'Delta Link', scopeType: 'template', status: 'closed', templateId: 'form-delta', pendingDeleteReason: 'template_pending_delete' }],
+};
+
 describe('ProfilePage', () => {
   it('renders tier and limits cards for basic and god users', () => {
     const { rerender } = render(
@@ -82,6 +114,8 @@ describe('ProfilePage', () => {
     expect(screen.getByText(String(limits.detectMaxPages))).toBeTruthy();
     expect(screen.getByText(String(limits.fillableMaxPages))).toBeTruthy();
     expect(screen.getAllByText(String(limits.savedFormsMax)).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(String(limits.fillLinksActiveMax)).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(String(limits.fillLinkResponsesMax)).length).toBeGreaterThan(0);
     expect(screen.getByRole('button', { name: /Upgrade to Pro Monthly/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /Upgrade to Pro Yearly/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /Refill 500 Credits/ })).toBeTruthy();
@@ -367,6 +401,40 @@ describe('ProfilePage', () => {
     expect(
       screen.getByText('Billing status is temporarily unavailable because profile data could not be refreshed.'),
     ).toBeTruthy();
+  });
+
+  it('shows downgrade retention summary and re-open action', async () => {
+    const user = userEvent.setup();
+    const onOpenDowngradeRetention = vi.fn();
+
+    render(
+      <ProfilePage
+        email="retention@example.com"
+        role="base"
+        creditsRemaining={3}
+        monthlyCreditsRemaining={0}
+        refillCreditsRemaining={0}
+        availableCredits={3}
+        billingEnabled={billingConfig.enabled}
+        billingPlans={billingConfig.plans}
+        retention={retentionSummary}
+        limits={limits}
+        savedForms={savedForms}
+        onSelectSavedForm={vi.fn()}
+        onOpenDowngradeRetention={onOpenDowngradeRetention}
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('Downgrade retention')).toBeTruthy();
+    expect(screen.getByText(/queued for deletion on/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Review retention queue' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Follow Up Delta' })).toBeTruthy();
+    expect(screen.getByText('Queued for deletion')).toBeTruthy();
+    expect(screen.getAllByText('Kept').length).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole('button', { name: 'Review retention queue' }));
+    expect(onOpenDowngradeRetention).toHaveBeenCalledTimes(1);
   });
 
   it('wires billing callbacks and busy labels', async () => {

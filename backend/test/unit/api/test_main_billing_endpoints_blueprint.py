@@ -4,12 +4,18 @@ import pytest
 from fastapi import HTTPException
 
 from backend.firebaseDB.user_database import UserBillingRecord, UserProfileRecord
+from backend.services.billing_service import BillingCheckoutSessionNotFoundError
 
 
 STRIPE_TEST_CARD_SUCCESS = "4242 4242 4242 4242"
 STRIPE_TEST_CARD_3DS_REQUIRED = "4000 0025 0000 3155"
 STRIPE_TEST_CARD_DECLINED = "4000 0000 0000 0002"
 STRIPE_TEST_CARD_INSUFFICIENT_FUNDS = "4000 0000 0000 9995"
+
+
+@pytest.fixture(autouse=True)
+def _allow_billing_rate_limit(mocker, app_main):
+    return mocker.patch.object(app_main, "check_rate_limit", return_value=True)
 
 
 def _patch_auth(mocker, app_main, user) -> None:
@@ -57,6 +63,13 @@ def _build_checkout_session_completed_event(
             }
         },
     }
+
+
+def _build_checkout_session_object(**kwargs) -> dict:
+    return _build_checkout_session_completed_event(
+        event_id="evt_checkout_session_object",
+        **kwargs,
+    )["data"]["object"]
 
 
 def test_checkout_session_rejects_refill_for_non_pro_users(
@@ -219,6 +232,40 @@ def test_checkout_session_rejects_refill_without_active_subscription_even_for_pr
         ),
     )
     mocker.patch.object(app_main, "is_subscription_active", return_value=False)
+    checkout_mock = mocker.patch.object(app_main, "create_checkout_session")
+
+    response = client.post(
+        "/api/billing/checkout-session",
+        json={"kind": "refill_500"},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 409
+    assert "requires an active Pro subscription" in response.text
+    checkout_mock.assert_not_called()
+
+
+def test_checkout_session_rejects_refill_when_pro_profile_has_no_billing_record(
+    client,
+    app_main,
+    base_user,
+    mocker,
+    auth_headers,
+) -> None:
+    _patch_auth(mocker, app_main, base_user)
+    mocker.patch.object(app_main, "billing_enabled", return_value=True)
+    mocker.patch.object(
+        app_main,
+        "get_user_profile",
+        return_value=UserProfileRecord(
+            uid=base_user.app_user_id,
+            email=base_user.email,
+            display_name=base_user.display_name,
+            role="pro",
+            openai_credits_remaining=500,
+        ),
+    )
+    mocker.patch.object(app_main, "get_user_billing_record", return_value=None)
     checkout_mock = mocker.patch.object(app_main, "create_checkout_session")
 
     response = client.post(
@@ -422,7 +469,17 @@ def test_checkout_session_surfaces_service_subscription_conflict_as_409(
             openai_credits_remaining=10,
         ),
     )
-    mocker.patch.object(app_main, "get_user_billing_record", return_value=None)
+    mocker.patch.object(
+        app_main,
+        "get_user_billing_record",
+        return_value=UserBillingRecord(
+            uid="user-1",
+            customer_id="cus_123",
+            subscription_id="sub_123",
+            subscription_status="active",
+            subscription_price_id="price_pro_monthly",
+        ),
+    )
     mocker.patch.object(
         app_main,
         "create_checkout_session",
@@ -488,6 +545,43 @@ def test_checkout_session_returns_503_when_webhook_health_check_fails(
 
     assert response.status_code == 503
     assert "webhook health check failed" in response.text.lower()
+    assert "No enabled Stripe webhook endpoint is configured" not in response.text
+    checkout_mock.assert_not_called()
+
+
+def test_checkout_session_rate_limits_authenticated_users(
+    client,
+    app_main,
+    base_user,
+    mocker,
+    auth_headers,
+    _allow_billing_rate_limit,
+) -> None:
+    _patch_auth(mocker, app_main, base_user)
+    _allow_billing_rate_limit.return_value = False
+    mocker.patch.object(app_main, "billing_enabled", return_value=True)
+    mocker.patch.object(app_main, "webhook_health_enforced_for_checkout", return_value=False)
+    mocker.patch.object(
+        app_main,
+        "get_user_profile",
+        return_value=UserProfileRecord(
+            uid=base_user.app_user_id,
+            email=base_user.email,
+            display_name=base_user.display_name,
+            role="base",
+            openai_credits_remaining=2,
+        ),
+    )
+    checkout_mock = mocker.patch.object(app_main, "create_checkout_session")
+
+    response = client.post(
+        "/api/billing/checkout-session",
+        json={"kind": "pro_monthly"},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 429
+    assert "Too many billing requests" in response.text
     checkout_mock.assert_not_called()
 
 
@@ -527,6 +621,35 @@ def test_cancel_subscription_returns_401_when_auth_fails(client, app_main, mocke
     response = client.post("/api/billing/subscription/cancel")
 
     assert response.status_code == 401
+
+
+def test_cancel_subscription_rate_limits_authenticated_users(
+    client,
+    app_main,
+    base_user,
+    mocker,
+    auth_headers,
+    _allow_billing_rate_limit,
+) -> None:
+    _patch_auth(mocker, app_main, base_user)
+    _allow_billing_rate_limit.return_value = False
+    mocker.patch.object(app_main, "billing_enabled", return_value=True)
+    mocker.patch.object(
+        app_main,
+        "get_user_profile",
+        return_value=UserProfileRecord(
+            uid=base_user.app_user_id,
+            email=base_user.email,
+            display_name=base_user.display_name,
+            role="pro",
+            openai_credits_remaining=500,
+        ),
+    )
+
+    response = client.post("/api/billing/subscription/cancel", headers=auth_headers)
+
+    assert response.status_code == 429
+    assert "Too many billing requests" in response.text
 
 
 def test_cancel_subscription_rejects_non_pro_users(
@@ -773,6 +896,48 @@ def test_cancel_subscription_returns_already_canceled_when_period_end_is_already
     downgrade_mock.assert_not_called()
 
 
+@pytest.mark.parametrize("subscription_status", ["canceled", "incomplete_expired", "unpaid"])
+def test_cancel_subscription_rejects_terminal_subscription_statuses(
+    client,
+    app_main,
+    base_user,
+    mocker,
+    auth_headers,
+    subscription_status,
+) -> None:
+    _patch_auth(mocker, app_main, base_user)
+    mocker.patch.object(app_main, "billing_enabled", return_value=True)
+    mocker.patch.object(
+        app_main,
+        "get_user_profile",
+        return_value=UserProfileRecord(
+            uid=base_user.app_user_id,
+            email=base_user.email,
+            display_name=base_user.display_name,
+            role="base",
+            openai_credits_remaining=2,
+        ),
+    )
+    mocker.patch.object(
+        app_main,
+        "get_user_billing_record",
+        return_value=UserBillingRecord(
+            uid=base_user.app_user_id,
+            customer_id="cus_123",
+            subscription_id="sub_dead",
+            subscription_status=subscription_status,
+            subscription_price_id="price_pro_monthly",
+        ),
+    )
+    cancel_mock = mocker.patch.object(app_main, "cancel_subscription_at_period_end")
+
+    response = client.post("/api/billing/subscription/cancel", headers=auth_headers)
+
+    assert response.status_code == 409
+    assert "already inactive" in response.text
+    cancel_mock.assert_not_called()
+
+
 def test_cancel_subscription_downgrades_immediately_when_status_inactive(
     client,
     app_main,
@@ -818,11 +983,13 @@ def test_cancel_subscription_downgrades_immediately_when_status_inactive(
     )
     mocker.patch.object(app_main, "set_user_billing_subscription", return_value=None)
     downgrade_mock = mocker.patch.object(app_main, "downgrade_to_base_membership", return_value=None)
+    apply_retention_mock = mocker.patch.object(app_main, "apply_user_downgrade_retention", return_value={"status": "grace_period"})
 
     response = client.post("/api/billing/subscription/cancel", headers=auth_headers)
 
     assert response.status_code == 200
     downgrade_mock.assert_called_once_with(base_user.app_user_id)
+    apply_retention_mock.assert_called_once_with(base_user.app_user_id)
 
 
 def test_cancel_subscription_succeeds_when_subscription_state_persistence_fails(
@@ -940,6 +1107,72 @@ def test_cancel_subscription_succeeds_when_role_downgrade_fails_after_stripe_can
     payload = response.json()
     assert payload["success"] is True
     assert payload["stateSyncDeferred"] is True
+
+
+def test_cancel_subscription_immediate_downgrade_uses_retention_override_when_billing_persistence_fails(
+    client,
+    app_main,
+    base_user,
+    mocker,
+    auth_headers,
+) -> None:
+    _patch_auth(mocker, app_main, base_user)
+    mocker.patch.object(app_main, "billing_enabled", return_value=True)
+    mocker.patch.object(
+        app_main,
+        "get_user_profile",
+        return_value=UserProfileRecord(
+            uid=base_user.app_user_id,
+            email=base_user.email,
+            display_name=base_user.display_name,
+            role="pro",
+            openai_credits_remaining=2,
+        ),
+    )
+    mocker.patch.object(
+        app_main,
+        "get_user_billing_record",
+        return_value=UserBillingRecord(
+            uid=base_user.app_user_id,
+            customer_id="cus_123",
+            subscription_id="sub_123",
+            subscription_status="active",
+            subscription_price_id="price_pro_monthly",
+        ),
+    )
+    mocker.patch.object(
+        app_main,
+        "cancel_subscription_at_period_end",
+        return_value=SimpleNamespace(
+            status="canceled",
+            cancel_at_period_end=True,
+            cancel_at=1775000000,
+            current_period_end=1775000000,
+            customer_id="cus_123",
+            price_id="price_pro_monthly",
+        ),
+    )
+    mocker.patch.object(
+        app_main,
+        "set_user_billing_subscription",
+        side_effect=RuntimeError("firestore unavailable"),
+    )
+    downgrade_mock = mocker.patch.object(app_main, "downgrade_to_base_membership", return_value=None)
+    apply_retention_mock = mocker.patch.object(app_main, "apply_user_downgrade_retention", return_value={"status": "grace_period"})
+
+    response = client.post("/api/billing/subscription/cancel", headers=auth_headers)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["success"] is True
+    assert payload["stateSyncDeferred"] is True
+    downgrade_mock.assert_called_once_with(base_user.app_user_id)
+    apply_retention_mock.assert_called_once()
+    eligibility_override = apply_retention_mock.call_args.kwargs["eligibility_override"]
+    assert eligibility_override.should_apply is True
+    assert eligibility_override.role == "base"
+    assert eligibility_override.has_active_subscription is False
+    assert apply_retention_mock.call_args.kwargs["billing_state_deferred"] is True
 
 
 def test_cancel_subscription_returns_503_on_billing_config_error(
@@ -1066,11 +1299,15 @@ def test_billing_webhook_health_endpoint_returns_health_payload(
     assert response.status_code == 200
     payload = response.json()
     assert payload["healthy"] is False
-    assert "No enabled Stripe webhook endpoint" in payload["reason"]
+    assert payload["reason"] == (
+        "Stripe webhook health check is failing. "
+        "Ask an administrator to review billing configuration."
+    )
     assert payload["enforcedForCheckout"] is True
     assert "endpointId" not in payload
     assert "endpointUrl" not in payload
     assert "expectedEndpointUrl" not in payload
+    app_main.resolve_webhook_health.assert_called_once_with(force_refresh=False)
 
 
 def test_billing_webhook_health_endpoint_includes_endpoint_details_for_god_role(
@@ -1114,9 +1351,10 @@ def test_billing_webhook_health_endpoint_includes_endpoint_details_for_god_role(
     assert payload["endpointId"] == "we_123"
     assert payload["endpointUrl"] == "https://billing.example.com/api/billing/webhook"
     assert payload["expectedEndpointUrl"] == "https://billing.example.com/api/billing/webhook"
+    app_main.resolve_webhook_health.assert_called_once_with(force_refresh=True)
 
 
-def test_billing_reconcile_dry_run_reports_missing_events_without_processing(
+def test_billing_reconcile_dry_run_reports_missing_checkout_session_without_processing(
     client,
     app_main,
     base_user,
@@ -1138,25 +1376,29 @@ def test_billing_reconcile_dry_run_reports_missing_events_without_processing(
     )
     mocker.patch.object(
         app_main,
-        "list_recent_checkout_completion_events",
-        return_value=[
-            _build_checkout_session_completed_event(
-                event_id="evt_reconcile_1",
-                checkout_kind="refill_500",
-                payment_status="paid",
-                card_number=STRIPE_TEST_CARD_SUCCESS,
-                user_id=base_user.app_user_id,
-                checkout_session_id="cs_refill_123",
-                checkout_attempt_id="attempt_refill_123",
-            )
-        ],
+        "retrieve_checkout_session",
+        return_value=_build_checkout_session_object(
+            checkout_kind="refill_500",
+            payment_status="paid",
+            card_number=STRIPE_TEST_CARD_SUCCESS,
+            user_id=base_user.app_user_id,
+            checkout_session_id="cs_refill_123",
+            checkout_attempt_id="attempt_refill_123",
+        ),
     )
+    list_mock = mocker.patch.object(app_main, "list_recent_checkout_completion_events")
     mocker.patch.object(app_main, "get_billing_event", return_value=None)
     start_mock = mocker.patch.object(app_main, "start_billing_event")
 
     response = client.post(
         "/api/billing/reconcile",
-        json={"dryRun": True, "lookbackHours": 24, "maxEvents": 20},
+        json={
+            "dryRun": True,
+            "lookbackHours": 24,
+            "maxEvents": 20,
+            "sessionId": "cs_refill_123",
+            "attemptId": "attempt_refill_123",
+        },
         headers=auth_headers,
     )
 
@@ -1169,7 +1411,7 @@ def test_billing_reconcile_dry_run_reports_missing_events_without_processing(
     assert payload["reconciledCount"] == 0
     assert payload["events"] == [
         {
-            "eventId": "evt_reconcile_1",
+            "eventId": "checkout_session:cs_refill_123",
             "eventType": "checkout.session.completed",
             "eventUserId": base_user.app_user_id,
             "created": None,
@@ -1181,9 +1423,45 @@ def test_billing_reconcile_dry_run_reports_missing_events_without_processing(
         }
     ]
     start_mock.assert_not_called()
+    list_mock.assert_not_called()
 
 
-def test_billing_reconcile_processes_missing_checkout_events(
+def test_billing_reconcile_rate_limits_self_scope_requests(
+    client,
+    app_main,
+    base_user,
+    mocker,
+    auth_headers,
+    _allow_billing_rate_limit,
+) -> None:
+    _patch_auth(mocker, app_main, base_user)
+    _allow_billing_rate_limit.return_value = False
+    mocker.patch.object(app_main, "billing_enabled", return_value=True)
+    mocker.patch.object(
+        app_main,
+        "get_user_profile",
+        return_value=UserProfileRecord(
+            uid=base_user.app_user_id,
+            email=base_user.email,
+            display_name=base_user.display_name,
+            role="pro",
+            openai_credits_remaining=500,
+        ),
+    )
+    retrieve_mock = mocker.patch.object(app_main, "retrieve_checkout_session")
+
+    response = client.post(
+        "/api/billing/reconcile",
+        json={"dryRun": True, "sessionId": "cs_rate_limited_123"},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 429
+    assert "Too many billing requests" in response.text
+    retrieve_mock.assert_not_called()
+
+
+def test_billing_reconcile_processes_missing_checkout_session(
     client,
     app_main,
     base_user,
@@ -1205,19 +1483,17 @@ def test_billing_reconcile_processes_missing_checkout_events(
     )
     mocker.patch.object(
         app_main,
-        "list_recent_checkout_completion_events",
-        return_value=[
-            _build_checkout_session_completed_event(
-                event_id="evt_reconcile_apply",
-                checkout_kind="refill_500",
-                payment_status="paid",
-                card_number=STRIPE_TEST_CARD_SUCCESS,
-                user_id=base_user.app_user_id,
-                checkout_session_id="cs_refill_apply",
-                checkout_attempt_id="attempt_refill_apply",
-            )
-        ],
+        "retrieve_checkout_session",
+        return_value=_build_checkout_session_object(
+            checkout_kind="refill_500",
+            payment_status="paid",
+            card_number=STRIPE_TEST_CARD_SUCCESS,
+            user_id=base_user.app_user_id,
+            checkout_session_id="cs_refill_apply",
+            checkout_attempt_id="attempt_refill_apply",
+        ),
     )
+    list_mock = mocker.patch.object(app_main, "list_recent_checkout_completion_events")
     mocker.patch.object(app_main, "get_billing_event", return_value=None)
     mocker.patch.object(app_main, "start_billing_event", return_value=True)
     handle_mock = mocker.patch.object(app_main, "_handle_checkout_session_completed", return_value=None)
@@ -1225,7 +1501,13 @@ def test_billing_reconcile_processes_missing_checkout_events(
 
     response = client.post(
         "/api/billing/reconcile",
-        json={"dryRun": False, "lookbackHours": 24, "maxEvents": 20},
+        json={
+            "dryRun": False,
+            "lookbackHours": 24,
+            "maxEvents": 20,
+            "sessionId": "cs_refill_apply",
+            "attemptId": "attempt_refill_apply",
+        },
         headers=auth_headers,
     )
 
@@ -1239,7 +1521,134 @@ def test_billing_reconcile_processes_missing_checkout_events(
     assert payload["events"][0]["checkoutAttemptId"] == "attempt_refill_apply"
     assert payload["events"][0]["checkoutPriceId"] == "price_refill_500"
     handle_mock.assert_called_once()
-    complete_mock.assert_called_once_with("evt_reconcile_apply")
+    complete_mock.assert_called_once_with("checkout_session:cs_refill_apply")
+    list_mock.assert_not_called()
+
+
+def test_billing_reconcile_requires_session_id_for_self_scope(
+    client,
+    app_main,
+    base_user,
+    mocker,
+    auth_headers,
+) -> None:
+    _patch_auth(mocker, app_main, base_user)
+    mocker.patch.object(app_main, "billing_enabled", return_value=True)
+    mocker.patch.object(
+        app_main,
+        "get_user_profile",
+        return_value=UserProfileRecord(
+            uid=base_user.app_user_id,
+            email=base_user.email,
+            display_name=base_user.display_name,
+            role="pro",
+            openai_credits_remaining=500,
+        ),
+    )
+    retrieve_mock = mocker.patch.object(app_main, "retrieve_checkout_session")
+    list_mock = mocker.patch.object(app_main, "list_recent_checkout_completion_events")
+
+    response = client.post(
+        "/api/billing/reconcile",
+        json={"dryRun": True, "lookbackHours": 24, "maxEvents": 20},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 400
+    assert "sessionId is required" in response.text
+    retrieve_mock.assert_not_called()
+    list_mock.assert_not_called()
+
+
+def test_billing_reconcile_returns_not_found_for_invalid_self_session_id(
+    client,
+    app_main,
+    base_user,
+    mocker,
+    auth_headers,
+) -> None:
+    _patch_auth(mocker, app_main, base_user)
+    mocker.patch.object(app_main, "billing_enabled", return_value=True)
+    mocker.patch.object(
+        app_main,
+        "get_user_profile",
+        return_value=UserProfileRecord(
+            uid=base_user.app_user_id,
+            email=base_user.email,
+            display_name=base_user.display_name,
+            role="pro",
+            openai_credits_remaining=500,
+        ),
+    )
+    retrieve_mock = mocker.patch.object(
+        app_main,
+        "retrieve_checkout_session",
+        side_effect=BillingCheckoutSessionNotFoundError("Stripe checkout session was not found."),
+    )
+
+    response = client.post(
+        "/api/billing/reconcile",
+        json={"dryRun": True, "sessionId": "cs_missing_123"},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 404
+    assert "Stripe checkout session was not found." in response.text
+    retrieve_mock.assert_called_once_with(session_id="cs_missing_123")
+
+
+def test_billing_reconcile_self_scope_does_not_scan_account_events(
+    client,
+    app_main,
+    base_user,
+    mocker,
+    auth_headers,
+) -> None:
+    _patch_auth(mocker, app_main, base_user)
+    mocker.patch.object(app_main, "billing_enabled", return_value=True)
+    mocker.patch.object(
+        app_main,
+        "get_user_profile",
+        return_value=UserProfileRecord(
+            uid=base_user.app_user_id,
+            email=base_user.email,
+            display_name=base_user.display_name,
+            role="pro",
+            openai_credits_remaining=500,
+        ),
+    )
+    mocker.patch.object(
+        app_main,
+        "retrieve_checkout_session",
+        return_value=_build_checkout_session_object(
+            checkout_kind="refill_500",
+            payment_status="paid",
+            card_number=STRIPE_TEST_CARD_SUCCESS,
+            user_id=base_user.app_user_id,
+            checkout_session_id="cs_self_only",
+            checkout_attempt_id="attempt_self_only",
+        ),
+    )
+    list_mock = mocker.patch.object(app_main, "list_recent_checkout_completion_events")
+    mocker.patch.object(app_main, "get_billing_event", return_value=None)
+
+    response = client.post(
+        "/api/billing/reconcile",
+        json={
+            "dryRun": True,
+            "lookbackHours": 24,
+            "maxEvents": 20,
+            "sessionId": "cs_self_only",
+            "attemptId": "attempt_self_only",
+        },
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["scope"] == "self"
+    assert payload["events"][0]["checkoutSessionId"] == "cs_self_only"
+    list_mock.assert_not_called()
 
 
 def test_billing_reconcile_returns_processed_events_for_frontend_matching(
@@ -1264,25 +1673,29 @@ def test_billing_reconcile_returns_processed_events_for_frontend_matching(
     )
     mocker.patch.object(
         app_main,
-        "list_recent_checkout_completion_events",
-        return_value=[
-            _build_checkout_session_completed_event(
-                event_id="evt_processed",
-                checkout_kind="pro_monthly",
-                payment_status="paid",
-                card_number=STRIPE_TEST_CARD_SUCCESS,
-                user_id=base_user.app_user_id,
-                checkout_session_id="cs_processed_123",
-                checkout_attempt_id="attempt_processed_123",
-            )
-        ],
+        "retrieve_checkout_session",
+        return_value=_build_checkout_session_object(
+            checkout_kind="pro_monthly",
+            payment_status="paid",
+            card_number=STRIPE_TEST_CARD_SUCCESS,
+            user_id=base_user.app_user_id,
+            checkout_session_id="cs_processed_123",
+            checkout_attempt_id="attempt_processed_123",
+        ),
     )
     mocker.patch.object(app_main, "get_billing_event", return_value={"status": "processed"})
+    list_mock = mocker.patch.object(app_main, "list_recent_checkout_completion_events")
     start_mock = mocker.patch.object(app_main, "start_billing_event")
 
     response = client.post(
         "/api/billing/reconcile",
-        json={"dryRun": False, "lookbackHours": 24, "maxEvents": 20},
+        json={
+            "dryRun": False,
+            "lookbackHours": 24,
+            "maxEvents": 20,
+            "sessionId": "cs_processed_123",
+            "attemptId": "attempt_processed_123",
+        },
         headers=auth_headers,
     )
 
@@ -1293,7 +1706,7 @@ def test_billing_reconcile_returns_processed_events_for_frontend_matching(
     assert payload["alreadyProcessedCount"] == 1
     assert payload["events"] == [
         {
-            "eventId": "evt_processed",
+            "eventId": "checkout_session:cs_processed_123",
             "eventType": "checkout.session.completed",
             "eventUserId": base_user.app_user_id,
             "created": None,
@@ -1305,6 +1718,7 @@ def test_billing_reconcile_returns_processed_events_for_frontend_matching(
         }
     ]
     start_mock.assert_not_called()
+    list_mock.assert_not_called()
 
 
 def test_billing_webhook_rejects_invalid_signature(client, app_main, mocker) -> None:
@@ -1453,7 +1867,17 @@ def test_billing_webhook_applies_refill_and_marks_complete(client, app_main, moc
             openai_credits_remaining=500,
         ),
     )
-    mocker.patch.object(app_main, "get_user_billing_record", return_value=None)
+    mocker.patch.object(
+        app_main,
+        "get_user_billing_record",
+        return_value=UserBillingRecord(
+            uid="user-1",
+            customer_id="cus_123",
+            subscription_id="sub_123",
+            subscription_status="active",
+            subscription_price_id="price_pro_monthly",
+        ),
+    )
     mocker.patch.object(app_main, "resolve_refill_credit_pack_size_for_price", return_value=500)
     refill_mock = mocker.patch.object(app_main, "add_refill_openai_credits", return_value=500)
     complete_mock = mocker.patch.object(app_main, "complete_billing_event", return_value=None)
@@ -1470,6 +1894,62 @@ def test_billing_webhook_applies_refill_and_marks_complete(client, app_main, moc
     refill_mock.assert_called_once_with("user-1", credits=500, stripe_event_id="evt_2")
     complete_mock.assert_called_once_with("evt_2")
     clear_mock.assert_not_called()
+
+
+def test_billing_webhook_refill_ineligible_returns_retryable_and_does_not_complete(client, app_main, mocker) -> None:
+    mocker.patch.object(
+        app_main,
+        "construct_webhook_event",
+        return_value={
+            "id": "evt_refill_ineligible",
+            "type": "checkout.session.completed",
+            "data": {
+                "object": {
+                    "client_reference_id": "user-1",
+                    "metadata": {"checkoutKind": "refill_500"},
+                    "payment_status": "paid",
+                }
+            },
+        },
+    )
+    mocker.patch.object(app_main, "start_billing_event", return_value=True)
+    mocker.patch.object(
+        app_main,
+        "get_user_profile",
+        return_value=UserProfileRecord(
+            uid="user-1",
+            email="base@example.com",
+            display_name="Base User",
+            role="base",
+            openai_credits_remaining=10,
+        ),
+    )
+    mocker.patch.object(
+        app_main,
+        "get_user_billing_record",
+        return_value=UserBillingRecord(
+            uid="user-1",
+            customer_id="cus_123",
+            subscription_id="sub_123",
+            subscription_status="active",
+            subscription_price_id="price_pro_monthly",
+        ),
+    )
+    refill_mock = mocker.patch.object(app_main, "add_refill_openai_credits")
+    complete_mock = mocker.patch.object(app_main, "complete_billing_event", return_value=None)
+    clear_mock = mocker.patch.object(app_main, "clear_billing_event", return_value=None)
+
+    response = client.post(
+        "/api/billing/webhook",
+        data=b"{}",
+        headers={"Stripe-Signature": "sig"},
+    )
+
+    assert response.status_code == 503
+    assert "active Pro subscription at fulfillment time" in response.text
+    refill_mock.assert_not_called()
+    complete_mock.assert_not_called()
+    clear_mock.assert_called_once_with("evt_refill_ineligible")
 
 
 def test_billing_webhook_refill_uses_line_items_price_fallback_when_metadata_lacks_price(client, app_main, mocker) -> None:
@@ -1501,7 +1981,17 @@ def test_billing_webhook_refill_uses_line_items_price_fallback_when_metadata_lac
             openai_credits_remaining=500,
         ),
     )
-    mocker.patch.object(app_main, "get_user_billing_record", return_value=None)
+    mocker.patch.object(
+        app_main,
+        "get_user_billing_record",
+        return_value=UserBillingRecord(
+            uid="user-1",
+            customer_id="cus_123",
+            subscription_id="sub_123",
+            subscription_status="active",
+            subscription_price_id="price_pro_monthly",
+        ),
+    )
     mocker.patch.object(app_main, "resolve_refill_credit_pack_size_for_price", return_value=500)
     refill_mock = mocker.patch.object(app_main, "add_refill_openai_credits", return_value=500)
     complete_mock = mocker.patch.object(app_main, "complete_billing_event", return_value=None)
@@ -1552,7 +2042,17 @@ def test_billing_webhook_refill_checkout_skips_on_credit_metadata_mismatch(clien
             openai_credits_remaining=500,
         ),
     )
-    mocker.patch.object(app_main, "get_user_billing_record", return_value=None)
+    mocker.patch.object(
+        app_main,
+        "get_user_billing_record",
+        return_value=UserBillingRecord(
+            uid="user-1",
+            customer_id="cus_123",
+            subscription_id="sub_123",
+            subscription_status="active",
+            subscription_price_id="price_pro_monthly",
+        ),
+    )
     mocker.patch.object(app_main, "resolve_refill_credit_pack_size_for_price", return_value=250)
     refill_mock = mocker.patch.object(app_main, "add_refill_openai_credits", return_value=500)
     complete_mock = mocker.patch.object(app_main, "complete_billing_event", return_value=None)
@@ -1602,7 +2102,17 @@ def test_billing_webhook_refill_checkout_skips_when_credit_mapping_is_missing(cl
             openai_credits_remaining=500,
         ),
     )
-    mocker.patch.object(app_main, "get_user_billing_record", return_value=None)
+    mocker.patch.object(
+        app_main,
+        "get_user_billing_record",
+        return_value=UserBillingRecord(
+            uid="user-1",
+            customer_id="cus_123",
+            subscription_id="sub_123",
+            subscription_status="active",
+            subscription_price_id="price_pro_monthly",
+        ),
+    )
     mocker.patch.object(app_main, "resolve_refill_credit_pack_size_for_price", return_value=None)
     refill_mock = mocker.patch.object(app_main, "add_refill_openai_credits", return_value=500)
     complete_mock = mocker.patch.object(app_main, "complete_billing_event", return_value=None)
@@ -1671,7 +2181,17 @@ def test_billing_webhook_refill_card_outcomes_only_fulfill_paid_sessions(
             openai_credits_remaining=500,
         ),
     )
-    mocker.patch.object(app_main, "get_user_billing_record", return_value=None)
+    mocker.patch.object(
+        app_main,
+        "get_user_billing_record",
+        return_value=UserBillingRecord(
+            uid="user-1",
+            customer_id="cus_123",
+            subscription_id="sub_123",
+            subscription_status="active",
+            subscription_price_id="price_pro_monthly",
+        ),
+    )
     mocker.patch.object(app_main, "resolve_refill_credit_pack_size_for_price", return_value=500)
     refill_mock = mocker.patch.object(app_main, "add_refill_openai_credits", return_value=500)
     complete_mock = mocker.patch.object(app_main, "complete_billing_event", return_value=None)
@@ -1686,7 +2206,11 @@ def test_billing_webhook_refill_card_outcomes_only_fulfill_paid_sessions(
     assert response.status_code == 200
     assert response.json() == {"received": True}
     if expect_refill_applied:
-        refill_mock.assert_called_once_with("user-1", credits=500, stripe_event_id=event_id)
+        refill_mock.assert_called_once_with(
+            "user-1",
+            credits=500,
+            stripe_event_id="checkout_session:cs_test_123",
+        )
     else:
         refill_mock.assert_not_called()
     complete_mock.assert_called_once_with(event_id)
@@ -1728,11 +2252,11 @@ def test_billing_webhook_refill_checkout_skips_fulfillment_when_user_is_not_pro(
         headers={"Stripe-Signature": "sig"},
     )
 
-    assert response.status_code == 200
-    assert response.json() == {"received": True}
+    assert response.status_code == 503
+    assert "active Pro subscription at fulfillment time" in response.text
     refill_mock.assert_not_called()
-    complete_mock.assert_called_once_with(event_id)
-    clear_mock.assert_not_called()
+    complete_mock.assert_not_called()
+    clear_mock.assert_called_once_with(event_id)
 
 
 def test_billing_webhook_refill_checkout_skips_when_subscription_is_inactive(client, app_main, mocker) -> None:
@@ -1782,11 +2306,11 @@ def test_billing_webhook_refill_checkout_skips_when_subscription_is_inactive(cli
         headers={"Stripe-Signature": "sig"},
     )
 
-    assert response.status_code == 200
-    assert response.json() == {"received": True}
+    assert response.status_code == 503
+    assert "active Pro subscription at fulfillment time" in response.text
     refill_mock.assert_not_called()
-    complete_mock.assert_called_once_with(event_id)
-    clear_mock.assert_not_called()
+    complete_mock.assert_not_called()
+    clear_mock.assert_called_once_with(event_id)
 
 
 @pytest.mark.parametrize(
@@ -1847,7 +2371,7 @@ def test_billing_webhook_pro_checkout_card_outcomes_only_promote_paid_sessions(
     assert response.json() == {"received": True}
     if expect_pro_activation:
         activate_mock.assert_called_once()
-        assert activate_mock.call_args.kwargs["stripe_event_id"] == event_id
+        assert activate_mock.call_args.kwargs["stripe_event_id"] == "checkout_session:cs_test_123"
         assert activate_mock.call_args.kwargs["subscription_id"] == "sub_123"
         assert activate_mock.call_args.kwargs["subscription_status"] == "active"
         assert activate_mock.call_args.kwargs["cancel_at_period_end"] is False
@@ -1937,6 +2461,7 @@ def test_billing_webhook_subscription_deletion_downgrades_to_base(client, app_ma
     mocker.patch.object(app_main, "clear_billing_event", return_value=None)
     set_subscription_mock = mocker.patch.object(app_main, "set_user_billing_subscription", return_value=None)
     downgrade_mock = mocker.patch.object(app_main, "downgrade_to_base_membership", return_value=None)
+    apply_retention_mock = mocker.patch.object(app_main, "apply_user_downgrade_retention", return_value={"status": "grace_period"})
 
     response = client.post(
         "/api/billing/webhook",
@@ -1947,6 +2472,7 @@ def test_billing_webhook_subscription_deletion_downgrades_to_base(client, app_ma
     assert response.status_code == 200
     set_subscription_mock.assert_called_once()
     downgrade_mock.assert_called_once_with("user-1")
+    apply_retention_mock.assert_called_once_with("user-1")
 
 
 def test_billing_webhook_subscription_updated_cancel_at_period_end_keeps_pro_role(client, app_main, mocker) -> None:
@@ -1972,6 +2498,7 @@ def test_billing_webhook_subscription_updated_cancel_at_period_end_keeps_pro_rol
     mocker.patch.object(app_main, "is_pro_price_id", side_effect=lambda value: value == "price_pro_monthly")
     set_subscription_mock = mocker.patch.object(app_main, "set_user_billing_subscription", return_value=None)
     set_role_mock = mocker.patch.object(app_main, "set_user_role", return_value=None)
+    clear_retention_mock = mocker.patch.object(app_main, "clear_user_downgrade_retention", return_value=None)
     downgrade_mock = mocker.patch.object(app_main, "downgrade_to_base_membership", return_value=None)
     complete_mock = mocker.patch.object(app_main, "complete_billing_event", return_value=None)
     clear_mock = mocker.patch.object(app_main, "clear_billing_event", return_value=None)
@@ -1987,6 +2514,7 @@ def test_billing_webhook_subscription_updated_cancel_at_period_end_keeps_pro_rol
     set_subscription_mock.assert_called_once()
     assert set_subscription_mock.call_args.kwargs["cancel_at_period_end"] is True
     set_role_mock.assert_called_once_with("user-1", "pro")
+    clear_retention_mock.assert_called_once_with("user-1")
     downgrade_mock.assert_not_called()
     complete_mock.assert_called_once_with("evt_3b")
     clear_mock.assert_not_called()
@@ -2503,7 +3031,17 @@ def test_billing_webhook_processing_failure_clears_event_lock(client, app_main, 
             openai_credits_remaining=500,
         ),
     )
-    mocker.patch.object(app_main, "get_user_billing_record", return_value=None)
+    mocker.patch.object(
+        app_main,
+        "get_user_billing_record",
+        return_value=UserBillingRecord(
+            uid="user-1",
+            customer_id="cus_123",
+            subscription_id="sub_123",
+            subscription_status="active",
+            subscription_price_id="price_pro_monthly",
+        ),
+    )
     mocker.patch.object(app_main, "resolve_refill_credit_pack_size_for_price", return_value=500)
     mocker.patch.object(app_main, "add_refill_openai_credits", side_effect=RuntimeError("db down"))
     clear_mock = mocker.patch.object(app_main, "clear_billing_event", return_value=None)

@@ -10,7 +10,10 @@ from backend.api.routes import (
     ai_router,
     billing_router,
     detection_router,
+    fill_links_public_router,
+    fill_links_router,
     forms_router,
+    groups_router,
     health_router,
     legacy_detection_router,
     profile_router,
@@ -44,6 +47,7 @@ def create_app() -> FastAPI:
 
     app.include_router(health_router)
     app.include_router(public_router)
+    app.include_router(fill_links_public_router)
     app.include_router(billing_router)
     app.include_router(profile_router)
     app.include_router(legacy_detection_router)
@@ -51,6 +55,8 @@ def create_app() -> FastAPI:
     app.include_router(schemas_router)
     app.include_router(ai_router)
     app.include_router(forms_router)
+    app.include_router(fill_links_router)
+    app.include_router(groups_router)
     app.include_router(saved_forms_router)
     app.include_router(sessions_router)
     return app

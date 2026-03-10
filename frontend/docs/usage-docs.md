@@ -17,6 +17,8 @@ consistent with existing legal-page routing.
 - `/usage-docs/rename-mapping`
 - `/usage-docs/editor-workflow`
 - `/usage-docs/search-fill`
+- `/usage-docs/fill-by-link`
+- `/usage-docs/create-group`
 - `/usage-docs/save-download-profile`
 - `/usage-docs/troubleshooting`
 - `/docs/*` permanently redirects to the matching `/usage-docs/*` path

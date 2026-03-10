@@ -42,9 +42,11 @@ The MCP server uses the Firebase email/password REST flow and caches the ID toke
 
 ## Allowlist behavior
 
-- Dev defaults to `DULLY_MCP_ALLOWLIST_MODE=auto`, which loads the allowlist from `/openapi.json`.
+- Dev defaults to `DULLY_MCP_ALLOWLIST_MODE=auto`, but only for local backend targets.
+  Auto mode now refuses remote `DULLY_MCP_API_BASE_URL` / `DULLY_MCP_OPENAPI_URL` values.
 - Prod defaults to `DULLY_MCP_ALLOWLIST_MODE=file`, which reads `mcp/allowlist.prod.json`.
 - If `DULLY_MCP_ENV` is unset, the server infers `prod` when `DULLY_MCP_API_BASE_URL` is not local.
+- For any remote backend, set `DULLY_MCP_ALLOWLIST_MODE=file` and keep the allowlist checked in or reviewed locally before enabling writes.
 
 ## Tool summary
 

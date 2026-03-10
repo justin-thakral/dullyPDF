@@ -138,6 +138,11 @@ def upload_session_json(payload, destination_path: str) -> str:
     return f"gs://{bucket_name}/{safe_destination}"
 
 
+def upload_saved_form_snapshot_json(payload, destination_path: str) -> str:
+    """Upload a saved-form editor snapshot JSON blob to storage."""
+    return upload_session_json(payload, destination_path)
+
+
 def delete_pdf(bucket_path: str) -> None:
     """Delete a PDF object from an allowlisted bucket.
     """
@@ -180,3 +185,8 @@ def download_session_json(bucket_path: str):
     bucket = get_storage_bucket(bucket_name)
     data = bucket.blob(file_path).download_as_bytes()
     return json.loads(data.decode("utf-8"))
+
+
+def download_saved_form_snapshot_json(bucket_path: str):
+    """Download a saved-form editor snapshot JSON blob from storage."""
+    return download_session_json(bucket_path)

@@ -394,12 +394,13 @@ def test_consume_openai_credits_base_cannot_spend_refill_pool(mocker) -> None:
 
 def test_refund_openai_credits_pro_restores_specific_pools_from_breakdown(mocker) -> None:
     client = FakeFirestoreClient()
+    mocker.patch("backend.firebaseDB.user_database._current_month_cycle_key", return_value="2026-03")
     doc = client.collection(adb.USERS_COLLECTION).document("uid-pro").seed(
         {
             adb.ROLE_FIELD: adb.ROLE_PRO,
             adb.OPENAI_CREDITS_MONTHLY_FIELD: 0,
             adb.OPENAI_CREDITS_REFILL_FIELD: 1,
-            adb.OPENAI_CREDITS_MONTHLY_CYCLE_FIELD: adb._current_month_cycle_key(),
+            adb.OPENAI_CREDITS_MONTHLY_CYCLE_FIELD: "2026-03",
         }
     )
     mocker.patch("backend.firebaseDB.user_database.get_firestore_client", return_value=client)
@@ -417,6 +418,67 @@ def test_refund_openai_credits_pro_restores_specific_pools_from_breakdown(mocker
     assert stored[adb.OPENAI_CREDITS_MONTHLY_FIELD] == 3
     assert stored[adb.OPENAI_CREDITS_REFILL_FIELD] == 2
     assert stored["updated_at"] == "ts-refund-pro"
+
+
+def test_refund_openai_credits_returns_base_credits_to_base_pool_even_after_upgrade(mocker) -> None:
+    client = FakeFirestoreClient()
+    mocker.patch("backend.firebaseDB.user_database._current_month_cycle_key", return_value="2026-03")
+    doc = client.collection(adb.USERS_COLLECTION).document("uid-upgraded").seed(
+        {
+            adb.ROLE_FIELD: adb.ROLE_PRO,
+            adb.OPENAI_CREDITS_FIELD: 2,
+            adb.OPENAI_CREDITS_MONTHLY_FIELD: 9,
+            adb.OPENAI_CREDITS_REFILL_FIELD: 4,
+            adb.OPENAI_CREDITS_MONTHLY_CYCLE_FIELD: "2026-03",
+        }
+    )
+    mocker.patch("backend.firebaseDB.user_database.get_firestore_client", return_value=client)
+    mocker.patch("backend.firebaseDB.user_database.now_iso", return_value="ts-refund-base-after-upgrade")
+
+    available = adb.refund_openai_credits(
+        "uid-upgraded",
+        credits=3,
+        role=adb.ROLE_BASE,
+    )
+
+    assert available == 5
+    stored = doc.get().to_dict()
+    assert stored[adb.ROLE_FIELD] == adb.ROLE_PRO
+    assert stored[adb.OPENAI_CREDITS_FIELD] == 5
+    assert stored[adb.OPENAI_CREDITS_MONTHLY_FIELD] == 9
+    assert stored[adb.OPENAI_CREDITS_REFILL_FIELD] == 4
+    assert stored["updated_at"] == "ts-refund-base-after-upgrade"
+
+
+def test_refund_openai_credits_preserves_pro_pools_even_after_downgrade(mocker) -> None:
+    client = FakeFirestoreClient()
+    mocker.patch("backend.firebaseDB.user_database._current_month_cycle_key", return_value="2026-03")
+    doc = client.collection(adb.USERS_COLLECTION).document("uid-downgraded").seed(
+        {
+            adb.ROLE_FIELD: adb.ROLE_BASE,
+            adb.OPENAI_CREDITS_FIELD: 1,
+            adb.OPENAI_CREDITS_MONTHLY_FIELD: 0,
+            adb.OPENAI_CREDITS_REFILL_FIELD: 2,
+            adb.OPENAI_CREDITS_MONTHLY_CYCLE_FIELD: "2026-03",
+        }
+    )
+    mocker.patch("backend.firebaseDB.user_database.get_firestore_client", return_value=client)
+    mocker.patch("backend.firebaseDB.user_database.now_iso", return_value="ts-refund-pro-after-downgrade")
+
+    available = adb.refund_openai_credits(
+        "uid-downgraded",
+        credits=4,
+        role=adb.ROLE_PRO,
+        credit_breakdown={"monthly": 3, "refill": 1},
+    )
+
+    assert available == 6
+    stored = doc.get().to_dict()
+    assert stored[adb.ROLE_FIELD] == adb.ROLE_BASE
+    assert stored[adb.OPENAI_CREDITS_FIELD] == 1
+    assert stored[adb.OPENAI_CREDITS_MONTHLY_FIELD] == 3
+    assert stored[adb.OPENAI_CREDITS_REFILL_FIELD] == 3
+    assert stored["updated_at"] == "ts-refund-pro-after-downgrade"
 
 
 def test_get_user_profile_base_role_reports_locked_refill_credits(mocker) -> None:
@@ -440,6 +502,36 @@ def test_get_user_profile_base_role_reports_locked_refill_credits(mocker) -> Non
     assert profile.openai_credits_refill_remaining == 5
     assert profile.openai_credits_available == 2
     assert profile.refill_credits_locked is True
+
+
+def test_get_user_profile_includes_downgrade_retention(mocker) -> None:
+    client = FakeFirestoreClient()
+    client.collection(adb.USERS_COLLECTION).document("uid-base").seed(
+        {
+            adb.ROLE_FIELD: adb.ROLE_BASE,
+            adb.OPENAI_CREDITS_FIELD: 2,
+            adb.DOWNGRADE_RETENTION_FIELD: {
+                "status": "grace_period",
+                "policy_version": 1,
+                "downgraded_at": "2026-03-01T00:00:00+00:00",
+                "grace_ends_at": "2026-03-31T00:00:00+00:00",
+                "saved_forms_limit": 3,
+                "fill_links_active_limit": 1,
+                "kept_template_ids": ["tpl-1", "tpl-2", "tpl-3"],
+                "pending_delete_template_ids": ["tpl-4"],
+                "pending_delete_link_ids": ["link-4"],
+            },
+        }
+    )
+    mocker.patch("backend.firebaseDB.user_database.get_firestore_client", return_value=client)
+
+    profile = adb.get_user_profile("uid-base")
+
+    assert profile is not None
+    assert profile.downgrade_retention is not None
+    assert profile.downgrade_retention.status == "grace_period"
+    assert profile.downgrade_retention.pending_delete_template_ids == ["tpl-4"]
+    assert profile.downgrade_retention.pending_delete_link_ids == ["link-4"]
 
 
 def test_consume_openai_credits_pro_resets_monthly_pool_when_cycle_stale(mocker) -> None:
@@ -585,6 +677,10 @@ def test_activate_pro_membership_with_subscription_writes_membership_and_billing
         {
             adb.ROLE_FIELD: adb.ROLE_BASE,
             adb.OPENAI_CREDITS_REFILL_FIELD: 9,
+            adb.DOWNGRADE_RETENTION_FIELD: {
+                "status": "grace_period",
+                "policy_version": 1,
+            },
         }
     )
     mocker.patch("backend.firebaseDB.user_database.get_firestore_client", return_value=client)
@@ -610,6 +706,7 @@ def test_activate_pro_membership_with_subscription_writes_membership_and_billing
     assert stored[adb.STRIPE_SUBSCRIPTION_STATUS_FIELD] == "active"
     assert stored[adb.STRIPE_SUBSCRIPTION_PRICE_ID_FIELD] == "price_monthly"
     assert stored[adb.STRIPE_PROCESSED_EVENT_IDS_FIELD] == ["evt_pro_checkout_1"]
+    assert adb.DOWNGRADE_RETENTION_FIELD not in stored
 
 
 def test_activate_pro_membership_with_subscription_can_backfill_metadata_for_duplicate_event(mocker) -> None:
@@ -642,6 +739,36 @@ def test_activate_pro_membership_with_subscription_can_backfill_metadata_for_dup
     assert stored[adb.STRIPE_SUBSCRIPTION_STATUS_FIELD] == "active"
     assert stored[adb.STRIPE_SUBSCRIPTION_PRICE_ID_FIELD] == "price_backfill"
     assert stored[adb.STRIPE_PROCESSED_EVENT_IDS_FIELD] == ["evt_repeat"]
+
+
+def test_set_and_clear_user_downgrade_retention_round_trip(mocker) -> None:
+    client = FakeFirestoreClient()
+    mocker.patch("backend.firebaseDB.user_database.get_firestore_client", return_value=client)
+    mocker.patch("backend.firebaseDB.user_database.now_iso", return_value="ts-retention")
+
+    adb.set_user_downgrade_retention(
+        "uid-base",
+        status="grace_period",
+        policy_version=2,
+        downgraded_at="2026-03-01T00:00:00+00:00",
+        grace_ends_at="2026-03-31T00:00:00+00:00",
+        saved_forms_limit=3,
+        fill_links_active_limit=1,
+        kept_template_ids=["tpl-1", "tpl-2", "tpl-3"],
+        pending_delete_template_ids=["tpl-4"],
+        pending_delete_link_ids=["link-4"],
+        billing_state_deferred=True,
+    )
+
+    retention = adb.get_user_downgrade_retention("uid-base")
+    assert retention is not None
+    assert retention.policy_version == 2
+    assert retention.kept_template_ids == ["tpl-1", "tpl-2", "tpl-3"]
+    assert retention.pending_delete_template_ids == ["tpl-4"]
+    assert retention.billing_state_deferred is True
+
+    adb.clear_user_downgrade_retention("uid-base")
+    assert adb.get_user_downgrade_retention("uid-base") is None
 
 
 def test_add_refill_openai_credits_requires_positive_integer(mocker) -> None:

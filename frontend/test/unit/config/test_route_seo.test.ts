@@ -21,6 +21,12 @@ describe('routeSeo config', () => {
     expect(metadata.title).toContain('Auto Fill PDF');
   });
 
+  it('resolves dedicated Create Group docs metadata', () => {
+    const metadata = resolveRouteSeo({ kind: 'usage-docs', pageKey: 'create-group' });
+    expect(metadata.canonicalPath).toBe('/usage-docs/create-group');
+    expect(metadata.title).toContain('Create Group');
+  });
+
   it('resolves canonical intent metadata by key', () => {
     const metadata = resolveRouteSeo({ kind: 'intent', intentKey: 'healthcare-pdf-automation' });
     expect(metadata.canonicalPath).toBe('/healthcare-pdf-automation');
@@ -31,6 +37,12 @@ describe('routeSeo config', () => {
     const metadata = resolveRouteSeo({ kind: 'intent-hub', hubKey: 'workflows' });
     expect(metadata.canonicalPath).toBe('/workflows');
     expect(metadata.title).toContain('Workflow Library');
+  });
+
+  it('resolves feature plan metadata by key', () => {
+    const metadata = resolveRouteSeo({ kind: 'feature-plan', planKey: 'premium-features' });
+    expect(metadata.canonicalPath).toBe('/premium-features');
+    expect(metadata.title).toContain('Premium');
   });
 
   it('keeps build-time static routes aligned with the runtime indexable route list', () => {

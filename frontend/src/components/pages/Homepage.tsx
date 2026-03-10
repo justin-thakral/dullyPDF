@@ -80,12 +80,39 @@ const DEMO_WALKTHROUGH: DemoWalkthroughStep[] = [
   },
   {
     id: 'filled',
-    title: 'Search & Fill completes the form',
+    title: 'Search & Fill or Fill By Link completes the form',
     description:
-      'Pull a record from your data source and populate every mapped field in seconds.',
+      'Pull a local record or choose a stored Fill By Link respondent record and populate every mapped field in seconds.',
     imageWebp: '/demo/mobile-filled.webp',
     imagePng: '/demo/mobile-filled.png',
     alt: 'Completed PDF form with patient data filled into the detected fields.',
+  },
+  {
+    id: 'link-generated',
+    title: 'Generate a shareable link for respondents',
+    description:
+      'After saving the template, publish a DullyPDF link you can send to users so they can submit the form without opening the PDF editor.',
+    imageWebp: '/demo/link-generated.webp',
+    imagePng: '/demo/link-generated.png',
+    alt: 'Generated Fill By Link panel showing a shareable respondent link for the saved template.',
+  },
+  {
+    id: 'mock-form',
+    title: 'Respondents fill a mock form, not the PDF',
+    description:
+      'The public link opens a mobile-friendly HTML form where users submit answers. DullyPDF stores the response so you can generate the PDF later.',
+    imageWebp: '/demo/mock-form.webp',
+    imagePng: '/demo/mock-form.png',
+    alt: 'Mock respondent form showing public question fields that collect answers outside the PDF editor.',
+  },
+  {
+    id: 'create-group',
+    title: 'Create groups for full document workflows',
+    description:
+      'Open a group to search and fill an entire packet, then rename and remap every template in that group at once for larger document workflows.',
+    imageWebp: '/demo/create-group.webp',
+    imagePng: '/demo/create-group.png',
+    alt: 'Create Group workflow showing grouped templates for packet-wide Search and Fill and batch Rename + Map.',
   },
 ];
 
@@ -368,9 +395,9 @@ const Homepage: React.FC<HomepageProps> = ({
 
         <div className="mobile-copy">
           <p className="mobile-description">
-            DullyPDF converts raw PDFs into editable templates with precise form fields. Upload a CSV, Excel, JSON, or
-            TXT schema locally, standardize field names with OpenAI, and map them to your database columns for Search
-            &amp; Fill.
+            DullyPDF converts raw PDFs into editable templates with precise form fields. Then you can either search
+            local CSV, Excel, JSON, or TXT data or publish a native Fill By Link from a saved template so respondents
+            can answer from a phone.
           </p>
           <p className="mobile-description">
             If you are searching for ways to fill information in PDF files, generate PDF database templates, or clean
@@ -379,6 +406,10 @@ const Homepage: React.FC<HomepageProps> = ({
             <CommonFormsAttribution />
             {' '}
             for field detections.
+          </p>
+          <p className="mobile-credit">
+            Fill By Link is native to DullyPDF: free includes 1 active link with up to 5 accepted responses, while
+            premium unlocks a shareable link for every saved template with up to 10,000 responses per link.
           </p>
         </div>
 
@@ -409,8 +440,15 @@ const Homepage: React.FC<HomepageProps> = ({
             <div className="feature-item">
               <span className="feature-number">4</span>
               <div className="feature-content">
-                <h4>Map schema + Search &amp; Fill</h4>
-                <p>Connect your data headers and populate a selected record instantly.</p>
+                <h4>Publish Fill By Link or map local data</h4>
+                <p>Save the template, then either connect local rows or publish a DullyPDF-hosted HTML form link.</p>
+              </div>
+            </div>
+            <div className="feature-item">
+              <span className="feature-number">5</span>
+              <div className="feature-content">
+                <h4>Select a respondent and generate the PDF</h4>
+                <p>Choose a saved respondent record inside DullyPDF and create the final PDF only when it is needed.</p>
               </div>
             </div>
           </div>
@@ -422,7 +460,8 @@ const Homepage: React.FC<HomepageProps> = ({
           <p className="demo-kicker">Demo walkthrough</p>
           <h3>See the pipeline on mobile</h3>
           <p>
-            Use the arrows to move through each state and see how DullyPDF prepares a database-ready template.
+            Use the arrows to move through each state and see how DullyPDF prepares a database-ready template that can
+            be filled from local data or a native Fill By Link respondent record.
           </p>
         </div>
         <div className="mobile-demo-card">
@@ -478,46 +517,38 @@ const Homepage: React.FC<HomepageProps> = ({
           {/* Left Panel - Project Description */}
           <div className="description-panel" ref={descriptionPanelRef}>
             <div className="description-content" ref={descriptionContentRef}>
-              <h1 className="homepage-main-title">Automatic PDF to Fillable Form and Database Template Mapping</h1>
+              <h1 className="homepage-main-title">Automatic PDF Templates, Fill By Link, and Database Mapping</h1>
 
               <div className="description-text">
                 <p className="lead-description">
-                  This software converts raw PDFs into fillable forms with writable areas at input fields.
-                  Once your fillable form is ready, you can upload a CSV, Excel, JSON, or TXT schema file locally and map
-                  field names to the PDF. CSV/Excel/JSON rows stay in the browser for Search &amp; Fill, with
+                  This software converts raw PDFs into fillable forms using 
                   {' '}
                   <CommonFormsAttribution />
                   {' '}
-                  for field detections.
+                  for field detections with writable areas at input fields.
+                  Once your form is ready, you can upload a CSV, Excel, JSON, or TXT schema file and map
+                  field names to the PDF, or publish a native DullyPDF Fill By Link from a saved template so up to 10,000 respondents can
+                  submit data through a mobile-friendly HTML form to be filled in on your PDF. Database rows stay in browser for Search
+                  &amp; Fill 
                 </p>
 
                 <div className="features-section">
                   <h3>Complete Workflow Process</h3>
                   <div className="feature-list">
+              
                     <div className="feature-item">
                       <span className="feature-number">1</span>
                       <div className="feature-content">
-                        <h4>Upload PDF Document</h4>
+                        <h4>PDF to Form with AI-Powered Field Detection</h4>
                         <p>
-                          Upload any PDF document containing text fields, checkboxes, signature areas,
-                          or any regions where users should input information. Supports files up to 50MB.
+                          The detection pipeline analyzes your PDF and automatically identifies
+                          potential form fields with confidence scoring and field names pulled from nearby labels.
                         </p>
                       </div>
                     </div>
 
                     <div className="feature-item">
                       <span className="feature-number">2</span>
-                      <div className="feature-content">
-                        <h4>AI-Powered Field Detection</h4>
-                        <p>
-                          The detection pipeline analyzes your document and automatically identifies
-                          potential form fields with confidence scoring and context hints pulled from nearby labels.
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="feature-item">
-                      <span className="feature-number">3</span>
                       <div className="feature-content">
                         <h4>Interactive Visual Editing</h4>
                         <p>
@@ -529,12 +560,23 @@ const Homepage: React.FC<HomepageProps> = ({
                     </div>
 
                     <div className="feature-item">
+                      <span className="feature-number">3</span>
+                      <div className="feature-content">
+                        <h4>Publish Native Fill By Link or Connect Local Data</h4>
+                        <p>
+                          Save the template, then either publish a DullyPDF-hosted HTML form link or upload a
+                          CSV/Excel/JSON/TXT schema file locally for Search &amp; Fill preparation.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="feature-item">
                       <span className="feature-number">4</span>
                       <div className="feature-content">
-                        <h4>Schema Mapping &amp; Auto-Fill</h4>
+                        <h4>Search, Select, and Generate the Final PDF</h4>
                         <p>
-                          Upload a CSV/Excel/JSON/TXT schema file locally, map PDF field names to your schema, and
-                          choose a local record to populate the form for streamlined data entry.
+                          Choose a local row or a stored respondent submission in the workspace. DullyPDF fills the
+                          template and creates the PDF only when you download it.
                         </p>
                       </div>
                     </div>
@@ -549,11 +591,12 @@ const Homepage: React.FC<HomepageProps> = ({
           <div className="action-panel" ref={actionPanelRef}>
             <div className="action-content" ref={actionContentRef}>
               <div className="cta-section">
-                <h3>Ready to Get Started?</h3>
+                <h3>Build, Share, and Fill Faster</h3>
                 <p className="cta-description">
-                  Click <strong>Try Now</strong> to upload your PDF document and use AI-driven
-                  form field detection, the form builder, and database mapping. PDF to fillable form is <strong>free</strong>.
-                  The <strong>Demo</strong> is interactive and live. Use <strong>Contact</strong> to send me a message.
+                  Click <strong>Try Now</strong> to upload your PDF document and use AI-driven form field detection,
+                  the form builder, native Fill By Link, and database mapping. 
+                  The <strong>Demo</strong> is interactive and live. Use <strong>Contact</strong> to send me a
+                  message.
                 </p>
 
                 <div className="cta-buttons">
@@ -582,14 +625,20 @@ const Homepage: React.FC<HomepageProps> = ({
                     <span className="info-label">Supported:</span>
                     <span className="info-value">PDF files up to 50MB</span>
                   </div>
-                  <div className="info-item">
-                    <span className="info-label">Processing:</span>
-                    <span className="info-value">Typically 30 seconds per page</span>
-                  </div>
-                  <div className="info-item">
-                    <span className="info-label">Output:</span>
-                    <span className="info-value">Editable field template</span>
-                  </div>
+                  <a href="/free-features" className="info-item info-item--link" aria-label="View free features">
+                    <span className="info-main">
+                      <span className="info-label">Free Feats:</span>
+                      <span className="info-value">Unlimited PDF to form and form builder</span>
+                    </span>
+                    <span className="info-cta">View</span>
+                  </a>
+                  <a href="/premium-features" className="info-item info-item--link" aria-label="View premium features">
+                    <span className="info-main">
+                      <span className="info-label">Premium Feats:</span>
+                      <span className="info-value">High usage for all DullyPDF features.</span>
+                    </span>
+                    <span className="info-cta">View</span>
+                  </a>
                 </div>
               </div>
 
@@ -597,8 +646,9 @@ const Homepage: React.FC<HomepageProps> = ({
                 <h4>Powered by Advanced Technology</h4>
                 <p>
                   Built using PDF.js rendering for precision geometry,
-                  React for responsive interfaces, and AI workflows
-                  for intelligent field detection and naming.
+                  React for responsive interfaces, and AI workflows for intelligent field detection and naming.
+                  Respondent answers stay structured so owners can reopen the workspace, search a respondent list, and
+                  generate the final PDF only when it is needed.
                 </p>
               </div>
             </div>

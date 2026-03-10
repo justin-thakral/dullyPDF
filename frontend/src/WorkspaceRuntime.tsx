@@ -7,11 +7,11 @@ import type { PDFDocumentProxy } from 'pdfjs-dist/types/src/display/api';
 import './App.css';
 import type {
   BannerNotice,
+  CheckboxRule,
   FieldType,
   PageSize,
   PdfField,
 } from './types';
-import { debugLog } from './utils/debug';
 import Homepage from './components/pages/Homepage';
 import LoginPage from './components/pages/LoginPage';
 import ProfilePage from './components/pages/ProfilePage';
@@ -19,6 +19,9 @@ import VerifyEmailPage from './components/pages/VerifyEmailPage';
 import { HeaderBar } from './components/layout/HeaderBar';
 import LegacyHeader from './components/layout/LegacyHeader';
 import SearchFillModal from './components/features/SearchFillModal';
+import { FillLinkManagerDialog } from './components/features/FillLinkManagerDialog';
+import DowngradeRetentionDialog from './components/features/DowngradeRetentionDialog';
+import { GroupUploadDialog } from './components/features/GroupUploadDialog';
 import UploadView from './components/features/UploadView';
 import ProcessingView from './components/features/ProcessingView';
 import { DemoTour } from './components/demo/DemoTour';
@@ -41,22 +44,31 @@ import { useFieldState } from './hooks/useFieldState';
 import { useDialog } from './hooks/useDialog';
 import { useAuth } from './hooks/useAuth';
 import { useSavedForms } from './hooks/useSavedForms';
+import { useGroups } from './hooks/useGroups';
+import { useWorkspaceGroupCoordinator } from './hooks/useWorkspaceGroupCoordinator';
+import { useWorkspaceFillLinks } from './hooks/useWorkspaceFillLinks';
 import { useDataSource } from './hooks/useDataSource';
 import { useOpenAiPipeline } from './hooks/useOpenAiPipeline';
 import { useDetection } from './hooks/useDetection';
 import { usePipelineModal } from './hooks/usePipelineModal';
+import { useGroupDownload } from './hooks/useGroupDownload';
+import { useDowngradeRetentionRuntime } from './hooks/useDowngradeRetentionRuntime';
 import { useSaveDownload } from './hooks/useSaveDownload';
 import { useDemo } from './hooks/useDemo';
-import {
-  ApiService,
-  type BillingCheckoutKind,
-  type BillingPlanCatalogItem,
-  type UserProfile,
-} from './services/api';
+import { useUploadBrowserViewModel } from './hooks/useUploadBrowserViewModel';
 import { applyRouteSeo } from './utils/seo';
 import { clampRectToPage } from './utils/coords';
-import { createFieldWithRect, getMinFieldSize, normalizeRectForFieldType } from './utils/fields';
-import { trackGoogleAdsBillingPurchase } from './utils/googleAds';
+import {
+  createFieldWithRect,
+  getMinFieldSize,
+  normalizeRectForFieldType,
+} from './utils/fields';
+import {
+  DEFAULT_ARROW_KEY_MOVE_STEP,
+  getFieldNudgeCommandFromKey,
+  sanitizeArrowKeyMoveStep,
+} from './utils/fieldMovement';
+import { buildFillLinkPublishFingerprint } from './utils/fillLinks';
 
 /**
  * Launch actions that can be requested by the lightweight homepage shell.
@@ -71,132 +83,15 @@ type WorkspaceRuntimeProps = {
   bootstrapAuthUser?: User | null;
 };
 
-const PENDING_BILLING_CHECKOUT_STORAGE_KEY = 'dullypdf.pendingBillingCheckout';
-const ZERO_DECIMAL_CURRENCIES = new Set([
-  'BIF',
-  'CLP',
-  'DJF',
-  'GNF',
-  'JPY',
-  'KMF',
-  'KRW',
-  'MGA',
-  'PYG',
-  'RWF',
-  'UGX',
-  'VND',
-  'VUV',
-  'XAF',
-  'XOF',
-  'XPF',
-]);
-
-type PendingBillingCheckout = {
-  requestedKind: BillingCheckoutKind;
-  sessionId: string;
-  attemptId?: string | null;
-  checkoutPriceId?: string | null;
-  startedAt: number;
-};
-
-type BillingReconcileEvent = Awaited<ReturnType<typeof ApiService.reconcileBillingCheckoutFulfillment>>['events'][number];
-
-function getSessionStorage(): Storage | null {
-  if (typeof window === 'undefined') return null;
-  try {
-    return window.sessionStorage;
-  } catch {
-    return null;
-  }
-}
-
-function persistPendingBillingCheckout(payload: PendingBillingCheckout): void {
-  const storage = getSessionStorage();
-  if (!storage) return;
-  storage.setItem(PENDING_BILLING_CHECKOUT_STORAGE_KEY, JSON.stringify(payload));
-}
-
-function readPendingBillingCheckout(): PendingBillingCheckout | null {
-  const storage = getSessionStorage();
-  if (!storage) return null;
-  const raw = storage.getItem(PENDING_BILLING_CHECKOUT_STORAGE_KEY);
-  if (!raw) return null;
-  try {
-    const parsed = JSON.parse(raw) as Partial<PendingBillingCheckout> | null;
-    const sessionId = typeof parsed?.sessionId === 'string' ? parsed.sessionId.trim() : '';
-    const requestedKind = typeof parsed?.requestedKind === 'string' ? parsed.requestedKind.trim() : '';
-    if (!sessionId || !requestedKind) return null;
-    if (!['pro_monthly', 'pro_yearly', 'refill_500'].includes(requestedKind)) return null;
-    return {
-      requestedKind: requestedKind as BillingCheckoutKind,
-      sessionId,
-      attemptId: typeof parsed?.attemptId === 'string' ? parsed.attemptId.trim() || null : null,
-      checkoutPriceId: typeof parsed?.checkoutPriceId === 'string' ? parsed.checkoutPriceId.trim() || null : null,
-      startedAt: typeof parsed?.startedAt === 'number' && Number.isFinite(parsed.startedAt) ? parsed.startedAt : Date.now(),
-    };
-  } catch {
-    return null;
-  }
-}
-
-function clearPendingBillingCheckout(): void {
-  const storage = getSessionStorage();
-  if (!storage) return;
-  storage.removeItem(PENDING_BILLING_CHECKOUT_STORAGE_KEY);
-}
-
-function findMatchingBillingCheckoutEvent(
-  events: BillingReconcileEvent[],
-  pendingCheckout: PendingBillingCheckout | null,
-): BillingReconcileEvent | null {
-  if (!pendingCheckout) return null;
-  const normalizedSessionId = pendingCheckout.sessionId.trim();
-  const normalizedAttemptId = (pendingCheckout.attemptId || '').trim();
-  return events.find((event) => {
-    const eventSessionId = (event.checkoutSessionId || '').trim();
-    if (normalizedSessionId && eventSessionId && eventSessionId === normalizedSessionId) {
-      return true;
-    }
-    const eventAttemptId = (event.checkoutAttemptId || '').trim();
-    return Boolean(normalizedAttemptId && eventAttemptId && eventAttemptId === normalizedAttemptId);
-  }) ?? null;
-}
-
-function resolveTrackedBillingKind(
-  event: BillingReconcileEvent | null,
-  pendingCheckout: PendingBillingCheckout | null,
-): BillingCheckoutKind | null {
-  const eventKind = (event?.checkoutKind || '').trim();
-  if (eventKind === 'pro_monthly' || eventKind === 'pro_yearly' || eventKind === 'refill_500') {
-    return eventKind;
-  }
-  return pendingCheckout?.requestedKind ?? null;
-}
-
-function resolveBillingPlanForTracking(
-  profile: UserProfile | null,
-  event: BillingReconcileEvent | null,
-  pendingCheckout: PendingBillingCheckout | null,
-): BillingPlanCatalogItem | null {
-  const plans = profile?.billing?.plans;
-  if (!plans) return null;
-  const trackedKind = resolveTrackedBillingKind(event, pendingCheckout);
-  if (trackedKind && plans[trackedKind]) {
-    return plans[trackedKind] ?? null;
-  }
-  const targetPriceId = (event?.checkoutPriceId || pendingCheckout?.checkoutPriceId || '').trim();
-  if (!targetPriceId) return null;
-  return Object.values(plans).find((plan) => plan?.priceId === targetPriceId) ?? null;
-}
-
-function resolveGoogleAdsPurchaseValue(plan: BillingPlanCatalogItem | null): number | null {
-  if (typeof plan?.unitAmount !== 'number' || !Number.isFinite(plan.unitAmount) || plan.unitAmount <= 0) {
-    return null;
-  }
-  const normalizedCurrency = (plan.currency || '').trim().toUpperCase();
-  const divisor = ZERO_DECIMAL_CURRENCIES.has(normalizedCurrency) ? 1 : 100;
-  return Number((plan.unitAmount / divisor).toFixed(divisor === 1 ? 0 : 2));
-}
+type SearchFillPresetState = {
+  query: string;
+  searchKey?: string;
+  searchMode?: 'contains' | 'equals';
+  autoRun?: boolean;
+  autoFillOnSearch?: boolean;
+  highlightResult?: boolean;
+  token: number;
+} | null;
 
 /**
  * Main workspace runtime component that coordinates auth, detection, and editing.
@@ -209,10 +104,14 @@ function WorkspaceRuntime({
   bootstrapAuthUser = null,
 }: WorkspaceRuntimeProps) {
   // ── Ref bridges to break circular hook dependencies ────────────────
-  const savedFormsBridge = useRef({
+  const savedFormsBridge = useRef<{
+    clearSavedFormsRetry: () => void;
+    clearSavedForms: () => void;
+    refreshSavedForms: (opts?: { allowRetry?: boolean; throwOnError?: boolean }) => Promise<unknown>;
+  }>({
     clearSavedFormsRetry: () => {},
     clearSavedForms: () => {},
-    refreshSavedForms: async (_opts?: { allowRetry?: boolean }) => {},
+    refreshSavedForms: async (_opts?: { allowRetry?: boolean; throwOnError?: boolean }) => [],
   });
   const openAiBridge = useRef({
     runOpenAiRename: async (_opts?: any) => null as PdfField[] | null,
@@ -249,11 +148,18 @@ function WorkspaceRuntime({
     refreshSavedForms: (opts) => savedFormsBridge.current.refreshSavedForms(opts),
   });
 
+  const groups = useGroups({
+    verifiedUser: auth.verifiedUser,
+    setBannerNotice: dialog.setBannerNotice,
+  });
+
   // ── Saved forms (uses auth) ────────────────────────────────────────
   const savedForms = useSavedForms({
     authUserRef: auth.authUserRef,
     setBannerNotice: dialog.setBannerNotice,
     requestConfirm: dialog.requestConfirm,
+    refreshGroups: groups.refreshGroups,
+    refreshProfile: () => auth.loadUserProfile(),
   });
   savedFormsBridge.current = {
     clearSavedFormsRetry: savedForms.clearSavedFormsRetry,
@@ -271,15 +177,18 @@ function WorkspaceRuntime({
   const [showHomepage, setShowHomepage] = useState(initialShowHomepage);
   const [isMobileView, setIsMobileView] = useState(false);
   const [showSearchFill, setShowSearchFill] = useState(false);
+  const [showFillLinkManager, setShowFillLinkManager] = useState(false);
   const [transformMode, setTransformMode] = useState(false);
   const [activeCreateTool, setActiveCreateTool] = useState<FieldType | null>(null);
+  const [arrowKeyMoveEnabled, setArrowKeyMoveEnabled] = useState(false);
+  const [arrowKeyMoveStep, setArrowKeyMoveStep] = useState(DEFAULT_ARROW_KEY_MOVE_STEP);
   const [searchFillSessionId, setSearchFillSessionId] = useState(0);
+  const [searchFillPreset, setSearchFillPreset] = useState<SearchFillPresetState>(null);
   const [sourceFile, setSourceFile] = useState<File | null>(null);
   const [sourceFileName, setSourceFileName] = useState<string | null>(null);
   const [sourceFileIsDemo, setSourceFileIsDemo] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [billingCheckoutInProgressKind, setBillingCheckoutInProgressKind] = useState<BillingCheckoutKind | null>(null);
-  const [billingCancelInProgress, setBillingCancelInProgress] = useState(false);
+  const [savedFillLinkPublishFingerprint, setSavedFillLinkPublishFingerprint] = useState<string | null>(null);
 
   useEffect(() => {
     applyRouteSeo({ kind: 'app' });
@@ -288,6 +197,13 @@ function WorkspaceRuntime({
   const pdfState = useMemo(() => ({
     setPdfDoc, setPageSizes, setPageCount, setCurrentPage, setScale, setPendingPageJump,
   }), []);
+
+  const captureSavedFillLinkPublishFingerprint = useCallback(
+    (nextFields: PdfField[], nextCheckboxRules: CheckboxRule[]) => {
+      setSavedFillLinkPublishFingerprint(buildFillLinkPublishFingerprint(nextFields, nextCheckboxRules));
+    },
+    [],
+  );
 
   // ── Data source (uses auth, dialog; openAi setters via bridge) ─────
   const dataSource = useDataSource({
@@ -313,6 +229,7 @@ function WorkspaceRuntime({
     setShowSearchFill,
     setSearchFillSessionId,
     setLoadError,
+    markSavedFillLinkSnapshot: captureSavedFillLinkPublishFingerprint,
     setSourceFile,
     setSourceFileName,
     setSourceFileIsDemo,
@@ -343,7 +260,10 @@ function WorkspaceRuntime({
     fieldsRef: fieldHistory.fieldsRef,
     loadTokenRef: detection.loadTokenRef,
     detectSessionId: detection.detectSessionId,
+    setDetectSessionId: detection.setDetectSessionId,
+    setMappingSessionId: detection.setMappingSessionId,
     activeSavedFormId: savedForms.activeSavedFormId,
+    pageCount,
     dataColumns: dataSource.dataColumns,
     schemaId: dataSource.schemaId,
     pendingAutoActionsRef: detection.pendingAutoActionsRef,
@@ -377,36 +297,172 @@ function WorkspaceRuntime({
     setOpenAiError: openAi.setOpenAiError,
   };
 
-  // ── Wrapped detection handlers (bind pdfState) ─────────────────────
-  const handleFillableUpload = useCallback(
-    (file: File, options: { isDemo?: boolean; skipExistingFields?: boolean } = {}) =>
-      detection.handleFillableUpload(file, options, pdfState),
-    [detection.handleFillableUpload, pdfState],
-  );
-
-  const handleSelectSavedForm = useCallback(
-    (formId: string) => detection.handleSelectSavedForm(formId, pdfState),
-    [detection.handleSelectSavedForm, pdfState],
-  );
+  const {
+    activeGroupId,
+    activeGroupName,
+    activeGroupTemplates,
+    pendingGroupTemplateId,
+    groupTemplateStatusById,
+    groupSwitchingTemplateId,
+    groupUpload,
+    groupRenameMapInProgress,
+    groupRenameMapLabel,
+    groupRenameMapDisabledReason,
+    captureActiveGroupTemplateSnapshot,
+    ensureGroupTemplateSnapshot,
+    resolveGroupTemplateDirtyNames,
+    markGroupTemplatesPersisted,
+    handleSelectActiveGroupTemplate,
+    handleFillSearchTargets,
+    confirmDiscardDirtyGroupChanges,
+    handleFillableUpload,
+    handleSelectSavedForm,
+    handleCreateGroup,
+    handleUpdateGroup,
+    handleDeleteSavedForm,
+    handleSavedFormsLimitDelete,
+    handleDeleteGroup,
+    handleOpenGroup,
+    runDetectUpload,
+    handleRenameAndMapGroup,
+    resetGroupRuntime,
+  } = useWorkspaceGroupCoordinator({
+    verifiedUser: auth.verifiedUser,
+    userProfile: auth.userProfile,
+    loadUserProfile: auth.loadUserProfile,
+    profileLimits: auth.profileLimits,
+    dialog: {
+      setBannerNotice: dialog.setBannerNotice,
+      requestConfirm: dialog.requestConfirm,
+    },
+    groups,
+    savedForms,
+    detection,
+    openAi,
+    document: {
+      pdfDoc,
+      sourceFile,
+      sourceFileName,
+      pageSizes,
+      pageCount,
+      currentPage,
+      scale,
+      setLoadError,
+      setShowHomepage,
+      setShowSearchFill,
+      setSearchFillPreset,
+      setShowFillLinkManager,
+      setSourceFile,
+      setSourceFileName,
+      setSourceFileIsDemo,
+      setPdfDoc,
+      setPageSizes,
+      setPageCount,
+      setCurrentPage,
+      setScale,
+      setPendingPageJump,
+      bumpSearchFillSession: () => setSearchFillSessionId((prev) => prev + 1),
+    },
+    pdfState,
+    fieldHistory: {
+      fields: fieldHistory.fields,
+      fieldsRef: fieldHistory.fieldsRef,
+      historyRef: fieldHistory.historyRef,
+      historyTick: fieldHistory.historyTick,
+      restoreState: fieldHistory.restoreState,
+    },
+    fieldSelection: {
+      selectedFieldId: fieldState.selectedFieldId,
+      setSelectedFieldId: fieldState.setSelectedFieldId,
+      handleFieldsChange: fieldState.handleFieldsChange,
+    },
+    display: {
+      showFields: fieldState.showFields,
+      showFieldNames: fieldState.showFieldNames,
+      showFieldInfo: fieldState.showFieldInfo,
+      transformMode,
+      setShowFields: fieldState.setShowFields,
+      setShowFieldNames: fieldState.setShowFieldNames,
+      setShowFieldInfo: fieldState.setShowFieldInfo,
+      setTransformMode,
+    },
+    dataSource: {
+      schemaId: dataSource.schemaId,
+      schemaUploadInProgress: dataSource.schemaUploadInProgress,
+      pendingSchemaPayload: dataSource.pendingSchemaPayload,
+      persistSchemaPayload: dataSource.persistSchemaPayload,
+      setSchemaUploadInProgress: dataSource.setSchemaUploadInProgress,
+      dataColumns: dataSource.dataColumns,
+      dataSourceKind: dataSource.dataSourceKind,
+      resolveSchemaForMapping: dataSource.resolveSchemaForMapping,
+    },
+    markSavedFillLinkSnapshot: captureSavedFillLinkPublishFingerprint,
+  });
 
   const handleSelectSavedFormFromProfile = useCallback(
-    (formId: string) => {
-      auth.setShowProfile(false);
-      void handleSelectSavedForm(formId);
+    async (formId: string) => {
+      const opened = await handleSelectSavedForm(formId);
+      if (opened) {
+        auth.setShowProfile(false);
+      }
     },
     [auth, handleSelectSavedForm],
   );
 
-  const runDetectUpload = useCallback(
-    (file: File, options: { autoRename?: boolean; autoMap?: boolean; schemaIdOverride?: string | null } = {}) =>
-      detection.runDetectUpload(file, options, pdfState),
-    [detection.runDetectUpload, pdfState],
-  );
+  const headerActiveGroupTemplateId =
+    pendingGroupTemplateId || groupSwitchingTemplateId || savedForms.activeSavedFormId;
+  const headerGroupTemplateStatuses = useMemo(() => {
+    const nextStatuses = { ...groupTemplateStatusById };
+    const pendingTemplateId = pendingGroupTemplateId || groupSwitchingTemplateId;
+    if (pendingTemplateId) {
+      nextStatuses[pendingTemplateId] = 'loading';
+    }
+    return nextStatuses;
+  }, [groupSwitchingTemplateId, groupTemplateStatusById, pendingGroupTemplateId]);
+
+  const activeTemplateName = savedForms.activeSavedFormName || sourceFileName || null;
+  const {
+    canManageFillLink,
+    handleOpenFillLinkManager,
+    clearAllFillLinks,
+    dialogProps: fillLinkManagerDialogProps,
+  } = useWorkspaceFillLinks({
+    verifiedUser: auth.verifiedUser,
+    profileLimits: auth.profileLimits,
+    managerOpen: showFillLinkManager,
+    setManagerOpen: setShowFillLinkManager,
+    setBannerNotice: dialog.setBannerNotice,
+    activeTemplateId: savedForms.activeSavedFormId,
+    activeTemplateName,
+    activeGroupId,
+    activeGroupName,
+    activeGroupTemplates,
+    fields: fieldHistory.fields,
+    checkboxRules: openAi.checkboxRules,
+    checkboxHints: openAi.checkboxHints,
+    textTransformRules: openAi.textTransformRules,
+    savedFillLinkPublishFingerprint,
+    resolveGroupTemplateDirtyNames,
+    ensureGroupTemplateSnapshot,
+    applyStructuredDataSource: dataSource.applyStructuredDataSource,
+    clearFieldValues: fieldState.handleClearFieldValues,
+    setSearchFillPreset,
+    setShowSearchFill,
+    bumpSearchFillSession: () => setSearchFillSessionId((prev) => prev + 1),
+  });
+
+  useEffect(() => {
+    if (auth.verifiedUser) return;
+    clearAllFillLinks();
+    setShowFillLinkManager(false);
+  }, [auth.verifiedUser, clearAllFillLinks]);
 
   // ── Pipeline modal (uses runDetectUpload, dataSource, auth) ────────
   const pipeline = usePipelineModal({
     verifiedUser: auth.verifiedUser,
     loadUserProfile: auth.loadUserProfile,
+    userProfile: auth.userProfile,
+    detectMaxPages: auth.profileLimits.detectMaxPages,
     schemaId: dataSource.schemaId,
     schemaUploadInProgress: dataSource.schemaUploadInProgress,
     pendingSchemaPayload: dataSource.pendingSchemaPayload,
@@ -417,6 +473,7 @@ function WorkspaceRuntime({
 
   // ── clearWorkspace ─────────────────────────────────────────────────
   const clearWorkspace = useCallback(() => {
+    resetGroupRuntime();
     // App-level PDF state
     setPdfDoc(null); setPageSizes({}); setPageCount(0); setCurrentPage(1);
     setScale(1); setPendingPageJump(null);
@@ -427,13 +484,15 @@ function WorkspaceRuntime({
     openAi.reset();
     dataSource.reset();
     savedForms.reset();
+    clearAllFillLinks();
     dialog.reset();
     pipeline.reset();
     // App-level UI state
     setShowSearchFill(false); setSearchFillSessionId((prev) => prev + 1);
+    setSearchFillPreset(null); setShowFillLinkManager(false);
     setTransformMode(false); setActiveCreateTool(null);
     setSourceFile(null); setSourceFileName(null); setSourceFileIsDemo(false);
-  }, [fieldHistory, fieldState, detection, openAi, dataSource, savedForms, dialog, pipeline]);
+  }, [clearAllFillLinks, dataSource, detection, dialog, fieldHistory, fieldState, openAi, pipeline, resetGroupRuntime, savedForms]);
   clearWorkspaceRef.current = clearWorkspace;
 
   // ── Demo (uses wrapped handlers) ───────────────────────────────────
@@ -460,6 +519,8 @@ function WorkspaceRuntime({
 
   // ── Auth-related callbacks ─────────────────────────────────────────
   const handleSignOut = useCallback(async () => {
+    const confirmed = await confirmDiscardDirtyGroupChanges('signing out');
+    if (!confirmed) return;
     await auth.handleSignOut();
     clearWorkspace();
     savedForms.clearSavedForms();
@@ -469,9 +530,11 @@ function WorkspaceRuntime({
     demo.setDemoStepIndex(null);
     demo.setDemoCompletionOpen(false);
     demo.setDemoSearchPreset(null);
-  }, [auth, clearWorkspace, demo, savedForms]);
+  }, [auth, clearWorkspace, confirmDiscardDirtyGroupChanges, demo, savedForms]);
 
-  const handleNavigateHome = useCallback(() => {
+  const handleNavigateHome = useCallback(async () => {
+    const confirmed = await confirmDiscardDirtyGroupChanges('returning home');
+    if (!confirmed) return;
     clearWorkspace();
     setLoadError(null);
     setShowHomepage(true);
@@ -479,140 +542,7 @@ function WorkspaceRuntime({
     demo.setDemoStepIndex(null);
     demo.setDemoCompletionOpen(false);
     demo.setDemoSearchPreset(null);
-  }, [clearWorkspace, demo]);
-
-  const refreshProfileAfterBillingAction = useCallback(
-    async (options?: { attempts?: number; retryDelayMs?: number }) => {
-      const attempts = Math.max(1, options?.attempts ?? 3);
-      const retryDelayMs = Math.max(0, options?.retryDelayMs ?? 1200);
-      for (let attempt = 0; attempt < attempts; attempt += 1) {
-        const profile = await auth.loadUserProfile();
-        if (profile) return profile;
-        if (attempt < attempts - 1 && retryDelayMs > 0) {
-          await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
-        }
-      }
-      return null;
-    },
-    [auth.loadUserProfile],
-  );
-
-  const handleStartBillingCheckout = useCallback(
-    async (kind: BillingCheckoutKind) => {
-      if (billingCancelInProgress) return;
-      if (!auth.userProfile?.billing?.enabled) {
-        dialog.setBannerNotice({
-          tone: 'error',
-          message: 'Stripe billing is currently unavailable.',
-          autoDismissMs: 8000,
-        });
-        return;
-      }
-      setBillingCheckoutInProgressKind(kind);
-      try {
-        const payload = await ApiService.createBillingCheckoutSession(kind);
-        const checkoutUrl = payload?.checkoutUrl;
-        if (!checkoutUrl) {
-          throw new Error('Stripe checkout URL is missing.');
-        }
-        persistPendingBillingCheckout({
-          requestedKind: kind,
-          sessionId: payload.sessionId,
-          attemptId: payload.attemptId ?? null,
-          checkoutPriceId: payload.checkoutPriceId ?? null,
-          startedAt: Date.now(),
-        });
-        window.location.assign(checkoutUrl);
-      } catch (error) {
-        clearPendingBillingCheckout();
-        const message = error instanceof Error ? error.message : 'Failed to start checkout.';
-        dialog.setBannerNotice({ tone: 'error', message, autoDismissMs: 8000 });
-      } finally {
-        setBillingCheckoutInProgressKind(null);
-      }
-    },
-    [auth.userProfile?.billing?.enabled, billingCancelInProgress, dialog.setBannerNotice],
-  );
-
-  const handleCancelBillingSubscription = useCallback(async () => {
-    if (billingCheckoutInProgressKind !== null) return;
-    if (!auth.userProfile?.billing?.enabled) {
-      dialog.setBannerNotice({
-        tone: 'error',
-        message: 'Stripe billing is currently unavailable.',
-        autoDismissMs: 8000,
-      });
-      return;
-    }
-    if (!auth.userProfile?.billing?.hasSubscription) {
-      dialog.setBannerNotice({
-        tone: 'info',
-        message: 'No active subscription is linked to this profile yet.',
-        autoDismissMs: 7000,
-      });
-      return;
-    }
-    if (auth.userProfile?.billing?.cancelAtPeriodEnd === true) {
-      dialog.setBannerNotice({
-        tone: 'info',
-        message: 'Subscription is already cancelled for period end.',
-        autoDismissMs: 7000,
-      });
-      return;
-    }
-    setBillingCancelInProgress(true);
-    try {
-      const payload = await ApiService.cancelBillingSubscription();
-      const alreadyCanceled = Boolean(payload?.alreadyCanceled);
-      const cancelAtPeriodEnd = Boolean(payload?.cancelAtPeriodEnd);
-      const stateSyncDeferred = Boolean(payload?.stateSyncDeferred);
-      const refreshedProfile = await refreshProfileAfterBillingAction({
-        attempts: 2,
-        retryDelayMs: 1200,
-      });
-      if (alreadyCanceled) {
-        dialog.setBannerNotice({
-          tone: 'info',
-          message: 'Subscription is already cancelled for period end.',
-          autoDismissMs: 7000,
-        });
-      } else if (stateSyncDeferred) {
-        dialog.setBannerNotice({
-          tone: 'info',
-          message: cancelAtPeriodEnd
-            ? 'Stripe cancellation is scheduled, but profile sync is delayed. Refresh in a moment to confirm local role and billing status.'
-            : 'Stripe cancellation succeeded, but profile sync is delayed. Refresh in a moment to confirm local role and billing status.',
-          autoDismissMs: 9000,
-        });
-      } else if (!refreshedProfile) {
-        dialog.setBannerNotice({
-          tone: 'error',
-          message: 'Stripe accepted the cancellation, but profile refresh failed. Reopen Profile in a moment to confirm subscription status.',
-          autoDismissMs: 9000,
-        });
-      } else {
-        dialog.setBannerNotice({
-          tone: 'success',
-          message: cancelAtPeriodEnd
-            ? 'Subscription cancellation is scheduled for period end. Pro access remains active until then.'
-            : 'Subscription canceled.',
-          autoDismissMs: 8000,
-        });
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to cancel subscription.';
-      dialog.setBannerNotice({ tone: 'error', message, autoDismissMs: 8000 });
-    } finally {
-      setBillingCancelInProgress(false);
-    }
-  }, [
-    auth.userProfile?.billing?.enabled,
-    auth.userProfile?.billing?.cancelAtPeriodEnd,
-    auth.userProfile?.billing?.hasSubscription,
-    billingCheckoutInProgressKind,
-    dialog.setBannerNotice,
-    refreshProfileAfterBillingAction,
-  ]);
+  }, [clearWorkspace, confirmDiscardDirtyGroupChanges, demo]);
 
   // ── Save & Download ────────────────────────────────────────────────
   const saveDownload = useSaveDownload({
@@ -620,12 +550,18 @@ function WorkspaceRuntime({
     sourceFile,
     sourceFileName,
     fields: fieldHistory.fields,
+    pageSizes,
+    pageCount,
     checkboxRules: openAi.checkboxRules,
     checkboxHints: openAi.checkboxHints,
     textTransformRules: openAi.textTransformRules,
+    hasRenamedFields: openAi.hasRenamedFields,
+    hasMappedSchema: openAi.hasMappedSchema,
     mappingSessionId: detection.mappingSessionId,
     activeSavedFormId: savedForms.activeSavedFormId,
     activeSavedFormName: savedForms.activeSavedFormName,
+    activeGroupId,
+    activeGroupName,
     savedFormsCount: savedForms.savedForms.length,
     savedFormsMax: auth.profileLimits.savedFormsMax,
     verifiedUser: auth.verifiedUser,
@@ -634,10 +570,25 @@ function WorkspaceRuntime({
     requestConfirm: dialog.requestConfirm,
     requestPrompt: dialog.requestPrompt,
     refreshSavedForms: savedForms.refreshSavedForms,
+    refreshGroups: groups.refreshGroups,
+    refreshProfile: auth.loadUserProfile,
     setActiveSavedFormId: savedForms.setActiveSavedFormId,
     setActiveSavedFormName: savedForms.setActiveSavedFormName,
+    markGroupTemplatesPersisted,
     queueSaveAfterLimit: savedForms.queueSaveAfterLimit,
     allowAnonymousDownload: sourceFileIsDemo,
+    onSaveSuccess: captureSavedFillLinkPublishFingerprint,
+  });
+  const groupDownload = useGroupDownload({
+    verifiedUser: auth.verifiedUser,
+    activeGroupId,
+    activeGroupName,
+    activeGroupTemplates,
+    activeSavedFormId: savedForms.activeSavedFormId,
+    captureActiveGroupTemplateSnapshot,
+    ensureGroupTemplateSnapshot,
+    setLoadError,
+    setBannerNotice: dialog.setBannerNotice,
   });
 
   // ── OpenAI header bar handlers ─────────────────────────────────────
@@ -786,6 +737,7 @@ function WorkspaceRuntime({
   );
 
   const initializedEditorDocRef = useRef<PDFDocumentProxy | null>(null);
+
   useEffect(() => {
     if (!pdfDoc) {
       initializedEditorDocRef.current = null;
@@ -795,8 +747,13 @@ function WorkspaceRuntime({
       return;
     }
     initializedEditorDocRef.current = pdfDoc;
+    // Group template restores its own cached display state. Do not overwrite it
+    // with the default editor preset each time the active template PDF swaps.
+    if (activeGroupId) {
+      return;
+    }
     handleApplyDisplayPreset('edit');
-  }, [handleApplyDisplayPreset, pdfDoc]);
+  }, [activeGroupId, handleApplyDisplayPreset, pdfDoc]);
 
   const handleDismissBanner = useCallback(() => {
     if (openAi.openAiError || dataSource.schemaError) {
@@ -863,98 +820,10 @@ function WorkspaceRuntime({
   }, [dataSource.schemaError, dialog, openAi.openAiError]);
 
   useEffect(() => {
-    if (!auth.authReady && !assumeAuthReady) return;
-    if (typeof window === 'undefined') return;
-    const url = new URL(window.location.href);
-    const billingState = (url.searchParams.get('billing') || '').toLowerCase();
-    if (!billingState) return;
-    if (billingState === 'success') {
-      const pendingCheckout = readPendingBillingCheckout();
-      dialog.setBannerNotice({
-        tone: 'info',
-        message: 'Checkout completed. Syncing your profile credits…',
-        autoDismissMs: 8000,
-      });
-      void (async () => {
-        let reconciledCount = 0;
-        let reconcileFailed = false;
-        let matchedBillingEvent: BillingReconcileEvent | null = null;
-        try {
-          const reconciliation = await ApiService.reconcileBillingCheckoutFulfillment({
-            lookbackHours: 72,
-            maxEvents: 150,
-            dryRun: false,
-          });
-          reconciledCount = typeof reconciliation?.reconciledCount === 'number' ? reconciliation.reconciledCount : 0;
-          matchedBillingEvent = findMatchingBillingCheckoutEvent(reconciliation?.events ?? [], pendingCheckout);
-        } catch (error) {
-          reconcileFailed = true;
-          debugLog('Billing checkout reconciliation failed', error);
-        }
-        const refreshedProfile = await refreshProfileAfterBillingAction({
-          attempts: 3,
-          retryDelayMs: 1200,
-        });
-        if (matchedBillingEvent && pendingCheckout) {
-          const trackedKind = resolveTrackedBillingKind(matchedBillingEvent, pendingCheckout);
-          const trackedPlan = resolveBillingPlanForTracking(
-            refreshedProfile ?? auth.userProfile,
-            matchedBillingEvent,
-            pendingCheckout,
-          );
-          if (trackedKind) {
-            trackGoogleAdsBillingPurchase({
-              kind: trackedKind,
-              transactionId: matchedBillingEvent.checkoutSessionId ?? pendingCheckout.sessionId,
-              value: resolveGoogleAdsPurchaseValue(trackedPlan),
-              currency: trackedPlan?.currency ?? null,
-            });
-          }
-        }
-        clearPendingBillingCheckout();
-        if (refreshedProfile) {
-          const message = reconciledCount > 0
-            ? `Checkout completed. Recovered ${reconciledCount} missed billing event${reconciledCount === 1 ? '' : 's'} and refreshed your profile.`
-            : (reconcileFailed
-              ? 'Checkout completed and your profile has been refreshed. Automatic billing reconciliation is temporarily unavailable.'
-              : 'Checkout completed and your profile has been refreshed.');
-          dialog.setBannerNotice({
-            tone: 'success',
-            message,
-            autoDismissMs: 8000,
-          });
-        } else {
-          dialog.setBannerNotice({
-            tone: 'error',
-            message: 'Checkout completed, but profile refresh failed. Reopen Profile in a moment to verify credits and subscription status.',
-            autoDismissMs: 9000,
-          });
-        }
-      })();
-    } else if (billingState === 'cancel') {
-      clearPendingBillingCheckout();
-      dialog.setBannerNotice({
-        tone: 'info',
-        message: 'Checkout was canceled.',
-        autoDismissMs: 6000,
-      });
-    }
-    url.searchParams.delete('billing');
-    window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
-  }, [assumeAuthReady, auth.authReady, auth.userProfile, dialog.setBannerNotice, refreshProfileAfterBillingAction]);
-
-  useEffect(() => {
     if (!dialog.bannerNotice?.autoDismissMs) return undefined;
     const timer = setTimeout(() => dialog.setBannerNotice(null), dialog.bannerNotice.autoDismissMs);
     return () => clearTimeout(timer);
   }, [dialog, dialog.bannerNotice]);
-
-  useEffect(() => {
-    return () => {
-      if (!pdfDoc) return;
-      void pdfDoc.destroy().catch((error) => { debugLog('Failed to release PDF document resources', error); });
-    };
-  }, [pdfDoc]);
 
   const focusFieldSearch = useCallback(() => {
     if (typeof document === 'undefined') return;
@@ -1055,28 +924,21 @@ function WorkspaceRuntime({
         }
       }
 
-      if (event.altKey && !modifier) {
-        const step = event.shiftKey ? 10 : 1;
-        if (key === 'arrowleft') {
-          event.preventDefault();
-          nudgeSelectedField(-1, 0, step);
-          return;
-        }
-        if (key === 'arrowright') {
-          event.preventDefault();
-          nudgeSelectedField(1, 0, step);
-          return;
-        }
-        if (key === 'arrowup') {
-          event.preventDefault();
-          nudgeSelectedField(0, -1, step);
-          return;
-        }
-        if (key === 'arrowdown') {
-          event.preventDefault();
-          nudgeSelectedField(0, 1, step);
-          return;
-        }
+      const nudgeCommand = getFieldNudgeCommandFromKey({
+        key,
+        altKey: event.altKey,
+        shiftKey: event.shiftKey,
+        ctrlKey: event.ctrlKey,
+        metaKey: event.metaKey,
+        arrowKeyMoveEnabled,
+        arrowKeyMoveStep,
+      });
+      if (nudgeCommand) {
+        if (!transformMode || fieldState.showFieldInfo) return;
+        if (!fieldState.selectedFieldId) return;
+        event.preventDefault();
+        nudgeSelectedField(nudgeCommand.deltaX, nudgeCommand.deltaY, nudgeCommand.step);
+        return;
       }
 
       if (!modifier) return;
@@ -1110,6 +972,8 @@ function WorkspaceRuntime({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [
     activeCreateTool,
+    arrowKeyMoveEnabled,
+    arrowKeyMoveStep,
     currentPage,
     fieldState,
     focusFieldSearch,
@@ -1120,11 +984,12 @@ function WorkspaceRuntime({
     nudgeSelectedField,
     pageCount,
     pdfDoc,
+    transformMode,
   ]);
 
   // ── Computed values ────────────────────────────────────────────────
   const { demoActive, demoStepIndex, demoCompletionOpen, demoSearchPreset } = demo;
-  const { isProcessing, processingMode, processingDetail } = detection;
+  const { isProcessing, processingMode, processingHeading, processingDetail } = detection;
   const { verifiedUser, userEmail, requiresEmailVerification, authReady, showLogin, showProfile, profileLimits, authUser, profileLoading, userProfile } = auth;
   const { bannerNotice, dialogRequest } = dialog;
   const {
@@ -1148,6 +1013,36 @@ function WorkspaceRuntime({
   const { savedForms: savedFormsList, savedFormsLoading, deletingFormId, showSavedFormsLimitDialog } = savedForms;
   const { fields } = fieldHistory;
   const { showFields, showFieldNames, showFieldInfo, confidenceFilter, selectedFieldId, visibleFields, hasFieldValues } = fieldState;
+  const {
+    billingCheckoutInProgressKind,
+    billingCancelInProgress,
+    showDowngradeRetentionDialog,
+    downgradeRetentionSaveInProgress,
+    downgradeRetentionDeleteInProgress,
+    currentDowngradeRetention,
+    downgradeRetentionReactivateLabel,
+    closeDowngradeRetentionDialog,
+    handleOpenDowngradeRetentionDialog,
+    handleStartBillingCheckout,
+    handleCancelBillingSubscription,
+    handleSaveDowngradeRetentionSelection,
+    handleDeleteDowngradeRetentionNow,
+    handleReactivateDowngradedAccount,
+  } = useDowngradeRetentionRuntime({
+    authReady,
+    assumeAuthReady,
+    verifiedUser,
+    userProfile,
+    loadUserProfile: auth.loadUserProfile,
+    mutateUserProfile: auth.mutateUserProfile,
+    setBannerNotice: dialog.setBannerNotice,
+    requestConfirm: dialog.requestConfirm,
+    refreshSavedForms: savedForms.refreshSavedForms,
+    refreshGroups: groups.refreshGroups,
+    activeSavedFormId: savedForms.activeSavedFormId,
+    activeGroupTemplates,
+    clearWorkspace,
+  });
   const selectedField = useMemo(
     () => fields.find((field) => field.id === selectedFieldId) || null,
     [fields, selectedFieldId],
@@ -1160,12 +1055,26 @@ function WorkspaceRuntime({
   }, [showFieldInfo, showFieldNames, showFields, transformMode]);
 
   const bootstrapAuthSyncedRef = useRef(false);
+
   useEffect(() => {
     if (!bootstrapAuthUser) return;
     if (bootstrapAuthSyncedRef.current) return;
     bootstrapAuthSyncedRef.current = true;
     void auth.syncAuthSession(bootstrapAuthUser, { forceTokenRefresh: true, deferSavedForms: true });
   }, [auth, bootstrapAuthUser]);
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return undefined;
+    const root = document.getElementById('root');
+    document.documentElement.classList.add('workspace-no-scroll');
+    document.body.classList.add('workspace-no-scroll');
+    root?.classList.add('workspace-no-scroll');
+    return () => {
+      document.documentElement.classList.remove('workspace-no-scroll');
+      document.body.classList.remove('workspace-no-scroll');
+      root?.classList.remove('workspace-no-scroll');
+    };
+  }, []);
 
   const handledLaunchIntentRef = useRef<WorkspaceLaunchIntent>(null);
   useEffect(() => {
@@ -1216,6 +1125,15 @@ function WorkspaceRuntime({
   const activeDemoStep = demoStepIndex !== null ? DEMO_STEPS[demoStepIndex] : null;
   const showDemoTour = demoActive && currentView === 'editor';
   const shouldShowProcessingAd = processingMode === 'detect' && Boolean(PROCESSING_AD_VIDEO_URL);
+  const handleOpenSearchFill = useCallback(() => {
+    setSearchFillPreset(null);
+    setShowSearchFill(true);
+  }, []);
+
+  const handleCloseSearchFill = useCallback(() => {
+    setShowSearchFill(false);
+    setSearchFillPreset(null);
+  }, []);
 
   useEffect(() => {
     if (currentView === 'editor') return;
@@ -1243,8 +1161,51 @@ function WorkspaceRuntime({
   const savedFormsLimitDialog = (
     <SavedFormsLimitDialog open={showSavedFormsLimitDialog}
       maxSavedForms={profileLimits.savedFormsMax} savedForms={savedFormsList}
-      deletingFormId={deletingFormId} onDelete={savedForms.handleSavedFormsLimitDelete}
+      deletingFormId={deletingFormId} onDelete={handleSavedFormsLimitDelete}
       onClose={savedForms.closeSavedFormsLimitDialog} />
+  );
+  const fillLinkManagerDialog = (
+    <FillLinkManagerDialog {...fillLinkManagerDialogProps} />
+  );
+  const downgradeRetentionDialog = (
+    <DowngradeRetentionDialog
+      open={showDowngradeRetentionDialog}
+      retention={currentDowngradeRetention}
+      billingEnabled={userProfile?.billing?.enabled === true}
+      savingSelection={downgradeRetentionSaveInProgress}
+      deletingNow={downgradeRetentionDeleteInProgress}
+      checkoutInProgress={billingCheckoutInProgressKind !== null}
+      reactivateLabel={downgradeRetentionReactivateLabel}
+      onClose={closeDowngradeRetentionDialog}
+      onSaveSelection={handleSaveDowngradeRetentionSelection}
+      onDeleteNow={handleDeleteDowngradeRetentionNow}
+      onReactivatePremium={handleReactivateDowngradedAccount}
+    />
+  );
+  const groupUploadDialog = (
+    <GroupUploadDialog
+      open={groupUpload.open}
+      groupName={groupUpload.groupName}
+      onGroupNameChange={groupUpload.setGroupName}
+      items={groupUpload.items}
+      wantsRename={groupUpload.wantsRename}
+      onWantsRenameChange={groupUpload.setWantsRename}
+      wantsMap={groupUpload.wantsMap}
+      onWantsMapChange={groupUpload.setWantsMap}
+      processing={groupUpload.processing}
+      localError={groupUpload.localError}
+      progressLabel={groupUpload.progressLabel}
+      pageSummary={groupUpload.pageSummary}
+      creditEstimate={groupUpload.creditEstimate}
+      creditsRemaining={groupUpload.creditsRemaining}
+      schemaUploadInProgress={dataSource.schemaUploadInProgress}
+      dataSourceLabel={dataSourceLabel}
+      onChooseDataSource={dataSource.handleChooseDataSource}
+      onClose={groupUpload.closeDialog}
+      onAddFiles={groupUpload.addFiles}
+      onRemoveFile={groupUpload.removeFile}
+      onConfirm={groupUpload.confirm}
+    />
   );
   const demoCompletionDialog = (
     <ConfirmDialog open={demoCompletionOpen} title="Demo complete"
@@ -1260,6 +1221,58 @@ function WorkspaceRuntime({
       <input ref={dataSource.txtInputRef} id="txt-file-input" name="txt-file" type="file" accept=".txt,text/plain" style={{ display: 'none' }} onChange={dataSource.handleTxtFileSelected} />
     </>
   );
+  const uploadBrowserViewModel = useUploadBrowserViewModel({
+    loadError,
+    onSetLoadError: setLoadError,
+    verifiedUser: !!verifiedUser,
+    schemaUploadInProgress,
+    dataSourceLabel,
+    onChooseDataSource: dataSource.handleChooseDataSource,
+    pipeline: {
+      showPipelineModal: pipeline.showPipelineModal,
+      pendingDetectFile: pipeline.pendingDetectFile,
+      pendingDetectPageCount: pipeline.pendingDetectPageCount,
+      pendingDetectPageCountLoading: pipeline.pendingDetectPageCountLoading,
+      pendingDetectCreditEstimate: pipeline.pendingDetectCreditEstimate,
+      pendingDetectWithinPageLimit: pipeline.pendingDetectWithinPageLimit,
+      pendingDetectCreditsRemaining: pipeline.pendingDetectCreditsRemaining,
+      uploadWantsRename: pipeline.uploadWantsRename,
+      uploadWantsMap: pipeline.uploadWantsMap,
+      pipelineError: pipeline.pipelineError,
+      onSetUploadWantsRename: pipeline.setUploadWantsRename,
+      onSetUploadWantsMap: pipeline.setUploadWantsMap,
+      onSetPipelineError: pipeline.setPipelineError,
+      onPipelineCancel: pipeline.cancel,
+      onPipelineConfirm: pipeline.confirm,
+      onDetectUpload: pipeline.openModal,
+    },
+    savedForms: {
+      savedForms: savedFormsList,
+      savedFormsLoading,
+      deletingFormId,
+    },
+    groups: {
+      groups: groups.groups,
+      groupsLoading: groups.groupsLoading,
+      groupsCreating: groups.groupsCreating,
+      updatingGroupId: groups.updatingGroupId,
+      selectedGroupFilterId: groups.selectedGroupFilterId,
+      selectedGroupFilterLabel: groups.selectedGroupFilterLabel,
+      deletingGroupId: groups.deletingGroupId,
+      setSelectedGroupFilterId: groups.setSelectedGroupFilterId,
+    },
+    handlers: {
+      onFillableUpload: handleFillableUpload,
+      onOpenGroupUpload: groupUpload.openDialog,
+      onSelectSavedForm: handleSelectSavedForm,
+      onDeleteSavedForm: handleDeleteSavedForm,
+      onOpenGroup: handleOpenGroup,
+      onCreateGroup: handleCreateGroup,
+      onUpdateGroup: handleUpdateGroup,
+      onDeleteGroup: handleDeleteGroup,
+    },
+    groupUploadDialog,
+  });
 
   // ── Render ─────────────────────────────────────────────────────────
   if (!authReady && !assumeAuthReady) {
@@ -1275,7 +1288,7 @@ function WorkspaceRuntime({
     return (
       <>
         {shouldShowBannerAlert && bannerAlert ? <Alert tone={bannerAlert.tone} variant="banner" message={bannerAlert.message} onDismiss={handleDismissBanner} /> : null}
-        {savedFormsLimitDialog}{dialogContent}
+        {savedFormsLimitDialog}{fillLinkManagerDialog}{downgradeRetentionDialog}{dialogContent}
         <ProfilePage email={userProfile?.email ?? verifiedUser.email} role={userProfile?.role ?? 'base'}
           creditsRemaining={userProfile?.creditsRemaining ?? 0}
           monthlyCreditsRemaining={userProfile?.monthlyCreditsRemaining ?? 0}
@@ -1289,16 +1302,18 @@ function WorkspaceRuntime({
           billingCancelAt={userProfile?.billing?.cancelAt ?? null}
           billingCurrentPeriodEnd={userProfile?.billing?.currentPeriodEnd ?? null}
           billingPlans={userProfile?.billing?.plans}
+          retention={currentDowngradeRetention}
           profileError={auth.profileLoadError}
           creditPricing={userProfile?.creditPricing}
           isLoading={profileLoading}
           limits={profileLimits} savedForms={savedFormsList} savedFormsLoading={savedFormsLoading}
-          onSelectSavedForm={handleSelectSavedFormFromProfile} onDeleteSavedForm={savedForms.handleDeleteSavedForm}
+          onSelectSavedForm={handleSelectSavedFormFromProfile} onDeleteSavedForm={handleDeleteSavedForm}
           deletingFormId={deletingFormId}
           billingCheckoutInProgressKind={billingCheckoutInProgressKind}
           billingCancelInProgress={billingCancelInProgress}
           onStartBillingCheckout={userProfile?.billing?.enabled === true ? handleStartBillingCheckout : undefined}
           onCancelBillingSubscription={userProfile?.billing?.enabled === true ? handleCancelBillingSubscription : undefined}
+          onOpenDowngradeRetention={currentDowngradeRetention ? handleOpenDowngradeRetentionDialog : undefined}
           onClose={auth.handleCloseProfile} onSignOut={handleSignOut} />
       </>
     );
@@ -1308,7 +1323,7 @@ function WorkspaceRuntime({
     return (
       <div className="homepage-shell">
         {shouldShowBannerAlert && bannerAlert ? <Alert tone={bannerAlert.tone} variant="banner" message={bannerAlert.message} onDismiss={handleDismissBanner} /> : null}
-        {savedFormsLimitDialog}{demoCompletionDialog}{dialogContent}
+        {savedFormsLimitDialog}{fillLinkManagerDialog}{downgradeRetentionDialog}{demoCompletionDialog}{dialogContent}
         <LegacyHeader currentView={currentView} onNavigateHome={handleNavigateHome}
           showBackButton={!showHomepage} userEmail={userEmail ?? null}
           onOpenProfile={verifiedUser ? auth.handleOpenProfile : undefined}
@@ -1329,22 +1344,10 @@ function WorkspaceRuntime({
               onOpenProfile={verifiedUser ? auth.handleOpenProfile : undefined} />
           )}
           {currentView === 'upload' && (
-            <UploadView
-              loadError={loadError} showPipelineModal={pipeline.showPipelineModal}
-              pendingDetectFile={pipeline.pendingDetectFile} uploadWantsRename={pipeline.uploadWantsRename}
-              uploadWantsMap={pipeline.uploadWantsMap} schemaUploadInProgress={schemaUploadInProgress}
-              dataSourceLabel={dataSourceLabel} pipelineError={pipeline.pipelineError}
-              verifiedUser={!!verifiedUser} savedForms={savedFormsList} savedFormsLoading={savedFormsLoading}
-              deletingFormId={deletingFormId}
-              onSetUploadWantsRename={pipeline.setUploadWantsRename} onSetUploadWantsMap={pipeline.setUploadWantsMap}
-              onSetPipelineError={pipeline.setPipelineError} onSetLoadError={setLoadError}
-              onChooseDataSource={dataSource.handleChooseDataSource}
-              onPipelineCancel={pipeline.cancel} onPipelineConfirm={pipeline.confirm}
-              onDetectUpload={pipeline.openModal} onFillableUpload={handleFillableUpload}
-              onSelectSavedForm={handleSelectSavedForm} onDeleteSavedForm={savedForms.handleDeleteSavedForm} />
+            <UploadView {...uploadBrowserViewModel} />
           )}
           {currentView === 'processing' && (
-            <ProcessingView detail={processingDetail} showAd={shouldShowProcessingAd}
+            <ProcessingView heading={processingHeading} detail={processingDetail} showAd={shouldShowProcessingAd}
               adVideoUrl={PROCESSING_AD_VIDEO_URL} adPosterUrl={PROCESSING_AD_POSTER_URL} />
           )}
         </main>
@@ -1357,30 +1360,63 @@ function WorkspaceRuntime({
   return (
     <div className={appShellClassName}>
       {shouldShowBannerAlert && bannerAlert ? <Alert tone={bannerAlert.tone} variant="banner" message={bannerAlert.message} onDismiss={handleDismissBanner} /> : null}
-      {savedFormsLimitDialog}{demoCompletionDialog}{dialogContent}
+      {savedFormsLimitDialog}{fillLinkManagerDialog}{downgradeRetentionDialog}{demoCompletionDialog}{dialogContent}
       <HeaderBar
         pageCount={pageCount} currentPage={currentPage} scale={scale} onScaleChange={setScale}
         onNavigateHome={handleNavigateHome} mappingInProgress={mappingInProgress}
         mapSchemaInProgress={mapSchemaInProgress} hasMappedSchema={hasMappedSchema}
         renameInProgress={renameInProgress} hasRenamedFields={hasRenamedFields}
         dataSourceKind={dataSourceKind} dataSourceLabel={dataSourceLabel}
+        groupName={activeGroupName}
+        groupTemplates={activeGroupTemplates.map((template) => ({ id: template.id, name: template.name }))}
+        groupTemplateStatuses={headerGroupTemplateStatuses}
+        activeGroupTemplateId={headerActiveGroupTemplateId}
+        groupTemplateSwitchInProgress={Boolean(pendingGroupTemplateId || groupSwitchingTemplateId)}
+        onSelectGroupTemplate={(formId) => { void handleSelectActiveGroupTemplate(formId); }}
         onChooseDataSource={dataSource.handleChooseDataSource} onClearDataSource={dataSource.handleClearDataSource}
         onRename={demoActive ? demo.handleDemoRename : handleRename}
         onRenameAndMap={demoActive ? demo.handleDemoRenameAndMap : handleRenameAndMap}
+        onRenameAndMapGroup={demoActive ? undefined : (activeGroupId ? handleRenameAndMapGroup : undefined)}
         onMapSchema={demoActive ? demo.handleDemoMapSchema : handleMapSchema}
         canMapSchema={demoActive ? true : canMapSchema} canRename={demoActive ? true : canRename}
         canRenameAndMap={demoActive ? true : canRenameAndMap}
+        canRenameAndMapGroup={demoActive ? true : !groupRenameMapDisabledReason}
         mapSchemaDisabledReason={demoActive ? null : mapSchemaDisabledReason}
         renameDisabledReason={demoActive ? null : renameDisabledReason}
         renameAndMapDisabledReason={demoActive ? null : renameAndMapDisabledReason}
-        onOpenSearchFill={canSearchFill ? () => setShowSearchFill(true) : undefined}
-        canSearchFill={canSearchFill} onDownload={saveDownload.handleDownload} onSaveToProfile={saveDownload.handleSaveToProfile}
-        downloadInProgress={saveDownload.downloadInProgress} saveInProgress={saveDownload.saveInProgress}
-        canDownload={canDownload} canSave={canSaveToProfile} userEmail={userEmail}
+        renameAndMapGroupDisabledReason={demoActive ? null : groupRenameMapDisabledReason}
+        renameAndMapGroupInProgress={groupRenameMapInProgress}
+        renameAndMapGroupButtonLabel={groupRenameMapLabel}
+        onOpenSearchFill={canSearchFill ? handleOpenSearchFill : undefined}
+        canSearchFill={canSearchFill}
+        onDownload={saveDownload.handleDownload}
+        onDownloadGroup={activeGroupId ? groupDownload.handleDownloadGroup : undefined}
+        onSaveToProfile={saveDownload.handleSaveToProfile}
+        downloadInProgress={saveDownload.downloadInProgress}
+        downloadGroupInProgress={groupDownload.downloadGroupInProgress}
+        saveInProgress={saveDownload.saveInProgress}
+        canDownload={canDownload}
+        canDownloadGroup={Boolean(
+          activeGroupId &&
+          activeGroupTemplates.length > 0 &&
+          auth.verifiedUser &&
+          !mappingInProgress &&
+          !renameInProgress &&
+          !mapSchemaInProgress &&
+          !groupRenameMapInProgress,
+        )}
+        canSave={canSaveToProfile}
+        userEmail={userEmail}
+        onOpenFillLink={verifiedUser ? handleOpenFillLinkManager : undefined}
+        canFillLink={canManageFillLink}
         onOpenProfile={verifiedUser ? auth.handleOpenProfile : undefined}
         onSignIn={!verifiedUser ? () => auth.setShowLogin(true) : undefined}
         onSignOut={verifiedUser ? handleSignOut : undefined}
-        demoLocked={demoUiLocked} onDemoLockedAction={handleDemoLockedAction} />
+        demoLocked={demoUiLocked}
+        onDemoLockedAction={handleDemoLockedAction}
+        demoFillLinkDocsHref="/usage-docs/fill-by-link"
+        demoCreateGroupDocsHref="/usage-docs/create-group"
+      />
       <div className="app-shell">
         <FieldListPanel fields={visibleFields} totalFieldCount={fields.length}
           selectedFieldId={selectedFieldId} selectedField={selectedField}
@@ -1408,7 +1444,7 @@ function WorkspaceRuntime({
               pageSizes={pageSizes}
               fields={visibleFields} showFields={showFields} showFieldNames={showFieldNames}
               showFieldInfo={showFieldInfo}
-              moveEnabled={!showFieldInfo}
+              moveEnabled={transformMode && !showFieldInfo}
               resizeEnabled={transformMode && !showFieldInfo}
               createEnabled={Boolean(activeCreateTool) && !showFieldInfo}
               activeCreateTool={activeCreateTool}
@@ -1423,12 +1459,17 @@ function WorkspaceRuntime({
           )}
         </main>
         <FieldInspectorPanel fields={fields} selectedFieldId={selectedFieldId}
+          selectedField={selectedField}
           activeCreateTool={activeCreateTool}
+          arrowKeyMoveEnabled={arrowKeyMoveEnabled}
+          arrowKeyMoveStep={arrowKeyMoveStep}
           onUpdateField={fieldState.handleUpdateField}
           onSetFieldType={handleSetFieldType}
           onUpdateFieldDraft={fieldState.handleUpdateFieldDraft}
           onDeleteField={fieldState.handleDeleteField}
           onCreateToolChange={handleSetCreateTool}
+          onArrowKeyMoveEnabledChange={setArrowKeyMoveEnabled}
+          onArrowKeyMoveStepChange={(value) => setArrowKeyMoveStep(sanitizeArrowKeyMoveStep(value))}
           onUndo={handleUndo}
           onRedo={handleRedo}
           canUndo={fieldHistory.canUndo}
@@ -1437,14 +1478,19 @@ function WorkspaceRuntime({
           onCommitFieldChange={fieldHistory.commitFieldHistory} />
       </div>
       {showSearchFill ? (
-        <SearchFillModal open={showSearchFill} onClose={() => setShowSearchFill(false)}
+        <SearchFillModal open={showSearchFill} onClose={handleCloseSearchFill}
           sessionId={searchFillSessionId} dataSourceKind={dataSourceKind}
           dataSourceLabel={dataSourceLabel} columns={dataColumns}
           identifierKey={identifierKey} rows={dataRows} fields={fields}
           checkboxRules={checkboxRules} checkboxHints={checkboxHints}
           textTransformRules={textTransformRules}
+          searchPreset={!demoActive ? searchFillPreset : null}
+          fillTargets={activeGroupId ? activeGroupTemplates.map((template) => ({ id: template.id, name: template.name })) : []}
+          activeFillTargetId={savedForms.activeSavedFormId}
+          onFillTargets={activeGroupId ? handleFillSearchTargets : undefined}
           onFieldsChange={fieldState.handleFieldsChange} onClearFields={fieldState.handleClearFieldValues}
           onAfterFill={() => {
+            setSearchFillPreset(null);
             handleSetTransformMode(false);
             setActiveCreateTool(null);
             fieldState.setShowFieldInfo(true); fieldState.setShowFieldNames(false);

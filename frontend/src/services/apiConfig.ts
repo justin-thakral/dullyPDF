@@ -122,6 +122,7 @@ export function buildApiUrl(...segments: Array<string>): string {
 
 export interface ApiFetchOptions extends RequestInit {
   allowStatuses?: number[];
+  authMode?: 'default' | 'anonymous';
   timeoutMs?: number;
 }
 
@@ -145,11 +146,15 @@ export async function apiFetch(
   url: string,
   options: ApiFetchOptions = {},
 ): Promise<Response> {
-  const { allowStatuses, headers, timeoutMs, signal: inputSignal, ...requestInit } = options;
+  const { allowStatuses, authMode = 'default', headers, timeoutMs, signal: inputSignal, ...requestInit } = options;
   const requestHeaders = new Headers(headers || {});
-  const managedAuth = !requestHeaders.has('Authorization');
-  const initialToken = await attachAuthHeader(requestHeaders, false);
-  if (!requestHeaders.has('Authorization')) {
+  if (authMode === 'anonymous') {
+    requestHeaders.delete('Authorization');
+    requestHeaders.delete('x-admin-token');
+  }
+  const managedAuth = authMode !== 'anonymous' && !requestHeaders.has('Authorization');
+  const initialToken = managedAuth ? await attachAuthHeader(requestHeaders, false) : null;
+  if (authMode !== 'anonymous' && !requestHeaders.has('Authorization')) {
     const adminToken = resolveAdminToken();
     if (adminToken && !requestHeaders.has('x-admin-token')) {
       requestHeaders.set('x-admin-token', adminToken);

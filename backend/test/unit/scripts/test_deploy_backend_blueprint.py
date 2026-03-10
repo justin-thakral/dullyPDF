@@ -42,6 +42,29 @@ def test_deploy_backend_runs_required_billing_integration_test_gate() -> None:
     assert 'ENV=test python3 -m pytest -q "$BILLING_INTEGRATION_TEST_PATH"' in text
 
 
+def test_deploy_backend_requires_fill_link_token_secret_and_recaptcha() -> None:
+    text = _script_text()
+    assert "require_nonempty FILL_LINK_TOKEN_SECRET" in text
+    assert "require_fill_link_secret_quality FILL_LINK_TOKEN_SECRET" in text
+    assert "must be at least 32 characters in prod" in text
+    assert "FILL_LINK_REQUIRE_RECAPTCHA must be true in prod" in text
+    assert "require_nonempty RECAPTCHA_ALLOWED_HOSTNAMES" in text
+
+
+def test_deploy_backend_requires_adc_only_firebase_auth_in_prod() -> None:
+    text = _script_text()
+    assert 'require_exact FIREBASE_USE_ADC "true"' in text
+    assert "require_nonempty BACKEND_RUNTIME_SERVICE_ACCOUNT" in text
+    assert "require_empty FIREBASE_CREDENTIALS" in text
+    assert "require_empty FIREBASE_CREDENTIALS_SECRET" in text
+    assert "require_empty GOOGLE_APPLICATION_CREDENTIALS" in text
+    assert '"BACKEND_RUNTIME_SERVICE_ACCOUNT"' in text
+    assert '"FIREBASE_CREDENTIALS"' in text
+    assert '"GOOGLE_APPLICATION_CREDENTIALS"' in text
+    assert '"FIREBASE_CREDENTIALS_SECRET"' in text
+    assert '--service-account "$BACKEND_RUNTIME_SERVICE_ACCOUNT"' in text
+
+
 def test_backend_prod_env_example_documents_stripe_as_required() -> None:
     stripe_heading = next(
         line.strip()
@@ -55,4 +78,13 @@ def test_backend_prod_env_example_documents_stripe_as_required() -> None:
 def test_backend_prod_env_example_documents_stripe_idempotency_and_event_history_knobs() -> None:
     text = _prod_env_example_text()
     assert "STRIPE_CHECKOUT_IDEMPOTENCY_WINDOW_SECONDS=300" in text
-    assert "STRIPE_MAX_PROCESSED_EVENTS=0" in text
+    assert "STRIPE_MAX_PROCESSED_EVENTS=256" in text
+
+
+def test_backend_prod_env_example_documents_adc_only_and_fill_link_placeholder_rules() -> None:
+    text = _prod_env_example_text()
+    assert "at least 32 characters" in text
+    assert "must use ADC" in text
+    assert "BACKEND_RUNTIME_SERVICE_ACCOUNT=dullypdf-backend-runtime@dullypdf.iam.gserviceaccount.com" in text
+    assert "# FIREBASE_CREDENTIALS_SECRET=" in text
+    assert "GOOGLE_APPLICATION_CREDENTIALS unset" in text

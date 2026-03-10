@@ -14,7 +14,12 @@ vi.mock('pdfjs-dist/build/pdf.worker.min.mjs?url', () => ({
   default: '/mocked/pdf.worker.min.mjs',
 }));
 
-import { extractFieldsFromPdf, loadPageSizes, loadPdfFromFile } from '../../../src/utils/pdf';
+import {
+  extractFieldsFromPdf,
+  loadPageSizes,
+  loadPdfFromFile,
+  loadPdfPageCountFromFile,
+} from '../../../src/utils/pdf';
 
 type MockAnnotation = Record<string, unknown>;
 type MockFieldObject = Record<string, unknown>;
@@ -87,6 +92,61 @@ describe('pdf utils', () => {
     expect(options.enableXfa).toBe(true);
     expect(options.useSystemFonts).toBe(true);
     expect(Array.from(new Uint8Array(options.data))).toEqual([1, 2, 3]);
+  });
+
+  it('loads page counts with lighter PDF.js options and destroys the document after counting', async () => {
+    const destroyMock = vi.fn().mockResolvedValue(undefined);
+    const mockDoc = { numPages: 6, destroy: destroyMock };
+    getDocumentMock.mockReturnValue({ promise: Promise.resolve(mockDoc), destroy: vi.fn() });
+    const sourceBytes = Uint8Array.from([9, 8, 7]);
+    const file = {
+      name: 'packet.pdf',
+      arrayBuffer: vi.fn(async () => sourceBytes.buffer),
+    } as unknown as File;
+
+    const pageCount = await loadPdfPageCountFromFile(file);
+
+    expect(pageCount).toBe(6);
+    expect(getDocumentMock).toHaveBeenCalledTimes(1);
+    const options = getDocumentMock.mock.calls[0][0] as {
+      data: ArrayBuffer;
+      enableXfa: boolean;
+      useSystemFonts: boolean;
+      disableFontFace: boolean;
+      stopAtErrors: boolean;
+    };
+    expect(options.enableXfa).toBe(false);
+    expect(options.useSystemFonts).toBe(false);
+    expect(options.disableFontFace).toBe(true);
+    expect(options.stopAtErrors).toBe(true);
+    expect(Array.from(new Uint8Array(options.data))).toEqual([9, 8, 7]);
+    expect(destroyMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('times out stalled page counts and destroys the loading task', async () => {
+    vi.useFakeTimers();
+    try {
+      const destroyTaskMock = vi.fn();
+      getDocumentMock.mockReturnValue({
+        promise: new Promise(() => {}),
+        destroy: destroyTaskMock,
+      });
+      const file = {
+        name: 'stalled.pdf',
+        arrayBuffer: vi.fn(async () => Uint8Array.from([1]).buffer),
+      } as unknown as File;
+
+      const pending = loadPdfPageCountFromFile(file, { timeoutMs: 25 });
+      const rejection = expect(pending).rejects.toThrow(
+        'Page counting timed out. Remove this PDF and try again.',
+      );
+      await vi.advanceTimersByTimeAsync(25);
+
+      await rejection;
+      expect(destroyTaskMock).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('extracts page sizes for every page in the document', async () => {

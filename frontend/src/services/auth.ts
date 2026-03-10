@@ -122,7 +122,12 @@ export const Auth = {
    * Send a password reset email.
    */
   async sendPasswordReset(email: string): Promise<void> {
-    await sendPasswordResetEmail(firebaseAuth, email);
+    const actionSettings = resolveEmailActionSettings();
+    if (actionSettings) {
+      await sendPasswordResetEmail(firebaseAuth, email, actionSettings);
+    } else {
+      await sendPasswordResetEmail(firebaseAuth, email);
+    }
   },
 
   /**

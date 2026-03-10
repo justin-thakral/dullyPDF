@@ -110,7 +110,7 @@ describe('Homepage', () => {
     expect(
       screen.getByRole('heading', {
         level: 1,
-        name: 'Automatic PDF to Fillable Form and Database Template Mapping',
+        name: 'Automatic PDF Templates, Fill By Link, and Database Mapping',
       }),
     ).toBeTruthy();
 
@@ -126,6 +126,16 @@ describe('Homepage', () => {
     expect(onStartDemo).toHaveBeenCalledTimes(1);
   });
 
+  it('renders compact feature-plan links in the quick info card', () => {
+    render(<Homepage onStartWorkflow={vi.fn()} />);
+
+    expect(screen.getByText('Supported:')).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'View free features' }).getAttribute('href')).toBe('/free-features');
+    expect(screen.getByRole('link', { name: 'View premium features' }).getAttribute('href')).toBe('/premium-features');
+    expect(screen.getByText('Free Feats:')).toBeTruthy();
+    expect(screen.getByText('Premium Feats:')).toBeTruthy();
+  });
+
   it('navigates mobile walkthrough steps with proper boundaries', async () => {
     const user = userEvent.setup();
     render(<Homepage onStartWorkflow={vi.fn()} />);
@@ -134,19 +144,19 @@ describe('Homepage', () => {
     const nextButton = screen.getByRole('button', { name: 'Next demo step' }) as HTMLButtonElement;
 
     expect(prevButton.disabled).toBe(true);
-    expect(screen.getByText('Step 1 of 6')).toBeTruthy();
+    expect(screen.getByText('Step 1 of 9')).toBeTruthy();
 
-    for (let index = 0; index < 5; index += 1) {
+    for (let index = 0; index < 8; index += 1) {
       await user.click(nextButton);
     }
 
-    expect(screen.getByText('Step 6 of 6')).toBeTruthy();
-    expect(screen.getByRole('heading', { name: 'Search & Fill completes the form' })).toBeTruthy();
+    expect(screen.getByText('Step 9 of 9')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Create groups for full document workflows' })).toBeTruthy();
     expect(nextButton.disabled).toBe(true);
 
     await user.click(prevButton);
-    expect(screen.getByText('Step 5 of 6')).toBeTruthy();
-    expect(screen.getByRole('heading', { name: 'OpenAI rename + OpenAI remap' })).toBeTruthy();
+    expect(screen.getByText('Step 8 of 9')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Respondents fill a mock form, not the PDF' })).toBeTruthy();
   });
 
   it('shows Sign in for signed-out users and Profile for signed-in users', async () => {

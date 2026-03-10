@@ -130,7 +130,7 @@ describe('LoginPage', () => {
     await user.click(screen.getByRole('button', { name: 'Sign in' }));
 
     await waitFor(() => {
-      expect(loginMocks.signIn).toHaveBeenCalledWith('user@example.com', 'secret123');
+      expect(loginMocks.signIn).toHaveBeenCalledWith('user@example.com', '  secret123 ');
     });
     expect(onAuthenticated).toHaveBeenCalledTimes(1);
   });
@@ -155,7 +155,7 @@ describe('LoginPage', () => {
         token: 'token-123',
         action: 'signup',
       });
-      expect(loginMocks.signUp).toHaveBeenCalledWith('new@example.com', 'password123');
+      expect(loginMocks.signUp).toHaveBeenCalledWith('new@example.com', '  password123 ');
       expect(loginMocks.trackGoogleAdsSignup).toHaveBeenCalledWith('user-signup-123');
     });
 
@@ -246,6 +246,24 @@ describe('LoginPage', () => {
 
     unmount();
     expect(existingUi.reset.mock.calls.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it('does not restart firebaseui when onAuthenticated changes identity', () => {
+    const existingUi = {
+      start: vi.fn(),
+      reset: vi.fn(),
+    };
+    loginMocks.uiGetInstance.mockReturnValue(existingUi);
+
+    const firstHandler = vi.fn();
+    const secondHandler = vi.fn();
+    const { rerender } = render(<LoginPage onAuthenticated={firstHandler} />);
+
+    expect(existingUi.start).toHaveBeenCalledTimes(1);
+
+    rerender(<LoginPage onAuthenticated={secondHandler} />);
+
+    expect(existingUi.start).toHaveBeenCalledTimes(1);
   });
 
   it('tracks native OAuth signup conversions only for new FirebaseUI users', async () => {

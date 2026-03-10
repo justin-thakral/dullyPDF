@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { User } from 'firebase/auth';
 import type { PDFDocumentProxy } from 'pdfjs-dist/types/src/display/api';
 import type {
@@ -19,6 +19,11 @@ import {
 import { extractFieldsFromPdf, loadPageSizes, loadPdfFromFile } from '../utils/pdf';
 import { buildTemplateFields } from '../utils/fields';
 import { debugLog } from '../utils/debug';
+import {
+  buildSavedFormEditorSnapshot,
+  extractSavedFormFillRuleState,
+  normalizeSavedFormEditorSnapshot,
+} from '../utils/savedFormHydration';
 import { ApiError } from '../services/apiConfig';
 import { ApiService } from '../services/api';
 import { detectFields, pollDetectionStatus } from '../services/detectionApi';
@@ -28,16 +33,14 @@ import {
   DETECTION_WARMUP_DURATION_MS,
   DETECTION_WARMUP_MESSAGE,
   DETECTION_WARMUP_PAGE_THRESHOLD,
-  DEFAULT_PROCESSING_MESSAGE,
   DEMO_ASSETS,
   DETECTION_BACKGROUND_MAX_RETRIES,
   DETECTION_BACKGROUND_POLL_TIMEOUT_MS,
   DETECTION_BACKGROUND_RETRY_BASE_MS,
   DETECTION_BACKGROUND_RETRY_MAX_MS,
-  FILLABLE_TEMPLATE_PROCESSING_MESSAGE,
   QUEUE_WAIT_THRESHOLD_MS,
-  SAVED_FORM_PROCESSING_MESSAGE,
 } from '../config/appConstants';
+import { resolveProcessingCopy, type ProcessingVariant } from '../utils/processing';
 
 const DEMO_ASSET_NAME_SET = new Set(Object.values(DEMO_ASSETS));
 
@@ -62,6 +65,7 @@ export interface UseDetectionDeps {
   setSourceFile: (file: File | null) => void;
   setSourceFileName: (name: string | null) => void;
   setSourceFileIsDemo: (value: boolean) => void;
+  markSavedFillLinkSnapshot: (fields: PdfField[], checkboxRules: CheckboxRule[]) => void;
   setActiveSavedFormId: (id: string | null) => void;
   setActiveSavedFormName: (name: string | null) => void;
   setShowSearchFill: (value: boolean) => void;
@@ -86,22 +90,76 @@ export interface UseDetectionDeps {
   demoStateRef: React.MutableRefObject<{ demoActive: boolean; demoCompletionOpen: boolean }>;
 }
 
+function isAbortError(error: unknown): boolean {
+  if (error instanceof DOMException && error.name === 'AbortError') {
+    return true;
+  }
+  return error instanceof Error && (error.name === 'AbortError' || error.message.toLowerCase().includes('aborted'));
+}
+
+function clonePdfFields(fields: PdfField[]): PdfField[] {
+  return fields.map((field) => ({
+    ...field,
+    rect: { ...field.rect },
+  }));
+}
+
 export function useDetection(deps: UseDetectionDeps) {
   const [detectSessionId, setDetectSessionId] = useState<string | null>(null);
   const [mappingSessionId, setMappingSessionId] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingMode, setProcessingMode] = useState<ProcessingMode>(null);
-  const [processingDetail, setProcessingDetail] = useState(DEFAULT_PROCESSING_MESSAGE);
+  const [processingVariant, setProcessingVariant] = useState<ProcessingVariant>('detect');
+  const [processingDetail, setProcessingDetail] = useState(resolveProcessingCopy('detect').detail);
+  const processingHeading = useMemo(
+    () => resolveProcessingCopy(processingVariant).heading,
+    [processingVariant],
+  );
   const loadTokenRef = useRef(0);
   const detectionRetryRef = useRef<Map<string, number>>(new Map());
   const resumeDetectionPollingRef = useRef<((sessionId: string, loadToken: number) => void) | null>(null);
   const pendingAutoActionsRef = useRef<PendingAutoActions | null>(null);
+  const activeDetectionAbortRef = useRef<AbortController | null>(null);
+  const backgroundDetectionAbortRefs = useRef<Map<string, AbortController>>(new Map());
+  const detectionRetryTimeoutsRef = useRef<Map<string, number>>(new Map());
   const detectionPipeline: 'commonforms' = 'commonforms';
+
+  const clearScheduledDetectionRetry = useCallback((sessionId?: string) => {
+    if (sessionId) {
+      const timeoutId = detectionRetryTimeoutsRef.current.get(sessionId);
+      if (timeoutId !== undefined) {
+        window.clearTimeout(timeoutId);
+        detectionRetryTimeoutsRef.current.delete(sessionId);
+      }
+      return;
+    }
+    for (const timeoutId of detectionRetryTimeoutsRef.current.values()) {
+      window.clearTimeout(timeoutId);
+    }
+    detectionRetryTimeoutsRef.current.clear();
+  }, []);
+
+  const cancelBackgroundDetectionPolling = useCallback(() => {
+    clearScheduledDetectionRetry();
+    detectionRetryRef.current.clear();
+    for (const controller of backgroundDetectionAbortRefs.current.values()) {
+      controller.abort();
+    }
+    backgroundDetectionAbortRefs.current.clear();
+  }, [clearScheduledDetectionRetry]);
+
+  const cancelAllDetectionPolling = useCallback(() => {
+    pendingAutoActionsRef.current = null;
+    activeDetectionAbortRef.current?.abort();
+    activeDetectionAbortRef.current = null;
+    cancelBackgroundDetectionPolling();
+  }, [cancelBackgroundDetectionPolling]);
 
   const scheduleDetectionRetry = useCallback((sessionId: string, loadToken: number) => {
     const attempts = detectionRetryRef.current.get(sessionId) ?? 0;
     const nextAttempt = attempts + 1;
     if (nextAttempt > DETECTION_BACKGROUND_MAX_RETRIES) {
+      clearScheduledDetectionRetry(sessionId);
       detectionRetryRef.current.delete(sessionId);
       return;
     }
@@ -110,20 +168,30 @@ export function useDetection(deps: UseDetectionDeps) {
       DETECTION_BACKGROUND_RETRY_MAX_MS,
       DETECTION_BACKGROUND_RETRY_BASE_MS * 2 ** (nextAttempt - 1),
     );
-    window.setTimeout(() => {
+    clearScheduledDetectionRetry(sessionId);
+    const timeoutId = window.setTimeout(() => {
+      detectionRetryTimeoutsRef.current.delete(sessionId);
+      if (loadTokenRef.current !== loadToken) return;
       resumeDetectionPollingRef.current?.(sessionId, loadToken);
     }, delay);
-  }, []);
+    detectionRetryTimeoutsRef.current.set(sessionId, timeoutId);
+  }, [clearScheduledDetectionRetry]);
 
   const resumeDetectionPolling = useCallback(
     async (sessionId: string, loadToken: number) => {
+      clearScheduledDetectionRetry(sessionId);
+      backgroundDetectionAbortRefs.current.get(sessionId)?.abort();
+      const controller = new AbortController();
+      backgroundDetectionAbortRefs.current.set(sessionId, controller);
       try {
         const payload = await pollDetectionStatus(sessionId, {
+          signal: controller.signal,
           timeoutMs: DETECTION_BACKGROUND_POLL_TIMEOUT_MS,
         });
         if (loadTokenRef.current !== loadToken) return;
         const status = String(payload?.status || '').toLowerCase();
         if (status === 'complete') {
+          clearScheduledDetectionRetry(sessionId);
           detectionRetryRef.current.delete(sessionId);
           const nextFields = mapDetectionFields(payload);
           if (!nextFields.length) {
@@ -175,6 +243,7 @@ export function useDetection(deps: UseDetectionDeps) {
           return;
         }
         if (status === 'failed') {
+          clearScheduledDetectionRetry(sessionId);
           detectionRetryRef.current.delete(sessionId);
           const message = payload?.error || 'Detection failed on the backend.';
           deps.setBannerNotice({ tone: 'error', message: String(message), autoDismissMs: 8000 });
@@ -187,8 +256,10 @@ export function useDetection(deps: UseDetectionDeps) {
           scheduleDetectionRetry(sessionId, loadToken);
         }
       } catch (error) {
+        if (isAbortError(error)) return;
         if (loadTokenRef.current !== loadToken) return;
         if (error instanceof ApiError && (error.status === 401 || error.status === 403 || error.status === 404)) {
+          clearScheduledDetectionRetry(sessionId);
           detectionRetryRef.current.delete(sessionId);
           pendingAutoActionsRef.current = null;
           setDetectSessionId(null);
@@ -199,14 +270,23 @@ export function useDetection(deps: UseDetectionDeps) {
         const message = error instanceof Error ? error.message : 'Detection failed on the backend.';
         deps.setBannerNotice({ tone: 'error', message, autoDismissMs: 8000 });
         scheduleDetectionRetry(sessionId, loadToken);
+      } finally {
+        const activeController = backgroundDetectionAbortRefs.current.get(sessionId);
+        if (activeController === controller) {
+          backgroundDetectionAbortRefs.current.delete(sessionId);
+        }
       }
     },
-    [scheduleDetectionRetry, deps],
+    [clearScheduledDetectionRetry, scheduleDetectionRetry, deps],
   );
 
   useEffect(() => {
     resumeDetectionPollingRef.current = resumeDetectionPolling;
   }, [resumeDetectionPolling]);
+
+  useEffect(() => () => {
+    cancelAllDetectionPolling();
+  }, [cancelAllDetectionPolling]);
 
   const commitPdfLoad = useCallback(
     (
@@ -252,13 +332,15 @@ export function useDetection(deps: UseDetectionDeps) {
         setPendingPageJump: (page: number | null) => void;
       },
     ) => {
+      cancelAllDetectionPolling();
       const loadToken = loadTokenRef.current + 1;
       loadTokenRef.current = loadToken;
       deps.setShowSearchFill(false);
       deps.setSearchFillSessionId((prev) => prev + 1);
       setProcessingMode('fillable');
       setIsProcessing(true);
-      setProcessingDetail(FILLABLE_TEMPLATE_PROCESSING_MESSAGE);
+      setProcessingVariant('fillable');
+      setProcessingDetail(resolveProcessingCopy('fillable').detail);
       deps.setLoadError(null);
       deps.setShowHomepage(false);
       setMappingSessionId(null);
@@ -347,14 +429,18 @@ export function useDetection(deps: UseDetectionDeps) {
         setScale: (scale: number) => void;
         setPendingPageJump: (page: number | null) => void;
       },
+      options: { source?: 'saved-form' | 'saved-group' } = {},
     ) => {
+      cancelAllDetectionPolling();
       const loadToken = loadTokenRef.current + 1;
       loadTokenRef.current = loadToken;
       deps.setShowSearchFill(false);
       deps.setSearchFillSessionId((prev) => prev + 1);
       setProcessingMode('saved');
       setIsProcessing(true);
-      setProcessingDetail(SAVED_FORM_PROCESSING_MESSAGE);
+      const savedSource = options.source === 'saved-group' ? 'saved-group' : 'saved-form';
+      setProcessingVariant(savedSource);
+      setProcessingDetail(resolveProcessingCopy(savedSource).detail);
       deps.setLoadError(null);
       deps.setShowHomepage(false);
       setMappingSessionId(null);
@@ -375,55 +461,47 @@ export function useDetection(deps: UseDetectionDeps) {
         deps.setSourceFileName(name);
         deps.setSourceFileIsDemo(false);
         const doc = await loadPdfFromFile(file);
-        const sizesPromise = loadPageSizes(doc);
-        const existingFieldsPromise = (async () => {
-          try { return await extractFieldsFromPdf(doc); }
-          catch (error) { debugLog('Failed to extract saved form fields', error); return []; }
-        })();
+        const hydratedSnapshot = normalizeSavedFormEditorSnapshot(savedMeta?.editorSnapshot, {
+          expectedPageCount: doc.numPages,
+        });
+        const sizesPromise = hydratedSnapshot
+          ? Promise.resolve(hydratedSnapshot.pageSizes)
+          : loadPageSizes(doc);
+        const existingFieldsPromise = hydratedSnapshot
+          ? Promise.resolve(clonePdfFields(hydratedSnapshot.fields))
+          : (async () => {
+              try { return await extractFieldsFromPdf(doc); }
+              catch (error) { debugLog('Failed to extract saved form fields', error); return []; }
+            })();
         const sizes = await sizesPromise;
-        if (!commitPdfLoad(doc, sizes, [], loadToken, pdfState)) return;
+        const initialFields = hydratedSnapshot ? clonePdfFields(hydratedSnapshot.fields) : [];
+        if (!commitPdfLoad(doc, sizes, initialFields, loadToken, pdfState)) return;
         deps.setActiveSavedFormId(formId);
         deps.setActiveSavedFormName(savedMeta?.name || null);
-        const savedFillRules = savedMeta?.fillRules && typeof savedMeta.fillRules === 'object'
-          ? savedMeta.fillRules
-          : null;
-        const savedCheckboxRules = Array.isArray(savedFillRules?.checkboxRules)
-          ? (savedFillRules.checkboxRules as CheckboxRule[])
-          : Array.isArray(savedMeta?.checkboxRules)
-          ? (savedMeta.checkboxRules as CheckboxRule[])
-          : [];
-        const savedCheckboxHints = Array.isArray(savedFillRules?.checkboxHints)
-          ? (savedFillRules.checkboxHints as CheckboxHint[])
-          : Array.isArray(savedMeta?.checkboxHints)
-          ? (savedMeta.checkboxHints as CheckboxHint[])
-          : [];
-        const savedTextTransformRules = Array.isArray(savedFillRules?.textTransformRules)
-          ? (savedFillRules.textTransformRules as TextTransformRule[])
-          : Array.isArray((savedFillRules as Record<string, unknown> | null)?.templateRules)
-          ? ((savedFillRules as Record<string, unknown>).templateRules as TextTransformRule[])
-          : Array.isArray(savedMeta?.textTransformRules)
-          ? (savedMeta.textTransformRules as TextTransformRule[])
-          : Array.isArray((savedMeta as Record<string, unknown> | null)?.templateRules)
-          ? ((savedMeta as Record<string, unknown>).templateRules as TextTransformRule[])
-          : [];
+        const {
+          checkboxRules: savedCheckboxRules,
+          checkboxHints: savedCheckboxHints,
+          textTransformRules: savedTextTransformRules,
+        } = extractSavedFormFillRuleState(savedMeta);
         deps.setCheckboxRules(savedCheckboxRules);
         deps.setCheckboxHints(savedCheckboxHints);
         deps.setTextTransformRules(savedTextTransformRules);
+        const derivedHasMappedSchema = Boolean(
+          savedCheckboxRules.length ||
+          savedCheckboxHints.length ||
+          savedTextTransformRules.length
+        );
+        deps.setHasRenamedFields(Boolean(hydratedSnapshot?.hasRenamedFields));
+        deps.setHasMappedSchema(hydratedSnapshot?.hasMappedSchema ?? derivedHasMappedSchema);
 
-        void (async () => {
-          const existingFields = await existingFieldsPromise;
-          if (loadTokenRef.current !== loadToken) return;
-          deps.resetFieldHistory(existingFields);
-          deps.setSelectedFieldId(null);
-          debugLog('Extracted saved form fields', { total: existingFields.length });
-          debugLog('Loaded saved form', { name, pages: doc.numPages, fields: existingFields.length });
-          if (!existingFields.length) {
+        const registerSavedFormSession = async (fieldsForSession: PdfField[]) => {
+          if (!fieldsForSession.length) {
             deps.setBannerNotice({ tone: 'info', message: 'No fields found in this saved form. Rename is unavailable.', autoDismissMs: 8000 });
             return;
           }
           try {
             const sessionPayload = await ApiService.createSavedFormSession(formId, {
-              fields: buildTemplateFields(existingFields),
+              fields: buildTemplateFields(fieldsForSession),
               pageCount: doc.numPages,
             });
             if (loadTokenRef.current !== loadToken) return;
@@ -434,6 +512,43 @@ export function useDetection(deps: UseDetectionDeps) {
             deps.setBannerNotice({ tone: 'info', message: 'Rename is unavailable for this saved form.', autoDismissMs: 8000 });
             debugLog('Failed to register saved form session', error);
           }
+        };
+
+        if (hydratedSnapshot) {
+          deps.markSavedFillLinkSnapshot(initialFields, savedCheckboxRules);
+          debugLog('Loaded saved form from editor snapshot', { name, pages: doc.numPages, fields: initialFields.length });
+          if (deps.verifiedUser) {
+            void registerSavedFormSession(initialFields);
+          }
+          return;
+        }
+
+        void (async () => {
+          const existingFields = await existingFieldsPromise;
+          if (loadTokenRef.current !== loadToken) return;
+          deps.resetFieldHistory(existingFields);
+          deps.setSelectedFieldId(null);
+          deps.markSavedFillLinkSnapshot(existingFields, savedCheckboxRules);
+          debugLog('Extracted saved form fields', { total: existingFields.length });
+          debugLog('Loaded saved form', { name, pages: doc.numPages, fields: existingFields.length });
+          if (deps.verifiedUser && existingFields.length) {
+            void Promise.resolve(
+              ApiService.updateSavedFormEditorSnapshot(
+                formId,
+                buildSavedFormEditorSnapshot({
+                  pageCount: doc.numPages,
+                  pageSizes: sizes,
+                  fields: existingFields,
+                  hasRenamedFields: false,
+                  hasMappedSchema: derivedHasMappedSchema,
+                }),
+              ),
+            ).catch((error) => {
+              debugLog('Failed to backfill saved form editor snapshot', formId, error);
+            });
+          }
+          if (!deps.verifiedUser) return;
+          await registerSavedFormSession(existingFields);
         })();
       } catch (error) {
         if (loadTokenRef.current !== loadToken) return;
@@ -461,6 +576,7 @@ export function useDetection(deps: UseDetectionDeps) {
         setPendingPageJump: (page: number | null) => void;
       },
     ) => {
+      cancelAllDetectionPolling();
       const loadToken = loadTokenRef.current + 1;
       loadTokenRef.current = loadToken;
       pendingAutoActionsRef.current = null;
@@ -469,7 +585,8 @@ export function useDetection(deps: UseDetectionDeps) {
       deps.setSearchFillSessionId((prev) => prev + 1);
       setProcessingMode('detect');
       setIsProcessing(true);
-      setProcessingDetail(DEFAULT_PROCESSING_MESSAGE);
+      setProcessingVariant('detect');
+      setProcessingDetail(resolveProcessingCopy('detect').detail);
       deps.setLoadError(null);
       deps.setShowHomepage(false);
       setMappingSessionId(null);
@@ -542,12 +659,15 @@ export function useDetection(deps: UseDetectionDeps) {
         let detectionTimedOut = false;
         let detectionError: string | null = null;
         let authFailure: ApiError | null = null;
+        const detectionController = new AbortController();
 
         try {
+          activeDetectionAbortRef.current = detectionController;
           const detection = await detectFields(file, {
             pipeline: detectionPipeline,
             prewarmRename: Boolean(options.autoRename),
             prewarmRemap: Boolean(options.autoMap),
+            signal: detectionController.signal,
             onStatus: (payload) => {
               if (loadTokenRef.current !== loadToken) return;
               const message = resolveDetectionStatusMessage(payload, QUEUE_WAIT_THRESHOLD_MS);
@@ -568,12 +688,19 @@ export function useDetection(deps: UseDetectionDeps) {
           detectedFields = mapDetectionFields(detection);
           debugLog('Field detection returned', { total: detectedFields.length });
         } catch (error) {
+          if (isAbortError(error)) {
+            return;
+          }
           if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
             authFailure = error;
           } else {
             detectionError = error instanceof Error ? error.message : 'Field detection failed.';
           }
           debugLog('Field detection failed', error);
+        } finally {
+          if (activeDetectionAbortRef.current === detectionController) {
+            activeDetectionAbortRef.current = null;
+          }
         }
 
         if (authFailure) {
@@ -697,17 +824,19 @@ export function useDetection(deps: UseDetectionDeps) {
   }, [deps.verifiedUser, deps.pdfDoc, deps.sourceFileIsDemo, deps.sourceFileName, deps.setBannerNotice, deps.demoStateRef, detectSessionId, mappingSessionId]);
 
   const reset = useCallback(() => {
+    cancelAllDetectionPolling();
     setProcessingMode(null);
     setMappingSessionId(null);
     setDetectSessionId(null);
     detectionRetryRef.current.clear();
-  }, []);
+  }, [cancelAllDetectionPolling]);
 
   return {
     detectSessionId, setDetectSessionId,
     mappingSessionId, setMappingSessionId,
     isProcessing, setIsProcessing,
     processingMode, setProcessingMode,
+    processingHeading,
     processingDetail,
     loadTokenRef,
     detectionRetryRef,

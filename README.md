@@ -1,6 +1,6 @@
 # DullyPDF
 
-FastAPI + React app for detecting PDF form fields, renaming candidates with OpenAI, and editing fields in a PDF viewer. The main pipeline is CommonForms (by [jbarrow](https://github.com/jbarrow/commonforms)) detection, optional OpenAI rename, and schema-only mapping.
+FastAPI + React app for detecting PDF form fields, renaming candidates with OpenAI, editing fields in a PDF viewer, and publishing native Fill By Link respondent forms from saved templates. The main pipeline is CommonForms (by [jbarrow](https://github.com/jbarrow/commonforms)) detection, optional OpenAI rename, schema-only mapping, and Search & Fill or Fill By Link respondent selection at generation time.
 
 ## Getting Started
 
@@ -55,6 +55,13 @@ Optional local frontend overrides can be added in ignored files:
 ### OpenAI (optional)
 
 Rename and schema mapping require `OPENAI_API_KEY`. If the key is missing, those actions fail while CommonForms (by [jbarrow](https://github.com/jbarrow/commonforms)) detection still works.
+
+### Fill By Link product messaging
+
+- Free users can publish 1 active Fill By Link with up to 5 accepted responses.
+- Premium users can publish a shareable link for every saved template with up to 10,000 accepted responses per link.
+- Respondents fill a DullyPDF-hosted HTML form. The final PDF is generated later when the owner selects a respondent inside the workspace.
+- Public plan summaries are available at `/free-features` and `/premium-features`.
 
 ## Quick test files
 
@@ -218,4 +225,4 @@ From `backend/requirements-detector.txt` and `Dockerfile.detector`:
 - `backend/README.md`
 - `frontend/README.md`
 - `backend/fieldDetecting/docs/README.md`
-
+- `GIT_WORKFLOW.md`

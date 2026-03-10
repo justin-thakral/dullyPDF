@@ -12,6 +12,7 @@ import type {
 } from '../types';
 import { normaliseFormName, prepareFieldsForMaterialize } from '../utils/fields';
 import { debugLog } from '../utils/debug';
+import { buildSavedFormEditorSnapshot } from '../utils/savedFormHydration';
 import { ApiError } from '../services/apiConfig';
 import { ApiService } from '../services/api';
 
@@ -20,12 +21,18 @@ export interface UseSaveDownloadDeps {
   sourceFile: File | null;
   sourceFileName: string | null;
   fields: PdfField[];
+  pageSizes: Record<number, { width: number; height: number }>;
+  pageCount: number;
   checkboxRules: CheckboxRule[];
   checkboxHints: CheckboxHint[];
   textTransformRules: TextTransformRule[];
+  hasRenamedFields: boolean;
+  hasMappedSchema: boolean;
   mappingSessionId: string | null;
   activeSavedFormId: string | null;
   activeSavedFormName: string | null;
+  activeGroupId?: string | null;
+  activeGroupName?: string | null;
   savedFormsCount: number;
   savedFormsMax: number;
   verifiedUser: User | null;
@@ -33,11 +40,15 @@ export interface UseSaveDownloadDeps {
   setLoadError: (message: string | null) => void;
   requestConfirm: (options: ConfirmDialogOptions) => Promise<boolean>;
   requestPrompt: (options: PromptDialogOptions) => Promise<string | null>;
-  refreshSavedForms: (opts?: { allowRetry?: boolean }) => Promise<void>;
+  refreshSavedForms: (opts?: { allowRetry?: boolean; throwOnError?: boolean }) => Promise<unknown>;
+  refreshGroups?: () => Promise<unknown> | void;
+  refreshProfile?: () => Promise<unknown> | void;
   setActiveSavedFormId: (id: string | null) => void;
   setActiveSavedFormName: (name: string | null) => void;
+  markGroupTemplatesPersisted?: (formIds?: string[]) => void;
   queueSaveAfterLimit: (action: () => Promise<void>) => void;
   allowAnonymousDownload?: boolean;
+  onSaveSuccess?: (fields: PdfField[], checkboxRules: CheckboxRule[]) => void;
 }
 
 export function useSaveDownload(deps: UseSaveDownloadDeps) {
@@ -62,14 +73,35 @@ export function useSaveDownload(deps: UseSaveDownloadDeps) {
           blob = new Blob([new Uint8Array(data)], { type: 'application/pdf' });
         }
         const fieldsForSave = prepareFieldsForMaterialize(deps.fields);
+        const editorSnapshot = buildSavedFormEditorSnapshot({
+          pageCount: deps.pageCount || deps.pdfDoc.numPages,
+          pageSizes: deps.pageSizes,
+          fields: fieldsForSave,
+          hasRenamedFields: deps.hasRenamedFields,
+          hasMappedSchema: deps.hasMappedSchema,
+        });
         const generatedBlob = await ApiService.materializeFormPdf(blob, fieldsForSave);
         const payload = await ApiService.saveFormToProfile(
           generatedBlob, saveName, deps.mappingSessionId || undefined,
           overwriteFormId || undefined, deps.checkboxRules, deps.checkboxHints, deps.textTransformRules,
+          editorSnapshot,
         );
         deps.setActiveSavedFormId(payload?.id || null);
         deps.setActiveSavedFormName(payload?.name || saveName);
-        await deps.refreshSavedForms();
+        const refreshResults = await Promise.allSettled([
+          deps.refreshSavedForms(),
+          Promise.resolve().then(() => deps.refreshGroups?.()),
+          Promise.resolve().then(() => deps.refreshProfile?.()),
+        ]);
+        for (const result of refreshResults) {
+          if (result.status === 'rejected') {
+            debugLog('Failed to refresh workspace state after saving form', result.reason);
+          }
+        }
+        if (overwriteFormId) {
+          deps.markGroupTemplatesPersisted?.([overwriteFormId]);
+        }
+        deps.onSaveSuccess?.(deps.fields, deps.checkboxRules);
         return { success: true, limitReached: false };
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Failed to save form to profile.';
@@ -116,7 +148,17 @@ export function useSaveDownload(deps: UseSaveDownloadDeps) {
       }
     };
     let shouldOverwrite = false;
-    if (deps.activeSavedFormId) {
+    if (deps.activeSavedFormId && deps.activeGroupId) {
+      const overwrite = await deps.requestConfirm({
+        title: 'Overwrite group template?',
+        message: `Save changes back to "${deps.activeSavedFormName || defaultName}" in "${deps.activeGroupName || 'this group'}"? Saving a new copy is disabled while a group is open so the active template does not leave the group.`,
+        confirmLabel: 'Overwrite',
+        cancelLabel: 'Cancel',
+        tone: 'danger',
+      });
+      if (overwrite) { shouldOverwrite = true; }
+      else { return; }
+    } else if (deps.activeSavedFormId) {
       const overwrite = await deps.requestConfirm({
         title: 'Overwrite saved form?',
         message: 'This form is already saved. Overwrite it or save a new copy with a different name.',

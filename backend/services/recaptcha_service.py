@@ -19,6 +19,10 @@ from .email_service import get_google_access_token
 logger = get_logger(__name__)
 
 
+def _is_prod() -> bool:
+    return _env_value("ENV").strip().lower() in {"prod", "production"}
+
+
 def recaptcha_required_for_contact() -> bool:
     raw = _env_value("CONTACT_REQUIRE_RECAPTCHA")
     if raw:
@@ -33,8 +37,19 @@ def recaptcha_required_for_signup() -> bool:
     return True
 
 
+def recaptcha_required_for_fill_link() -> bool:
+    raw = _env_value("FILL_LINK_REQUIRE_RECAPTCHA")
+    if raw:
+        return _env_truthy("FILL_LINK_REQUIRE_RECAPTCHA")
+    return True
+
+
 def recaptcha_required_any() -> bool:
-    return recaptcha_required_for_contact() or recaptcha_required_for_signup()
+    return (
+        recaptcha_required_for_contact()
+        or recaptcha_required_for_signup()
+        or recaptcha_required_for_fill_link()
+    )
 
 
 def resolve_contact_recaptcha_action() -> str:
@@ -43,6 +58,10 @@ def resolve_contact_recaptcha_action() -> str:
 
 def resolve_signup_recaptcha_action() -> str:
     return _env_value("RECAPTCHA_SIGNUP_ACTION") or _env_value("RECAPTCHA_EXPECTED_ACTION") or "signup"
+
+
+def resolve_fill_link_recaptcha_action() -> str:
+    return _env_value("RECAPTCHA_FILL_LINK_ACTION") or _env_value("RECAPTCHA_EXPECTED_ACTION") or "fill_link_submit"
 
 
 def resolve_recaptcha_project_id() -> str:
@@ -107,6 +126,10 @@ async def verify_recaptcha_token(
         logger.warning("Recaptcha configuration missing; skipping verification.")
         return
 
+    allowed_hostnames = resolve_recaptcha_allowed_hostnames()
+    if _is_prod() and not allowed_hostnames:
+        raise HTTPException(status_code=500, detail="Recaptcha allowed hostnames are not configured")
+
     expected_action = (expected_action or "").strip() or None
     event: Dict[str, Any] = {"token": token, "siteKey": site_key}
     if expected_action:
@@ -139,7 +162,6 @@ async def verify_recaptcha_token(
         if action != expected_action:
             raise HTTPException(status_code=400, detail="Recaptcha action mismatch")
 
-    allowed_hostnames = resolve_recaptcha_allowed_hostnames()
     if allowed_hostnames:
         hostname = str(token_props.get("hostname") or "").strip()
         if not recaptcha_hostname_allowed(hostname, allowed_hostnames):

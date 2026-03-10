@@ -8,6 +8,7 @@ declare global {
 }
 
 const TRACKED_CONVERSION_PREFIX = 'dullypdf.googleAdsConversion:';
+const GOOGLE_ADS_SCRIPT_SELECTOR = 'script[data-google-ads="true"]';
 const trackedConversionsFallback = new Set<string>();
 
 function readEnvValue(key: string): string {
@@ -27,6 +28,29 @@ function resolveSendTo(rawLabelOrSendTo: string): string | null {
 const signupSendTo = resolveSendTo(readEnvValue('VITE_GOOGLE_ADS_SIGNUP_LABEL'));
 const proSubscriptionSendTo = resolveSendTo(readEnvValue('VITE_GOOGLE_ADS_PRO_PURCHASE_LABEL'));
 const refillPurchaseSendTo = resolveSendTo(readEnvValue('VITE_GOOGLE_ADS_REFILL_PURCHASE_LABEL'));
+
+export function initializeGoogleAds(): void {
+  if (!googleAdsTagId || typeof window === 'undefined' || typeof document === 'undefined') {
+    return;
+  }
+  if (typeof window.gtag === 'function') {
+    return;
+  }
+  const existingScript = document.querySelector<HTMLScriptElement>(GOOGLE_ADS_SCRIPT_SELECTOR);
+  if (!existingScript) {
+    const script = document.createElement('script');
+    script.async = true;
+    script.src = `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(googleAdsTagId)}`;
+    script.dataset.googleAds = 'true';
+    document.head.appendChild(script);
+  }
+  window.dataLayer = window.dataLayer || [];
+  window.gtag = window.gtag || function gtag() {
+    window.dataLayer?.push(arguments);
+  };
+  window.gtag('js', new Date());
+  window.gtag('config', googleAdsTagId);
+}
 
 function getSessionStorage(): Storage | null {
   if (typeof window === 'undefined') return null;

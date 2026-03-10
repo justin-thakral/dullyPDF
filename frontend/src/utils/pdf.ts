@@ -10,6 +10,7 @@ import { parseConfidence } from './confidence';
 import { ensureUniqueFieldName, makeId } from './fields';
 
 const DEBUG_PDF = false;
+const DEFAULT_PAGE_COUNT_TIMEOUT_MS = 15000;
 
 function debugLog(...args: unknown[]) {
   if (!DEBUG_PDF) return;
@@ -96,6 +97,49 @@ export async function loadPdfFromFile(file: File): Promise<PDFDocumentProxy> {
   } catch (error) {
     debugLog('Failed to load PDF', error);
     throw error;
+  }
+}
+
+export async function loadPdfPageCountFromFile(
+  file: File,
+  options: { timeoutMs?: number } = {},
+): Promise<number> {
+  const buffer = await file.arrayBuffer();
+  const task = getDocument({
+    data: buffer,
+    enableXfa: false,
+    useSystemFonts: false,
+    disableFontFace: true,
+    stopAtErrors: true,
+  });
+  const timeoutMs = options.timeoutMs ?? DEFAULT_PAGE_COUNT_TIMEOUT_MS;
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+  try {
+    const doc = await Promise.race<PDFDocumentProxy>([
+      task.promise,
+      new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => {
+          void task.destroy();
+          reject(new Error('Page counting timed out. Remove this PDF and try again.'));
+        }, timeoutMs);
+      }),
+    ]);
+    debugLog('Resolved PDF page count', { name: file.name, pages: doc.numPages });
+    try {
+      return Math.max(1, Number(doc.numPages) || 1);
+    } finally {
+      if (typeof doc.destroy === 'function') {
+        void doc.destroy().catch(() => {});
+      }
+    }
+  } catch (error) {
+    debugLog('Failed to resolve PDF page count', { name: file.name, error });
+    throw error;
+  } finally {
+    if (timeoutId !== null) {
+      clearTimeout(timeoutId);
+    }
   }
 }
 

@@ -37,6 +37,11 @@ type CreateState = {
   current: { x: number; y: number };
 };
 
+type DragPreviewState = {
+  fieldId: string;
+  rect: FieldRect;
+} | null;
+
 type FieldOverlayProps = {
   fields: PdfField[];
   pageSize: PageSize;
@@ -212,6 +217,16 @@ function toDragRect(
   );
 }
 
+function resolveFieldLabelMetrics(rect: FieldRect) {
+  const maxWidth = Math.max(12, rect.width * 0.75);
+  const maxHeight = Math.max(10, rect.height * 0.75);
+  return {
+    maxWidth,
+    maxHeight,
+    fontSize: Math.max(7, Math.min(13, maxHeight * 0.44, maxWidth * 0.14)),
+  };
+}
+
 /**
  * Render editable field boxes and pointer-driven geometry updates.
  */
@@ -240,6 +255,8 @@ export function FieldOverlay({
   const pageRef = useRef(pageSize);
   const createToolRef = useRef<FieldType | null>(activeCreateTool);
   const [draftCreateRect, setDraftCreateRect] = useState<FieldRect | null>(null);
+  const [dragPreview, setDragPreview] = useState<DragPreviewState>(null);
+  const dragPreviewRef = useRef<DragPreviewState>(null);
 
   useEffect(() => {
     scaleRef.current = scale;
@@ -268,6 +285,23 @@ export function FieldOverlay({
       y: clamp((clientY - bounds.top) / scaleValue, 0, page.height),
     };
   };
+
+  const clearDragPreview = () => {
+    dragPreviewRef.current = null;
+    setDragPreview(null);
+  };
+
+  const updateDragPreview = (fieldId: string, rect: FieldRect) => {
+    const nextPreview = { fieldId, rect };
+    dragPreviewRef.current = nextPreview;
+    setDragPreview(nextPreview);
+  };
+
+  const rectsEqual = (left: FieldRect, right: FieldRect) =>
+    left.x === right.x &&
+    left.y === right.y &&
+    left.width === right.width &&
+    left.height === right.height;
 
   useEffect(() => {
     // Global listeners keep drag and resize responsive even if the cursor leaves the box.
@@ -357,7 +391,7 @@ export function FieldOverlay({
         }
       }
 
-      onUpdateField(dragState.fieldId, { rect: nextRect });
+      updateDragPreview(dragState.fieldId, nextRect);
     };
 
     const endDrag = (pointerId: number) => {
@@ -390,6 +424,13 @@ export function FieldOverlay({
           // Ignore release errors when capture is already lost.
         }
       }
+      const nextRect = dragPreviewRef.current?.fieldId === dragState.fieldId
+        ? dragPreviewRef.current.rect
+        : dragState.startRect;
+      if (!rectsEqual(nextRect, dragState.startRect)) {
+        onUpdateField(dragState.fieldId, { rect: nextRect });
+      }
+      clearDragPreview();
       onCommitFieldChange();
       dragStateRef.current = null;
     };
@@ -403,6 +444,7 @@ export function FieldOverlay({
       window.removeEventListener('pointermove', handlePointerMove);
       window.removeEventListener('pointerup', handlePointerUp);
       window.removeEventListener('pointercancel', handlePointerCancel);
+      clearDragPreview();
     };
   }, [onCommitFieldChange, onCreateFieldWithRect, onUpdateField]);
 
@@ -494,13 +536,14 @@ export function FieldOverlay({
         />
       ) : null}
       {fields.map((field) => {
-        const rect = toViewportRect(field.rect, scale);
+        const previewRect = dragPreview?.fieldId === field.id ? dragPreview.rect : field.rect;
+        const rect = toViewportRect(previewRect, scale);
         const selected = field.id === selectedFieldId;
         const isSmallField =
           field.type === 'checkbox' ||
-          (field.rect.width <= SMALL_FIELD_THRESHOLD_PDF && field.rect.height <= SMALL_FIELD_THRESHOLD_PDF);
-        // Keep labels readable while preventing oversized names on large fields.
-        const labelFontSize = Math.max(8, Math.min(14, Math.min(rect.width, rect.height) * 0.24));
+          (previewRect.width <= SMALL_FIELD_THRESHOLD_PDF && previewRect.height <= SMALL_FIELD_THRESHOLD_PDF);
+        // Keep labels inside a 75% inset box so names stay visibly subordinate to the field bounds.
+        const labelMetrics = resolveFieldLabelMetrics(rect);
         const confidenceTier = fieldConfidenceTierForField(field);
         const nameTier = nameConfidenceTierForField(field);
         const className = [
@@ -546,7 +589,11 @@ export function FieldOverlay({
               <span
                 className={labelClassName}
                 title={field.name}
-                style={{ ['--field-label-font-size' as string]: `${labelFontSize}px` }}
+                style={{
+                  ['--field-label-font-size' as string]: `${labelMetrics.fontSize}px`,
+                  ['--field-label-max-width' as string]: `${labelMetrics.maxWidth}px`,
+                  ['--field-label-max-height' as string]: `${labelMetrics.maxHeight}px`,
+                }}
               >
                 {field.name}
               </span>

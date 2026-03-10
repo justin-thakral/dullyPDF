@@ -21,6 +21,7 @@ function resolveDetectionPollTimeoutMs(): number {
 const DETECTION_POLL_TIMEOUT_MS = resolveDetectionPollTimeoutMs();
 
 type PollOptions = {
+  signal?: AbortSignal;
   timeoutMs?: number;
   onStatus?: (payload: any) => void;
 };
@@ -40,6 +41,7 @@ type DetectOptions = {
   pipeline?: 'commonforms';
   prewarmRename?: boolean;
   prewarmRemap?: boolean;
+  signal?: AbortSignal;
   onStatus?: (payload: any) => void;
 };
 
@@ -71,6 +73,7 @@ export async function detectFields(
 
   const response = await apiFetch('POST', `${getDetectionApiBase()}/detect-fields`, {
     body: formData,
+    signal: options.signal,
   });
   const startPayload = await apiJsonFetch(response);
   const sessionId = startPayload?.sessionId;
@@ -84,7 +87,10 @@ export async function detectFields(
 
   // Important: do not mask polling errors as "timed out".
   // Auth failures and backend errors should surface so the UI can prompt re-auth / show a real error.
-  return pollDetection(sessionId, startPayload, { onStatus: options.onStatus });
+  return pollDetection(sessionId, startPayload, {
+    onStatus: options.onStatus,
+    signal: options.signal,
+  });
 }
 
 export async function pollDetectionStatus(
@@ -113,11 +119,16 @@ async function pollDetection(
     options.onStatus(fallbackPayload);
   }
   while (Date.now() < deadline) {
+    if (options.signal?.aborted) {
+      throw new DOMException('Detection polling aborted.', 'AbortError');
+    }
     if (Date.now() >= nextTouchAt) {
       void touchDetectionSession(sessionId);
       nextTouchAt = Date.now() + DETECTION_TTL_TOUCH_INTERVAL_MS;
     }
-    const response = await apiFetch('GET', `${getDetectionApiBase()}/detect-fields/${sessionId}`);
+    const response = await apiFetch('GET', `${getDetectionApiBase()}/detect-fields/${sessionId}`, {
+      signal: options.signal,
+    });
     const payload = await apiJsonFetch(response);
     lastPayload = payload;
     if (options.onStatus) {
@@ -132,7 +143,7 @@ async function pollDetection(
       throw new DetectionFailedError(String(message));
     }
     attempt += 1;
-    await sleep(Math.min(DETECTION_POLL_INTERVAL_MS * attempt, 6000));
+    await sleep(Math.min(DETECTION_POLL_INTERVAL_MS * attempt, 6000), options.signal);
   }
   const status = String(lastPayload?.status || '').toLowerCase();
   const basePayload =
@@ -144,14 +155,32 @@ async function pollDetection(
   };
 }
 
-function sleep(durationMs: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, durationMs));
+function sleep(durationMs: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      cleanup();
+      resolve();
+    }, durationMs);
+    const cleanup = () => {
+      clearTimeout(timeoutId);
+      signal?.removeEventListener('abort', onAbort);
+    };
+    const onAbort = () => {
+      cleanup();
+      reject(new DOMException('Detection polling aborted.', 'AbortError'));
+    };
+    if (signal?.aborted) {
+      onAbort();
+      return;
+    }
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
 }
 
-  async function touchDetectionSession(sessionId: string): Promise<void> {
-    try {
-      await apiFetch('POST', `${getDetectionApiBase()}/api/sessions/${encodeURIComponent(sessionId)}/touch`);
-    } catch {
-      // Best-effort; detection polling should continue even if touch fails.
-    }
+async function touchDetectionSession(sessionId: string): Promise<void> {
+  try {
+    await apiFetch('POST', `${getDetectionApiBase()}/api/sessions/${encodeURIComponent(sessionId)}/touch`);
+  } catch {
+    // Best-effort; detection polling should continue even if touch fails.
   }
+}

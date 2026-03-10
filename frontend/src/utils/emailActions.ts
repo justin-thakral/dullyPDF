@@ -27,10 +27,29 @@ export type StoredEmailActionState =
     }
   | {
       kind: 'pending-reset-password';
-      oobCode: string;
-      email: string;
       continuePath: string;
     };
+
+function replaceAccountActionHistoryState(nextStoredState: StoredEmailActionState | null): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  const nextState =
+    window.history.state && typeof window.history.state === 'object'
+      ? { ...window.history.state }
+      : {};
+
+  delete nextState[ACCOUNT_ACTION_HISTORY_KEY];
+  delete nextState[LEGACY_ACCOUNT_ACTION_HISTORY_KEY];
+
+  if (nextStoredState) {
+    nextState[ACCOUNT_ACTION_HISTORY_KEY] = nextStoredState;
+    nextState[LEGACY_ACCOUNT_ACTION_HISTORY_KEY] = nextStoredState;
+  }
+
+  window.history.replaceState(nextState, '', ACCOUNT_ACTION_ROUTE_PATH);
+}
 
 function resolveBaseOrigin(): string {
   if (typeof window !== 'undefined' && window.location?.origin) {
@@ -100,23 +119,12 @@ export function readStoredEmailActionState(historyState: unknown): StoredEmailAc
   }
   const kind = (candidate as Record<string, unknown>).kind;
   if (kind === 'pending-reset-password') {
-    const oobCode = (candidate as Record<string, unknown>).oobCode;
-    const email = (candidate as Record<string, unknown>).email;
     const continuePath = (candidate as Record<string, unknown>).continuePath;
-    if (
-      typeof oobCode !== 'string' ||
-      !oobCode ||
-      typeof email !== 'string' ||
-      !email ||
-      typeof continuePath !== 'string' ||
-      !continuePath.startsWith('/')
-    ) {
+    if (typeof continuePath !== 'string' || !continuePath.startsWith('/')) {
       return null;
     }
     return {
       kind,
-      oobCode,
-      email,
       continuePath,
     };
   }
@@ -141,19 +149,9 @@ export function readStoredEmailActionState(historyState: unknown): StoredEmailAc
 }
 
 export function writeStoredEmailActionState(result: StoredEmailActionState): void {
-  if (typeof window === 'undefined') {
-    return;
-  }
-  const nextState =
-    window.history.state && typeof window.history.state === 'object'
-      ? {
-          ...window.history.state,
-          [ACCOUNT_ACTION_HISTORY_KEY]: result,
-          [LEGACY_ACCOUNT_ACTION_HISTORY_KEY]: result,
-        }
-      : {
-          [ACCOUNT_ACTION_HISTORY_KEY]: result,
-          [LEGACY_ACCOUNT_ACTION_HISTORY_KEY]: result,
-        };
-  window.history.replaceState(nextState, '', ACCOUNT_ACTION_ROUTE_PATH);
+  replaceAccountActionHistoryState(result);
+}
+
+export function scrubEmailActionRoute(): void {
+  replaceAccountActionHistoryState(readStoredEmailActionState(window.history.state));
 }

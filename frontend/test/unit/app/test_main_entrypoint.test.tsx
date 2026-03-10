@@ -14,8 +14,14 @@ const entrypointMocks = vi.hoisted(() => {
     PublicNotFoundPage: vi.fn(({ requestedPath }: { requestedPath: string }) => (
       <div data-testid="public-not-found">Public not found {requestedPath}</div>
     )),
+    FillLinkPublicPage: vi.fn(({ token }: { token: string }) => (
+      <div data-testid="fill-link-public">Fill link {token}</div>
+    )),
     AccountActionPage: vi.fn(() => <div data-testid="account-action-page">Account action</div>),
     IntentHubPage: vi.fn(({ hubKey }: { hubKey: string }) => <div data-testid={`intent-hub-${hubKey}`}>Hub {hubKey}</div>),
+    FeaturePlanPage: vi.fn(({ pageKey }: { pageKey: string }) => (
+      <div data-testid={`feature-plan-${pageKey}`}>Feature plan {pageKey}</div>
+    )),
     IntentLandingPage: vi.fn(({ pageKey }: { pageKey: string }) => (
       <div data-testid={`intent-${pageKey}`}>Intent {pageKey}</div>
     )),
@@ -25,6 +31,7 @@ const entrypointMocks = vi.hoisted(() => {
     UsageDocsNotFoundPage: vi.fn(({ requestedPath }: { requestedPath: string }) => (
       <div data-testid="usage-docs-not-found">Usage docs not found {requestedPath}</div>
     )),
+    initializeGoogleAds: vi.fn(),
   };
 });
 
@@ -44,12 +51,20 @@ vi.mock('../../../src/components/pages/PublicNotFoundPage', () => ({
   default: entrypointMocks.PublicNotFoundPage,
 }));
 
+vi.mock('../../../src/components/pages/FillLinkPublicPage', () => ({
+  default: entrypointMocks.FillLinkPublicPage,
+}));
+
 vi.mock('../../../src/components/pages/AccountActionPage', () => ({
   default: entrypointMocks.AccountActionPage,
 }));
 
 vi.mock('../../../src/components/pages/IntentHubPage', () => ({
   default: entrypointMocks.IntentHubPage,
+}));
+
+vi.mock('../../../src/components/pages/FeaturePlanPage', () => ({
+  default: entrypointMocks.FeaturePlanPage,
 }));
 
 vi.mock('../../../src/components/pages/IntentLandingPage', () => ({
@@ -62,6 +77,10 @@ vi.mock('../../../src/components/pages/UsageDocsPage', () => ({
 
 vi.mock('../../../src/components/pages/UsageDocsNotFoundPage', () => ({
   default: entrypointMocks.UsageDocsNotFoundPage,
+}));
+
+vi.mock('../../../src/utils/googleAds', () => ({
+  initializeGoogleAds: entrypointMocks.initializeGoogleAds,
 }));
 
 const importEntrypoint = async (pathname: string) => {
@@ -84,11 +103,14 @@ describe('main entrypoint', () => {
     entrypointMocks.App.mockClear();
     entrypointMocks.LegalPage.mockClear();
     entrypointMocks.PublicNotFoundPage.mockClear();
+    entrypointMocks.FillLinkPublicPage.mockClear();
     entrypointMocks.AccountActionPage.mockClear();
     entrypointMocks.IntentHubPage.mockClear();
+    entrypointMocks.FeaturePlanPage.mockClear();
     entrypointMocks.IntentLandingPage.mockClear();
     entrypointMocks.UsageDocsPage.mockClear();
     entrypointMocks.UsageDocsNotFoundPage.mockClear();
+    entrypointMocks.initializeGoogleAds.mockClear();
   });
 
   afterEach(() => {
@@ -103,6 +125,7 @@ describe('main entrypoint', () => {
     await renderCapturedTree();
 
     expect(fetchMock).toHaveBeenCalledWith('/api/health', { method: 'GET', mode: 'cors' });
+    expect(entrypointMocks.initializeGoogleAds).toHaveBeenCalledTimes(1);
     expect(await screen.findByTestId('app-view')).toBeTruthy();
     expect(screen.queryByTestId('legal-privacy')).toBeNull();
     expect(screen.queryByTestId('legal-terms')).toBeNull();
@@ -120,7 +143,24 @@ describe('main entrypoint', () => {
     await renderCapturedTree();
 
     expect(fetchMock).not.toHaveBeenCalled();
+    expect(entrypointMocks.initializeGoogleAds).not.toHaveBeenCalled();
     expect(await screen.findByTestId(`intent-hub-${hubKey}`)).toBeTruthy();
+    expect(screen.queryByTestId('app-view')).toBeNull();
+  });
+
+  it.each([
+    ['/free-features', 'free-features'],
+    ['/premium-features', 'premium-features'],
+  ])('renders feature plan route %s', async (pathname, pageKey) => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response('', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await importEntrypoint(pathname);
+    await renderCapturedTree();
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(entrypointMocks.initializeGoogleAds).not.toHaveBeenCalled();
+    expect(await screen.findByTestId(`feature-plan-${pageKey}`)).toBeTruthy();
     expect(screen.queryByTestId('app-view')).toBeNull();
   });
 
@@ -132,8 +172,22 @@ describe('main entrypoint', () => {
     await renderCapturedTree();
 
     expect(fetchMock).not.toHaveBeenCalled();
+    expect(entrypointMocks.initializeGoogleAds).not.toHaveBeenCalled();
     expect(await screen.findByTestId('account-action-page')).toBeTruthy();
     expect(screen.queryByTestId('app-view')).toBeNull();
+  });
+
+  it('renders the public Fill By Link route without backend warmup', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response('', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await importEntrypoint('/respond/token-1');
+    await renderCapturedTree();
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(entrypointMocks.initializeGoogleAds).not.toHaveBeenCalled();
+    expect(await screen.findByTestId('fill-link-public')).toBeTruthy();
+    expect(screen.getByText('Fill link token-1')).toBeTruthy();
   });
 
   it('normalizes legacy /verify-email links to /account-action before rendering', async () => {
@@ -168,6 +222,7 @@ describe('main entrypoint', () => {
     ['/usage-docs', 'index'],
     ['/usage-docs/getting-started', 'getting-started'],
     ['/usage-docs/editor-workflow', 'editor-workflow'],
+    ['/usage-docs/create-group', 'create-group'],
     ['/usage-docs/search-fill/', 'search-fill'],
   ])('renders UsageDocs pageKey=%s route=%s', async (pathname, pageKey) => {
     const fetchMock = vi.fn().mockResolvedValue(new Response('', { status: 200 }));

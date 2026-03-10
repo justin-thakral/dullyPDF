@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+import hashlib
+import json
 import uuid
 import os
+import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -26,6 +30,7 @@ from backend.ai.status import (
     OPENAI_JOB_STATUS_COMPLETE,
     OPENAI_JOB_STATUS_FAILED,
     OPENAI_JOB_STATUS_QUEUED,
+    OPENAI_JOB_STATUS_RUNNING,
     OPENAI_JOB_TYPE_REMAP,
     OPENAI_JOB_TYPE_RENAME,
 )
@@ -38,6 +43,7 @@ from backend.ai.tasks import (
 )
 from backend.api.schemas import RenameFieldsRequest, SchemaMappingRequest
 from backend.firebaseDB.openai_job_database import (
+    OpenAiJobAlreadyExistsError,
     create_openai_job,
     get_openai_job,
     update_openai_job,
@@ -201,6 +207,297 @@ def _serialize_template_fields(payload_fields) -> Optional[List[Dict[str, Any]]]
     return serialized or None
 
 
+def _normalize_request_id(value: Any) -> Optional[str]:
+    text = str(value or "").strip()
+    return text or None
+
+
+def _normalize_openai_job_status(value: Any) -> str:
+    return str(value or OPENAI_JOB_STATUS_FAILED).strip().lower() or OPENAI_JOB_STATUS_FAILED
+
+
+def _normalize_optional_identifier(value: Any) -> Optional[str]:
+    text = str(value or "").strip()
+    return text or None
+
+
+def _openai_task_idempotency_window_seconds() -> int:
+    return _safe_positive_int_env("OPENAI_TASK_IDEMPOTENCY_WINDOW_SECONDS", 300)
+
+
+def _build_openai_request_id(
+    kind: str,
+    *,
+    user_id: str,
+    session_id: Optional[str] = None,
+    schema_id: Optional[str] = None,
+    template_id: Optional[str] = None,
+    fingerprint_payload: Optional[Dict[str, Any]] = None,
+) -> str:
+    bucket = int(time.time() // _openai_task_idempotency_window_seconds())
+    serialized = json.dumps(
+        {
+            "version": 1,
+            "bucket": bucket,
+            "kind": str(kind or "").strip().lower(),
+            "userId": str(user_id or "").strip(),
+            "sessionId": _normalize_optional_identifier(session_id),
+            "schemaId": _normalize_optional_identifier(schema_id),
+            "templateId": _normalize_optional_identifier(template_id),
+            "payload": fingerprint_payload if isinstance(fingerprint_payload, dict) else {},
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+        default=str,
+    )
+    digest = hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+    return f"{str(kind or 'openai').strip().lower()}_{digest}"
+
+
+def _build_openai_job_response(
+    *,
+    job_id: str,
+    job: Dict[str, Any],
+    fallback_session_id: Optional[str] = None,
+    fallback_schema_id: Optional[str] = None,
+    fallback_template_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    status = _normalize_openai_job_status(job.get("status"))
+    response: Dict[str, Any] = {
+        "success": status == OPENAI_JOB_STATUS_COMPLETE,
+        "jobId": job_id,
+        "requestId": job.get("request_id") or job_id,
+        "status": status,
+        "sessionId": job.get("session_id") or fallback_session_id,
+        "schemaId": job.get("schema_id") or fallback_schema_id,
+        "templateId": job.get("template_id") or fallback_template_id,
+        "timestamp": datetime.now(tz=timezone.utc).isoformat(),
+    }
+    page_count = job.get("page_count")
+    if page_count is not None:
+        response["pageCount"] = page_count
+    credit_pricing = job.get("credit_pricing")
+    if isinstance(credit_pricing, dict):
+        response["creditPricing"] = credit_pricing
+    if status == OPENAI_JOB_STATUS_FAILED:
+        response["error"] = job.get("error") or "OpenAI job failed"
+    result = job.get("result")
+    if isinstance(result, dict):
+        response["result"] = result
+        if status == OPENAI_JOB_STATUS_COMPLETE:
+            response.update(result)
+    openai_usage = job.get("openai_usage_summary")
+    if isinstance(openai_usage, dict):
+        response["openaiUsage"] = openai_usage
+    openai_usage_events = job.get("openai_usage_events")
+    if isinstance(openai_usage_events, list):
+        response["openaiUsageEvents"] = openai_usage_events
+    attempt_count = job.get("attempt_count")
+    if isinstance(attempt_count, int):
+        response["attemptCount"] = attempt_count
+    return response
+
+
+def _reuse_existing_openai_job(
+    *,
+    job_id: str,
+    job_type: str,
+    user_id: str,
+    session_id: Optional[str] = None,
+    schema_id: Optional[str] = None,
+    template_id: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    existing_job = get_openai_job(job_id)
+    if not existing_job:
+        return None
+    if str(existing_job.get("job_type") or "") != job_type:
+        raise HTTPException(status_code=409, detail="requestId already belongs to a different OpenAI job.")
+    if str(existing_job.get("user_id") or "") != user_id:
+        raise HTTPException(status_code=409, detail="requestId already belongs to another user.")
+    if _normalize_optional_identifier(existing_job.get("session_id")) != _normalize_optional_identifier(session_id):
+        raise HTTPException(status_code=409, detail="requestId already belongs to a different document session.")
+    if _normalize_optional_identifier(existing_job.get("schema_id")) != _normalize_optional_identifier(schema_id):
+        raise HTTPException(status_code=409, detail="requestId already belongs to a different schema mapping.")
+    if _normalize_optional_identifier(existing_job.get("template_id")) != _normalize_optional_identifier(template_id):
+        raise HTTPException(status_code=409, detail="requestId already belongs to a different template.")
+    return _build_openai_job_response(
+        job_id=job_id,
+        job=existing_job,
+        fallback_session_id=session_id,
+        fallback_schema_id=schema_id,
+        fallback_template_id=template_id,
+    )
+
+
+@dataclass(frozen=True)
+class _OpenAiRequestTracking:
+    request_id: str
+    track_job: bool
+
+
+def _resolve_openai_request_tracking(
+    *,
+    kind: str,
+    task_mode: bool,
+    provided_request_id: Optional[str],
+    user_id: str,
+    session_id: Optional[str] = None,
+    schema_id: Optional[str] = None,
+    template_id: Optional[str] = None,
+    fingerprint_payload: Optional[Dict[str, Any]] = None,
+) -> _OpenAiRequestTracking:
+    request_id = provided_request_id or uuid.uuid4().hex
+    if task_mode and not provided_request_id:
+        request_id = _build_openai_request_id(
+            kind,
+            user_id=user_id,
+            session_id=session_id,
+            schema_id=schema_id,
+            template_id=template_id,
+            fingerprint_payload=fingerprint_payload,
+        )
+    return _OpenAiRequestTracking(
+        request_id=request_id,
+        track_job=task_mode or provided_request_id is not None,
+    )
+
+
+def _maybe_fail_openai_job(
+    *,
+    tracking: _OpenAiRequestTracking,
+    error: str,
+) -> None:
+    if not tracking.track_job:
+        return
+    update_openai_job(
+        job_id=tracking.request_id,
+        status=OPENAI_JOB_STATUS_FAILED,
+        error=error,
+        completed_at=now_iso(),
+    )
+
+
+def _maybe_record_openai_job_credit_breakdown(
+    *,
+    tracking: _OpenAiRequestTracking,
+    credit_breakdown: Dict[str, int],
+) -> None:
+    if not tracking.track_job or not any(credit_breakdown.values()):
+        return
+    update_openai_job(
+        job_id=tracking.request_id,
+        credit_breakdown=credit_breakdown,
+    )
+
+
+def _maybe_mark_openai_job_running(
+    *,
+    tracking: _OpenAiRequestTracking,
+) -> None:
+    if not tracking.track_job:
+        return
+    update_openai_job(
+        job_id=tracking.request_id,
+        status=OPENAI_JOB_STATUS_RUNNING,
+        started_at=now_iso(),
+    )
+
+
+def _maybe_complete_openai_job(
+    *,
+    tracking: _OpenAiRequestTracking,
+    result: Dict[str, Any],
+    openai_usage_summary: Optional[Dict[str, Any]] = None,
+    openai_usage_events: Optional[List[Dict[str, Any]]] = None,
+) -> None:
+    if not tracking.track_job:
+        return
+    update_openai_job(
+        job_id=tracking.request_id,
+        status=OPENAI_JOB_STATUS_COMPLETE,
+        result=result,
+        completed_at=now_iso(),
+        openai_usage_summary=openai_usage_summary,
+        openai_usage_events=openai_usage_events,
+    )
+
+
+def _maybe_reuse_tracked_openai_job(
+    *,
+    tracking: _OpenAiRequestTracking,
+    job_type: str,
+    user_id: str,
+    session_id: Optional[str] = None,
+    schema_id: Optional[str] = None,
+    template_id: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    if not tracking.track_job:
+        return None
+    return _reuse_existing_openai_job(
+        job_id=tracking.request_id,
+        job_type=job_type,
+        user_id=user_id,
+        session_id=session_id,
+        schema_id=schema_id,
+        template_id=template_id,
+    )
+
+
+def _create_tracked_openai_job(
+    *,
+    tracking: _OpenAiRequestTracking,
+    job_type: str,
+    user_id: str,
+    session_id: Optional[str] = None,
+    schema_id: Optional[str] = None,
+    template_id: Optional[str] = None,
+    task_config: Optional[Dict[str, str]] = None,
+    page_count: Optional[int] = None,
+    template_field_count: Optional[int] = None,
+    credits_required: int,
+    credit_pricing: Dict[str, Any],
+    credits_charged: bool,
+    user_role: Optional[str],
+) -> Optional[Dict[str, Any]]:
+    if not tracking.track_job:
+        return None
+    try:
+        create_openai_job(
+            job_id=tracking.request_id,
+            request_id=tracking.request_id,
+            job_type=job_type,
+            user_id=user_id,
+            session_id=session_id,
+            schema_id=schema_id,
+            template_id=template_id,
+            status=OPENAI_JOB_STATUS_QUEUED,
+            profile=task_config.get("profile") if task_config else None,
+            queue=task_config.get("queue") if task_config else None,
+            service_url=task_config.get("service_url") if task_config else None,
+            page_count=page_count,
+            template_field_count=template_field_count,
+            credits=credits_required,
+            credit_pricing=credit_pricing,
+            credits_charged=credits_charged,
+            credit_breakdown=None,
+            user_role=user_role,
+        )
+    except OpenAiJobAlreadyExistsError:
+        existing_response = _reuse_existing_openai_job(
+            job_id=tracking.request_id,
+            job_type=job_type,
+            user_id=user_id,
+            session_id=session_id,
+            schema_id=schema_id,
+            template_id=template_id,
+        )
+        if existing_response is not None:
+            return existing_response
+        raise HTTPException(status_code=409, detail="requestId already exists and could not be reused.")
+    return None
+
+
 @router.post("/api/renames/ai")
 async def rename_fields_ai(
     request: Request,
@@ -250,7 +547,12 @@ async def rename_fields_ai(
     window_seconds = _safe_positive_int_env("OPENAI_RENAME_RATE_LIMIT_WINDOW_SECONDS", 60)
     user_rate = _safe_positive_int_env("OPENAI_RENAME_RATE_LIMIT_PER_USER", 6)
 
-    if not check_rate_limit(f"rename:user:{user.app_user_id}", limit=user_rate, window_seconds=window_seconds):
+    if not check_rate_limit(
+        f"rename:user:{user.app_user_id}",
+        limit=user_rate,
+        window_seconds=window_seconds,
+        fail_closed=True,
+    ):
         raise HTTPException(status_code=429, detail="Rate limit exceeded for user")
 
     page_count = _coerce_positive_int(entry.get("page_count"))
@@ -262,6 +564,53 @@ async def rename_fields_ai(
     credit_operation = OPENAI_CREDIT_OPERATION_RENAME_REMAP if schema_id else OPENAI_CREDIT_OPERATION_RENAME
     credit_pricing = compute_credit_pricing(credit_operation, page_count=page_count)
     credits_required = credit_pricing.total_credits
+    credits_charged = normalize_role(user.role) != ROLE_GOD
+    task_mode = _task_mode_enabled(resolve_openai_rename_mode())
+    provided_request_id = _normalize_request_id(payload.requestId)
+    tracking = _resolve_openai_request_tracking(
+        kind="rename",
+        task_mode=task_mode,
+        provided_request_id=provided_request_id,
+        user_id=user.app_user_id,
+        session_id=payload.sessionId,
+        schema_id=schema_id,
+        fingerprint_payload={
+            "renameFields": rename_fields,
+            "databaseFields": list(database_fields or []),
+        },
+    )
+    profile: Optional[str] = None
+    task_config: Optional[Dict[str, str]] = None
+    serialized_template_fields = _serialize_template_fields(payload.templateFields)
+
+    existing_response = _maybe_reuse_tracked_openai_job(
+        tracking=tracking,
+        job_type=OPENAI_JOB_TYPE_RENAME,
+        user_id=user.app_user_id,
+        session_id=payload.sessionId,
+        schema_id=schema_id,
+    )
+    if existing_response is not None:
+        return existing_response
+    if task_mode:
+        profile = resolve_openai_rename_profile(page_count)
+        task_config = resolve_openai_task_config("rename", profile)
+    existing_response = _create_tracked_openai_job(
+        tracking=tracking,
+        job_type=OPENAI_JOB_TYPE_RENAME,
+        user_id=user.app_user_id,
+        session_id=payload.sessionId,
+        schema_id=schema_id,
+        task_config=task_config,
+        page_count=page_count,
+        template_field_count=len(rename_fields),
+        credits_required=credits_required,
+        credit_pricing=credit_pricing.to_dict(),
+        credits_charged=credits_charged,
+        user_role=user.role,
+    )
+    if existing_response is not None:
+        return existing_response
 
     remaining, allowed, credit_breakdown = _coerce_consume_result(
         consume_openai_credits(
@@ -272,16 +621,23 @@ async def rename_fields_ai(
         )
     )
     if not allowed:
+        _maybe_fail_openai_job(
+            tracking=tracking,
+            error=f"OpenAI credits exhausted (remaining={remaining}, required={credits_required})",
+        )
         raise HTTPException(
             status_code=402,
             detail=f"OpenAI credits exhausted (remaining={remaining}, required={credits_required})",
         )
-    credits_charged = normalize_role(user.role) != ROLE_GOD
 
-    request_id = uuid.uuid4().hex
+    _maybe_record_openai_job_credit_breakdown(
+        tracking=tracking,
+        credit_breakdown=credit_breakdown,
+    )
+
     try:
         record_openai_rename_request(
-            request_id=request_id,
+            request_id=tracking.request_id,
             user_id=user.app_user_id,
             session_id=payload.sessionId,
             schema_id=schema_id,
@@ -293,41 +649,19 @@ async def rename_fields_ai(
             credits=credits_required,
             charged=credits_charged,
             source="rename.request_log",
-            request_id=request_id,
+            request_id=tracking.request_id,
             credit_breakdown=credit_breakdown,
         )
+        _maybe_fail_openai_job(tracking=tracking, error=str(exc))
         status_code = getattr(exc, "status_code", None) or 500
         raise HTTPException(status_code=status_code, detail=str(exc)) from exc
 
-    if _task_mode_enabled(resolve_openai_rename_mode()):
-        profile = resolve_openai_rename_profile(page_count)
-        task_config = resolve_openai_task_config("rename", profile)
-        serialized_template_fields = _serialize_template_fields(payload.templateFields)
-
+    if task_mode:
         try:
-            create_openai_job(
-                job_id=request_id,
-                request_id=request_id,
-                job_type=OPENAI_JOB_TYPE_RENAME,
-                user_id=user.app_user_id,
-                session_id=payload.sessionId,
-                schema_id=schema_id,
-                status=OPENAI_JOB_STATUS_QUEUED,
-                profile=task_config.get("profile"),
-                queue=task_config.get("queue"),
-                service_url=task_config.get("service_url"),
-                page_count=page_count,
-                template_field_count=len(rename_fields),
-                credits=credits_required,
-                credit_pricing=credit_pricing.to_dict(),
-                credits_charged=credits_charged,
-                credit_breakdown=credit_breakdown,
-                user_role=user.role,
-            )
             task_name = enqueue_openai_rename_task(
                 {
-                    "jobId": request_id,
-                    "requestId": request_id,
+                    "jobId": tracking.request_id,
+                    "requestId": tracking.request_id,
                     "sessionId": payload.sessionId,
                     "schemaId": schema_id,
                     "templateFields": serialized_template_fields,
@@ -341,7 +675,7 @@ async def rename_fields_ai(
                 },
                 profile=profile,
             )
-            update_openai_job(job_id=request_id, task_name=task_name)
+            update_openai_job(job_id=tracking.request_id, task_name=task_name)
         except Exception as exc:
             _refund_credits_if_charged(
                 user_id=user.app_user_id,
@@ -349,22 +683,17 @@ async def rename_fields_ai(
                 credits=credits_required,
                 charged=credits_charged,
                 source="rename.enqueue",
-                request_id=request_id,
-                job_id=request_id,
+                request_id=tracking.request_id,
+                job_id=tracking.request_id,
                 credit_breakdown=credit_breakdown,
             )
-            update_openai_job(
-                job_id=request_id,
-                status=OPENAI_JOB_STATUS_FAILED,
-                error=str(exc),
-                completed_at=now_iso(),
-            )
+            _maybe_fail_openai_job(tracking=tracking, error=str(exc))
             raise HTTPException(status_code=500, detail="Failed to enqueue rename job") from exc
 
         return {
             "success": True,
-            "requestId": request_id,
-            "jobId": request_id,
+            "requestId": tracking.request_id,
+            "jobId": tracking.request_id,
             "sessionId": payload.sessionId,
             "schemaId": schema_id,
             "status": OPENAI_JOB_STATUS_QUEUED,
@@ -372,6 +701,8 @@ async def rename_fields_ai(
             "creditPricing": credit_pricing.to_dict(),
             "timestamp": datetime.now(tz=timezone.utc).isoformat(),
         }
+
+    _maybe_mark_openai_job_running(tracking=tracking)
 
     try:
         rename_report, renamed_fields = run_openai_rename_on_pdf(
@@ -387,9 +718,10 @@ async def rename_fields_ai(
             credits=credits_required,
             charged=credits_charged,
             source="rename.sync_openai",
-            request_id=request_id,
+            request_id=tracking.request_id,
             credit_breakdown=credit_breakdown,
         )
+        _maybe_fail_openai_job(tracking=tracking, error=str(exc))
         status_code = getattr(exc, "status_code", None) or 500
         raise HTTPException(status_code=status_code, detail=str(exc)) from exc
 
@@ -414,9 +746,9 @@ async def rename_fields_ai(
         persist_text_transform_rules=True,
     )
 
-    return {
+    response_payload = {
         "success": True,
-        "requestId": request_id,
+        "requestId": tracking.request_id,
         "sessionId": payload.sessionId,
         "schemaId": schema_id,
         "renames": rename_report,
@@ -426,6 +758,24 @@ async def rename_fields_ai(
         "creditPricing": credit_pricing.to_dict(),
         "timestamp": datetime.now(tz=timezone.utc).isoformat(),
     }
+    _maybe_complete_openai_job(
+        tracking=tracking,
+        result={
+            "success": True,
+            "requestId": tracking.request_id,
+            "sessionId": payload.sessionId,
+            "schemaId": schema_id,
+            "renames": rename_report,
+            "fields": renamed_fields,
+            "checkboxRules": checkbox_rules,
+            "pageCount": page_count,
+            "creditPricing": credit_pricing.to_dict(),
+        },
+    )
+    if tracking.track_job:
+        response_payload["jobId"] = tracking.request_id
+        response_payload["status"] = OPENAI_JOB_STATUS_COMPLETE
+    return response_payload
 
 
 @router.get("/api/renames/ai/{job_id}")
@@ -442,34 +792,7 @@ async def get_rename_job_status(
         raise HTTPException(status_code=404, detail="Rename job not found")
     if str(job.get("user_id") or "") != user.app_user_id:
         raise HTTPException(status_code=403, detail="Rename job access denied")
-
-    status = str(job.get("status") or OPENAI_JOB_STATUS_FAILED).strip().lower()
-    response: Dict[str, Any] = {
-        "success": status == OPENAI_JOB_STATUS_COMPLETE,
-        "jobId": job_id,
-        "requestId": job.get("request_id") or job_id,
-        "status": status,
-        "sessionId": job.get("session_id"),
-        "schemaId": job.get("schema_id"),
-        "timestamp": datetime.now(tz=timezone.utc).isoformat(),
-    }
-    if status == OPENAI_JOB_STATUS_FAILED:
-        response["error"] = job.get("error") or "Rename job failed"
-    result = job.get("result")
-    if isinstance(result, dict):
-        response["result"] = result
-        if status == OPENAI_JOB_STATUS_COMPLETE:
-            response.update(result)
-    openai_usage = job.get("openai_usage_summary")
-    if isinstance(openai_usage, dict):
-        response["openaiUsage"] = openai_usage
-    openai_usage_events = job.get("openai_usage_events")
-    if isinstance(openai_usage_events, list):
-        response["openaiUsageEvents"] = openai_usage_events
-    attempt_count = job.get("attempt_count")
-    if isinstance(attempt_count, int):
-        response["attemptCount"] = attempt_count
-    return response
+    return _build_openai_job_response(job_id=job_id, job=job)
 
 
 @router.post("/api/schema-mappings/ai")
@@ -503,7 +826,12 @@ async def map_schema_ai(
     window_seconds = _safe_positive_int_env("OPENAI_SCHEMA_RATE_LIMIT_WINDOW_SECONDS", 60)
     user_rate = _safe_positive_int_env("OPENAI_SCHEMA_RATE_LIMIT_PER_USER", 10)
 
-    if not check_rate_limit(f"user:{user.app_user_id}", limit=user_rate, window_seconds=window_seconds):
+    if not check_rate_limit(
+        f"user:{user.app_user_id}",
+        limit=user_rate,
+        window_seconds=window_seconds,
+        fail_closed=True,
+    ):
         raise HTTPException(status_code=429, detail="Rate limit exceeded for user")
 
     session_entry = None
@@ -529,6 +857,55 @@ async def map_schema_ai(
         page_count=page_count,
     )
     credits_required = credit_pricing.total_credits
+    credits_charged = normalize_role(user.role) != ROLE_GOD
+    task_mode = _task_mode_enabled(resolve_openai_remap_mode())
+    provided_request_id = _normalize_request_id(payload.requestId)
+    tracking = _resolve_openai_request_tracking(
+        kind="remap",
+        task_mode=task_mode,
+        provided_request_id=provided_request_id,
+        user_id=user.app_user_id,
+        session_id=payload.sessionId,
+        schema_id=schema.id,
+        template_id=payload.templateId,
+        fingerprint_payload={
+            "schemaFields": allowlist_payload.get("schemaFields") or [],
+            "templateTags": allowlist_payload.get("templateTags") or [],
+        },
+    )
+    profile: Optional[str] = None
+    task_config: Optional[Dict[str, str]] = None
+
+    existing_response = _maybe_reuse_tracked_openai_job(
+        tracking=tracking,
+        job_type=OPENAI_JOB_TYPE_REMAP,
+        user_id=user.app_user_id,
+        session_id=payload.sessionId,
+        schema_id=schema.id,
+        template_id=payload.templateId,
+    )
+    if existing_response is not None:
+        return existing_response
+    if task_mode:
+        profile = resolve_openai_remap_profile(len(template_fields))
+        task_config = resolve_openai_task_config("remap", profile)
+    existing_response = _create_tracked_openai_job(
+        tracking=tracking,
+        job_type=OPENAI_JOB_TYPE_REMAP,
+        user_id=user.app_user_id,
+        session_id=payload.sessionId,
+        schema_id=schema.id,
+        template_id=payload.templateId,
+        task_config=task_config,
+        page_count=page_count,
+        template_field_count=len(template_fields),
+        credits_required=credits_required,
+        credit_pricing=credit_pricing.to_dict(),
+        credits_charged=credits_charged,
+        user_role=user.role,
+    )
+    if existing_response is not None:
+        return existing_response
 
     remaining, allowed, credit_breakdown = _coerce_consume_result(
         consume_openai_credits(
@@ -539,16 +916,23 @@ async def map_schema_ai(
         )
     )
     if not allowed:
+        _maybe_fail_openai_job(
+            tracking=tracking,
+            error=f"OpenAI credits exhausted (remaining={remaining}, required={credits_required})",
+        )
         raise HTTPException(
             status_code=402,
             detail=f"OpenAI credits exhausted (remaining={remaining}, required={credits_required})",
         )
-    credits_charged = normalize_role(user.role) != ROLE_GOD
 
-    request_id = uuid.uuid4().hex
+    _maybe_record_openai_job_credit_breakdown(
+        tracking=tracking,
+        credit_breakdown=credit_breakdown,
+    )
+
     try:
         record_openai_request(
-            request_id=request_id,
+            request_id=tracking.request_id,
             user_id=user.app_user_id,
             schema_id=schema.id,
             template_id=payload.templateId,
@@ -560,40 +944,19 @@ async def map_schema_ai(
             credits=credits_required,
             charged=credits_charged,
             source="remap.request_log",
-            request_id=request_id,
+            request_id=tracking.request_id,
             credit_breakdown=credit_breakdown,
         )
+        _maybe_fail_openai_job(tracking=tracking, error=str(exc))
         status_code = getattr(exc, "status_code", None) or 500
         raise HTTPException(status_code=status_code, detail=str(exc)) from exc
 
-    if _task_mode_enabled(resolve_openai_remap_mode()):
-        profile = resolve_openai_remap_profile(len(template_fields))
-        task_config = resolve_openai_task_config("remap", profile)
+    if task_mode:
         try:
-            create_openai_job(
-                job_id=request_id,
-                request_id=request_id,
-                job_type=OPENAI_JOB_TYPE_REMAP,
-                user_id=user.app_user_id,
-                session_id=payload.sessionId,
-                schema_id=schema.id,
-                template_id=payload.templateId,
-                status=OPENAI_JOB_STATUS_QUEUED,
-                profile=task_config.get("profile"),
-                queue=task_config.get("queue"),
-                service_url=task_config.get("service_url"),
-                page_count=page_count,
-                template_field_count=len(template_fields),
-                credits=credits_required,
-                credit_pricing=credit_pricing.to_dict(),
-                credits_charged=credits_charged,
-                credit_breakdown=credit_breakdown,
-                user_role=user.role,
-            )
             task_name = enqueue_openai_remap_task(
                 {
-                    "jobId": request_id,
-                    "requestId": request_id,
+                    "jobId": tracking.request_id,
+                    "requestId": tracking.request_id,
                     "schemaId": schema.id,
                     "templateId": payload.templateId,
                     "templateFields": template_fields,
@@ -608,7 +971,7 @@ async def map_schema_ai(
                 },
                 profile=profile,
             )
-            update_openai_job(job_id=request_id, task_name=task_name)
+            update_openai_job(job_id=tracking.request_id, task_name=task_name)
         except Exception as exc:
             _refund_credits_if_charged(
                 user_id=user.app_user_id,
@@ -616,28 +979,25 @@ async def map_schema_ai(
                 credits=credits_required,
                 charged=credits_charged,
                 source="remap.enqueue",
-                request_id=request_id,
-                job_id=request_id,
+                request_id=tracking.request_id,
+                job_id=tracking.request_id,
                 credit_breakdown=credit_breakdown,
             )
-            update_openai_job(
-                job_id=request_id,
-                status=OPENAI_JOB_STATUS_FAILED,
-                error=str(exc),
-                completed_at=now_iso(),
-            )
+            _maybe_fail_openai_job(tracking=tracking, error=str(exc))
             raise HTTPException(status_code=500, detail="Failed to enqueue schema mapping job") from exc
 
         return {
             "success": True,
-            "requestId": request_id,
-            "jobId": request_id,
+            "requestId": tracking.request_id,
+            "jobId": tracking.request_id,
             "schemaId": schema.id,
             "status": OPENAI_JOB_STATUS_QUEUED,
             "pageCount": page_count,
             "creditPricing": credit_pricing.to_dict(),
             "timestamp": datetime.now(tz=timezone.utc).isoformat(),
         }
+
+    _maybe_mark_openai_job_running(tracking=tracking)
 
     try:
         openai_usage_events: List[Dict[str, Any]] = []
@@ -653,9 +1013,10 @@ async def map_schema_ai(
             credits=credits_required,
             charged=credits_charged,
             source="remap.sync_openai",
-            request_id=request_id,
+            request_id=tracking.request_id,
             credit_breakdown=credit_breakdown,
         )
+        _maybe_fail_openai_job(tracking=tracking, error=str(exc))
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         _refund_credits_if_charged(
@@ -664,9 +1025,10 @@ async def map_schema_ai(
             credits=credits_required,
             charged=credits_charged,
             source="remap.sync_openai",
-            request_id=request_id,
+            request_id=tracking.request_id,
             credit_breakdown=credit_breakdown,
         )
+        _maybe_fail_openai_job(tracking=tracking, error=str(exc))
         status_code = getattr(exc, "status_code", None) or 500
         raise HTTPException(status_code=status_code, detail=str(exc)) from exc
 
@@ -698,9 +1060,9 @@ async def map_schema_ai(
             persist_checkbox_hints=persist_hints,
             persist_text_transform_rules=persist_text_rules,
         )
-    return {
+    response_payload = {
         "success": True,
-        "requestId": request_id,
+        "requestId": tracking.request_id,
         "schemaId": schema.id,
         "mappingResults": mapping_results,
         "pageCount": page_count,
@@ -709,6 +1071,27 @@ async def map_schema_ai(
         "openaiUsageEvents": openai_usage_events,
         "timestamp": datetime.now(tz=timezone.utc).isoformat(),
     }
+    _maybe_complete_openai_job(
+        tracking=tracking,
+        result={
+            "success": True,
+            "requestId": tracking.request_id,
+            "schemaId": schema.id,
+            "sessionId": payload.sessionId,
+            "templateId": payload.templateId,
+            "mappingResults": mapping_results,
+            "pageCount": page_count,
+            "creditPricing": credit_pricing.to_dict(),
+            "openaiUsage": openai_usage_summary,
+            "openaiUsageEvents": openai_usage_events,
+        },
+        openai_usage_summary=openai_usage_summary,
+        openai_usage_events=openai_usage_events,
+    )
+    if tracking.track_job:
+        response_payload["jobId"] = tracking.request_id
+        response_payload["status"] = OPENAI_JOB_STATUS_COMPLETE
+    return response_payload
 
 
 @router.get("/api/schema-mappings/ai/{job_id}")
@@ -725,31 +1108,4 @@ async def get_schema_mapping_job_status(
         raise HTTPException(status_code=404, detail="Schema mapping job not found")
     if str(job.get("user_id") or "") != user.app_user_id:
         raise HTTPException(status_code=403, detail="Schema mapping job access denied")
-
-    status = str(job.get("status") or OPENAI_JOB_STATUS_FAILED).strip().lower()
-    response: Dict[str, Any] = {
-        "success": status == OPENAI_JOB_STATUS_COMPLETE,
-        "jobId": job_id,
-        "requestId": job.get("request_id") or job_id,
-        "status": status,
-        "schemaId": job.get("schema_id"),
-        "sessionId": job.get("session_id"),
-        "timestamp": datetime.now(tz=timezone.utc).isoformat(),
-    }
-    if status == OPENAI_JOB_STATUS_FAILED:
-        response["error"] = job.get("error") or "Schema mapping job failed"
-    result = job.get("result")
-    if isinstance(result, dict):
-        response["result"] = result
-        if status == OPENAI_JOB_STATUS_COMPLETE:
-            response.update(result)
-    openai_usage = job.get("openai_usage_summary")
-    if isinstance(openai_usage, dict):
-        response["openaiUsage"] = openai_usage
-    openai_usage_events = job.get("openai_usage_events")
-    if isinstance(openai_usage_events, list):
-        response["openaiUsageEvents"] = openai_usage_events
-    attempt_count = job.get("attempt_count")
-    if isinstance(attempt_count, int):
-        response["attemptCount"] = attempt_count
-    return response
+    return _build_openai_job_response(job_id=job_id, job=job)

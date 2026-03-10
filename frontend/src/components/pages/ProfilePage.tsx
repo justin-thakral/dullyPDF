@@ -7,6 +7,7 @@ import type {
   BillingCheckoutKind,
   BillingPlanCatalogItem,
   CreditPricingConfig,
+  DowngradeRetentionSummary,
   ProfileLimits,
   SavedFormSummary,
 } from '../../services/api';
@@ -35,10 +36,12 @@ interface ProfilePageProps {
   billingCancelAt?: number | null;
   billingCurrentPeriodEnd?: number | null;
   billingPlans?: Partial<Record<BillingCheckoutKind, BillingPlanCatalogItem>>;
+  retention?: DowngradeRetentionSummary | null;
   profileError?: string | null;
   creditPricing?: CreditPricingConfig | null;
   onStartBillingCheckout?: (kind: BillingCheckoutKind) => void;
   onCancelBillingSubscription?: () => void;
+  onOpenDowngradeRetention?: () => void;
   onClose: () => void;
   onSignOut?: () => void;
 }
@@ -92,10 +95,12 @@ const ProfilePage: React.FC<ProfilePageProps> = ({
   billingCancelAt = null,
   billingCurrentPeriodEnd = null,
   billingPlans,
+  retention = null,
   profileError = null,
   creditPricing,
   onStartBillingCheckout,
   onCancelBillingSubscription,
+  onOpenDowngradeRetention,
   onClose,
   onSignOut,
 }) => {
@@ -147,6 +152,19 @@ const ProfilePage: React.FC<ProfilePageProps> = ({
       return null;
     }
   }, [cancelEffectiveAt]);
+  const retentionDeadlineLabel = useMemo(() => {
+    if (!retention?.graceEndsAt) return 'the grace deadline';
+    const parsed = new Date(retention.graceEndsAt);
+    if (Number.isNaN(parsed.getTime())) return 'the grace deadline';
+    return parsed.toLocaleDateString();
+  }, [retention?.graceEndsAt]);
+  const retentionStatusByFormId = useMemo(() => {
+    const next = new Map<string, string>();
+    for (const template of retention?.templates ?? []) {
+      next.set(template.id, template.status);
+    }
+    return next;
+  }, [retention?.templates]);
 
   const filteredForms = useMemo(() => {
     const trimmed = query.trim().toLowerCase();
@@ -228,6 +246,16 @@ const ProfilePage: React.FC<ProfilePageProps> = ({
             <span className="metric-label">Saved forms limit</span>
             <span className="metric-value">{limits.savedFormsMax}</span>
             <p className="metric-note">Delete older forms to make room.</p>
+          </div>
+          <div className="metric-card">
+            <span className="metric-label">Active Fill By Link templates</span>
+            <span className="metric-value">{limits.fillLinksActiveMax}</span>
+            <p className="metric-note">Free tiers get 1 active link. Premium tiers can publish one for every saved template.</p>
+          </div>
+          <div className="metric-card">
+            <span className="metric-label">Responses per Fill By Link</span>
+            <span className="metric-value">{limits.fillLinkResponsesMax.toLocaleString()}</span>
+            <p className="metric-note">Free tiers stop at 5 responses. Premium tiers go up to 10,000 per link.</p>
           </div>
         </section>
 
@@ -350,6 +378,31 @@ const ProfilePage: React.FC<ProfilePageProps> = ({
           </section>
         ) : null}
 
+        {retention ? (
+          <section className="profile-retention">
+            <div>
+              <h2>Downgrade retention</h2>
+              <p>
+                {retention.counts.pendingTemplates} saved form{retention.counts.pendingTemplates === 1 ? '' : 's'} and{' '}
+                {retention.counts.pendingLinks} Fill By Link record{retention.counts.pendingLinks === 1 ? '' : 's'} are queued
+                for deletion on {retentionDeadlineLabel}.
+              </p>
+              <p>
+                Free accounts keep {retention.savedFormsLimit} saved form{retention.savedFormsLimit === 1 ? '' : 's'}.
+                You can swap which ones stay before the grace period ends.
+              </p>
+            </div>
+            <button
+              type="button"
+              className="profile-billing__button"
+              onClick={onOpenDowngradeRetention}
+              disabled={!onOpenDowngradeRetention}
+            >
+              Review retention queue
+            </button>
+          </section>
+        ) : null}
+
         <section className="profile-saved">
           <div className="profile-saved-header">
             <div>
@@ -380,8 +433,23 @@ const ProfilePage: React.FC<ProfilePageProps> = ({
             <div className="profile-saved-list" role="list">
               {filteredForms.map((form) => {
                 const isDeleting = deletingFormId === form.id;
+                const retentionStatus = retentionStatusByFormId.get(form.id) ?? null;
+                const retentionStatusLabel =
+                  retentionStatus === 'pending_delete'
+                    ? 'Queued for deletion'
+                    : retentionStatus === 'kept'
+                      ? 'Kept'
+                      : null;
                 return (
-                  <div key={form.id} className="saved-form-pill" role="listitem">
+                  <div
+                    key={form.id}
+                    className={[
+                      'saved-form-pill',
+                      retentionStatus === 'pending_delete' ? 'saved-form-pill--queued' : '',
+                      retentionStatus === 'kept' ? 'saved-form-pill--kept' : '',
+                    ].filter(Boolean).join(' ')}
+                    role="listitem"
+                  >
                     <button
                       type="button"
                       className="saved-form-pill__name"
@@ -391,6 +459,18 @@ const ProfilePage: React.FC<ProfilePageProps> = ({
                     >
                       {form.name}
                     </button>
+                    {retentionStatusLabel ? (
+                      <span
+                        className={[
+                          'saved-form-pill__status',
+                          retentionStatus === 'pending_delete'
+                            ? 'saved-form-pill__status--queued'
+                            : 'saved-form-pill__status--kept',
+                        ].join(' ')}
+                      >
+                        {retentionStatusLabel}
+                      </span>
+                    ) : null}
                     {onDeleteSavedForm ? (
                       <button
                         type="button"

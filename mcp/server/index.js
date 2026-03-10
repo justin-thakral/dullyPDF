@@ -58,6 +58,14 @@ const isLocalUrl = (value) => {
   }
 };
 
+const sameOrigin = (left, right) => {
+  try {
+    return new URL(normalizeUrl(left)).origin === new URL(normalizeUrl(right)).origin;
+  } catch (error) {
+    return false;
+  }
+};
+
 class DullyPdfMcpServer {
   constructor() {
     this.server = new Server(
@@ -79,8 +87,9 @@ class DullyPdfMcpServer {
     this.frontendUrl = process.env.DULLY_MCP_FRONTEND_URL || 'http://localhost:5173';
     this.openApiUrl =
       process.env.DULLY_MCP_OPENAPI_URL || `${this.apiBaseUrl.replace(/\/$/, '')}/openapi.json`;
-    this.allowlistMode =
-      process.env.DULLY_MCP_ALLOWLIST_MODE || (this.envName === 'prod' ? 'file' : 'auto');
+    this.allowlistMode = (
+      process.env.DULLY_MCP_ALLOWLIST_MODE || (this.envName === 'prod' ? 'file' : 'auto')
+    ).trim().toLowerCase();
     this.allowlistFile =
       process.env.DULLY_MCP_ALLOWLIST_FILE || path.join(REPO_ROOT, 'mcp', 'allowlist.prod.json');
     this.allowWrite = process.env.DULLY_MCP_ALLOW_WRITE === '1';
@@ -96,7 +105,30 @@ class DullyPdfMcpServer {
     };
     this.allowlist = [];
 
+    this.validateConfiguration();
     this.setupToolHandlers();
+  }
+
+  validateConfiguration() {
+    if (!['auto', 'file'].includes(this.allowlistMode)) {
+      throw new Error(`Unsupported allowlist mode: ${this.allowlistMode}`);
+    }
+    if (this.allowlistMode !== 'auto') {
+      return;
+    }
+    if (!isLocalUrl(this.apiBaseUrl)) {
+      throw new Error(
+        'DULLY_MCP_ALLOWLIST_MODE=auto only supports local API targets. Use file mode for remote backends.'
+      );
+    }
+    if (!isLocalUrl(this.openApiUrl)) {
+      throw new Error(
+        'DULLY_MCP_ALLOWLIST_MODE=auto only supports local OpenAPI URLs. Set DULLY_MCP_ALLOWLIST_MODE=file for remote targets.'
+      );
+    }
+    if (!sameOrigin(this.apiBaseUrl, this.openApiUrl)) {
+      throw new Error('Auto allowlist requires DULLY_MCP_API_BASE_URL and DULLY_MCP_OPENAPI_URL to share an origin.');
+    }
   }
 
   async start() {

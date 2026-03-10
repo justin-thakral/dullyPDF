@@ -62,7 +62,9 @@ admin tokens, or auth headers (search terms: `FIREBASE_`, `GOOGLE_APPLICATION_CR
 ### Prod flow (runtime)
 
 1) Backend should start with a runtime service account and `FIREBASE_USE_ADC=true`
-   on Cloud Run (recommended). Use `FIREBASE_CREDENTIALS` only for non-GCP runs.
+   on Cloud Run (recommended). In this repo, set `BACKEND_RUNTIME_SERVICE_ACCOUNT`
+   in the prod env file so `scripts/deploy-backend.sh` pins the backend service to
+   the intended runtime identity. Use `FIREBASE_CREDENTIALS` only for non-GCP runs.
 2) `scripts/run-backend-prod.sh` can be used for local prod testing; in real prod,
    prefer ADC (no JSON keys on disk).
 3) Frontend uses `config/public/frontend.prod.env` values (Firebase web config).
@@ -76,6 +78,10 @@ admin tokens, or auth headers (search terms: `FIREBASE_`, `GOOGLE_APPLICATION_CR
 4) Restrict callers with `DETECTOR_CALLER_SERVICE_ACCOUNT` (required in prod).
 5) Run the detector service with private ingress and allow only the main API
    service account to invoke it (no public access).
+6) `scripts/benchmark-detector-cpu-gpu.sh` now keeps benchmark deploys private
+   by default and refuses to target the `dullypdf` prod project unless
+   `BENCH_ALLOW_PROD_PROJECT=true` is set. Public benchmark deploys require
+   `BENCH_ALLOW_UNAUTHENTICATED=true`.
 
 ### File-by-file map (credential + auth related)
 
@@ -120,6 +126,7 @@ Repo hygiene:
 - Revocation checks are enabled in prod by default (`FIREBASE_CHECK_REVOKED` or `ENV=prod`).
 - Password-based logins are blocked until the email is verified; OAuth providers are treated as verified.
 - Schema metadata is stored without CSV/Excel/JSON rows or field values.
+- Template Fill By Link can store a publish-time respondent-download snapshot containing the saved-form PDF storage path, normalized field payload, and deterministic fill rules (`checkboxRules`, `checkboxHints`, `textTransformRules`). Public respondent downloads materialize from that frozen snapshot plus the stored respondent answer record; group links do not expose public PDF downloads.
 - Storage paths are allowlisted and validated in `backend/firebaseDB/storage_service.py`.
 
 ### Things to review or tighten further
@@ -127,6 +134,7 @@ Repo hygiene:
 - **Logging**: ensure schema metadata and request metadata are the only stored OpenAI metadata.
 - **Retention**: OpenAI + detection logs expire via `SANDBOX_OPENAI_LOG_TTL_SECONDS` and Firestore TTL on
   `openai_requests.expires_at`, `openai_rename_requests.expires_at`, `detection_requests.expires_at`.
+- **Public Fill By Link downloads**: keep separate anonymous rate limits on respondent PDF materialization (`FILL_LINK_DOWNLOAD_RATE_*`) because download requests are heavier than page-load or submit requests.
 - **Credits**: base users start with 10 lifetime OpenAI credits. Credits are billed by page bucket using server-side page counts:
   `total_credits = operation_base_cost * ceil(page_count / OPENAI_CREDITS_PAGE_BUCKET_SIZE)`.
   Default base costs: Rename `1`, Remap `1`, Rename+Remap `2`; default bucket size is `5`.

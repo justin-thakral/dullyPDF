@@ -57,6 +57,53 @@ def test_template_session_fields_validation_and_page_limits(
     assert "Fillable upload limited to 5 pages" in response.text
 
 
+def test_pdf_page_count_validates_upload_and_returns_detect_limit_metadata(
+    client,
+    app_main,
+    base_user,
+    mocker,
+    auth_headers,
+) -> None:
+    _patch_auth(mocker, app_main, base_user)
+    response = client.post(
+        "/api/pdf/page-count",
+        files={"pdf": ("x.txt", b"hello", "text/plain")},
+        headers=auth_headers,
+    )
+    assert response.status_code == 400
+    assert "Only PDF uploads" in response.text
+
+    mocker.patch.object(app_main, "_read_upload_bytes", return_value=b"")
+    response = client.post(
+        "/api/pdf/page-count",
+        files={"pdf": ("x.pdf", b"", "application/pdf")},
+        headers=auth_headers,
+    )
+    assert response.status_code == 400
+    assert "Uploaded file is empty" in response.text
+
+    mocker.patch.object(app_main, "_read_upload_bytes", return_value=b"%PDF-1.4\n")
+    mocker.patch.object(
+        app_main,
+        "_validate_pdf_for_detection",
+        return_value=PdfValidationResult(pdf_bytes=b"%PDF-1.4\n", page_count=7, was_decrypted=False),
+    )
+    mocker.patch.object(app_main, "_resolve_detect_max_pages", return_value=5)
+    response = client.post(
+        "/api/pdf/page-count",
+        files={"pdf": ("x.pdf", b"%PDF-1.4\n", "application/pdf")},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "success": True,
+        "pageCount": 7,
+        "detectMaxPages": 5,
+        "withinDetectLimit": False,
+    }
+
+
 def test_template_session_success_coerces_fields(
     client,
     app_main,

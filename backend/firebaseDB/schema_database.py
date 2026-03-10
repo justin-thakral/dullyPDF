@@ -7,6 +7,7 @@ import os
 from typing import Any, Dict, List, Optional
 
 from backend.logging_config import get_logger
+from .firestore_query_utils import where_equals
 from .firebase_service import get_firestore_client
 from .log_utils import log_expires_at, now_iso
 
@@ -109,7 +110,7 @@ def list_schemas(user_id: str) -> List[SchemaRecord]:
     if not user_id:
         return []
     client = get_firestore_client()
-    snapshot = client.collection(SCHEMAS_COLLECTION).where("owner_user_id", "==", user_id).get()
+    snapshot = where_equals(client.collection(SCHEMAS_COLLECTION), "owner_user_id", user_id).get()
     records = []
     for doc in snapshot:
         data = doc.to_dict() or {}

@@ -4,6 +4,11 @@
 import { useEffect, useRef, useState } from 'react';
 import type { DataSourceKind } from '../../types';
 
+const HEADER_GROUP_TEMPLATE_TRIGGER_MAX_CHARS = 22;
+const HEADER_GROUP_TEMPLATE_MENU_MAX_CHARS = 24;
+const MIN_ZOOM_PERCENT = 25;
+const MAX_ZOOM_PERCENT = 1000;
+
 type HeaderBarProps = {
   pageCount: number;
   currentPage: number;
@@ -18,6 +23,12 @@ type HeaderBarProps = {
   dataSourceLabel?: string | null;
   onChooseDataSource?: (kind: Exclude<DataSourceKind, 'none'>) => void;
   onClearDataSource?: () => void;
+  groupName?: string | null;
+  groupTemplates?: Array<{ id: string; name: string }>;
+  groupTemplateStatuses?: Record<string, 'ready' | 'loading' | 'error'>;
+  activeGroupTemplateId?: string | null;
+  groupTemplateSwitchInProgress?: boolean;
+  onSelectGroupTemplate?: (templateId: string) => void;
   mappingInProgress?: boolean;
   mapSchemaInProgress?: boolean;
   hasMappedSchema?: boolean;
@@ -28,26 +39,61 @@ type HeaderBarProps = {
   hasRenamedFields?: boolean;
   onRename?: () => void;
   onRenameAndMap?: () => void;
+  onRenameAndMapGroup?: () => void;
   canRename?: boolean;
   canRenameAndMap?: boolean;
+  canRenameAndMapGroup?: boolean;
   renameDisabledReason?: string | null;
   renameAndMapDisabledReason?: string | null;
+  renameAndMapGroupDisabledReason?: string | null;
+  renameAndMapGroupInProgress?: boolean;
+  renameAndMapGroupButtonLabel?: string;
   onOpenSearchFill?: () => void;
   canSearchFill?: boolean;
+  onOpenFillLink?: () => void;
+  canFillLink?: boolean;
   onDownload?: () => void;
+  onDownloadGroup?: () => void;
   onSaveToProfile?: () => void;
   downloadInProgress?: boolean;
+  downloadGroupInProgress?: boolean;
   saveInProgress?: boolean;
   canDownload?: boolean;
+  canDownloadGroup?: boolean;
   canSave?: boolean;
   demoLocked?: boolean;
   onDemoLockedAction?: () => void;
+  demoFillLinkDocsHref?: string;
+  demoCreateGroupDocsHref?: string;
 };
 
 function isSchemaPrerequisiteHint(reason: string | null | undefined): boolean {
   return reason === 'Connect a CSV, Excel, JSON, or TXT schema source first.' ||
     reason === 'Upload schema headers before mapping.' ||
     reason === 'Schema metadata is required before mapping.';
+}
+
+function truncateHeaderText(value: string, maxChars: number): string {
+  const normalized = value.trim();
+  if (normalized.length <= maxChars) return normalized;
+  return `${normalized.slice(0, Math.max(1, maxChars - 1)).trimEnd()}…`;
+}
+
+function formatGroupTemplateOptionLabel(
+  template: { id: string; name: string },
+  status: 'ready' | 'loading' | 'error' | undefined,
+  options?: { maxNameChars?: number },
+): string {
+  const baseName = options?.maxNameChars
+    ? truncateHeaderText(template.name, options.maxNameChars)
+    : template.name;
+  if (status === 'loading') {
+    return `${baseName} (Preparing...)`;
+  }
+  if (status === 'error') {
+    return `${baseName} (Reload needed)`;
+  }
+  return baseName;
 }
 
 /**
@@ -67,6 +113,12 @@ export function HeaderBar({
   dataSourceLabel,
   onChooseDataSource,
   onClearDataSource,
+  groupName = null,
+  groupTemplates = [],
+  groupTemplateStatuses = {},
+  activeGroupTemplateId = null,
+  groupTemplateSwitchInProgress = false,
+  onSelectGroupTemplate,
   mappingInProgress = false,
   mapSchemaInProgress = false,
   hasMappedSchema = false,
@@ -77,28 +129,44 @@ export function HeaderBar({
   hasRenamedFields = false,
   onRename,
   onRenameAndMap,
+  onRenameAndMapGroup,
   canRename = false,
   canRenameAndMap = false,
+  canRenameAndMapGroup = false,
   renameDisabledReason = null,
   renameAndMapDisabledReason = null,
+  renameAndMapGroupDisabledReason = null,
+  renameAndMapGroupInProgress = false,
+  renameAndMapGroupButtonLabel,
   onOpenSearchFill,
   canSearchFill = false,
+  onOpenFillLink,
+  canFillLink = false,
   onDownload,
+  onDownloadGroup,
   onSaveToProfile,
   downloadInProgress = false,
+  downloadGroupInProgress = false,
   saveInProgress = false,
   canDownload = false,
+  canDownloadGroup = false,
   canSave = false,
   demoLocked = false,
   onDemoLockedAction,
+  demoFillLinkDocsHref,
+  demoCreateGroupDocsHref,
 }: HeaderBarProps) {
   const hasMappingControls = Boolean(
-    onChooseDataSource || onMapSchema || onRename || onRenameAndMap || onOpenSearchFill,
+    onChooseDataSource || onMapSchema || onRename || onRenameAndMap || onRenameAndMapGroup || onOpenSearchFill || onOpenFillLink,
   );
+  const hasGroupContext = Boolean(groupName && groupTemplates.length > 0);
   const userInitial = userEmail ? userEmail.charAt(0).toUpperCase() : null;
   const mapSchemaLabel = mapSchemaInProgress ? 'Mapping' : hasMappedSchema ? 'Mapped' : 'Map Schema';
   const renameLabel = renameInProgress ? 'Renaming' : hasRenamedFields ? 'Renamed' : 'Rename';
   const renameAndMapLabel = mapSchemaInProgress ? 'Mapping' : 'Rename + Map';
+  const renameAndMapGroupLabel =
+    renameAndMapGroupButtonLabel ||
+    (renameAndMapGroupInProgress ? 'Running group action…' : 'Rename + Map Group');
   const demoOverride = demoLocked && Boolean(onDemoLockedAction);
   const deferSchemaPrereqHint = isSchemaPrerequisiteHint(mapSchemaDisabledReason);
   const disableMapSchema = demoOverride
@@ -108,11 +176,18 @@ export function HeaderBar({
     demoOverride ? false : !canRename || mappingInProgress || renameInProgress || mapSchemaInProgress;
   const disableRenameAndMap =
     demoOverride ? false : !canRenameAndMap || mappingInProgress || renameInProgress || mapSchemaInProgress;
+  const disableRenameAndMapGroup =
+    demoOverride ? false : !canRenameAndMapGroup || mappingInProgress || renameInProgress || mapSchemaInProgress || renameAndMapGroupInProgress;
   const disableSearch = !canSearchFill || mappingInProgress;
+  const disableFillLink = !canFillLink || mappingInProgress;
+  const showDemoFillLinkDocs = demoLocked && Boolean(demoFillLinkDocsHref);
+  const showDemoCreateGroupDocs = demoLocked && Boolean(demoCreateGroupDocsHref);
   const showSearchHint = !canSearchFill;
   const rawActionHint = demoOverride
     ? null
-    : disableMapSchema
+    : hasGroupContext && disableRenameAndMapGroup
+      ? renameAndMapGroupDisabledReason
+      : disableMapSchema
       ? mapSchemaDisabledReason
       : disableRenameAndMap
         ? renameAndMapDisabledReason
@@ -129,34 +204,100 @@ export function HeaderBar({
   const renameAndMapTooltip = disableRenameAndMap
     ? renameAndMapDisabledReason || 'Rename + Map is unavailable right now.'
     : 'Run Rename and Map in one step';
+  const renameAndMapGroupTooltip = disableRenameAndMapGroup
+    ? renameAndMapGroupDisabledReason || 'Rename + Map Group is unavailable right now.'
+    : `Run Rename + Map for every saved form in ${groupName || 'this group'}`;
+  const disableGroupSelect =
+    groupTemplateSwitchInProgress || mappingInProgress || renameInProgress || mapSchemaInProgress || renameAndMapGroupInProgress;
   const disableDownload = demoOverride ? false : !canDownload || downloadInProgress;
+  const disableDownloadGroup = demoOverride ? false : !canDownloadGroup || downloadGroupInProgress;
   const disableSave = demoOverride ? false : !canSave || saveInProgress;
+  const activeGroupTemplate =
+    groupTemplates.find((template) => template.id === activeGroupTemplateId) ||
+    groupTemplates[0] ||
+    null;
+  const activeGroupTemplateFullLabel = activeGroupTemplate
+    ? formatGroupTemplateOptionLabel(
+      activeGroupTemplate,
+      groupTemplateStatuses[activeGroupTemplate.id],
+    )
+    : 'Preparing...';
+  const activeGroupTemplateDisplayLabel = activeGroupTemplate
+    ? formatGroupTemplateOptionLabel(
+      activeGroupTemplate,
+      groupTemplateStatuses[activeGroupTemplate.id],
+      { maxNameChars: HEADER_GROUP_TEMPLATE_TRIGGER_MAX_CHARS },
+    )
+    : 'Preparing...';
 
   const [showDataMenu, setShowDataMenu] = useState(false);
+  const [showGroupMenu, setShowGroupMenu] = useState(false);
+  const [zoomPercentInput, setZoomPercentInput] = useState(String(Math.round(scale * 100)));
   const isConnected = dataSourceKind !== 'none';
   const connectedKind =
     dataSourceKind === 'excel'
       ? 'XLS'
+      : dataSourceKind === 'respondent'
+        ? 'LINK'
       : dataSourceKind === 'txt'
         ? 'TXT'
         : dataSourceKind.toUpperCase();
   const dataSourceTitle = isConnected ? `Connected ${connectedKind}` : 'Schema';
   const dataSourceSubtitle = isConnected ? null : 'CSV/XLS/JSON/TXT';
-  const menuRef = useRef<HTMLDivElement | null>(null);
+  const dataSourceMenuRef = useRef<HTMLDivElement | null>(null);
+  const groupMenuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const handleClick = (event: MouseEvent) => {
       const target = event.target as Node | null;
       if (!target) return;
-      if (!menuRef.current) return;
-      if (menuRef.current.contains(target)) return;
-      setShowDataMenu(false);
+      const clickedInsideDataSource = dataSourceMenuRef.current?.contains(target) ?? false;
+      const clickedInsideGroupMenu = groupMenuRef.current?.contains(target) ?? false;
+      if (!clickedInsideDataSource) {
+        setShowDataMenu(false);
+      }
+      if (!clickedInsideGroupMenu) {
+        setShowGroupMenu(false);
+      }
     };
-    if (showDataMenu) {
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setShowDataMenu(false);
+      setShowGroupMenu(false);
+    };
+    if (showDataMenu || showGroupMenu) {
       window.addEventListener('mousedown', handleClick);
+      window.addEventListener('keydown', handleEscape);
     }
-    return () => window.removeEventListener('mousedown', handleClick);
-  }, [showDataMenu]);
+    return () => {
+      window.removeEventListener('mousedown', handleClick);
+      window.removeEventListener('keydown', handleEscape);
+    };
+  }, [showDataMenu, showGroupMenu]);
+
+  useEffect(() => {
+    setShowGroupMenu(false);
+  }, [activeGroupTemplateId]);
+
+  useEffect(() => {
+    setZoomPercentInput(String(Math.round(scale * 100)));
+  }, [scale]);
+
+  const commitZoomPercent = (rawValue: string) => {
+    const trimmed = rawValue.trim();
+    if (!trimmed) {
+      setZoomPercentInput(String(Math.round(scale * 100)));
+      return;
+    }
+    const parsed = Number(trimmed);
+    if (!Number.isFinite(parsed)) {
+      setZoomPercentInput(String(Math.round(scale * 100)));
+      return;
+    }
+    const clamped = Math.min(MAX_ZOOM_PERCENT, Math.max(MIN_ZOOM_PERCENT, Math.round(parsed)));
+    setZoomPercentInput(String(clamped));
+    onScaleChange(clamped / 100);
+  };
 
   return (
     <header className="ui-header">
@@ -176,28 +317,115 @@ export function HeaderBar({
         </div>
       </div>
       <div className="ui-header__meta">
-        <div className="ui-chip">
-          <span className="ui-chip__label">Page</span>
-          <span className="ui-chip__value">
-            {pageCount > 0 ? `${currentPage} / ${pageCount}` : '--'}
+        <div className="ui-chip ui-chip--page">
+          <span className="ui-chip__single-value">
+            {pageCount > 0 ? `Page ${currentPage}/${pageCount}` : 'Page --'}
           </span>
         </div>
         <div className="ui-chip ui-chip--slider">
           <span className="ui-chip__label">Zoom</span>
-          <input
-            className="ui-zoom"
-            type="range"
-            min={0.25}
-            max={10}
-            step={0.05}
-            value={scale}
-            id="header-zoom"
-            name="header-zoom"
-            aria-label="Zoom"
-            onChange={(event) => onScaleChange(Number(event.target.value))}
-          />
-          <span className="ui-chip__value">{Math.round(scale * 100)}%</span>
+          <div className="ui-zoom-input-shell">
+            <input
+              className="ui-zoom-input"
+              type="number"
+              min={MIN_ZOOM_PERCENT}
+              max={MAX_ZOOM_PERCENT}
+              step={1}
+              value={zoomPercentInput}
+              id="header-zoom"
+              name="header-zoom"
+              inputMode="numeric"
+              aria-label="Zoom percentage"
+              onChange={(event) => setZoomPercentInput(event.target.value)}
+              onBlur={(event) => commitZoomPercent(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.currentTarget.blur();
+                  return;
+                }
+                if (event.key === 'Escape') {
+                  setZoomPercentInput(String(Math.round(scale * 100)));
+                  event.currentTarget.blur();
+                }
+              }}
+            />
+            <span className="ui-chip__value ui-chip__value--suffix">%</span>
+          </div>
         </div>
+        {hasGroupContext ? (
+          <div
+            ref={groupMenuRef}
+            className={`ui-chip ui-chip--group-selector${showGroupMenu ? ' ui-chip--group-selector-open' : ''}`}
+          >
+            {disableGroupSelect ? (
+              <div
+                className="ui-group-select ui-group-select--disabled"
+                aria-live="polite"
+                title={activeGroupTemplateFullLabel}
+              >
+                {activeGroupTemplateDisplayLabel}
+              </div>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className="ui-group-select ui-group-select--trigger"
+                  aria-label={groupName ? `Open template in ${groupName}` : 'Open group template'}
+                  aria-haspopup="listbox"
+                  aria-expanded={showGroupMenu}
+                  title={activeGroupTemplateFullLabel}
+                  onClick={() => {
+                    setShowDataMenu(false);
+                    setShowGroupMenu((previous) => !previous);
+                  }}
+                >
+                  <span className="ui-group-select__value">{activeGroupTemplateDisplayLabel}</span>
+                  <span className="ui-group-select__caret" aria-hidden="true">▾</span>
+                </button>
+                {showGroupMenu ? (
+                  <div
+                    className="ui-group-menu"
+                    role="listbox"
+                    aria-label={groupName ? `Templates in ${groupName}` : 'Group templates'}
+                  >
+                    {groupTemplates.map((template) => {
+                      const status = groupTemplateStatuses[template.id];
+                      const optionDisabled =
+                        status === 'loading' && template.id !== activeGroupTemplateId;
+                      const optionFullLabel = formatGroupTemplateOptionLabel(template, status);
+                      const optionDisplayLabel = formatGroupTemplateOptionLabel(
+                        template,
+                        status,
+                        { maxNameChars: HEADER_GROUP_TEMPLATE_MENU_MAX_CHARS },
+                      );
+                      const optionSelected = template.id === activeGroupTemplateId;
+                      return (
+                        <button
+                          key={template.id}
+                          type="button"
+                          className={`ui-group-menu__item${optionSelected ? ' ui-group-menu__item--selected' : ''}`}
+                          role="option"
+                          aria-selected={optionSelected}
+                          disabled={optionDisabled}
+                          title={optionFullLabel}
+                          onClick={() => {
+                            setShowGroupMenu(false);
+                            onSelectGroupTemplate?.(template.id);
+                          }}
+                        >
+                          <span className="ui-group-menu__label">{optionDisplayLabel}</span>
+                          {optionSelected ? (
+                            <span className="ui-group-menu__status" aria-hidden="true">✓</span>
+                          ) : null}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : null}
+              </>
+            )}
+          </div>
+        ) : null}
       </div>
       <div className="ui-header__actions">
         <div className="ui-header__actions-top">
@@ -255,7 +483,7 @@ export function HeaderBar({
         <div className="ui-header__actions-bottom">
           {hasMappingControls ? (
             <div className="ui-header__tools">
-              <div className="data-source" ref={menuRef}>
+              <div className="data-source" ref={dataSourceMenuRef}>
                 <button
                   className="ui-button ui-button--ghost ui-button--compact data-source__button"
                   type="button"
@@ -265,6 +493,7 @@ export function HeaderBar({
                       onDemoLockedAction?.();
                       return;
                     }
+                    setShowGroupMenu(false);
                     setShowDataMenu((prev) => !prev);
                   }}
                   disabled={mappingInProgress}
@@ -371,7 +600,7 @@ export function HeaderBar({
                   </div>
                 ) : null}
               </div>
-              {onRename ? (
+              {!hasGroupContext && onRename ? (
                 <button
                   className="ui-button ui-button--ghost ui-button--compact"
                   type="button"
@@ -389,24 +618,26 @@ export function HeaderBar({
                   {renameLabel}
                 </button>
               ) : null}
-              <button
-                className="ui-button ui-button--ghost ui-button--compact"
-                type="button"
-                data-demo-target="openai-remap"
-                aria-disabled={disableMapSchema}
-                onClick={() => {
-                  if (demoOverride) {
-                    onDemoLockedAction?.();
-                    return;
-                  }
-                  onMapSchema?.();
-                }}
-                disabled={disableMapSchema}
-                title={mapSchemaTooltip}
-              >
-                {mapSchemaLabel}
-              </button>
-              {onRenameAndMap ? (
+              {!hasGroupContext ? (
+                <button
+                  className="ui-button ui-button--ghost ui-button--compact"
+                  type="button"
+                  data-demo-target="openai-remap"
+                  aria-disabled={disableMapSchema}
+                  onClick={() => {
+                    if (demoOverride) {
+                      onDemoLockedAction?.();
+                      return;
+                    }
+                    onMapSchema?.();
+                  }}
+                  disabled={disableMapSchema}
+                  title={mapSchemaTooltip}
+                >
+                  {mapSchemaLabel}
+                </button>
+              ) : null}
+              {!hasGroupContext && onRenameAndMap ? (
                 <button
                   className="ui-button ui-button--ghost ui-button--compact"
                   type="button"
@@ -423,6 +654,23 @@ export function HeaderBar({
                   {renameAndMapLabel}
                 </button>
               ) : null}
+              {hasGroupContext && onRenameAndMapGroup ? (
+                <button
+                  className="ui-button ui-button--ghost ui-button--compact"
+                  type="button"
+                  onClick={() => {
+                    if (demoOverride) {
+                      onDemoLockedAction?.();
+                      return;
+                    }
+                    onRenameAndMapGroup?.();
+                  }}
+                  disabled={disableRenameAndMapGroup}
+                  title={renameAndMapGroupTooltip}
+                >
+                  {renameAndMapGroupLabel}
+                </button>
+              ) : null}
               {onOpenSearchFill ? (
                 <div className="ui-header__search-fill">
                   <button
@@ -435,9 +683,42 @@ export function HeaderBar({
                     Search, Fill &amp; Clear
                   </button>
                   {showSearchHint ? (
-                    <span className="ui-header__search-hint">Requires CSV/Excel/JSON rows</span>
+                    <span className="ui-header__search-hint">Requires CSV/Excel/JSON/respondent rows</span>
                   ) : null}
                 </div>
+              ) : null}
+              {showDemoFillLinkDocs ? (
+                <a
+                  className="ui-button ui-button--ghost ui-button--compact"
+                  href={demoFillLinkDocsHref}
+                >
+                  See Link Filling docs
+                </a>
+              ) : null}
+              {showDemoCreateGroupDocs ? (
+                <a
+                  className="ui-button ui-button--ghost ui-button--compact"
+                  href={demoCreateGroupDocsHref}
+                >
+                  See Create Group docs
+                </a>
+              ) : null}
+              {!showDemoFillLinkDocs && !showDemoCreateGroupDocs && onOpenFillLink ? (
+                <button
+                  className="ui-button ui-button--ghost ui-button--compact"
+                  type="button"
+                  onClick={() => {
+                    if (demoOverride) {
+                      onDemoLockedAction?.();
+                      return;
+                    }
+                    onOpenFillLink();
+                  }}
+                  disabled={disableFillLink}
+                  title={canFillLink ? 'Publish or manage a DullyPDF Fill By Link.' : 'Load a saved template to use Fill By Link.'}
+                >
+                  Fill By Link
+                </button>
               ) : null}
             </div>
           ) : null}
@@ -454,6 +735,18 @@ export function HeaderBar({
                   disabled={disableDownload}
                 >
                   {downloadInProgress ? 'Downloading...' : 'Download'}
+                </button>
+              ) : null}
+              {onDownloadGroup ? (
+                <button
+                  className="ui-button ui-button--primary ui-button--compact ui-header__save"
+                  type="button"
+                  onClick={() => {
+                    onDownloadGroup?.();
+                  }}
+                  disabled={disableDownloadGroup}
+                >
+                  {downloadGroupInProgress ? 'Downloading Group...' : 'Download Group'}
                 </button>
               ) : null}
               <button

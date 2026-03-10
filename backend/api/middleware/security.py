@@ -17,8 +17,9 @@ async def enforce_security_guards(request: Request, call_next):
         return await call_next(request)
 
     path = request.url.path
+    normalized_path = path.rstrip("/") or "/"
     if not legacy_endpoints_enabled() and (
-        path in {"/api/process-pdf", "/api/register-fillable", "/api/detected-fields"}
+        normalized_path in {"/api/process-pdf", "/api/register-fillable", "/api/detected-fields"}
         or path.startswith("/download/")
     ):
         return JSONResponse(status_code=404, content={"detail": "Not found"}, headers=cors_headers)
@@ -46,8 +47,9 @@ async def enforce_security_guards(request: Request, call_next):
         "/api/contact",
         "/api/recaptcha/assess",
     }
-    is_public_billing_webhook = path.rstrip("/") == "/api/billing/webhook"
-    if path.startswith("/api/") and path not in public_api_paths and not is_public_billing_webhook:
+    is_public_fill_link_path = normalized_path.startswith("/api/fill-links/public/")
+    is_public_billing_webhook = normalized_path == "/api/billing/webhook"
+    if path.startswith("/api/") and normalized_path not in public_api_paths and not is_public_billing_webhook and not is_public_fill_link_path:
         authorization = request.headers.get("authorization")
         try:
             request.state.preverified_auth_payload = verify_token(authorization)

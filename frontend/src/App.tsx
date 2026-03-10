@@ -3,14 +3,17 @@
  * and lazy-loads the full workspace runtime on user intent.
  */
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
+import { useRef } from 'react';
 import type { User } from 'firebase/auth';
 import './App.css';
 import Homepage from './components/pages/Homepage';
 import LegacyHeader from './components/layout/LegacyHeader';
 import VerifyEmailPage from './components/pages/VerifyEmailPage';
 import { AUTH_READY_FALLBACK_MS } from './config/appConstants';
+import { ApiService } from './services/api';
 import { Auth } from './services/auth';
 import { setAuthToken } from './services/authTokenStore';
+import { clearExpiredPendingBillingCheckout, hasFreshPendingBillingCheckout } from './utils/billingCheckoutState';
 import { debugLog } from './utils/debug';
 import { applyRouteSeo } from './utils/seo';
 import type { WorkspaceLaunchIntent } from './WorkspaceRuntime';
@@ -24,6 +27,7 @@ function App() {
 
   const [runtimeMounted, setRuntimeMounted] = useState(false);
   const [launchIntent, setLaunchIntent] = useState<WorkspaceLaunchIntent>(null);
+  const checkedDowngradeRetentionUidRef = useRef<string | null>(null);
 
   useEffect(() => {
     applyRouteSeo({ kind: 'app' });
@@ -87,10 +91,76 @@ function App() {
 
   useEffect(() => {
     if (!authReady || runtimeMounted || typeof window === 'undefined') return;
-    const billingState = (new URL(window.location.href).searchParams.get('billing') || '').toLowerCase();
+    const url = new URL(window.location.href);
+    const billingState = (url.searchParams.get('billing') || '').toLowerCase();
     if (!billingState) return;
-    launchWorkspace('workflow');
-  }, [authReady, launchWorkspace, runtimeMounted]);
+    if (billingState !== 'success' && billingState !== 'cancel') {
+      url.searchParams.delete('billing');
+      window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+      return;
+    }
+    clearExpiredPendingBillingCheckout();
+    if (billingState === 'cancel') {
+      if (!verifiedUser) {
+        url.searchParams.delete('billing');
+        window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+        return;
+      }
+      launchWorkspace('workflow');
+      return;
+    }
+    if (!verifiedUser && !hasFreshPendingBillingCheckout()) {
+      url.searchParams.delete('billing');
+      window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+      return;
+    }
+    launchWorkspace(verifiedUser ? 'workflow' : 'signin');
+  }, [authReady, launchWorkspace, runtimeMounted, verifiedUser]);
+
+  useEffect(() => {
+    if (!verifiedUser) {
+      checkedDowngradeRetentionUidRef.current = null;
+      return;
+    }
+    if (!authReady || runtimeMounted) {
+      return;
+    }
+    if (checkedDowngradeRetentionUidRef.current === verifiedUser.uid) {
+      return;
+    }
+
+    let cancelled = false;
+    checkedDowngradeRetentionUidRef.current = verifiedUser.uid;
+    void (async () => {
+      try {
+        let profile = null;
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+          profile = await ApiService.getProfile();
+          if (cancelled || runtimeMounted) return;
+          if (profile) {
+            break;
+          }
+          if (attempt < 2) {
+            await new Promise((resolve) => window.setTimeout(resolve, 1200));
+          }
+        }
+        if (!profile) {
+          checkedDowngradeRetentionUidRef.current = null;
+          return;
+        }
+        if (profile?.retention?.status === 'grace_period') {
+          setRuntimeMounted(true);
+        }
+      } catch (error) {
+        checkedDowngradeRetentionUidRef.current = null;
+        debugLog('Failed to preflight downgrade retention from lightweight shell', error);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authReady, runtimeMounted, verifiedUser]);
 
   const handleStartWorkflow = useCallback(() => {
     launchWorkspace(verifiedUser ? 'workflow' : 'signin');

@@ -1,7 +1,7 @@
 /**
  * PDF canvas renderer with field overlay layers.
  */
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AnnotationMode } from 'pdfjs-dist';
 import type { PDFDocumentProxy, RenderTask } from 'pdfjs-dist/types/src/display/api';
 import type { FieldRect, FieldType, PageSize, PdfField } from '../../types';
@@ -10,6 +10,7 @@ import { FieldInputOverlay } from './FieldInputOverlay';
 import { Alert } from '../ui/Alert';
 
 const EMPTY_SIZE: PageSize = { width: 0, height: 0 };
+const EMPTY_FIELDS: PdfField[] = [];
 const RENDER_RADIUS = 2;
 
 type PdfViewerProps = {
@@ -41,6 +42,7 @@ type PdfPageProps = {
   pdfDoc: PDFDocumentProxy;
   pageNumber: number;
   scale: number;
+  renderScale: number;
   pageSize: PageSize;
   fields: PdfField[];
   showFields: boolean;
@@ -64,10 +66,11 @@ type PdfPageProps = {
 /**
  * Render a single PDF page plus optional overlays.
  */
-function PdfPage({
+function PdfPageComponent({
   pdfDoc,
   pageNumber,
   scale,
+  renderScale,
   pageSize,
   fields,
   showFields,
@@ -92,6 +95,13 @@ function PdfPage({
   const [renderError, setRenderError] = useState<string | null>(null);
 
   useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    canvas.style.width = `${pageSize.width * scale}px`;
+    canvas.style.height = `${pageSize.height * scale}px`;
+  }, [pageSize.height, pageSize.width, scale]);
+
+  useEffect(() => {
     let cancelled = false;
     let renderTask: RenderTask | null = null;
 
@@ -104,7 +114,7 @@ function PdfPage({
         const page = await pdfDoc.getPage(pageNumber);
         if (cancelled || !canvasRef.current) return;
 
-        const viewport = page.getViewport({ scale });
+        const viewport = page.getViewport({ scale: renderScale });
         const canvas = canvasRef.current;
         const context = canvas.getContext('2d');
 
@@ -118,8 +128,6 @@ function PdfPage({
 
         canvas.width = scaledWidth;
         canvas.height = scaledHeight;
-        canvas.style.width = `${viewport.width}px`;
-        canvas.style.height = `${viewport.height}px`;
 
         renderTask = page.render({
           canvasContext: context,
@@ -154,7 +162,7 @@ function PdfPage({
         renderTask.cancel();
       }
     };
-  }, [pdfDoc, pageNumber, scale, isActive]);
+  }, [isActive, pageNumber, pdfDoc, renderScale]);
 
   return (
     <div
@@ -212,6 +220,36 @@ function PdfPage({
     </div>
   );
 }
+
+function areFieldArraysShallowEqual(left: PdfField[], right: PdfField[]) {
+  if (left === right) return true;
+  if (left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) return false;
+  }
+  return true;
+}
+
+const PdfPage = memo(PdfPageComponent, (prev, next) => {
+  return (
+    prev.pdfDoc === next.pdfDoc &&
+    prev.pageNumber === next.pageNumber &&
+    prev.scale === next.scale &&
+    prev.renderScale === next.renderScale &&
+    prev.pageSize.width === next.pageSize.width &&
+    prev.pageSize.height === next.pageSize.height &&
+    areFieldArraysShallowEqual(prev.fields, next.fields) &&
+    prev.showFields === next.showFields &&
+    prev.showFieldNames === next.showFieldNames &&
+    prev.showFieldInfo === next.showFieldInfo &&
+    prev.moveEnabled === next.moveEnabled &&
+    prev.resizeEnabled === next.resizeEnabled &&
+    prev.createEnabled === next.createEnabled &&
+    prev.activeCreateTool === next.activeCreateTool &&
+    prev.selectedFieldId === next.selectedFieldId &&
+    prev.isActive === next.isActive
+  );
+});
 
 /**
  * Scrollable PDF viewer that virtualizes page rendering by radius.
@@ -288,6 +326,8 @@ export function PdfViewer({
   }, [containerSize, maxPageSize]);
 
   const effectiveScale = fitScale * scale;
+  // Defer raster work so the page shell and overlays can respond to zoom immediately.
+  const deferredRenderScale = useDeferredValue(effectiveScale);
 
   // Bucket fields by page for faster overlay rendering.
   const fieldsByPage = useMemo(() => {
@@ -364,7 +404,7 @@ export function PdfViewer({
     });
 
     return () => observer.disconnect();
-  }, [pages, onPageChange, effectiveScale]);
+  }, [pages, onPageChange]);
 
   useLayoutEffect(() => {
     if (!scrollRef.current) return;
@@ -430,8 +470,9 @@ export function PdfViewer({
             pdfDoc={pdfDoc}
             pageNumber={page}
             scale={effectiveScale}
+            renderScale={deferredRenderScale}
             pageSize={pageSizes[page] || EMPTY_SIZE}
-            fields={fieldsByPage.get(page) || []}
+            fields={fieldsByPage.get(page) || EMPTY_FIELDS}
             showFields={showFields}
             showFieldNames={showFieldNames}
             showFieldInfo={showFieldInfo}

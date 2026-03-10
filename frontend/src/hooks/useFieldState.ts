@@ -4,6 +4,48 @@ import { fieldConfidenceTierForField } from '../utils/confidence';
 import { createField } from '../utils/fields';
 import { debugLog } from '../utils/debug';
 
+function mergeFieldUpdates(field: PdfField, updates: Partial<PdfField>): PdfField {
+  return {
+    ...field,
+    ...updates,
+    rect: updates.rect ? { ...field.rect, ...updates.rect } : field.rect,
+  };
+}
+
+function hasFieldChanges(field: PdfField, updates: Partial<PdfField>): boolean {
+  for (const [key, value] of Object.entries(updates) as [keyof PdfField, PdfField[keyof PdfField]][]) {
+    if (key === 'rect') {
+      if (!value) continue;
+      const rectUpdates = value as Partial<PdfField['rect']>;
+      for (const [rectKey, rectValue] of Object.entries(rectUpdates) as [keyof PdfField['rect'], number][]) {
+        if (field.rect[rectKey] !== rectValue) {
+          return true;
+        }
+      }
+      continue;
+    }
+    if (field[key] !== value) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function updateSingleField(
+  fields: PdfField[],
+  fieldId: string,
+  updates: Partial<PdfField>,
+): PdfField[] {
+  const index = fields.findIndex((field) => field.id === fieldId);
+  if (index === -1) return fields;
+  const current = fields[index];
+  if (!hasFieldChanges(current, updates)) return fields;
+  const nextField = mergeFieldUpdates(current, updates);
+  const next = [...fields];
+  next[index] = nextField;
+  return next;
+}
+
 export function useFieldState(
   fieldsRef: React.MutableRefObject<PdfField[]>,
   fields: PdfField[],
@@ -22,31 +64,14 @@ export function useFieldState(
   const lastFieldVisibilityRef = useRef({ showFieldInfo, showFieldNames });
 
   const handleUpdateField = useCallback((fieldId: string, updates: Partial<PdfField>) => {
-    updateFieldsWith((prev) =>
-      prev.map((field) => {
-        if (field.id !== fieldId) return field;
-        return {
-          ...field,
-          ...updates,
-          rect: updates.rect ? { ...field.rect, ...updates.rect } : field.rect,
-        };
-      }),
-    );
+    updateFieldsWith((prev) => updateSingleField(prev, fieldId, updates));
     debugLog('Updated field', fieldId, updates);
   }, [updateFieldsWith]);
 
   const handleUpdateFieldDraft = useCallback(
     (fieldId: string, updates: Partial<PdfField>) => {
       updateFieldsWith(
-        (prev) =>
-          prev.map((field) => {
-            if (field.id !== fieldId) return field;
-            return {
-              ...field,
-              ...updates,
-              rect: updates.rect ? { ...field.rect, ...updates.rect } : field.rect,
-            };
-          }),
+        (prev) => updateSingleField(prev, fieldId, updates),
         { trackHistory: false },
       );
       debugLog('Updated field (draft)', fieldId, updates);
@@ -57,15 +82,7 @@ export function useFieldState(
   const handleUpdateFieldGeometry = useCallback(
     (fieldId: string, updates: Partial<PdfField>) => {
       updateFieldsWith(
-        (prev) =>
-          prev.map((field) => {
-            if (field.id !== fieldId) return field;
-            return {
-              ...field,
-              ...updates,
-              rect: updates.rect ? { ...field.rect, ...updates.rect } : field.rect,
-            };
-          }),
+        (prev) => updateSingleField(prev, fieldId, updates),
         { trackHistory: false },
       );
     },
@@ -92,16 +109,17 @@ export function useFieldState(
 
   const handleClearFieldValues = useCallback(() => {
     updateFieldsWith((prev) => {
-      let changed = false;
-      const next = prev.map((field) => {
+      let next: PdfField[] | null = null;
+      for (let index = 0; index < prev.length; index += 1) {
+        const field = prev[index];
         const value = field.value;
-        if (value === null || value === undefined) return field;
-        if (typeof value === 'string' && value.trim().length === 0) return field;
-        if (typeof value === 'boolean' && value === false) return field;
-        changed = true;
-        return { ...field, value: null };
-      });
-      return changed ? next : prev;
+        if (value === null || value === undefined) continue;
+        if (typeof value === 'string' && value.trim().length === 0) continue;
+        if (typeof value === 'boolean' && value === false) continue;
+        if (!next) next = [...prev];
+        next[index] = { ...field, value: null };
+      }
+      return next ?? prev;
     });
   }, [updateFieldsWith]);
 

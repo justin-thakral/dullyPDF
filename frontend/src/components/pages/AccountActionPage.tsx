@@ -10,6 +10,7 @@ import {
   ACCOUNT_ACTION_ROUTE_PATH,
   parseEmailActionSearch,
   readStoredEmailActionState,
+  type SupportedEmailActionMode,
   writeStoredEmailActionState,
 } from '../../utils/emailActions';
 import AuthActionShell from './AuthActionShell';
@@ -25,7 +26,7 @@ type AccountActionState =
     }
   | { kind: 'submitting-reset-password'; continuePath: string; email: string; oobCode: string }
   | { kind: 'reset-password-success'; continuePath: string; email: string }
-  | { kind: 'error'; continuePath: string; message: string };
+  | { kind: 'error'; continuePath: string; message: string; mode?: SupportedEmailActionMode };
 
 type ActionLink = {
   href: string;
@@ -35,6 +36,8 @@ type ActionLink = {
 const VERIFY_EMAIL_SUCCESS_MESSAGE = 'Your email address has been verified. You can continue to DullyPDF now.';
 const INVALID_LINK_MESSAGE = 'This verification link is invalid, expired, or has already been used.';
 const UNSUPPORTED_LINK_MESSAGE = 'This email link is not supported by this page.';
+const RESET_LINK_REFRESH_MESSAGE =
+  'For security, password reset links are kept only in this tab after they open. Request a fresh reset email to continue.';
 const HELP_ACTION: ActionLink = {
   href: '/usage-docs/getting-started',
   label: 'Open setup guide',
@@ -60,10 +63,10 @@ const AccountActionPage = () => {
     if (storedAction && !window.location.search) {
       if (storedAction.kind === 'pending-reset-password') {
         setState({
-          kind: 'ready-reset-password',
+          kind: 'error',
           continuePath: storedAction.continuePath,
-          email: storedAction.email,
-          oobCode: storedAction.oobCode,
+          mode: 'resetPassword',
+          message: RESET_LINK_REFRESH_MESSAGE,
         });
         return undefined;
       }
@@ -80,6 +83,7 @@ const AccountActionPage = () => {
               kind: 'error',
               continuePath: storedAction.continuePath,
               message: INVALID_LINK_MESSAGE,
+              mode: storedAction.mode,
             },
       );
       return undefined;
@@ -99,6 +103,7 @@ const AccountActionPage = () => {
         kind: 'error',
         continuePath: parsedAction.continuePath,
         message,
+        mode: undefined,
       });
       return undefined;
     }
@@ -129,6 +134,7 @@ const AccountActionPage = () => {
             kind: 'error',
             continuePath,
             message: INVALID_LINK_MESSAGE,
+            mode,
           });
         }
       })();
@@ -143,8 +149,6 @@ const AccountActionPage = () => {
         if (cancelled) return;
         writeStoredEmailActionState({
           kind: 'pending-reset-password',
-          oobCode,
-          email,
           continuePath,
         });
         setState({
@@ -165,6 +169,7 @@ const AccountActionPage = () => {
           kind: 'error',
           continuePath,
           message: INVALID_LINK_MESSAGE,
+          mode,
         });
       }
     })();
@@ -226,6 +231,13 @@ const AccountActionPage = () => {
         'As soon as verification finishes, the next-step actions will appear here.',
       ];
     }
+    if (state.kind === 'error' && state.mode === 'resetPassword') {
+      return [
+        'Open the newest password reset email and finish the form in the same tab.',
+        'Refreshing the clean route removes the one-time reset code from memory.',
+        'If needed, request another password reset from the sign-in page.',
+      ];
+    }
     return [
       'The link may already be used, expired, or incomplete.',
       'Request a fresh verification or reset email from the sign-in page.',
@@ -246,12 +258,11 @@ const AccountActionPage = () => {
       return;
     }
     setFormError(null);
-    const trimmedPassword = password.trim();
-    if (trimmedPassword.length < 8) {
+    if (password.length < 8) {
       setFormError('Use at least 8 characters for your new password.');
       return;
     }
-    if (trimmedPassword !== confirmPassword.trim()) {
+    if (password !== confirmPassword) {
       setFormError('Your passwords do not match.');
       return;
     }
@@ -263,7 +274,7 @@ const AccountActionPage = () => {
       oobCode: state.oobCode,
     });
     try {
-      await Auth.confirmPasswordReset(state.oobCode, trimmedPassword);
+      await Auth.confirmPasswordReset(state.oobCode, password);
       writeStoredEmailActionState({
         kind: 'result',
         mode: 'resetPassword',
@@ -288,6 +299,7 @@ const AccountActionPage = () => {
         kind: 'error',
         continuePath: state.continuePath,
         message: INVALID_LINK_MESSAGE,
+        mode: 'resetPassword',
       });
     }
   };
@@ -367,6 +379,8 @@ const AccountActionPage = () => {
         ? 'Password updated'
         : state.kind === 'processing-verify-email'
           ? 'Verifying secure link'
+          : state.kind === 'error' && state.mode === 'resetPassword'
+            ? 'Reset link needs attention'
           : 'Action needs attention';
 
   const badge =
@@ -376,6 +390,8 @@ const AccountActionPage = () => {
         ? 'Email verified'
         : state.kind === 'reset-password-success'
           ? 'Password reset'
+          : state.kind === 'error' && state.mode === 'resetPassword'
+            ? 'Password reset failed'
           : 'Verification failed';
 
   const title =
@@ -385,6 +401,8 @@ const AccountActionPage = () => {
         ? 'Email verified'
         : state.kind === 'reset-password-success'
           ? 'Password updated'
+          : state.kind === 'error' && state.mode === 'resetPassword'
+            ? 'We could not continue the password reset'
           : 'We could not verify this email';
 
   const description =

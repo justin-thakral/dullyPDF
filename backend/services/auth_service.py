@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hmac
 import os
 from typing import Any, Dict, Optional
 
@@ -78,4 +79,9 @@ def has_admin_override(authorization: Optional[str], x_admin_token: Optional[str
     bearer = None
     if authorization and authorization.lower().startswith("bearer "):
         bearer = authorization.split(" ", 1)[1].strip()
-    return bool(bearer == token or (x_admin_token and x_admin_token == token))
+    token_bytes = token.encode("utf-8")
+    if bearer and hmac.compare_digest(bearer.encode("utf-8"), token_bytes):
+        return True
+    if x_admin_token and hmac.compare_digest(x_admin_token.encode("utf-8"), token_bytes):
+        return True
+    return False

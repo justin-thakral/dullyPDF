@@ -132,6 +132,22 @@
   min-width: 0;
 }
 
+.panel__inline-control {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+.panel__inline-control > .panel__label {
+  flex: 1 1 auto;
+}
+
+.panel__input--inline {
+  flex: 0 0 5.5rem;
+  width: 5.5rem;
+}
+
 .panel__toggle-row {
   display: flex;
   align-items: center;

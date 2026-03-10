@@ -9,6 +9,14 @@ body.homepage-no-scroll {
   overflow: hidden;
 }
 
+html.workspace-no-scroll,
+body.workspace-no-scroll,
+#root.workspace-no-scroll {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
 :root {
   --font-body: 'IBM Plex Sans', 'Space Grotesk', sans-serif;
   --font-display: 'Space Grotesk', 'IBM Plex Sans', sans-serif;

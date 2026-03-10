@@ -2,6 +2,7 @@ export type IntentPageKey =
   | 'pdf-to-fillable-form'
   | 'pdf-to-database-template'
   | 'fill-pdf-from-csv'
+  | 'fill-pdf-by-link'
   | 'fill-information-in-pdf'
   | 'fillable-form-field-name'
   | 'healthcare-pdf-automation'
@@ -159,7 +160,7 @@ const INTENT_PAGES: IntentPage[] = [
     proofPoints: [
       'Search result sets are capped for controlled review workflows.',
       'Parser guardrails handle duplicate headers and schema normalization.',
-      'Filled output can be downloaded immediately or saved to profile.',
+      'Filled output can be downloaded immediately, saved to profile, or driven from stored Fill By Link respondents.',
     ],
     faqs: [
       {
@@ -176,6 +177,58 @@ const INTENT_PAGES: IntentPage[] = [
         question: 'What if some fields do not fill correctly?',
         answer:
           'Review mappings and checkbox rules, then run a clear-and-refill verification pass before production output.',
+      },
+      {
+        question: 'Can I use stored Fill By Link submissions in the same workflow?',
+        answer:
+          'Yes. Owners can publish a Fill By Link from a saved template and then select respondent records from the same Search & Fill flow used for local rows.',
+      },
+    ],
+  },
+  {
+    key: 'fill-pdf-by-link',
+    category: 'workflow',
+    path: '/fill-pdf-by-link',
+    navLabel: 'Fill PDF By Link',
+    heroTitle: 'Collect PDF Answers With Native Fill By Link',
+    heroSummary:
+      'Start from a saved DullyPDF template, publish a mobile-friendly form link, collect respondent answers, and either let respondents download their submitted copy after submit or generate the filled PDF later in the workspace.',
+    seoTitle: 'Fill PDF By Link With Shareable Respondent Forms | DullyPDF',
+    seoDescription:
+      'Publish a native Fill By Link from a saved PDF template, collect respondent answers in a DullyPDF-hosted HTML form, optionally let respondents download their submitted PDF copy after submit, and generate the final filled PDF from the response list when needed.',
+    seoKeywords: [
+      'fill pdf by link',
+      'shareable pdf form link',
+      'pdf form respondent link',
+      'collect pdf form responses',
+      'html form to fill pdf',
+    ],
+    valuePoints: [
+      'Publish a DullyPDF-hosted HTML form from any saved template.',
+      'Store respondent answers as structured records under the template owner account.',
+      'Optionally let template respondents download their submitted PDF copy on the success screen.',
+      'Pick a respondent later in the workspace and fill the source PDF on demand.',
+    ],
+    proofPoints: [
+      'Free includes 1 active published link and up to 5 accepted responses.',
+      'Premium unlocks a shareable link for every saved template with up to 10,000 responses per link.',
+      'Respondent records can be reused through the same Search & Fill workflow before download.',
+    ],
+    faqs: [
+      {
+        question: 'Does the respondent fill the actual PDF?',
+        answer:
+          'No. The respondent fills a DullyPDF-hosted mobile-friendly HTML form. Template links can optionally expose a post-submit PDF download, but the owner still manages the saved response and final workflow in the workspace.',
+      },
+      {
+        question: 'How many Fill By Link responses are allowed on free and premium?',
+        answer:
+          'Free includes 1 active link with 5 accepted responses. Premium supports a shareable link on every saved template and up to 10,000 accepted responses per link.',
+      },
+      {
+        question: 'Can I publish one link for every template?',
+        answer:
+          'Premium users can publish a shareable link for every saved template they keep in DullyPDF. Free users are limited to 1 active published link at a time.',
       },
     ],
   },
@@ -203,7 +256,7 @@ const INTENT_PAGES: IntentPage[] = [
     proofPoints: [
       'Date and checkbox handling include normalization and rule logic.',
       'Field edits can be audited through the editor and inspector panels.',
-      'Templates can be reused across repeated packets and updates.',
+      'Templates can be reused across repeated packets, updates, and Fill By Link respondent collection.',
     ],
     faqs: [
       {
@@ -220,6 +273,11 @@ const INTENT_PAGES: IntentPage[] = [
         question: 'Does this work for checkbox-heavy forms?',
         answer:
           'Yes. Checkbox metadata and rule precedence are part of the mapping and fill workflow.',
+      },
+      {
+        question: 'Can people submit their own information through a link first?',
+        answer:
+          'Yes. DullyPDF Fill By Link lets the template owner collect respondent answers first, then select that respondent inside the workspace when generating the PDF.',
       },
     ],
   },
@@ -294,6 +352,7 @@ const INTENT_PAGES: IntentPage[] = [
     ],
     proofPoints: [
       'CSV/XLSX/JSON rows are searchable in-browser for controlled patient record lookup.',
+      'Native Fill By Link supports phone-friendly respondent intake before front-desk review.',
       'Detection plus editor cleanup helps handle scanned and native healthcare PDFs.',
       'Templates can be saved and reused for recurring appointment workflows.',
     ],
@@ -312,6 +371,11 @@ const INTENT_PAGES: IntentPage[] = [
         question: 'Can healthcare teams reuse the same mapped template daily?',
         answer:
           'Yes. Saved templates retain PDF bytes, field metadata, and mapping context for repeat usage.',
+      },
+      {
+        question: 'Can clinics send patients a link instead of filling the PDF directly?',
+        answer:
+          'Yes. Teams can publish a DullyPDF Fill By Link, collect patient responses through a mobile-friendly form, and then generate the final PDF from the response list later.',
       },
     ],
   },

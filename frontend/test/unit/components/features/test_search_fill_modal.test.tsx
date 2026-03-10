@@ -59,7 +59,7 @@ describe('SearchFillModal', () => {
     });
     const { rerender } = render(<SearchFillModal {...propsMissingSource} />);
     await runSearch('ada');
-    expect(screen.getByText('Choose a CSV, Excel, or JSON source first.')).toBeTruthy();
+    expect(screen.getByText('Choose a CSV, Excel, JSON, or respondent source first.')).toBeTruthy();
 
     const propsMissingRows = buildProps({
       rows: [],
@@ -160,6 +160,78 @@ describe('SearchFillModal', () => {
       expect(onAfterFill).toHaveBeenCalledTimes(1);
       expect(onClose).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it('supports selecting multiple group PDF targets before filling', async () => {
+    const user = userEvent.setup();
+    const onFillTargets = vi.fn();
+    const onAfterFill = vi.fn();
+    const onClose = vi.fn();
+
+    render(
+      <SearchFillModal
+        {...buildProps({
+          rows: [{ mrn: '100', full_name: 'Ada Lovelace' }],
+          fillTargets: [
+            { id: 'tpl-a', name: 'Admissions Packet' },
+            { id: 'tpl-b', name: 'Consent Form' },
+          ],
+          activeFillTargetId: 'tpl-a',
+          onFillTargets,
+          onAfterFill,
+          onClose,
+        })}
+      />,
+    );
+
+    expect(screen.getByText('Select which PDFs receive the row')).toBeTruthy();
+    expect(screen.getByText('1 PDF selected')).toBeTruthy();
+
+    await user.click(screen.getByRole('button', { name: 'All PDFs' }));
+    expect(screen.getByText('2 PDFs selected')).toBeTruthy();
+
+    await runSearch('100');
+    await user.click(screen.getByRole('button', { name: 'Fill selected PDFs' }));
+
+    await waitFor(() => {
+      expect(onFillTargets).toHaveBeenCalledWith(
+        { mrn: '100', full_name: 'Ada Lovelace' },
+        ['tpl-a', 'tpl-b'],
+      );
+      expect(onAfterFill).toHaveBeenCalledTimes(1);
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('clears stale field values before applying a respondent record', async () => {
+    const user = userEvent.setup();
+    const onFieldsChange = vi.fn();
+    const fields = [
+      makeField({ id: 'full-name', name: 'full_name', type: 'text', page: 1, value: 'Justin Thakral' }),
+      makeField({ id: 'member-id', name: 'member_id', type: 'text', page: 1, value: 'OLD-1' }),
+    ];
+    const props = buildProps({
+      dataSourceKind: 'respondent',
+      dataSourceLabel: 'Fill By Link respondents',
+      columns: ['respondent_label', 'member_id'],
+      identifierKey: 'respondent_label',
+      rows: [{ respondent_label: 'Ada Lovelace', member_id: 'NEW-42' }],
+      fields,
+      onFieldsChange,
+    });
+
+    render(<SearchFillModal {...props} />);
+
+    await runSearch('Ada');
+    await user.click(screen.getByRole('button', { name: 'Fill PDF' }));
+
+    await waitFor(() => {
+      expect(onFieldsChange).toHaveBeenCalledTimes(1);
+    });
+    const nextFields = onFieldsChange.mock.calls[0][0] as PdfField[];
+    const byId = new Map(nextFields.map((field) => [field.id, field.value]));
+    expect(byId.get('full-name')).toBeNull();
+    expect(byId.get('member-id')).toBe('NEW-42');
   });
 
   it('fills text/date fields using direct and fallback key heuristics', async () => {
@@ -439,7 +511,7 @@ describe('SearchFillModal', () => {
       onClose,
       onClearFields,
     });
-    const { container } = render(<SearchFillModal {...props} />);
+    render(<SearchFillModal {...props} />);
 
     await user.click(screen.getByRole('button', { name: 'Clear inputs' }));
     expect(onClearFields).toHaveBeenCalledTimes(1);
@@ -450,13 +522,16 @@ describe('SearchFillModal', () => {
     await user.click(screen.getByLabelText('Close'));
     expect(onClose).toHaveBeenCalledTimes(1);
 
-    const dialogRoot = screen.getByRole('dialog');
-    await user.click(dialogRoot);
+    await user.click(screen.getByRole('dialog'));
+    expect(onClose).toHaveBeenCalledTimes(1);
+
+    await user.click(screen.getByRole('presentation'));
     expect(onClose).toHaveBeenCalledTimes(2);
 
     const resultsRegion = screen.getByLabelText('Search results');
     expect(within(resultsRegion).getByText('No results yet.')).toBeTruthy();
-    expect(container.querySelector('.searchfill-modal__card')).toBeTruthy();
+    expect(document.body.querySelector('.ui-dialog-backdrop')).toBeTruthy();
+    expect(document.body.querySelector('.searchfill-modal__card')).toBeTruthy();
   });
 
   it('applies multiple checkbox rules targeting different options in the same group', async () => {

@@ -67,6 +67,54 @@ def test_saved_form_get_includes_fill_rule_metadata(client, app_main, base_user,
     assert payload["fillRules"]["textTransformRules"] == payload["textTransformRules"]
 
 
+def test_saved_form_get_includes_editor_snapshot_when_available(
+    client,
+    app_main,
+    base_user,
+    mocker,
+    auth_headers,
+) -> None:
+    _patch_auth(mocker, app_main, base_user)
+    mocker.patch.object(
+        app_main,
+        "get_template",
+        return_value=_template_record(
+            template_id="tpl-1",
+            metadata={
+                "editorSnapshot": {
+                    "version": 1,
+                    "path": "gs://sessions/saved-form-snapshots/tpl-1.json",
+                },
+            },
+        ),
+    )
+    mocker.patch.object(
+        app_main,
+        "load_saved_form_editor_snapshot",
+        return_value={
+            "version": 1,
+            "pageCount": 1,
+            "pageSizes": {"1": {"width": 612, "height": 792}},
+            "fields": [{
+                "id": "field-1",
+                "name": "full_name",
+                "type": "text",
+                "page": 1,
+                "rect": {"x": 10, "y": 12, "width": 110, "height": 18},
+                "value": None,
+            }],
+            "hasRenamedFields": True,
+            "hasMappedSchema": False,
+        },
+    )
+
+    response = client.get("/api/saved-forms/tpl-1", headers=auth_headers)
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["editorSnapshot"]["fields"][0]["name"] == "full_name"
+    assert payload["editorSnapshot"]["hasRenamedFields"] is True
+
+
 def test_saved_form_get_uses_legacy_template_rules_as_text_transform_rules(
     client,
     app_main,
@@ -240,8 +288,8 @@ def test_save_form_overwrite_updates_existing_form(client, app_main, base_user, 
     mocker.patch.object(app_main, "_write_upload_to_temp", return_value=temp_pdf)
     mocker.patch.object(app_main, "_validate_pdf_for_detection", return_value=PdfValidationResult(pdf_bytes=b"%PDF-1.4\n", page_count=1, was_decrypted=False))
     mocker.patch.object(app_main, "_resolve_fillable_max_pages", return_value=10)
-    mocker.patch.object(app_main, "is_gcs_path", return_value=True)
-    mocker.patch.object(app_main, "upload_pdf_to_bucket_path", side_effect=["gs://forms/new.pdf", "gs://templates/new.pdf"])
+    mocker.patch.object(app_main, "upload_form_pdf", return_value="gs://forms/new.pdf")
+    mocker.patch.object(app_main, "upload_template_pdf", return_value="gs://templates/new.pdf")
     update_mock = mocker.patch.object(app_main, "update_template", return_value=updated)
     delete_mock = mocker.patch.object(app_main, "delete_pdf", return_value=None)
 
@@ -254,7 +302,239 @@ def test_save_form_overwrite_updates_existing_form(client, app_main, base_user, 
     assert response.status_code == 200
     assert response.json()["id"] == "tpl-old"
     assert update_mock.called
-    assert delete_mock.call_count == 2
+    assert [call.args[0] for call in delete_mock.call_args_list] == ["gs://forms/old.pdf", "gs://templates/old.pdf"]
+
+
+def test_save_form_overwrite_persists_editor_snapshot_and_removes_stale_snapshot(
+    client,
+    app_main,
+    base_user,
+    mocker,
+    auth_headers,
+    tmp_path: Path,
+) -> None:
+    temp_pdf = tmp_path / "overwrite-snapshot.pdf"
+    temp_pdf.write_bytes(b"%PDF-1.4\n")
+    _patch_auth(mocker, app_main, base_user)
+    existing = _template_record(
+        template_id="tpl-old",
+        pdf_path="gs://forms/old.pdf",
+        template_path="gs://templates/old.pdf",
+        metadata={
+            "existing": True,
+            "editorSnapshot": {
+                "version": 1,
+                "path": "gs://sessions/old-snapshot.json",
+            },
+        },
+    )
+    updated = _template_record(
+        template_id="tpl-old",
+        metadata={
+            "existing": True,
+            "name": "Renamed",
+            "editorSnapshot": {
+                "version": 1,
+                "path": "gs://sessions/new-snapshot.json",
+            },
+        },
+    )
+
+    mocker.patch.object(app_main, "get_template", return_value=existing)
+    mocker.patch.object(app_main, "_write_upload_to_temp", return_value=temp_pdf)
+    mocker.patch.object(
+        app_main,
+        "_validate_pdf_for_detection",
+        return_value=PdfValidationResult(pdf_bytes=b"%PDF-1.4\n", page_count=1, was_decrypted=False),
+    )
+    mocker.patch.object(app_main, "_resolve_fillable_max_pages", return_value=10)
+    mocker.patch.object(app_main, "upload_form_pdf", return_value="gs://forms/new.pdf")
+    mocker.patch.object(app_main, "upload_template_pdf", return_value="gs://templates/new.pdf")
+    upload_snapshot_mock = mocker.patch.object(
+        app_main,
+        "upload_saved_form_editor_snapshot",
+        return_value=(
+            "gs://sessions/new-snapshot.json",
+            {
+                "version": 1,
+                "path": "gs://sessions/new-snapshot.json",
+                "fieldCount": 1,
+                "pageCount": 1,
+                "updatedAt": "2026-03-10T00:00:00+00:00",
+            },
+        ),
+    )
+    update_mock = mocker.patch.object(app_main, "update_template", return_value=updated)
+    delete_mock = mocker.patch.object(app_main, "delete_pdf", return_value=None)
+
+    response = client.post(
+        "/api/saved-forms",
+        files={"pdf": ("x.pdf", b"%PDF-1.4\n", "application/pdf")},
+        data={
+            "name": "Renamed",
+            "overwriteFormId": "tpl-old",
+            "editorSnapshot": (
+                '{"version":1,"pageCount":1,"pageSizes":{"1":{"width":612,"height":792}},'
+                '"fields":[{"id":"field-1","name":"full_name","type":"text","page":1,'
+                '"rect":{"x":10,"y":12,"width":110,"height":18},"value":null}],'
+                '"hasRenamedFields":true,"hasMappedSchema":false}'
+            ),
+        },
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    upload_snapshot_mock.assert_called_once()
+    metadata = update_mock.call_args.kwargs["metadata"]
+    assert metadata["editorSnapshot"]["path"] == "gs://sessions/new-snapshot.json"
+    assert "gs://sessions/old-snapshot.json" in [call.args[0] for call in delete_mock.call_args_list]
+
+
+def test_saved_form_editor_snapshot_patch_updates_existing_saved_form(
+    client,
+    app_main,
+    base_user,
+    mocker,
+    auth_headers,
+) -> None:
+    _patch_auth(mocker, app_main, base_user)
+    existing = _template_record(
+        template_id="tpl-1",
+        metadata={
+            "name": "Saved Form",
+            "editorSnapshot": {
+                "version": 1,
+                "path": "gs://sessions/old-snapshot.json",
+            },
+        },
+    )
+    updated = _template_record(
+        template_id="tpl-1",
+        metadata={
+            "name": "Saved Form",
+            "editorSnapshot": {
+                "version": 1,
+                "path": "gs://sessions/new-snapshot.json",
+            },
+        },
+    )
+
+    mocker.patch.object(app_main, "get_template", return_value=existing)
+    upload_snapshot_mock = mocker.patch.object(
+        app_main,
+        "upload_saved_form_editor_snapshot",
+        return_value=(
+            "gs://sessions/new-snapshot.json",
+            {
+                "version": 1,
+                "path": "gs://sessions/new-snapshot.json",
+                "fieldCount": 1,
+                "pageCount": 1,
+                "updatedAt": "2026-03-10T00:00:00+00:00",
+            },
+        ),
+    )
+    update_mock = mocker.patch.object(app_main, "update_template", return_value=updated)
+    delete_mock = mocker.patch.object(app_main, "delete_pdf", return_value=None)
+
+    response = client.patch(
+        "/api/saved-forms/tpl-1/editor-snapshot",
+        json={
+            "snapshot": {
+                "version": 1,
+                "pageCount": 1,
+                "pageSizes": {"1": {"width": 612, "height": 792}},
+                "fields": [{
+                    "id": "field-1",
+                    "name": "full_name",
+                    "type": "text",
+                    "page": 1,
+                    "rect": {"x": 10, "y": 12, "width": 110, "height": 18},
+                    "value": None,
+                }],
+                "hasRenamedFields": False,
+                "hasMappedSchema": True,
+            },
+        },
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"success": True}
+    upload_snapshot_mock.assert_called_once()
+    assert update_mock.call_args.kwargs["metadata"]["editorSnapshot"]["path"] == "gs://sessions/new-snapshot.json"
+    delete_mock.assert_called_once_with("gs://sessions/old-snapshot.json")
+
+
+def test_saved_form_editor_snapshot_patch_rejects_invalid_payload(
+    client,
+    app_main,
+    base_user,
+    mocker,
+    auth_headers,
+) -> None:
+    _patch_auth(mocker, app_main, base_user)
+    mocker.patch.object(app_main, "get_template", return_value=_template_record(template_id="tpl-1"))
+
+    response = client.patch(
+        "/api/saved-forms/tpl-1/editor-snapshot",
+        json={
+            "snapshot": {
+                "version": 1,
+                "pageCount": 1,
+                "pageSizes": {},
+                "fields": [],
+                "hasRenamedFields": False,
+                "hasMappedSchema": False,
+            },
+        },
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 400
+    assert "pageSizes missing entry for page 1" in response.text
+
+
+def test_save_form_overwrite_cleans_new_uploads_when_template_update_fails(
+    app_main,
+    base_user,
+    mocker,
+    auth_headers,
+    tmp_path: Path,
+) -> None:
+    temp_pdf = tmp_path / "overwrite-fail.pdf"
+    temp_pdf.write_bytes(b"%PDF-1.4\n")
+    _patch_auth(mocker, app_main, base_user)
+    existing = _template_record(
+        template_id="tpl-old",
+        pdf_path="gs://forms/old.pdf",
+        template_path="gs://templates/old.pdf",
+        metadata={"existing": True},
+    )
+
+    mocker.patch.object(app_main, "get_template", return_value=existing)
+    mocker.patch.object(app_main, "_write_upload_to_temp", return_value=temp_pdf)
+    mocker.patch.object(
+        app_main,
+        "_validate_pdf_for_detection",
+        return_value=PdfValidationResult(pdf_bytes=b"%PDF-1.4\n", page_count=1, was_decrypted=False),
+    )
+    mocker.patch.object(app_main, "_resolve_fillable_max_pages", return_value=10)
+    mocker.patch.object(app_main, "upload_form_pdf", return_value="gs://forms/new.pdf")
+    mocker.patch.object(app_main, "upload_template_pdf", return_value="gs://templates/new.pdf")
+    mocker.patch.object(app_main, "update_template", side_effect=RuntimeError("db write failed"))
+    delete_mock = mocker.patch.object(app_main, "delete_pdf", return_value=None)
+
+    local_client = TestClient(app_main.app, raise_server_exceptions=False)
+    response = local_client.post(
+        "/api/saved-forms",
+        files={"pdf": ("x.pdf", b"%PDF-1.4\n", "application/pdf")},
+        data={"name": "Renamed", "overwriteFormId": "tpl-old"},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 500
+    assert [call.args[0] for call in delete_mock.call_args_list] == ["gs://forms/new.pdf", "gs://templates/new.pdf"]
 
 
 def test_save_form_merges_fill_rule_metadata_and_cleans_up_on_db_failure(
@@ -400,18 +680,17 @@ def test_delete_saved_form_handles_storage_failure_and_success(
     auth_headers,
 ) -> None:
     _patch_auth(mocker, app_main, base_user)
-    template = _template_record(pdf_path="gs://forms/a.pdf", template_path="gs://templates/a.pdf")
-    mocker.patch.object(app_main, "get_template", return_value=template)
-    mocker.patch.object(app_main, "is_gcs_path", return_value=True)
-    mocker.patch.object(app_main, "delete_pdf", side_effect=RuntimeError("delete fail"))
+    mocker.patch.object(app_main, "delete_saved_form_assets", side_effect=RuntimeError("delete fail"))
     response = client.delete("/api/saved-forms/tpl-1", headers=auth_headers)
     assert response.status_code == 500
 
-    mocker.patch.object(app_main, "delete_pdf", return_value=None)
-    mocker.patch.object(app_main, "delete_template", return_value=True)
+    delete_assets_mock = mocker.patch.object(app_main, "delete_saved_form_assets", return_value=True)
+    sync_mock = mocker.patch.object(app_main, "sync_user_downgrade_retention", return_value=None)
     response = client.delete("/api/saved-forms/tpl-1", headers=auth_headers)
     assert response.status_code == 200
     assert response.json() == {"success": True}
+    delete_assets_mock.assert_called_once_with("tpl-1", base_user.app_user_id, hard_delete_link_records=False)
+    sync_mock.assert_called_once_with(base_user.app_user_id)
 
 
 def test_delete_saved_form_allows_missing_storage_blob(
@@ -422,17 +701,15 @@ def test_delete_saved_form_allows_missing_storage_blob(
     auth_headers,
 ) -> None:
     _patch_auth(mocker, app_main, base_user)
-    template = _template_record(pdf_path="gs://forms/a.pdf", template_path="gs://templates/a.pdf")
-    mocker.patch.object(app_main, "get_template", return_value=template)
-    mocker.patch.object(app_main, "is_gcs_path", return_value=True)
-    mocker.patch.object(app_main, "delete_pdf", side_effect=FileNotFoundError("already deleted"))
-    delete_template_mock = mocker.patch.object(app_main, "delete_template", return_value=True)
+    delete_assets_mock = mocker.patch.object(app_main, "delete_saved_form_assets", return_value=True)
+    sync_mock = mocker.patch.object(app_main, "sync_user_downgrade_retention", return_value=None)
 
     response = client.delete("/api/saved-forms/tpl-1", headers=auth_headers)
 
     assert response.status_code == 200
     assert response.json() == {"success": True}
-    assert delete_template_mock.called
+    delete_assets_mock.assert_called_once_with("tpl-1", base_user.app_user_id, hard_delete_link_records=False)
+    sync_mock.assert_called_once_with(base_user.app_user_id)
 
 
 # ---------------------------------------------------------------------------

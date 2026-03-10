@@ -1,7 +1,25 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import './Dialog.css';
 
 export type DialogTone = 'default' | 'danger';
+
+const OPEN_DIALOG_STACK: string[] = [];
+
+function addOpenDialog(dialogId: string) {
+  OPEN_DIALOG_STACK.push(dialogId);
+}
+
+function removeOpenDialog(dialogId: string) {
+  const index = OPEN_DIALOG_STACK.lastIndexOf(dialogId);
+  if (index >= 0) {
+    OPEN_DIALOG_STACK.splice(index, 1);
+  }
+}
+
+function isTopmostDialog(dialogId: string) {
+  return OPEN_DIALOG_STACK[OPEN_DIALOG_STACK.length - 1] === dialogId;
+}
 
 type DialogShellProps = {
   open: boolean;
@@ -13,49 +31,115 @@ type DialogShellProps = {
   className?: string;
 };
 
-function DialogShell({ open, title, description, onClose, children, footer, className }: DialogShellProps) {
-  const titleId = useId();
-  const descId = useId();
+type DialogFrameProps = {
+  open: boolean;
+  onClose?: () => void;
+  className?: string;
+  labelledBy?: string;
+  describedBy?: string;
+  children: React.ReactNode;
+};
+
+function useDialogBodyLock(open: boolean) {
+  useEffect(() => {
+    if (!open || typeof document === 'undefined') return undefined;
+    const body = document.body;
+    const activeCount = Number(body.dataset.uiDialogCount || '0');
+    body.dataset.uiDialogCount = String(activeCount + 1);
+    body.classList.add('ui-dialog-open');
+
+    return () => {
+      const nextCount = Math.max(0, Number(body.dataset.uiDialogCount || '1') - 1);
+      if (nextCount === 0) {
+        delete body.dataset.uiDialogCount;
+        body.classList.remove('ui-dialog-open');
+        return;
+      }
+      body.dataset.uiDialogCount = String(nextCount);
+    };
+  }, [open]);
+}
+
+export function DialogFrame({
+  open,
+  onClose,
+  className,
+  labelledBy,
+  describedBy,
+  children,
+}: DialogFrameProps) {
+  const dialogId = useId();
+
+  useDialogBodyLock(open);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    addOpenDialog(dialogId);
+    return () => removeOpenDialog(dialogId);
+  }, [dialogId, open]);
 
   useEffect(() => {
     if (!open) return undefined;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
+      if (!isTopmostDialog(dialogId)) return;
       event.preventDefault();
       onClose?.();
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose, open]);
+  }, [dialogId, onClose, open]);
 
   if (!open) return null;
 
   const dialogClassName = ['ui-dialog', className].filter(Boolean).join(' ');
-
-  return (
+  const dialogContent = (
     <div className="ui-dialog-backdrop" role="presentation" onClick={onClose}>
       <div
         className={dialogClassName}
         role="dialog"
         aria-modal="true"
-        aria-labelledby={titleId}
-        aria-describedby={description ? descId : undefined}
+        aria-labelledby={labelledBy}
+        aria-describedby={describedBy}
         onClick={(event) => event.stopPropagation()}
       >
-        <header className="ui-dialog__header">
-          <h2 className="ui-dialog__title" id={titleId}>
-            {title}
-          </h2>
-        </header>
-        {description ? (
-          <div className="ui-dialog__message" id={descId}>
-            {description}
-          </div>
-        ) : null}
         {children}
-        {footer}
       </div>
     </div>
+  );
+
+  if (typeof document === 'undefined') {
+    return dialogContent;
+  }
+
+  return createPortal(dialogContent, document.body);
+}
+
+function DialogShell({ open, title, description, onClose, children, footer, className }: DialogShellProps) {
+  const titleId = useId();
+  const descId = useId();
+
+  return (
+    <DialogFrame
+      open={open}
+      onClose={onClose}
+      className={className}
+      labelledBy={titleId}
+      describedBy={description ? descId : undefined}
+    >
+      <header className="ui-dialog__header">
+        <h2 className="ui-dialog__title" id={titleId}>
+          {title}
+        </h2>
+      </header>
+      {description ? (
+        <div className="ui-dialog__message" id={descId}>
+          {description}
+        </div>
+      ) : null}
+      {children}
+      {footer}
+    </DialogFrame>
   );
 }
 

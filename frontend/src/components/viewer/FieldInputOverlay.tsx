@@ -1,7 +1,7 @@
 /**
  * Overlay layer that renders input elements aligned to PDF fields.
  */
-import { type ChangeEvent, type FocusEvent } from 'react';
+import { useEffect, useState, type ChangeEvent, type FocusEvent } from 'react';
 import type { PdfField, PageSize } from '../../types';
 import { fieldConfidenceTierForField } from '../../utils/confidence';
 import { toViewportRect } from '../../utils/coords';
@@ -57,6 +57,28 @@ export function FieldInputOverlay({
   onSelectField,
   onUpdateField,
 }: FieldInputOverlayProps) {
+  const [draftValues, setDraftValues] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    setDraftValues((prev) => {
+      let next: Record<string, string> | null = null;
+      const fieldById = new Map(fields.map((field) => [field.id, field] as const));
+      for (const [fieldId, draftValue] of Object.entries(prev)) {
+        const field = fieldById.get(fieldId);
+        if (!field) {
+          if (!next) next = { ...prev };
+          delete next[fieldId];
+          continue;
+        }
+        if (coerceToString(field.value) === draftValue) {
+          if (!next) next = { ...prev };
+          delete next[fieldId];
+        }
+      }
+      return next ?? prev;
+    });
+  }, [fields]);
+
   /**
    * Generate focus handlers that keep selection in sync.
    */
@@ -65,7 +87,8 @@ export function FieldInputOverlay({
   const handleTextChange =
     (field: PdfField) =>
     (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-      onUpdateField(field.id, { value: event.target.value });
+      const { value } = event.target;
+      setDraftValues((prev) => ({ ...prev, [field.id]: value }));
     };
 
   const handleCheckboxChange = (field: PdfField) => (event: ChangeEvent<HTMLInputElement>) => {
@@ -75,9 +98,22 @@ export function FieldInputOverlay({
   const handleBlur =
     (field: PdfField) =>
     (event: FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+      const nextValue = event.target.value;
+      setDraftValues((prev) => {
+        if (!(field.id in prev)) return prev;
+        const next = { ...prev };
+        delete next[field.id];
+        return next;
+      });
       if (field.type === 'date') {
-        const next = event.target.value.trim();
-        onUpdateField(field.id, { value: next || null });
+        const normalized = nextValue.trim();
+        if (normalized !== coerceToString(field.value)) {
+          onUpdateField(field.id, { value: normalized || null });
+        }
+        return;
+      }
+      if (nextValue !== coerceToString(field.value)) {
+        onUpdateField(field.id, { value: nextValue });
       }
     };
 
@@ -145,7 +181,7 @@ export function FieldInputOverlay({
                 {...commonInputProps}
                 className="field-input"
                 type="date"
-                value={coerceToString(field.value)}
+                value={draftValues[field.id] ?? coerceToString(field.value)}
                 onChange={handleTextChange(field)}
                 onBlur={handleBlur(field)}
               />
@@ -154,18 +190,20 @@ export function FieldInputOverlay({
                 {...commonInputProps}
                 className="field-input field-input--signature"
                 type="text"
-                value={coerceToString(field.value)}
+                value={draftValues[field.id] ?? coerceToString(field.value)}
                 onChange={handleTextChange(field)}
                 placeholder="Sign here"
+                onBlur={handleBlur(field)}
               />
             ) : (
               <input
                 {...commonInputProps}
                 className="field-input"
                 type="text"
-                value={coerceToString(field.value)}
+                value={draftValues[field.id] ?? coerceToString(field.value)}
                 onChange={handleTextChange(field)}
                 placeholder=""
+                onBlur={handleBlur(field)}
               />
             )}
           </div>

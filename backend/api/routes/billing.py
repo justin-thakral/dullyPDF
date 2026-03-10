@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import time
 from typing import Any, Dict, Optional
 
@@ -17,10 +18,12 @@ from backend.firebaseDB.billing_database import (
     start_billing_event,
 )
 from backend.firebaseDB.user_database import (
+    ROLE_BASE,
     ROLE_GOD,
     ROLE_PRO,
     activate_pro_membership_with_subscription,
     add_refill_openai_credits,
+    clear_user_downgrade_retention,
     downgrade_to_base_membership,
     ensure_user,
     find_user_id_by_subscription_id,
@@ -31,9 +34,11 @@ from backend.firebaseDB.user_database import (
     set_user_role,
 )
 from backend.services.auth_service import require_user
+from backend.security.rate_limit import check_rate_limit
 from backend.services.billing_service import (
     BillingCheckoutConflictError,
     BillingConfigError,
+    BillingCheckoutSessionNotFoundError,
     CHECKOUT_KIND_PRO_MONTHLY,
     CHECKOUT_KIND_PRO_YEARLY,
     CHECKOUT_KIND_REFILL_500,
@@ -46,15 +51,21 @@ from backend.services.billing_service import (
     is_pro_price_id,
     is_subscription_active,
     list_recent_checkout_completion_events,
+    retrieve_checkout_session,
     resolve_webhook_health,
     resolve_price_id_for_checkout_kind,
     resolve_refill_credit_pack_size_for_price,
     webhook_health_enforced_for_checkout,
 )
+from backend.services.downgrade_retention_service import (
+    DowngradeRetentionEligibility,
+    apply_user_downgrade_retention,
+)
 from backend.logging_config import get_logger
 
 router = APIRouter()
 logger = get_logger(__name__)
+TERMINAL_SUBSCRIPTION_STATUSES = {"canceled", "incomplete_expired", "unpaid"}
 
 
 class RetryableWebhookProcessingError(RuntimeError):
@@ -89,9 +100,9 @@ def _is_refill_fulfillment_eligible(user_id: str) -> bool:
 
     billing_record = get_user_billing_record(user_id)
     if not billing_record:
-        return True
-    if not billing_record.subscription_id:
-        return True
+        return False
+    if not str(billing_record.subscription_id or "").strip():
+        return False
     return is_subscription_active(billing_record.subscription_status)
 
 
@@ -161,6 +172,24 @@ def _resolve_checkout_attempt_id(metadata_dict: Dict[str, Any]) -> Optional[str]
     )
 
 
+def _resolve_checkout_processing_key(
+    session_obj: Dict[str, Any],
+    *,
+    fallback_event_id: Optional[str] = None,
+) -> str:
+    """Normalize checkout fulfillment idempotency to the checkout session id.
+
+    Webhooks provide a Stripe event id while self-reconciliation starts from a
+    checkout session id. Using the session id as the primary processing key
+    keeps fulfillment idempotent across both paths and avoids duplicate credit
+    grants when a delayed webhook arrives after a manual recovery.
+    """
+    session_id = str(session_obj.get("id") or "").strip()
+    if session_id:
+        return f"checkout_session:{session_id}"
+    return str(fallback_event_id or "").strip()
+
+
 def _resolve_refill_checkout_credits(session_obj: Dict[str, Any], *, metadata_dict: Dict[str, Any]) -> int:
     # Recent checkout sessions include both the Stripe price id and explicit refill
     # credit count in metadata. We validate the metadata against the configured
@@ -192,6 +221,7 @@ def _resolve_refill_checkout_credits(session_obj: Dict[str, Any], *, metadata_di
 def _handle_checkout_session_completed(session_obj: Dict[str, Any], *, stripe_event_id: str) -> None:
     metadata = session_obj.get("metadata") if isinstance(session_obj, dict) else None
     metadata_dict = metadata if isinstance(metadata, dict) else {}
+    processing_key = _resolve_checkout_processing_key(session_obj, fallback_event_id=stripe_event_id)
     user_id = first_nonempty(
         [
             metadata_dict.get("userId"),
@@ -217,7 +247,7 @@ def _handle_checkout_session_completed(session_obj: Dict[str, Any], *, stripe_ev
         # not leave billing metadata partially populated.
         activate_pro_membership_with_subscription(
             user_id,
-            stripe_event_id=stripe_event_id,
+            stripe_event_id=processing_key,
             customer_id=customer_id,
             subscription_id=subscription_id,
             subscription_status="active",
@@ -232,7 +262,9 @@ def _handle_checkout_session_completed(session_obj: Dict[str, Any], *, stripe_ev
         if payment_status not in {"paid", "no_payment_required"}:
             return
         if not _is_refill_fulfillment_eligible(user_id):
-            return
+            raise RetryableWebhookProcessingError(
+                "Credit refill requires an active Pro subscription at fulfillment time."
+            )
         try:
             refill_credits = _resolve_refill_checkout_credits(session_obj, metadata_dict=metadata_dict)
         except ValueError:
@@ -242,7 +274,7 @@ def _handle_checkout_session_completed(session_obj: Dict[str, Any], *, stripe_ev
         add_refill_openai_credits(
             user_id,
             credits=refill_credits,
-            stripe_event_id=stripe_event_id,
+            stripe_event_id=processing_key,
         )
 
 
@@ -375,8 +407,10 @@ def _handle_subscription_lifecycle(subscription_obj: Dict[str, Any]) -> None:
     )
     if is_subscription_active(status):
         set_user_role(user_id, ROLE_PRO)
+        clear_user_downgrade_retention(user_id)
         return
     downgrade_to_base_membership(user_id)
+    apply_user_downgrade_retention(user_id)
 
 
 def _enforce_checkout_webhook_health() -> None:
@@ -392,8 +426,49 @@ def _enforce_checkout_webhook_health() -> None:
     )
     raise HTTPException(
         status_code=503,
-        detail=f"Stripe webhook health check failed. Checkout is temporarily disabled. {reason}",
+        detail=(
+            "Stripe webhook health check failed. "
+            "Checkout is temporarily disabled until an administrator reviews billing configuration."
+        ),
     )
+
+
+def _safe_positive_int_env(name: str, default: int) -> int:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
+def _resolve_billing_route_rate_limit(scope: str) -> tuple[int, int]:
+    normalized_scope = str(scope or "").strip().lower()
+    defaults = {
+        "checkout": (300, 12),
+        "cancel": (300, 10),
+        "reconcile": (300, 24),
+    }
+    default_window, default_limit = defaults.get(normalized_scope, (300, 12))
+    env_prefix = f"BILLING_{normalized_scope.upper()}"
+    return (
+        _safe_positive_int_env(f"{env_prefix}_RATE_LIMIT_WINDOW_SECONDS", default_window),
+        _safe_positive_int_env(f"{env_prefix}_RATE_LIMIT_PER_USER", default_limit),
+    )
+
+
+def _enforce_billing_route_rate_limit(*, scope: str, user_id: str) -> None:
+    window_seconds, per_user = _resolve_billing_route_rate_limit(scope)
+    if check_rate_limit(
+        f"billing:{scope}:user:{user_id}",
+        limit=per_user,
+        window_seconds=window_seconds,
+        fail_closed=True,
+    ):
+        return
+    raise HTTPException(status_code=429, detail="Too many billing requests. Please wait and try again.")
 
 
 def _resolve_event_session_object(event_payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -421,6 +496,67 @@ def _event_is_checkout_fulfillment_candidate(event_payload: Dict[str, Any]) -> b
         return False
     payment_status = str(session_obj.get("payment_status") or "").strip().lower()
     return payment_status in {"paid", "no_payment_required"}
+
+
+def _build_checkout_reconcile_row(
+    *,
+    event_id: str,
+    event_type: str,
+    event_user_id: Optional[str],
+    created: Optional[int],
+    session_obj: Dict[str, Any],
+    billing_event_status: Optional[str],
+) -> Dict[str, Any]:
+    metadata_dict = session_obj.get("metadata") if isinstance(session_obj.get("metadata"), dict) else {}
+    return {
+        "eventId": event_id,
+        "eventType": event_type,
+        "eventUserId": event_user_id,
+        "created": created,
+        "checkoutSessionId": str(session_obj.get("id") or "").strip() or None,
+        "checkoutAttemptId": _resolve_checkout_attempt_id(metadata_dict),
+        "checkoutKind": str(
+            (
+                metadata_dict.get("checkoutKind")
+                if isinstance(metadata_dict, dict)
+                else ""
+            )
+            or ""
+        ).strip()
+        or None,
+        "checkoutPriceId": _resolve_checkout_session_price_id(session_obj, metadata_dict=metadata_dict),
+        "billingEventStatus": billing_event_status or None,
+    }
+
+
+def _reconcile_checkout_session_object(*, session_obj: Dict[str, Any], processing_key: str) -> str:
+    existing = get_billing_event(processing_key)
+    existing_status = str(existing.get("status") or "").strip().lower() if isinstance(existing, dict) else ""
+    if existing_status == "processed":
+        return "already_processed"
+
+    event_type = "checkout.session.completed"
+    try:
+        lock_acquired = start_billing_event(processing_key, event_type)
+    except BillingEventInProgressError:
+        return "processing"
+    if not lock_acquired:
+        return "already_processed"
+
+    try:
+        _handle_checkout_session_completed(session_obj, stripe_event_id=processing_key)
+        complete_billing_event(processing_key)
+        return "reconciled"
+    except RetryableWebhookProcessingError:
+        _release_billing_event_lock(processing_key, event_type=event_type)
+        return "retryable_error"
+    except Exception:
+        _release_billing_event_lock(processing_key, event_type=event_type)
+        logger.exception(
+            "Stripe checkout session reconciliation failed.",
+            extra={"checkoutProcessingKey": processing_key, "eventType": event_type},
+        )
+        return "failed"
 
 
 def _reconcile_checkout_event(*, event_payload: Dict[str, Any]) -> str:
@@ -472,6 +608,8 @@ async def create_checkout(
     user = _resolve_user_from_request(request, authorization)
     profile = get_user_profile(user.app_user_id)
     role = normalize_role(profile.role if profile else user.role)
+    if role != ROLE_GOD:
+        _enforce_billing_route_rate_limit(scope="checkout", user_id=user.app_user_id)
     checkout_kind = payload.kind
     billing_record = None
     if checkout_kind in {CHECKOUT_KIND_PRO_MONTHLY, CHECKOUT_KIND_PRO_YEARLY}:
@@ -548,13 +686,20 @@ async def get_webhook_health(
     user = _resolve_user_from_request(request, authorization)
     profile = get_user_profile(user.app_user_id)
     role = normalize_role(profile.role if profile else user.role)
-    payload = resolve_webhook_health(force_refresh=True)
+    payload = resolve_webhook_health(force_refresh=(role == ROLE_GOD))
     if role == ROLE_GOD:
         return payload
     redacted = dict(payload)
     redacted.pop("endpointId", None)
     redacted.pop("endpointUrl", None)
     redacted.pop("expectedEndpointUrl", None)
+    if redacted.get("healthy") is True:
+        redacted["reason"] = "Stripe webhook health check passed."
+    else:
+        redacted["reason"] = (
+            "Stripe webhook health check is failing. "
+            "Ask an administrator to review billing configuration."
+        )
     return redacted
 
 
@@ -572,6 +717,96 @@ async def reconcile_recent_checkout_events(
     profile = get_user_profile(user.app_user_id)
     role = normalize_role(profile.role if profile else user.role)
     can_reconcile_all_users = role == ROLE_GOD
+    if not can_reconcile_all_users:
+        _enforce_billing_route_rate_limit(scope="reconcile", user_id=user.app_user_id)
+
+    if not can_reconcile_all_users:
+        normalized_session_id = (payload.session_id or "").strip()
+        normalized_attempt_id = (payload.attempt_id or "").strip() or None
+        if not normalized_session_id:
+            raise HTTPException(
+                status_code=400,
+                detail="sessionId is required for self reconciliation.",
+            )
+
+        try:
+            session_obj = retrieve_checkout_session(session_id=normalized_session_id)
+        except BillingCheckoutSessionNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except BillingConfigError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail="Failed to load Stripe checkout session for reconciliation.") from exc
+
+        event_user_id = _resolve_event_user_id(session_obj)
+        if not event_user_id or event_user_id != user.app_user_id:
+            raise HTTPException(status_code=404, detail="Stripe checkout session was not found.")
+        metadata_dict = session_obj.get("metadata") if isinstance(session_obj.get("metadata"), dict) else {}
+        session_attempt_id = _resolve_checkout_attempt_id(metadata_dict)
+        if normalized_attempt_id and session_attempt_id != normalized_attempt_id:
+            raise HTTPException(status_code=404, detail="Stripe checkout session was not found.")
+
+        processing_key = _resolve_checkout_processing_key(session_obj, fallback_event_id=normalized_session_id)
+        existing = get_billing_event(processing_key)
+        existing_status = str(existing.get("status") or "").strip().lower() if isinstance(existing, dict) else ""
+        row = _build_checkout_reconcile_row(
+            event_id=processing_key,
+            event_type="checkout.session.completed",
+            event_user_id=event_user_id,
+            created=_coerce_positive_int(session_obj.get("created")),
+            session_obj=session_obj,
+            billing_event_status=existing_status or None,
+        )
+        is_candidate = _event_is_checkout_fulfillment_candidate({"data": {"object": session_obj}})
+
+        reconciled = 0
+        already_processed = 1 if existing_status == "processed" else 0
+        processing = 0
+        retryable = 0
+        failed = 0
+        invalid = 0
+        pending_reconciliation = 0
+        candidate_event_count = 1 if is_candidate and existing_status != "processed" else 0
+
+        if is_candidate and existing_status != "processed":
+            pending_reconciliation = 1
+            if not payload.dry_run:
+                reconcile_status = _reconcile_checkout_session_object(
+                    session_obj=session_obj,
+                    processing_key=processing_key,
+                )
+                if reconcile_status == "reconciled":
+                    reconciled = 1
+                elif reconcile_status == "already_processed":
+                    already_processed += 1
+                    candidate_event_count = 0
+                    pending_reconciliation = 0
+                    row["billingEventStatus"] = "processed"
+                elif reconcile_status == "processing":
+                    processing = 1
+                elif reconcile_status == "retryable_error":
+                    retryable = 1
+                elif reconcile_status == "failed":
+                    failed = 1
+                else:
+                    invalid = 1
+
+        return {
+            "success": True,
+            "dryRun": bool(payload.dry_run),
+            "scope": "self",
+            "auditedEventCount": 1,
+            "candidateEventCount": candidate_event_count,
+            "pendingReconciliationCount": pending_reconciliation,
+            "reconciledCount": reconciled,
+            "alreadyProcessedCount": already_processed,
+            "processingCount": processing,
+            "retryableCount": retryable,
+            "failedCount": failed,
+            "invalidCount": invalid,
+            "skippedForUserCount": 0,
+            "events": [row],
+        }
 
     now_unix = int(time.time())
     lookback_seconds = max(3600, int(payload.lookback_hours) * 3600)
@@ -589,7 +824,7 @@ async def reconcile_recent_checkout_events(
 
     candidates: list[Dict[str, Any]] = []
     response_events: list[Dict[str, Any]] = []
-    skipped_for_user = 0
+    scoped_audited_event_count = 0
     already_processed = 0
     processing = 0
     reconciled = 0
@@ -604,39 +839,29 @@ async def reconcile_recent_checkout_events(
         event_id = str(event_payload.get("id") or "").strip()
         event_type = str(event_payload.get("type") or "").strip() or "checkout.session.completed"
         if not event_id:
-            invalid += 1
+            if can_reconcile_all_users:
+                invalid += 1
             continue
         session_obj = _resolve_event_session_object(event_payload)
         event_user_id = _resolve_event_user_id(session_obj)
         if not event_user_id:
-            invalid += 1
+            if can_reconcile_all_users:
+                invalid += 1
             continue
         if not can_reconcile_all_users and event_user_id != user.app_user_id:
-            skipped_for_user += 1
             continue
 
-        metadata_dict = session_obj.get("metadata") if isinstance(session_obj.get("metadata"), dict) else {}
         existing = get_billing_event(event_id)
         existing_status = str(existing.get("status") or "").strip().lower() if isinstance(existing, dict) else ""
-        candidate_row = {
-            "eventId": event_id,
-            "eventType": event_type,
-            "eventUserId": event_user_id,
-            "created": event_payload.get("created"),
-            "checkoutSessionId": str(session_obj.get("id") or "").strip() or None,
-            "checkoutAttemptId": _resolve_checkout_attempt_id(metadata_dict),
-            "checkoutKind": str(
-                (
-                    metadata_dict.get("checkoutKind")
-                    if isinstance(metadata_dict, dict)
-                    else ""
-                )
-                or ""
-            ).strip()
-            or None,
-            "checkoutPriceId": _resolve_checkout_session_price_id(session_obj, metadata_dict=metadata_dict),
-            "billingEventStatus": existing_status or None,
-        }
+        candidate_row = _build_checkout_reconcile_row(
+            event_id=event_id,
+            event_type=event_type,
+            event_user_id=event_user_id,
+            created=_coerce_positive_int(event_payload.get("created")),
+            session_obj=session_obj,
+            billing_event_status=existing_status or None,
+        )
+        scoped_audited_event_count += 1
         response_events.append(candidate_row)
         if existing_status == "processed":
             already_processed += 1
@@ -665,7 +890,7 @@ async def reconcile_recent_checkout_events(
         "success": True,
         "dryRun": bool(payload.dry_run),
         "scope": "all_users" if can_reconcile_all_users else "self",
-        "auditedEventCount": len(events),
+        "auditedEventCount": len(events) if can_reconcile_all_users else scoped_audited_event_count,
         "candidateEventCount": len(candidates),
         "pendingReconciliationCount": pending_reconciliation,
         "reconciledCount": reconciled,
@@ -674,7 +899,7 @@ async def reconcile_recent_checkout_events(
         "retryableCount": retryable,
         "failedCount": failed,
         "invalidCount": invalid,
-        "skippedForUserCount": skipped_for_user,
+        "skippedForUserCount": 0,
         "events": response_events,
     }
 
@@ -691,6 +916,8 @@ async def cancel_subscription(
     user = _resolve_user_from_request(request, authorization)
     profile = get_user_profile(user.app_user_id)
     role = normalize_role(profile.role if profile else user.role)
+    if role != ROLE_GOD:
+        _enforce_billing_route_rate_limit(scope="cancel", user_id=user.app_user_id)
     billing_record = get_user_billing_record(user.app_user_id)
     subscription_id = billing_record.subscription_id if billing_record else None
     if role != ROLE_PRO and not subscription_id:
@@ -698,6 +925,8 @@ async def cancel_subscription(
     if not subscription_id:
         raise HTTPException(status_code=409, detail="No active subscription was found for this user.")
     recorded_status = str(billing_record.subscription_status or "").strip().lower() if billing_record else ""
+    if recorded_status in TERMINAL_SUBSCRIPTION_STATUSES:
+        raise HTTPException(status_code=409, detail="Stored subscription is already inactive.")
     cancel_already_scheduled = bool(billing_record and billing_record.cancel_at_period_end is True)
     if cancel_already_scheduled and is_subscription_active(recorded_status):
         return {
@@ -740,6 +969,18 @@ async def cancel_subscription(
     if not is_subscription_active(canceled.status):
         try:
             downgrade_to_base_membership(user.app_user_id)
+            if state_sync_deferred:
+                apply_user_downgrade_retention(
+                    user.app_user_id,
+                    eligibility_override=DowngradeRetentionEligibility(
+                        should_apply=True,
+                        role=ROLE_BASE,
+                        has_active_subscription=False,
+                    ),
+                    billing_state_deferred=True,
+                )
+            else:
+                apply_user_downgrade_retention(user.app_user_id)
         except Exception:
             state_sync_deferred = True
             logger.warning(

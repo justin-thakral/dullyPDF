@@ -1,6 +1,6 @@
 {
   "projects": {
-    "default": "dullypdf",
+    "default": "dullypdf-dev",
     "prod": "dullypdf",
     "dev": "dullypdf-dev"
   }

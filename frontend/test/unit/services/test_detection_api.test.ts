@@ -214,4 +214,23 @@ describe('detectionApi', () => {
     const timedOut = await module.pollDetectionStatus('sess-4', { timeoutMs: 0 });
     expect(timedOut.timedOut).toBe(true);
   });
+
+  it('aborts detection polling when the caller cancels the request', async () => {
+    const module = await importDetectionApi();
+    const controller = new AbortController();
+
+    apiMocks.apiFetch
+      .mockResolvedValueOnce({ id: 'start-abort' })
+      .mockResolvedValueOnce(new Promise(() => {}));
+    apiMocks.apiJsonFetch.mockResolvedValueOnce({ sessionId: 'sess-abort', status: 'running' });
+
+    const promise = module.detectFields(
+      new File(['pdf'], 'abort.pdf', { type: 'application/pdf' }),
+      { signal: controller.signal },
+    );
+
+    controller.abort();
+
+    await expect(promise).rejects.toMatchObject({ name: 'AbortError' });
+  });
 });

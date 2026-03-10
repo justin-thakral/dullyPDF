@@ -103,6 +103,7 @@ class SchemaMappingRequest(BaseModel):
     templateId: Optional[str] = None
     templateFields: List[TemplateOverlayField]
     sessionId: Optional[str] = None
+    requestId: Optional[str] = Field(default=None, min_length=1, max_length=120)
 
 
 class RenameFieldsRequest(BaseModel):
@@ -111,6 +112,7 @@ class RenameFieldsRequest(BaseModel):
     sessionId: str = Field(..., min_length=1)
     schemaId: Optional[str] = None
     templateFields: Optional[List[TemplateOverlayField]] = None
+    requestId: Optional[str] = Field(default=None, min_length=1, max_length=120)
 
 
 class SavedFormSessionRequest(BaseModel):
@@ -118,6 +120,192 @@ class SavedFormSessionRequest(BaseModel):
 
     fields: List[Dict[str, Any]] = Field(default_factory=list)
     pageCount: Optional[int] = None
+
+
+class SavedFormEditorSnapshotUpdateRequest(BaseModel):
+    """Persist a ready-to-hydrate editor snapshot for an existing saved form."""
+
+    snapshot: Dict[str, Any] = Field(default_factory=dict)
+
+
+class TemplateGroupCreateRequest(BaseModel):
+    """Create a named group from existing saved templates."""
+
+    name: str = Field(..., min_length=1, max_length=120)
+    templateIds: List[str] = Field(default_factory=list)
+
+    model_config = {"extra": "ignore"}
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def _trim_group_name(cls, value: Any) -> str:
+        if value is None:
+            raise ValueError("Group name is required")
+        resolved = " ".join(str(value).strip().split())
+        if not resolved:
+            raise ValueError("Group name is required")
+        return resolved
+
+    @field_validator("templateIds", mode="before")
+    @classmethod
+    def _normalize_group_template_ids(cls, value: Any) -> List[str]:
+        if value is None:
+            return []
+        if not isinstance(value, list):
+            raise ValueError("templateIds must be a list")
+        deduped: List[str] = []
+        for entry in value:
+            template_id = str(entry or "").strip()
+            if not template_id or template_id in deduped:
+                continue
+            deduped.append(template_id)
+        return deduped
+
+    @model_validator(mode="after")
+    def _validate_group_template_ids(self) -> "TemplateGroupCreateRequest":
+        if not self.templateIds:
+            raise ValueError("Select at least one saved form")
+        return self
+
+
+class TemplateGroupUpdateRequest(TemplateGroupCreateRequest):
+    """Update a named group with a new name and template membership."""
+
+
+class FillLinkCreateRequest(BaseModel):
+    """Publish or refresh a Fill By Link endpoint for a saved template."""
+
+    scopeType: Optional[Literal["template", "group"]] = None
+    templateId: Optional[str] = Field(default=None, max_length=160)
+    title: Optional[str] = Field(default=None, max_length=200)
+    templateName: Optional[str] = Field(default=None, max_length=200)
+    groupId: Optional[str] = Field(default=None, max_length=160)
+    groupName: Optional[str] = Field(default=None, max_length=200)
+    requireAllFields: bool = False
+    respondentPdfDownloadEnabled: bool = False
+    fields: List[TemplateOverlayField] = Field(default_factory=list)
+    checkboxRules: List[Dict[str, Any]] = Field(default_factory=list)
+    groupTemplates: List["FillLinkGroupTemplateSource"] = Field(default_factory=list)
+
+    model_config = {"extra": "ignore"}
+
+    @field_validator("scopeType", "templateId", "title", "templateName", "groupId", "groupName", mode="before")
+    @classmethod
+    def _trim_fill_link_strings(cls, value: Any) -> Any:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            trimmed = value.strip()
+            return trimmed if trimmed else None
+        return value
+
+    @model_validator(mode="after")
+    def _validate_fill_link_scope(self) -> "FillLinkCreateRequest":
+        scope_type = self.scopeType or ("group" if self.groupId or self.groupTemplates else "template")
+        object.__setattr__(self, "scopeType", scope_type)
+        if scope_type == "group":
+            if not self.groupId:
+                raise ValueError("groupId is required for a group Fill By Link")
+            if not self.groupTemplates:
+                raise ValueError("groupTemplates are required for a group Fill By Link")
+            return self
+        if not self.templateId:
+            raise ValueError("templateId is required for a template Fill By Link")
+        return self
+
+
+class FillLinkGroupTemplateSource(BaseModel):
+    """Per-template source data used to build a group Fill By Link schema."""
+
+    templateId: str = Field(..., min_length=1, max_length=160)
+    templateName: Optional[str] = Field(default=None, max_length=200)
+    fields: List[TemplateOverlayField] = Field(default_factory=list)
+    checkboxRules: List[Dict[str, Any]] = Field(default_factory=list)
+
+    model_config = {"extra": "ignore"}
+
+    @field_validator("templateId", "templateName", mode="before")
+    @classmethod
+    def _trim_group_template_strings(cls, value: Any) -> Any:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            trimmed = value.strip()
+            return trimmed if trimmed else None
+        return value
+
+
+class FillLinkUpdateRequest(BaseModel):
+    """Owner-side Fill By Link update payload."""
+
+    title: Optional[str] = Field(default=None, max_length=200)
+    requireAllFields: Optional[bool] = None
+    respondentPdfDownloadEnabled: Optional[bool] = None
+    fields: Optional[List[TemplateOverlayField]] = None
+    checkboxRules: Optional[List[Dict[str, Any]]] = None
+    groupName: Optional[str] = Field(default=None, max_length=200)
+    groupTemplates: Optional[List[FillLinkGroupTemplateSource]] = None
+    status: Optional[Literal["active", "closed"]] = None
+
+    model_config = {"extra": "ignore"}
+
+    @field_validator("title", "groupName", "status", mode="before")
+    @classmethod
+    def _trim_fill_link_update_strings(cls, value: Any) -> Any:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            trimmed = value.strip()
+            return trimmed if trimmed else None
+        return value
+
+
+class FillLinkPublicSubmitRequest(BaseModel):
+    """Public respondent submission payload."""
+
+    answers: Dict[str, Any] = Field(default_factory=dict)
+    attemptId: Optional[str] = Field(default=None, max_length=120)
+    recaptchaToken: Optional[str] = Field(default=None, max_length=4096)
+    recaptchaAction: Optional[str] = Field(default=None, max_length=120)
+
+    model_config = {"extra": "ignore"}
+
+    @field_validator("attemptId", "recaptchaToken", "recaptchaAction", mode="before")
+    @classmethod
+    def _trim_fill_link_submit_strings(cls, value: Any) -> Any:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            trimmed = value.strip()
+            return trimmed if trimmed else None
+        return value
+
+
+FillLinkCreateRequest.model_rebuild()
+FillLinkUpdateRequest.model_rebuild()
+
+
+class DowngradeRetentionUpdateRequest(BaseModel):
+    """Update the saved forms preserved during downgrade grace."""
+
+    keptTemplateIds: List[str] = Field(default_factory=list)
+
+    model_config = {"extra": "ignore"}
+
+    @field_validator("keptTemplateIds", mode="before")
+    @classmethod
+    def _normalize_kept_template_ids(cls, value: Any) -> List[str]:
+        if value is None:
+            return []
+        if not isinstance(value, list):
+            raise ValueError("keptTemplateIds must be a list")
+        deduped: List[str] = []
+        for entry in value:
+            template_id = str(entry or "").strip()
+            if not template_id or template_id in deduped:
+                continue
+            deduped.append(template_id)
+        return deduped
 
 
 class ContactRequest(BaseModel):
@@ -233,5 +421,15 @@ class BillingReconcileRequest(BaseModel):
     lookback_hours: int = Field(default=72, alias="lookbackHours", ge=1, le=720)
     max_events: int = Field(default=100, alias="maxEvents", ge=1, le=500)
     dry_run: bool = Field(default=False, alias="dryRun")
+    session_id: Optional[str] = Field(default=None, alias="sessionId", max_length=255)
+    attempt_id: Optional[str] = Field(default=None, alias="attemptId", max_length=120)
 
     model_config = {"extra": "ignore"}
+
+    @field_validator("session_id", "attempt_id", mode="before")
+    @classmethod
+    def _normalize_optional_identifier(cls, value: Any) -> Optional[str]:
+        if value is None:
+            return None
+        resolved = str(value).strip()
+        return resolved or None

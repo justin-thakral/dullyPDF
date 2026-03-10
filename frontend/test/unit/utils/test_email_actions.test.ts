@@ -5,6 +5,8 @@ import {
   parseEmailActionSearch,
   readStoredEmailActionState,
   resolveSafeContinuePath,
+  scrubEmailActionRoute,
+  writeStoredEmailActionState,
 } from '../../../src/utils/emailActions';
 
 describe('emailActions utils', () => {
@@ -67,6 +69,17 @@ describe('emailActions utils', () => {
       readStoredEmailActionState({
         dullypdfAccountAction: {
           kind: 'pending-reset-password',
+          continuePath: '/',
+        },
+      }),
+    ).toEqual({
+      kind: 'pending-reset-password',
+      continuePath: '/',
+    });
+    expect(
+      readStoredEmailActionState({
+        dullypdfAccountAction: {
+          kind: 'pending-reset-password',
           oobCode: 'reset-code',
           email: 'reset@example.com',
           continuePath: '/',
@@ -74,8 +87,6 @@ describe('emailActions utils', () => {
       }),
     ).toEqual({
       kind: 'pending-reset-password',
-      oobCode: 'reset-code',
-      email: 'reset@example.com',
       continuePath: '/',
     });
     expect(
@@ -90,5 +101,43 @@ describe('emailActions utils', () => {
     });
     expect(readStoredEmailActionState({ dullypdfAccountAction: { kind: 'result', status: 'wat', continuePath: '/' } })).toBeNull();
     expect(readStoredEmailActionState(null)).toBeNull();
+  });
+
+  it('scrubs the account-action route while preserving only non-sensitive stored state', () => {
+    window.history.replaceState(
+      {
+        dullypdfAccountAction: {
+          kind: 'pending-reset-password',
+          oobCode: 'reset-code',
+          email: 'reset@example.com',
+          continuePath: '/profile',
+        },
+      },
+      '',
+      '/account-action?mode=resetPassword&oobCode=reset-code',
+    );
+
+    scrubEmailActionRoute();
+
+    expect(window.location.pathname).toBe('/account-action');
+    expect(window.location.search).toBe('');
+    expect((window.history.state as Record<string, unknown>).dullypdfAccountAction).toEqual({
+      kind: 'pending-reset-password',
+      continuePath: '/profile',
+    });
+
+    writeStoredEmailActionState({
+      kind: 'result',
+      mode: 'resetPassword',
+      status: 'success',
+      continuePath: '/',
+    });
+
+    expect((window.history.state as Record<string, unknown>).dullypdfAccountAction).toEqual({
+      kind: 'result',
+      mode: 'resetPassword',
+      status: 'success',
+      continuePath: '/',
+    });
   });
 });

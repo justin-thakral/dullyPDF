@@ -177,7 +177,10 @@ describe('auth service', () => {
     const { Auth } = await importAuthModule();
 
     await Auth.sendPasswordReset('reset@example.com');
-    expect(firebaseMocks.sendPasswordResetEmail).toHaveBeenCalledWith(firebaseAuthRef, 'reset@example.com');
+    expect(firebaseMocks.sendPasswordResetEmail).toHaveBeenCalledWith(firebaseAuthRef, 'reset@example.com', {
+      url: window.location.origin,
+      handleCodeInApp: false,
+    });
 
     await Auth.signOut();
     expect(firebaseMocks.signOut).toHaveBeenCalledWith(firebaseAuthRef);

@@ -24,8 +24,6 @@ _DEFAULT_CORS_ORIGINS = [
 ]
 
 logger = get_logger(__name__)
-
-
 def is_prod() -> bool:
     return _env_value("ENV").lower() in {"prod", "production"}
 
@@ -33,7 +31,10 @@ def is_prod() -> bool:
 def docs_enabled() -> bool:
     if is_prod():
         return False
-    return True
+    raw = _env_value("SANDBOX_ENABLE_DOCS")
+    if not raw:
+        return True
+    return _env_truthy("SANDBOX_ENABLE_DOCS")
 
 
 def legacy_endpoints_enabled() -> bool:
@@ -108,6 +109,11 @@ def _recaptcha_required_any() -> bool:
     return recaptcha_required_any()
 
 
+def _fill_link_token_secret_is_placeholder(value: str) -> bool:
+    from backend.services.fill_links_service import fill_link_token_secret_is_weak
+    return fill_link_token_secret_is_weak(value)
+
+
 def require_prod_env() -> None:
     """Fail fast when production environment variables are missing."""
     if not is_prod():
@@ -119,16 +125,21 @@ def require_prod_env() -> None:
         missing.append("SANDBOX_CORS_ORIGINS (cannot be '*')")
     if not _env_value("FIREBASE_PROJECT_ID"):
         missing.append("FIREBASE_PROJECT_ID")
-    if not (
-        _env_value("FIREBASE_CREDENTIALS")
-        or _env_value("GOOGLE_APPLICATION_CREDENTIALS")
-        or _env_truthy("FIREBASE_USE_ADC")
-    ):
-        missing.append("FIREBASE_CREDENTIALS, GOOGLE_APPLICATION_CREDENTIALS, or FIREBASE_USE_ADC=true")
+    if not _env_truthy("FIREBASE_USE_ADC"):
+        missing.append("FIREBASE_USE_ADC=true")
+    if _env_value("FIREBASE_CREDENTIALS"):
+        missing.append("FIREBASE_CREDENTIALS (must be unset in prod; use ADC only)")
+    if _env_value("GOOGLE_APPLICATION_CREDENTIALS"):
+        missing.append("GOOGLE_APPLICATION_CREDENTIALS (must be unset in prod; use ADC only)")
     if not _env_value("FORMS_BUCKET"):
         missing.append("FORMS_BUCKET")
     if not _env_value("TEMPLATES_BUCKET"):
         missing.append("TEMPLATES_BUCKET")
+    fill_link_token_secret = _env_value("FILL_LINK_TOKEN_SECRET")
+    if not fill_link_token_secret:
+        missing.append("FILL_LINK_TOKEN_SECRET")
+    elif _fill_link_token_secret_is_placeholder(fill_link_token_secret):
+        missing.append("FILL_LINK_TOKEN_SECRET (must be unique and at least 32 characters)")
     if not _env_value("CONTACT_TO_EMAIL"):
         missing.append("CONTACT_TO_EMAIL")
     if not _env_value("CONTACT_FROM_EMAIL"):
@@ -162,19 +173,29 @@ def require_prod_env() -> None:
     elif not checkout_cancel_url.lower().startswith("https://"):
         missing.append("STRIPE_CHECKOUT_CANCEL_URL (must use https)")
     stripe_processed_cap_raw = _env_value("STRIPE_MAX_PROCESSED_EVENTS").strip()
-    if stripe_processed_cap_raw:
+    if not stripe_processed_cap_raw:
+        missing.append("STRIPE_MAX_PROCESSED_EVENTS (must be a positive integer in prod)")
+    else:
         try:
             stripe_processed_cap = int(stripe_processed_cap_raw)
         except ValueError:
-            missing.append("STRIPE_MAX_PROCESSED_EVENTS (must be an integer; use 0 for unbounded dedupe history)")
+            missing.append("STRIPE_MAX_PROCESSED_EVENTS (must be a positive integer in prod)")
         else:
-            if stripe_processed_cap > 0:
-                missing.append("STRIPE_MAX_PROCESSED_EVENTS (must be 0 in prod to preserve webhook idempotency)")
+            if stripe_processed_cap <= 0:
+                missing.append("STRIPE_MAX_PROCESSED_EVENTS (must be a positive integer in prod)")
+    if (_env_value("CONTACT_REQUIRE_RECAPTCHA") or "true").strip().lower() != "true":
+        missing.append("CONTACT_REQUIRE_RECAPTCHA (must be true in prod)")
+    if (_env_value("SIGNUP_REQUIRE_RECAPTCHA") or "true").strip().lower() != "true":
+        missing.append("SIGNUP_REQUIRE_RECAPTCHA (must be true in prod)")
+    if (_env_value("FILL_LINK_REQUIRE_RECAPTCHA") or "true").strip().lower() != "true":
+        missing.append("FILL_LINK_REQUIRE_RECAPTCHA (must be true in prod)")
     if _recaptcha_required_any():
         if not _env_value("RECAPTCHA_SITE_KEY"):
             missing.append("RECAPTCHA_SITE_KEY")
         if not (_env_value("RECAPTCHA_PROJECT_ID") or _env_value("FIREBASE_PROJECT_ID") or _env_value("GCP_PROJECT_ID")):
             missing.append("RECAPTCHA_PROJECT_ID (or FIREBASE_PROJECT_ID/GCP_PROJECT_ID)")
+        if not _env_value("RECAPTCHA_ALLOWED_HOSTNAMES"):
+            missing.append("RECAPTCHA_ALLOWED_HOSTNAMES (required in prod when reCAPTCHA is enabled)")
 
     detector_mode = resolve_detection_mode()
     if detector_mode != "tasks":

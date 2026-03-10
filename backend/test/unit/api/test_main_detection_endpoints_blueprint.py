@@ -83,7 +83,7 @@ def test_detect_fields_validates_upload_and_pipeline(client, app_main, base_user
     assert "Unsupported pipeline selection" in response.text
 
 
-def test_detect_fields_enforces_page_limit_and_local_success(client, app_main, base_user, mocker, auth_headers) -> None:
+def test_detect_fields_enforces_page_limit_and_local_enqueue(client, app_main, base_user, mocker, auth_headers) -> None:
     _patch_detect_auth(mocker, app_main, base_user)
     mocker.patch.object(app_main, "_read_upload_bytes", return_value=b"%PDF-1.4\n")
     mocker.patch.object(
@@ -107,22 +107,19 @@ def test_detect_fields_enforces_page_limit_and_local_success(client, app_main, b
     )
     mocker.patch.object(app_main, "_resolve_detect_max_pages", return_value=5)
     mocker.patch.object(app_main, "_resolve_detection_mode", return_value="local")
-    mocker.patch.object(
+    enqueue_mock = mocker.patch.object(
         app_main,
-        "_run_local_detection",
-        return_value={"pipeline": "commonforms", "fields": [{"name": "field_1"}]},
+        "_enqueue_local_detection_job",
+        return_value={"sessionId": "sess-local", "status": DETECTION_STATUS_QUEUED, "pipeline": "commonforms"},
     )
-    mocker.patch.object(app_main, "_store_session_entry", return_value=None)
-    mocker.patch.object(app_main, "record_detection_request", return_value=None)
-    mocker.patch.object(app_main, "update_detection_request", return_value=None)
-    mocker.patch.object(app_main.uuid, "uuid4", return_value=type("_U", (), {"__str__": lambda self: "sess-local"})())
     response = client.post(
         "/detect-fields",
         files={"file": ("x.pdf", b"%PDF-1.4\n", "application/pdf")},
         headers=auth_headers,
     )
     assert response.status_code == 200
-    assert response.json()["status"] == DETECTION_STATUS_COMPLETE
+    assert response.json()["status"] == DETECTION_STATUS_QUEUED
+    assert enqueue_mock.call_args.kwargs["page_count"] == 1
 
 
 def test_detect_fields_tasks_mode_enqueue_path(client, app_main, base_user, mocker, auth_headers) -> None:
@@ -240,6 +237,7 @@ def test_detect_fields_rate_limit_env_fallback_defaults_on_invalid_values(
     assert check_rate_limit_mock.called
     assert check_rate_limit_mock.call_args.kwargs["window_seconds"] == 30
     assert check_rate_limit_mock.call_args.kwargs["limit"] == 6
+    assert check_rate_limit_mock.call_args.kwargs["fail_closed"] is True
 
 
 def test_detect_fields_rate_limit_env_negative_values_fallback_to_safe_defaults(
@@ -278,6 +276,7 @@ def test_detect_fields_rate_limit_env_negative_values_fallback_to_safe_defaults(
     assert check_rate_limit_mock.called
     assert check_rate_limit_mock.call_args.kwargs["window_seconds"] == 30
     assert check_rate_limit_mock.call_args.kwargs["limit"] == 6
+    assert check_rate_limit_mock.call_args.kwargs["fail_closed"] is True
 
 
 def test_enqueue_detection_job_failure_marks_session_failed(app_main, base_user, mocker) -> None:
@@ -342,7 +341,7 @@ def test_get_detection_status_ownership_and_transitions(client, app_main, base_u
     response = client.get("/detect-fields/sess-1", headers=auth_headers)
     assert response.status_code == 200
     assert response.json()["status"] == DETECTION_STATUS_FAILED
-    assert response.json()["error"] == "boom"
+    assert response.json()["error"] == "Detection failed. Please retry the upload."
 
     mocker.patch.object(
         app_main,
@@ -377,15 +376,15 @@ def test_legacy_detection_routes_and_hidden_when_disabled(client, app_main, base
     )
     mocker.patch.object(app_main, "_resolve_detect_max_pages", return_value=10)
     mocker.patch.object(app_main, "_resolve_detection_mode", return_value="local")
-    mocker.patch.object(app_main, "_run_local_detection", return_value={"pipeline": "commonforms", "fields": [{"name": "f1"}]})
-    mocker.patch.object(app_main, "_store_session_entry", return_value=None)
-    mocker.patch.object(app_main, "record_detection_request", return_value=None)
-    mocker.patch.object(app_main, "update_detection_request", return_value=None)
-    mocker.patch.object(app_main.uuid, "uuid4", return_value=type("_U", (), {"__str__": lambda self: "legacy-sess"})())
+    mocker.patch.object(
+        app_main,
+        "_enqueue_local_detection_job",
+        return_value={"sessionId": "legacy-sess", "status": DETECTION_STATUS_QUEUED, "pipeline": "commonforms"},
+    )
 
     response = client.post("/api/process-pdf", files={"pdf": ("x.pdf", b"%PDF-1.4\n", "application/pdf")}, headers=auth_headers)
     assert response.status_code == 200
-    assert response.json()["status"] == DETECTION_STATUS_COMPLETE
+    assert response.json()["status"] == DETECTION_STATUS_QUEUED
 
     mocker.patch.object(app_main, "_get_session_entry", return_value={"fields": [{"name": "f1"}], "detection_status": DETECTION_STATUS_COMPLETE})
     response = client.get("/api/detected-fields", params={"sessionId": "legacy-sess"}, headers=auth_headers)
@@ -524,50 +523,3 @@ def test_get_detection_status_missing_artifacts_returns_404(
 
     assert response.status_code == 404
     assert "Session data not found" in response.text
-
-
-# ---------------------------------------------------------------------------
-# Edge-case: detect_fields local mode detection failure propagates and marks
-# the detection request as failed in the detection database.
-# ---------------------------------------------------------------------------
-def test_detect_fields_local_mode_failure_marks_status_failed(
-    client,
-    app_main,
-    base_user,
-    mocker,
-    auth_headers,
-) -> None:
-    _patch_detect_auth(mocker, app_main, base_user)
-    mocker.patch.object(app_main, "_read_upload_bytes", return_value=b"%PDF-1.4\n")
-    mocker.patch.object(
-        app_main,
-        "_validate_pdf_for_detection",
-        return_value=PdfValidationResult(pdf_bytes=b"%PDF-1.4\n", page_count=1, was_decrypted=False),
-    )
-    mocker.patch.object(app_main, "_resolve_detect_max_pages", return_value=10)
-    mocker.patch.object(app_main, "_resolve_detection_mode", return_value="local")
-    mocker.patch.object(app_main, "record_detection_request", return_value=None)
-
-    # Simulate the local detection pipeline raising an unexpected error.
-    mocker.patch.object(
-        app_main,
-        "_run_local_detection",
-        side_effect=RuntimeError("commonforms crashed"),
-    )
-    update_det_mock = mocker.patch.object(app_main, "update_detection_request", return_value=None)
-
-    from fastapi.testclient import TestClient
-
-    local_client = TestClient(app_main.app, raise_server_exceptions=False)
-    response = local_client.post(
-        "/detect-fields",
-        files={"file": ("x.pdf", b"%PDF-1.4\n", "application/pdf")},
-        headers=auth_headers,
-    )
-    # The exception propagates as a 500 to the client.
-    assert response.status_code == 500
-
-    # The detection request should have been updated with failed status.
-    assert update_det_mock.called
-    assert update_det_mock.call_args.kwargs["status"] == DETECTION_STATUS_FAILED
-    assert "commonforms crashed" in update_det_mock.call_args.kwargs["error"]

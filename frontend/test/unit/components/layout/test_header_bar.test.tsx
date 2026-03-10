@@ -1,6 +1,6 @@
 import type { ComponentProps } from 'react';
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { HeaderBar } from '../../../../src/components/layout/HeaderBar';
 
@@ -147,7 +147,112 @@ describe('HeaderBar', () => {
     expect((screen.getByRole('button', { name: 'Rename' }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole('button', { name: 'Rename + Map' }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole('button', { name: 'Search, Fill & Clear' }) as HTMLButtonElement).disabled).toBe(true);
-    expect(screen.getByText('Requires CSV/Excel/JSON rows')).toBeTruthy();
+    expect(screen.getByText('Requires CSV/Excel/JSON/respondent rows')).toBeTruthy();
+  });
+
+  it('switches into group mode with a selector and batch rename + map action', async () => {
+    const user = userEvent.setup();
+    const onSelectGroupTemplate = vi.fn();
+    const onRenameAndMapGroup = vi.fn();
+
+    render(
+      <HeaderBar
+        {...createProps({
+          groupName: 'Admissions',
+          groupTemplates: [
+            { id: 'tpl-a', name: 'Alpha Packet' },
+            { id: 'tpl-b', name: 'Bravo Intake' },
+          ],
+          activeGroupTemplateId: 'tpl-a',
+          onSelectGroupTemplate,
+          onRenameAndMapGroup,
+          canRenameAndMapGroup: true,
+          renameAndMapGroupButtonLabel: 'Rename + Map 1/2',
+        })}
+      />,
+    );
+
+    expect(screen.getByRole('combobox')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Rename + Map 1/2' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Rename' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Map Schema' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Rename + Map' })).toBeNull();
+
+    await user.selectOptions(screen.getByRole('combobox'), 'tpl-b');
+    await user.click(screen.getByRole('button', { name: 'Rename + Map 1/2' }));
+
+    expect(onSelectGroupTemplate).toHaveBeenCalledWith('tpl-b');
+    expect(onRenameAndMapGroup).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows cached group template readiness labels and disables selector while switching', () => {
+    render(
+      <HeaderBar
+        {...createProps({
+          groupName: 'Admissions',
+          groupTemplates: [
+            { id: 'tpl-a', name: 'Alpha Packet' },
+            { id: 'tpl-b', name: 'Bravo Intake' },
+          ],
+          groupTemplateStatuses: {
+            'tpl-a': 'ready',
+            'tpl-b': 'loading',
+          },
+          activeGroupTemplateId: 'tpl-a',
+          groupTemplateSwitchInProgress: true,
+        })}
+      />,
+    );
+
+    expect(screen.queryByRole('combobox')).toBeNull();
+    expect(screen.getByText('Alpha Packet')).toBeTruthy();
+  });
+
+  it('shows a stable preparing label for the active loading template while switching', () => {
+    render(
+      <HeaderBar
+        {...createProps({
+          groupName: 'Admissions',
+          groupTemplates: [
+            { id: 'tpl-a', name: 'Alpha Packet' },
+            { id: 'tpl-b', name: 'Bravo Intake' },
+          ],
+          groupTemplateStatuses: {
+            'tpl-a': 'ready',
+            'tpl-b': 'loading',
+          },
+          activeGroupTemplateId: 'tpl-b',
+          groupTemplateSwitchInProgress: true,
+        })}
+      />,
+    );
+
+    expect(screen.queryByRole('combobox')).toBeNull();
+    expect(screen.getByText('Bravo Intake (Preparing...)')).toBeTruthy();
+  });
+
+  it('keeps the active loading group template label selectable while the switch is in progress', () => {
+    render(
+      <HeaderBar
+        {...createProps({
+          groupName: 'Admissions',
+          groupTemplates: [
+            { id: 'tpl-a', name: 'Alpha Packet' },
+            { id: 'tpl-b', name: 'Bravo Intake' },
+          ],
+          groupTemplateStatuses: {
+            'tpl-a': 'ready',
+            'tpl-b': 'loading',
+          },
+          activeGroupTemplateId: 'tpl-b',
+        })}
+      />,
+    );
+
+    const selector = screen.getByRole('combobox') as HTMLSelectElement;
+    const activeOption = within(selector).getByRole('option', { name: 'Bravo Intake (Preparing...)' }) as HTMLOptionElement;
+    expect(selector.value).toBe('tpl-b');
+    expect(activeOption.disabled).toBe(false);
   });
 
   it('keeps demo-locked actions blocked except download', async () => {
@@ -207,25 +312,63 @@ describe('HeaderBar', () => {
     expect(onSaveToProfile).not.toHaveBeenCalled();
   });
 
+  it('shows docs links instead of the Fill By Link action in demo-locked mode', () => {
+    render(
+      <HeaderBar
+        {...createProps({
+          demoLocked: true,
+          onOpenFillLink: vi.fn(),
+          canFillLink: true,
+          demoFillLinkDocsHref: '/usage-docs/fill-by-link',
+          demoCreateGroupDocsHref: '/usage-docs/create-group',
+        })}
+      />,
+    );
+
+    expect(screen.queryByRole('button', { name: 'Fill By Link' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'See Link Filling docs' }).getAttribute('href')).toBe(
+      '/usage-docs/fill-by-link',
+    );
+    expect(screen.getByRole('link', { name: 'See Create Group docs' }).getAttribute('href')).toBe(
+      '/usage-docs/create-group',
+    );
+  });
+
   it('wires download/save callbacks and updates loading button states', async () => {
     const user = userEvent.setup();
     const onDownload = vi.fn();
+    const onDownloadGroup = vi.fn();
     const onSaveToProfile = vi.fn();
-    const props = createProps({ onDownload, onSaveToProfile });
+    const props = createProps({
+      groupName: 'Admissions',
+      groupTemplates: [
+        { id: 'tpl-a', name: 'Alpha Packet' },
+        { id: 'tpl-b', name: 'Bravo Intake' },
+      ],
+      activeGroupTemplateId: 'tpl-a',
+      onDownload,
+      onDownloadGroup,
+      onSaveToProfile,
+      canDownloadGroup: true,
+    });
     const { rerender } = render(<HeaderBar {...props} />);
 
     await user.click(screen.getByRole('button', { name: 'Download' }));
+    await user.click(screen.getByRole('button', { name: 'Download Group' }));
     await user.click(screen.getByRole('button', { name: 'Save' }));
 
     expect(onDownload).toHaveBeenCalledTimes(1);
+    expect(onDownloadGroup).toHaveBeenCalledTimes(1);
     expect(onSaveToProfile).toHaveBeenCalledTimes(1);
 
-    rerender(<HeaderBar {...props} downloadInProgress saveInProgress />);
+    rerender(<HeaderBar {...props} downloadInProgress downloadGroupInProgress saveInProgress />);
 
     const downloadingButton = screen.getByRole('button', { name: 'Downloading...' }) as HTMLButtonElement;
+    const groupDownloadingButton = screen.getByRole('button', { name: 'Downloading Group...' }) as HTMLButtonElement;
     const savingButton = screen.getByRole('button', { name: 'Saving...' }) as HTMLButtonElement;
 
     expect(downloadingButton.disabled).toBe(true);
+    expect(groupDownloadingButton.disabled).toBe(true);
     expect(savingButton.disabled).toBe(true);
   });
 });

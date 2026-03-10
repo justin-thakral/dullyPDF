@@ -14,6 +14,8 @@ export function useSavedForms(deps: {
   authUserRef: React.MutableRefObject<User | null>;
   setBannerNotice: (notice: BannerNotice | null) => void;
   requestConfirm: (options: ConfirmDialogOptions) => Promise<boolean>;
+  refreshGroups?: () => Promise<unknown> | void;
+  refreshProfile?: () => Promise<unknown> | void;
 }) {
   const [savedForms, setSavedForms] = useState<Array<{ id: string; name: string; createdAt: string }>>([]);
   const [savedFormsLoading, setSavedFormsLoading] = useState(false);
@@ -34,9 +36,9 @@ export function useSavedForms(deps: {
   }, []);
 
   const refreshSavedForms = useCallback(
-    async (options?: { allowRetry?: boolean }) => {
+    async (options?: { allowRetry?: boolean; throwOnError?: boolean }) => {
       const currentUser = deps.authUserRef.current;
-      if (!currentUser) return;
+      if (!currentUser) return [];
       setSavedFormsLoading(true);
       try {
         const forms = await ApiService.getSavedForms({
@@ -46,17 +48,24 @@ export function useSavedForms(deps: {
         setSavedForms(forms || []);
         setSavedFormsLoading(false);
         clearSavedFormsRetry();
+        return forms || [];
       } catch (error) {
         if (!options?.allowRetry || !(error instanceof TypeError)) {
           setSavedFormsLoading(false);
           debugLog('Failed to load saved forms', error);
-          return;
+          if (options?.throwOnError) {
+            throw error;
+          }
+          return [];
         }
         const attempt = savedFormsRetryRef.current + 1;
         if (attempt > SAVED_FORMS_RETRY_LIMIT) {
           setSavedFormsLoading(false);
           debugLog('Saved forms retry limit reached', error);
-          return;
+          if (options?.throwOnError) {
+            throw error;
+          }
+          return [];
         }
         savedFormsRetryRef.current = attempt;
         const delay = Math.min(
@@ -69,24 +78,41 @@ export function useSavedForms(deps: {
         savedFormsRetryTimerRef.current = setTimeout(() => {
           void refreshSavedForms(options);
         }, delay);
+        if (options?.throwOnError) {
+          throw error;
+        }
+        return [];
       }
     },
     [clearSavedFormsRetry, deps.authUserRef],
   );
 
   const deleteSavedFormById = useCallback(
-    async (formId: string): Promise<boolean> => {
+    async (
+      formId: string,
+      options?: {
+        preserveActiveSelection?: boolean;
+        afterDelete?: () => void;
+      },
+    ): Promise<boolean> => {
       setDeletingFormId(formId);
       try {
         await ApiService.deleteSavedForm(formId);
         setSavedForms((prev) => prev.filter((form) => form.id !== formId));
-        setActiveSavedFormId((prev) => {
-          if (prev === formId) {
-            setActiveSavedFormName(null);
-            return null;
-          }
-          return prev;
-        });
+        if (!options?.preserveActiveSelection) {
+          setActiveSavedFormId((prev) => {
+            if (prev === formId) {
+              setActiveSavedFormName(null);
+              return null;
+            }
+            return prev;
+          });
+        }
+        options?.afterDelete?.();
+        await Promise.allSettled([
+          Promise.resolve().then(() => deps.refreshGroups?.()),
+          Promise.resolve().then(() => deps.refreshProfile?.()),
+        ]);
         return true;
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Failed to delete saved form.';
@@ -118,14 +144,21 @@ export function useSavedForms(deps: {
   );
 
   const handleSavedFormsLimitDelete = useCallback(
-    async (formId: string) => {
-      const removed = await deleteSavedFormById(formId);
-      if (!removed) return;
+    async (
+      formId: string,
+      options?: {
+        preserveActiveSelection?: boolean;
+        afterDelete?: () => void;
+      },
+    ): Promise<boolean> => {
+      const removed = await deleteSavedFormById(formId, options);
+      if (!removed) return false;
       const pendingAction = pendingSaveActionRef.current;
-      if (!pendingAction) return;
+      if (!pendingAction) return true;
       pendingSaveActionRef.current = null;
       setShowSavedFormsLimitDialog(false);
       await pendingAction();
+      return true;
     },
     [deleteSavedFormById],
   );

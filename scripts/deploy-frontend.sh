@@ -114,7 +114,7 @@ fi
 
 (
   cd frontend
-  npm run build
+  npm run build:prod
 )
 
 echo "Generating static HTML for SEO prerendering..."

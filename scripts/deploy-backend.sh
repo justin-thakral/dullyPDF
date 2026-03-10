@@ -4,6 +4,7 @@ set -euo pipefail
 PROJECT_ID="${PROJECT_ID:-dullypdf}"
 REGION="${REGION:-us-central1}"
 SERVICE_NAME="${BACKEND_SERVICE:-dullypdf-backend}"
+BACKEND_RUNTIME_SERVICE_ACCOUNT="${BACKEND_RUNTIME_SERVICE_ACCOUNT:-}"
 ALLOW_NON_PROD="${DULLYPDF_ALLOW_NON_PROD:-}"
 ENV_FILE="${ENV_FILE:-env/backend.prod.env}"
 EXAMPLE="config/backend.prod.env.example"
@@ -93,6 +94,19 @@ require_empty() {
   fi
 }
 
+require_fill_link_secret_quality() {
+  local name="$1"
+  local actual="${!name:-}"
+  if [[ "$actual" == "change_me_prod_fill_link_token_secret" || "$actual" == "dullypdf-fill-link-dev-secret" ]]; then
+    echo "$name must not use the placeholder prod example value." >&2
+    exit 1
+  fi
+  if [[ "${#actual}" -lt 32 ]]; then
+    echo "$name must be at least 32 characters in prod." >&2
+    exit 1
+  fi
+}
+
 require_exact ENV "prod"
 require_exact SANDBOX_LOG_OPENAI_RESPONSE "false"
 require_exact SANDBOX_ENABLE_LEGACY_ENDPOINTS "false"
@@ -104,12 +118,18 @@ require_empty ADMIN_TOKEN
 require_empty ADMIN_TOKEN_SECRET
 require_exact FIREBASE_CHECK_REVOKED "true"
 require_exact FIREBASE_USE_ADC "true"
+require_empty FIREBASE_CREDENTIALS
+require_empty FIREBASE_CREDENTIALS_SECRET
+require_empty GOOGLE_APPLICATION_CREDENTIALS
 require_exact DETECTOR_MODE "tasks"
 require_exact OPENAI_RENAME_MODE "tasks"
 require_exact OPENAI_REMAP_MODE "tasks"
 require_nonempty FIREBASE_PROJECT_ID
+require_nonempty BACKEND_RUNTIME_SERVICE_ACCOUNT
 require_nonempty FORMS_BUCKET
 require_nonempty TEMPLATES_BUCKET
+require_nonempty FILL_LINK_TOKEN_SECRET
+require_fill_link_secret_quality FILL_LINK_TOKEN_SECRET
 require_nonempty SANDBOX_CORS_ORIGINS
 require_nonempty CONTACT_TO_EMAIL
 require_nonempty CONTACT_FROM_EMAIL
@@ -163,13 +183,14 @@ if [[ -n "${STRIPE_SECRET_KEY:-}" || -n "${STRIPE_WEBHOOK_SECRET:-}" ]]; then
   exit 1
 fi
 
-if [[ "${CONTACT_REQUIRE_RECAPTCHA:-true}" != "true" || "${SIGNUP_REQUIRE_RECAPTCHA:-true}" != "true" ]]; then
-  echo "CONTACT_REQUIRE_RECAPTCHA and SIGNUP_REQUIRE_RECAPTCHA must be true in prod." >&2
+if [[ "${CONTACT_REQUIRE_RECAPTCHA:-true}" != "true" || "${SIGNUP_REQUIRE_RECAPTCHA:-true}" != "true" || "${FILL_LINK_REQUIRE_RECAPTCHA:-true}" != "true" ]]; then
+  echo "CONTACT_REQUIRE_RECAPTCHA, SIGNUP_REQUIRE_RECAPTCHA, and FILL_LINK_REQUIRE_RECAPTCHA must be true in prod." >&2
   exit 1
 fi
 
-if [[ "${CONTACT_REQUIRE_RECAPTCHA:-true}" == "true" || "${SIGNUP_REQUIRE_RECAPTCHA:-true}" == "true" ]]; then
+if [[ "${CONTACT_REQUIRE_RECAPTCHA:-true}" == "true" || "${SIGNUP_REQUIRE_RECAPTCHA:-true}" == "true" || "${FILL_LINK_REQUIRE_RECAPTCHA:-true}" == "true" ]]; then
   require_nonempty RECAPTCHA_SITE_KEY
+  require_nonempty RECAPTCHA_ALLOWED_HOSTNAMES
   if [[ -z "${RECAPTCHA_PROJECT_ID:-}" && -z "${FIREBASE_PROJECT_ID:-}" ]]; then
     echo "RECAPTCHA_PROJECT_ID (or FIREBASE_PROJECT_ID) must be set for reCAPTCHA." >&2
     exit 1
@@ -189,6 +210,8 @@ echo "Running required billing integration gate: $BILLING_INTEGRATION_TEST_PATH"
 ENV=test python3 -m pytest -q "$BILLING_INTEGRATION_TEST_PATH"
 
 TMP_ENV_FILE="$(mktemp)"
+trap 'rm -f "$TMP_ENV_FILE"' EXIT
+
 python3 - <<'PY' "$ENV_FILE" "$TMP_ENV_FILE"
 import json
 import sys
@@ -197,6 +220,10 @@ env_path = sys.argv[1]
 out_path = sys.argv[2]
 script_only = {
     "PORT",
+    "FIREBASE_CREDENTIALS",
+    "FIREBASE_CREDENTIALS_SECRET",
+    "GOOGLE_APPLICATION_CREDENTIALS",
+    "BACKEND_RUNTIME_SERVICE_ACCOUNT",
     "DETECTOR_ROUTING_MODE",
     "DETECTOR_SERVICE_URL",
     "DETECTOR_SERVICE_URL_LIGHT",
@@ -361,8 +388,7 @@ gcloud run deploy "$SERVICE_NAME" \
   --image "$BACKEND_IMAGE" \
   --region "$REGION" \
   --project "$PROJECT_ID" \
+  --service-account "$BACKEND_RUNTIME_SERVICE_ACCOUNT" \
   --allow-unauthenticated \
   --env-vars-file "$TMP_ENV_FILE" \
   "${SECRET_FLAGS[@]}"
-
-rm -f "$TMP_ENV_FILE"

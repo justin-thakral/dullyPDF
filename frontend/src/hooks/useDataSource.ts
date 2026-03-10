@@ -11,6 +11,13 @@ import { inferSchemaFromRows, parseSchemaText } from '../utils/schema';
 import { ALERT_MESSAGES, buildImportFileBeforeMapping } from '../utils/alertMessages';
 import { ApiService } from '../services/api';
 
+const MAX_SCHEMA_IMPORT_FILE_BYTES = 10 * 1024 * 1024;
+
+export function validateSchemaImportFileSize(file: File): void {
+  if (file.size <= MAX_SCHEMA_IMPORT_FILE_BYTES) return;
+  throw new Error('Schema import files must be 10MB or smaller.');
+}
+
 export function useDataSource(deps: {
   verifiedUser: User | null;
   hasDocument: boolean;
@@ -224,6 +231,36 @@ export function useDataSource(deps: {
     [applySchemaMetadata],
   );
 
+  const applyStructuredDataSource = useCallback(
+    ({
+      kind,
+      label,
+      rows,
+      columns,
+      identifierKey: identifierOverride,
+    }: {
+      kind: Extract<DataSourceKind, 'csv' | 'excel' | 'json' | 'respondent'>;
+      label: string;
+      rows: Array<Record<string, unknown>>;
+      columns?: string[];
+      identifierKey?: string | null;
+    }) => {
+      const nextColumns = columns && columns.length > 0
+        ? columns
+        : Array.from(new Set(rows.flatMap((row) => Object.keys(row))));
+      setSchemaError(null);
+      setSchemaId(null);
+      setPendingSchemaPayload(null);
+      setDataSourceKind(kind);
+      setDataSourceLabel(label);
+      setSchemaUploadInProgress(false);
+      setDataColumns(nextColumns);
+      setDataRows(rows);
+      setIdentifierKey(identifierOverride ?? pickIdentifierKey(nextColumns));
+    },
+    [],
+  );
+
   const notifyHeaderRenames = useCallback(
     (sourceLabel: string, fileName: string, headerRenames?: HeaderRename[]) => {
       if (!headerRenames?.length) return;
@@ -261,6 +298,7 @@ export function useDataSource(deps: {
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file) return;
+    validateSchemaImportFileSize(file);
     await runSchemaUpload(
       async () => {
         const text = await file.text();
@@ -280,6 +318,7 @@ export function useDataSource(deps: {
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file) return;
+    validateSchemaImportFileSize(file);
     await runSchemaUpload(
       async () => {
         const buffer = await file.arrayBuffer();
@@ -300,6 +339,7 @@ export function useDataSource(deps: {
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file) return;
+    validateSchemaImportFileSize(file);
     await runSchemaUpload(
       async () => {
         const text = await file.text();
@@ -319,6 +359,7 @@ export function useDataSource(deps: {
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file) return;
+    validateSchemaImportFileSize(file);
     await runSchemaUpload(
       async () => {
         const text = await file.text();
@@ -335,7 +376,7 @@ export function useDataSource(deps: {
 
   const canSearchFill = useMemo(() => {
     if (!deps.hasDocument || dataSourceKind === 'none') return false;
-    if (!['csv', 'excel', 'json'].includes(dataSourceKind)) return false;
+    if (!['csv', 'excel', 'json', 'respondent'].includes(dataSourceKind)) return false;
     return dataRows.length > 0;
   }, [dataRows.length, dataSourceKind, deps.hasDocument]);
 
@@ -368,6 +409,7 @@ export function useDataSource(deps: {
     resolveSchemaForMapping,
     applySchemaMetadata,
     applyParsedDataSource,
+    applyStructuredDataSource,
     notifyHeaderRenames,
     handleCsvFileSelected,
     handleExcelFileSelected,

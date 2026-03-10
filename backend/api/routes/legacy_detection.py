@@ -11,20 +11,21 @@ from fastapi.responses import StreamingResponse
 
 from backend.detection.status import (
     DETECTION_STATUS_COMPLETE,
-    DETECTION_STATUS_FAILED,
+    DETECTION_STATUS_QUEUED,
     DETECTION_STATUS_RUNNING,
 )
-from backend.firebaseDB.detection_database import record_detection_request, update_detection_request
 from backend.sessions.session_store import (
     get_session_entry as _get_session_entry,
     store_session_entry as _store_session_entry,
 )
-from backend.time_utils import now_iso
 from backend.firebaseDB.storage_service import stream_pdf
 
 from backend.services.app_config import require_legacy_enabled, resolve_detection_mode
 from backend.services.auth_service import require_user
-from backend.services.detection_service import enqueue_detection_job, run_local_detection
+from backend.services.detection_service import (
+    enqueue_detection_job,
+    enqueue_local_detection_job,
+)
 from backend.services.limits_service import resolve_detect_max_pages, resolve_fillable_max_pages
 from backend.services.pdf_service import (
     get_pdf_page_count,
@@ -90,53 +91,12 @@ async def process_pdf(
     detection_mode = resolve_detection_mode()
 
     if detection_mode == "local":
-        session_id = str(uuid.uuid4())
-        record_detection_request(
-            request_id=session_id,
-            session_id=session_id,
-            user_id=user.app_user_id,
-            status=DETECTION_STATUS_RUNNING,
-            page_count=page_count,
-        )
-        try:
-            resolved = run_local_detection(pdf_bytes)
-            fields = resolved.get("fields", [])
-            _store_session_entry(
-                session_id,
-                {
-                    "pdf_bytes": pdf_bytes,
-                    "fields": fields,
-                    "source_pdf": source_pdf,
-                    "result": resolved,
-                    "page_count": page_count,
-                    "user_id": user.app_user_id,
-                    "detection_status": DETECTION_STATUS_COMPLETE,
-                    "detection_completed_at": now_iso(),
-                },
-            )
-            update_detection_request(
-                request_id=session_id,
-                status=DETECTION_STATUS_COMPLETE,
-                page_count=page_count,
-            )
-            return {
-                "success": True,
-                "sessionId": session_id,
-                "originalFilename": source_pdf,
-                "pipeline": resolved.get("pipeline", pipeline_choice),
-                "fieldCount": len(fields),
-                "fields": fields,
-                "result": resolved,
-                "status": DETECTION_STATUS_COMPLETE,
-            }
-        except Exception as exc:
-            update_detection_request(
-                request_id=session_id,
-                status=DETECTION_STATUS_FAILED,
-                error=str(exc),
-                page_count=page_count,
-            )
-            raise
+        response = enqueue_local_detection_job(pdf_bytes, source_pdf, user, page_count=page_count)
+        return {
+            "success": True,
+            "originalFilename": source_pdf,
+            **response,
+        }
     if detection_mode == "tasks":
         response = enqueue_detection_job(pdf_bytes, source_pdf, user, page_count=page_count)
         return {

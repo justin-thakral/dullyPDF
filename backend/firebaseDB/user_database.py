@@ -3,12 +3,13 @@
 import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from firebase_admin import firestore as firebase_firestore
 
 from backend.logging_config import get_logger
 from ..time_utils import now_iso
+from .firestore_query_utils import where_equals
 from .firebase_service import RequestUser, get_firestore_client
 
 
@@ -35,8 +36,16 @@ STRIPE_CANCEL_AT_PERIOD_END_FIELD = "stripe_cancel_at_period_end"
 STRIPE_CANCEL_AT_FIELD = "stripe_cancel_at"
 STRIPE_CURRENT_PERIOD_END_FIELD = "stripe_current_period_end"
 STRIPE_PROCESSED_EVENT_IDS_FIELD = "stripe_processed_event_ids"
-# When set to 0 or negative, processed event ids are retained without trimming.
-STRIPE_MAX_PROCESSED_EVENTS = int(os.getenv("STRIPE_MAX_PROCESSED_EVENTS", "0"))
+# Billing event docs remain the primary idempotency record. This inline recent-id
+# history is bounded so repeated billing activity cannot bloat the Firestore user
+# document over time.
+try:
+    STRIPE_MAX_PROCESSED_EVENTS = int(os.getenv("STRIPE_MAX_PROCESSED_EVENTS", "256"))
+except ValueError:
+    STRIPE_MAX_PROCESSED_EVENTS = 256
+if STRIPE_MAX_PROCESSED_EVENTS <= 0:
+    STRIPE_MAX_PROCESSED_EVENTS = 256
+DOWNGRADE_RETENTION_FIELD = "downgrade_retention"
 
 CreditBreakdown = Dict[str, int]
 _UNSET = object()
@@ -53,6 +62,7 @@ class UserProfileRecord:
     openai_credits_refill_remaining: Optional[int] = None
     openai_credits_available: Optional[int] = None
     refill_credits_locked: bool = False
+    downgrade_retention: Optional["UserDowngradeRetentionRecord"] = None
 
 
 @dataclass(frozen=True)
@@ -65,6 +75,21 @@ class UserBillingRecord:
     cancel_at_period_end: Optional[bool] = None
     cancel_at: Optional[int] = None
     current_period_end: Optional[int] = None
+
+
+@dataclass(frozen=True)
+class UserDowngradeRetentionRecord:
+    status: str
+    policy_version: int
+    downgraded_at: Optional[str]
+    grace_ends_at: Optional[str]
+    saved_forms_limit: int
+    fill_links_active_limit: int
+    kept_template_ids: List[str]
+    pending_delete_template_ids: List[str]
+    pending_delete_link_ids: List[str]
+    billing_state_deferred: bool = False
+    updated_at: Optional[str] = None
 
 
 def normalize_role(value: Optional[str]) -> str:
@@ -107,6 +132,26 @@ def _coerce_optional_bool(value: Any) -> Optional[bool]:
     if text in {"false", "0", "no", "n", "off"}:
         return False
     return None
+
+
+def _coerce_string_list(value: Any) -> List[str]:
+    if not isinstance(value, list):
+        return []
+    deduped: List[str] = []
+    for item in value:
+        normalized = str(item or "").strip()
+        if not normalized or normalized in deduped:
+            continue
+        deduped.append(normalized)
+    return deduped
+
+
+def _coerce_positive_int(value: Any, *, default: int) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed > 0 else default
 
 
 def _current_month_cycle_key() -> str:
@@ -165,6 +210,27 @@ def _normalize_credit_breakdown(raw: Optional[Dict[str, Any]]) -> CreditBreakdow
         "monthly": _coerce_non_negative_int(payload.get("monthly"), default=0),
         "refill": _coerce_non_negative_int(payload.get("refill"), default=0),
     }
+
+
+def _normalize_downgrade_retention(raw: Any) -> Optional[UserDowngradeRetentionRecord]:
+    if not isinstance(raw, dict):
+        return None
+    status = str(raw.get("status") or "").strip().lower()
+    if not status:
+        return None
+    return UserDowngradeRetentionRecord(
+        status=status,
+        policy_version=_coerce_positive_int(raw.get("policy_version"), default=1),
+        downgraded_at=str(raw.get("downgraded_at") or "").strip() or None,
+        grace_ends_at=str(raw.get("grace_ends_at") or "").strip() or None,
+        saved_forms_limit=_coerce_positive_int(raw.get("saved_forms_limit"), default=1),
+        fill_links_active_limit=_coerce_positive_int(raw.get("fill_links_active_limit"), default=1),
+        kept_template_ids=_coerce_string_list(raw.get("kept_template_ids")),
+        pending_delete_template_ids=_coerce_string_list(raw.get("pending_delete_template_ids")),
+        pending_delete_link_ids=_coerce_string_list(raw.get("pending_delete_link_ids")),
+        billing_state_deferred=bool(_coerce_optional_bool(raw.get("billing_state_deferred"))),
+        updated_at=str(raw.get("updated_at") or "").strip() or None,
+    )
 
 
 def _resolve_pro_monthly_pool(data: Dict[str, Any]) -> Tuple[int, str, bool]:
@@ -425,16 +491,44 @@ def refund_openai_credits(
         snapshot = doc_ref.get(transaction=txn)
         data = snapshot.to_dict() or {}
         stored_role = normalize_role(data.get(ROLE_FIELD))
-        normalized_role = stored_role
-        if normalized_role == ROLE_GOD:
+        charged_role = normalize_role(role) if role is not None else stored_role
+        if charged_role == ROLE_GOD:
             return -1
 
-        if normalized_role == ROLE_PRO:
+        base_refund = normalized_breakdown.get("base", 0)
+        monthly_refund = normalized_breakdown.get("monthly", 0)
+        refill_refund = normalized_breakdown.get("refill", 0)
+        if base_refund > 0 or monthly_refund > 0 or refill_refund > 0:
+            updates: Dict[str, Any] = {"updated_at": now_iso()}
+            total_available = 0
+
+            if base_refund > 0:
+                current_base = _resolve_openai_credits_remaining(data)
+                current_base += base_refund
+                updates[OPENAI_CREDITS_FIELD] = current_base
+                total_available += current_base
+
+            if monthly_refund > 0 or refill_refund > 0:
+                monthly_remaining, cycle_key, _ = _resolve_pro_monthly_pool(data)
+                next_monthly = monthly_remaining + monthly_refund
+                next_refill = _resolve_pro_refill_credits_remaining(data) + refill_refund
+                updates[OPENAI_CREDITS_MONTHLY_FIELD] = next_monthly
+                updates[OPENAI_CREDITS_REFILL_FIELD] = next_refill
+                updates[OPENAI_CREDITS_MONTHLY_CYCLE_FIELD] = cycle_key
+                total_available += next_monthly + next_refill
+            elif stored_role == ROLE_PRO:
+                monthly_remaining, _, _ = _resolve_pro_monthly_pool(data)
+                total_available += monthly_remaining + _resolve_pro_refill_credits_remaining(data)
+            elif total_available == 0:
+                total_available = _resolve_openai_credits_remaining(data)
+
+            txn.set(doc_ref, updates, merge=True)
+            return total_available
+
+        if charged_role == ROLE_PRO:
             monthly_remaining, cycle_key, _ = _resolve_pro_monthly_pool(data)
             refill_remaining = _resolve_pro_refill_credits_remaining(data)
 
-            monthly_refund = normalized_breakdown.get("monthly", 0)
-            refill_refund = normalized_breakdown.get("refill", 0)
             if monthly_refund + refill_refund <= 0:
                 # Fallback path for older callers that do not send pool breakdown.
                 # Refunding into refill avoids accidental month-boundary inflation.
@@ -445,7 +539,6 @@ def refund_openai_credits(
             txn.set(
                 doc_ref,
                 {
-                    ROLE_FIELD: ROLE_PRO,
                     OPENAI_CREDITS_MONTHLY_FIELD: next_monthly,
                     OPENAI_CREDITS_REFILL_FIELD: next_refill,
                     OPENAI_CREDITS_MONTHLY_CYCLE_FIELD: cycle_key,
@@ -526,6 +619,7 @@ def activate_pro_membership_with_subscription(
                     OPENAI_CREDITS_REFILL_FIELD: _resolve_pro_refill_credits_remaining(data),
                 }
             )
+        updates[DOWNGRADE_RETENTION_FIELD] = firebase_firestore.DELETE_FIELD
         _apply_subscription_updates(
             updates,
             customer_id=customer_id,
@@ -630,17 +724,78 @@ def set_user_billing_subscription(
     client.collection(USERS_COLLECTION).document(uid).set(updates, merge=True)
 
 
+def get_user_downgrade_retention(uid: str) -> Optional[UserDowngradeRetentionRecord]:
+    normalized_uid = (uid or "").strip()
+    if not normalized_uid:
+        return None
+    client = get_firestore_client()
+    snapshot = client.collection(USERS_COLLECTION).document(normalized_uid).get()
+    if not snapshot.exists:
+        return None
+    data = snapshot.to_dict() or {}
+    return _normalize_downgrade_retention(data.get(DOWNGRADE_RETENTION_FIELD))
+
+
+def set_user_downgrade_retention(
+    uid: str,
+    *,
+    status: str,
+    policy_version: int,
+    downgraded_at: Optional[str],
+    grace_ends_at: Optional[str],
+    saved_forms_limit: int,
+    fill_links_active_limit: int,
+    kept_template_ids: List[str],
+    pending_delete_template_ids: List[str],
+    pending_delete_link_ids: List[str],
+    billing_state_deferred: bool = False,
+) -> None:
+    if not uid:
+        raise ValueError("Missing firebase uid")
+    payload = {
+        DOWNGRADE_RETENTION_FIELD: {
+            "status": (status or "").strip().lower() or "grace_period",
+            "policy_version": max(1, int(policy_version or 1)),
+            "downgraded_at": (downgraded_at or "").strip() or None,
+            "grace_ends_at": (grace_ends_at or "").strip() or None,
+            "saved_forms_limit": max(1, int(saved_forms_limit)),
+            "fill_links_active_limit": max(1, int(fill_links_active_limit)),
+            "kept_template_ids": _coerce_string_list(kept_template_ids),
+            "pending_delete_template_ids": _coerce_string_list(pending_delete_template_ids),
+            "pending_delete_link_ids": _coerce_string_list(pending_delete_link_ids),
+            "billing_state_deferred": bool(billing_state_deferred),
+            "updated_at": now_iso(),
+        },
+        "updated_at": now_iso(),
+    }
+    client = get_firestore_client()
+    client.collection(USERS_COLLECTION).document(uid).set(payload, merge=True)
+
+
+def clear_user_downgrade_retention(uid: str) -> None:
+    if not uid:
+        raise ValueError("Missing firebase uid")
+    client = get_firestore_client()
+    client.collection(USERS_COLLECTION).document(uid).set(
+        {
+            DOWNGRADE_RETENTION_FIELD: firebase_firestore.DELETE_FIELD,
+            "updated_at": now_iso(),
+        },
+        merge=True,
+    )
+
+
 def find_user_id_by_subscription_id(subscription_id: str) -> Optional[str]:
     """Resolve an app user id from a Stripe subscription id."""
     normalized = (subscription_id or "").strip()
     if not normalized:
         return None
     client = get_firestore_client()
-    matches = (
-        client.collection(USERS_COLLECTION)
-        .where(STRIPE_SUBSCRIPTION_ID_FIELD, "==", normalized)
-        .get()
-    )
+    matches = where_equals(
+        client.collection(USERS_COLLECTION),
+        STRIPE_SUBSCRIPTION_ID_FIELD,
+        normalized,
+    ).get()
     if not matches:
         return None
     first = matches[0]
@@ -717,11 +872,13 @@ def get_user_profile(uid: str) -> Optional[UserProfileRecord]:
     if not uid:
         return None
     client = get_firestore_client()
-    snapshot = client.collection(USERS_COLLECTION).document(uid).get()
+    doc_ref = client.collection(USERS_COLLECTION).document(uid)
+    snapshot = doc_ref.get()
     if not snapshot.exists:
         return None
     data = snapshot.to_dict() or {}
     role = normalize_role(data.get(ROLE_FIELD))
+    downgrade_retention = _normalize_downgrade_retention(data.get(DOWNGRADE_RETENTION_FIELD))
     email = data.get("email")
     display_name = data.get("displayName")
     credits: Optional[int]
@@ -737,14 +894,32 @@ def get_user_profile(uid: str) -> Optional[UserProfileRecord]:
         available_credits = monthly_credits + refill_credits
         credits = available_credits
         if reset_applied:
-            client.collection(USERS_COLLECTION).document(uid).set(
-                {
-                    OPENAI_CREDITS_MONTHLY_FIELD: monthly_credits,
-                    OPENAI_CREDITS_MONTHLY_CYCLE_FIELD: cycle_key,
-                    "updated_at": now_iso(),
-                },
-                merge=True,
-            )
+            # Use a transaction so concurrent requests at the month boundary
+            # cannot overwrite credits that were consumed after our initial read.
+            transaction = client.transaction()
+
+            @firebase_firestore.transactional
+            def _apply_monthly_reset(txn: firebase_firestore.Transaction) -> None:
+                live_snapshot = doc_ref.get(transaction=txn)
+                live_data = live_snapshot.to_dict() or {}
+                _, live_cycle, still_needs_reset = _resolve_pro_monthly_pool(live_data)
+                if not still_needs_reset:
+                    return
+                txn.set(
+                    doc_ref,
+                    {
+                        OPENAI_CREDITS_MONTHLY_FIELD: PRO_MONTHLY_OPENAI_CREDITS,
+                        OPENAI_CREDITS_MONTHLY_CYCLE_FIELD: live_cycle,
+                        "updated_at": now_iso(),
+                    },
+                    merge=True,
+                )
+
+            try:
+                _apply_monthly_reset(transaction)
+            except Exception:
+                # Non-critical: the reset will be retried on the next profile load.
+                pass
     else:
         credits = _resolve_openai_credits_remaining(data)
         refill_credits = _resolve_pro_refill_credits_remaining(data)
@@ -760,4 +935,5 @@ def get_user_profile(uid: str) -> Optional[UserProfileRecord]:
         openai_credits_refill_remaining=refill_credits,
         openai_credits_available=available_credits,
         refill_credits_locked=refill_locked,
+        downgrade_retention=downgrade_retention,
     )

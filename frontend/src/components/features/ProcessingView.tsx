@@ -1,17 +1,24 @@
 import './ProcessingView.css';
 
 export interface ProcessingViewProps {
+  heading: string;
   detail: string;
   showAd: boolean;
   adVideoUrl?: string;
   adPosterUrl?: string;
 }
 
-export default function ProcessingView({ detail, showAd, adVideoUrl, adPosterUrl }: ProcessingViewProps) {
+export default function ProcessingView({
+  heading,
+  detail,
+  showAd,
+  adVideoUrl,
+  adPosterUrl,
+}: ProcessingViewProps) {
   return (
     <div className="processing-indicator">
       <div className="spinner"></div>
-      <h3>Preparing your form…</h3>
+      <h3>{heading}</h3>
       <p>{detail}</p>
       {showAd && adVideoUrl ? (
         <div className="processing-ad" aria-live="polite">

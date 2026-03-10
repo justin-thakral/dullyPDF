@@ -1,22 +1,8 @@
-.searchfill-modal {
-  position: fixed;
-  inset: 0;
-  z-index: 45;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 1.5rem;
-  background: rgba(15, 23, 42, 0.55);
-  backdrop-filter: blur(2px);
-}
-
-.searchfill-modal__card {
+.ui-dialog.searchfill-modal__card {
   width: min(980px, 95vw);
   max-height: 90vh;
-  background: #ffffff;
-  border-radius: 18px;
-  border: 1px solid rgba(148, 163, 184, 0.35);
-  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.25);
+  padding: 0;
+  gap: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -107,6 +93,84 @@
   grid-template-columns: minmax(160px, 0.8fr) minmax(130px, 0.6fr) minmax(200px, 1.4fr) auto;
   gap: 0.75rem;
   align-items: end;
+}
+
+.searchfill-targets {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  padding: 0.9rem 1rem;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+}
+
+.searchfill-targets__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.searchfill-targets__eyebrow {
+  margin: 0;
+  font-size: 0.68rem;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-weight: 700;
+}
+
+.searchfill-targets__header h3 {
+  margin: 0.2rem 0 0;
+  font-size: 0.98rem;
+  color: #0f172a;
+}
+
+.searchfill-targets__list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.65rem;
+}
+
+.searchfill-targets__item {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-width: 0;
+  padding: 0.7rem 0.8rem;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.searchfill-targets__item input {
+  margin: 0;
+}
+
+.searchfill-targets__name {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.searchfill-targets__name em {
+  font-style: normal;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #0f766e;
+}
+
+.searchfill-targets__summary {
+  margin: 0;
+  font-size: 0.82rem;
+  color: #475569;
 }
 
 .searchfill-field {
@@ -231,5 +295,9 @@
 
   .searchfill-actions {
     grid-column: auto;
+  }
+
+  .searchfill-targets__header {
+    flex-direction: column;
   }
 }

@@ -9,10 +9,17 @@ export function useFieldHistory() {
   const [fields, setFields] = useState<PdfField[]>([]);
   const [historyTick, setHistoryTick] = useState(0);
 
+  const pushSnapshot = (stack: PdfField[][], snapshot: PdfField[]) => {
+    stack.push(snapshot);
+    if (stack.length > MAX_FIELD_HISTORY) {
+      stack.shift();
+    }
+  };
+
   const pushFieldHistory = useCallback((snapshot: PdfField[]) => {
     const history = historyRef.current;
-    history.undo = [...history.undo, snapshot].slice(-MAX_FIELD_HISTORY);
-    history.redo = [];
+    pushSnapshot(history.undo, snapshot);
+    history.redo.length = 0;
     setHistoryTick((prev) => prev + 1);
   }, []);
 
@@ -67,8 +74,8 @@ export function useFieldHistory() {
       const history = historyRef.current;
       if (!history.undo.length) return;
       const previous = history.undo[history.undo.length - 1];
-      history.undo = history.undo.slice(0, -1);
-      history.redo = [...history.redo, fieldsRef.current].slice(-MAX_FIELD_HISTORY);
+      history.undo.pop();
+      pushSnapshot(history.redo, fieldsRef.current);
       pendingHistoryRef.current = null;
       fieldsRef.current = previous;
       setFields(previous);
@@ -86,8 +93,8 @@ export function useFieldHistory() {
       const history = historyRef.current;
       if (!history.redo.length) return;
       const next = history.redo[history.redo.length - 1];
-      history.redo = history.redo.slice(0, -1);
-      history.undo = [...history.undo, fieldsRef.current].slice(-MAX_FIELD_HISTORY);
+      history.redo.pop();
+      pushSnapshot(history.undo, fieldsRef.current);
       pendingHistoryRef.current = null;
       fieldsRef.current = next;
       setFields(next);
@@ -102,6 +109,24 @@ export function useFieldHistory() {
   const reset = useCallback(() => {
     resetFieldHistory([]);
   }, [resetFieldHistory]);
+
+  const restoreState = useCallback(
+    (
+      nextFields: PdfField[],
+      history?: {
+        undo?: PdfField[][];
+        redo?: PdfField[][];
+      } | null,
+    ) => {
+      historyRef.current.undo = Array.isArray(history?.undo) ? history.undo : [];
+      historyRef.current.redo = Array.isArray(history?.redo) ? history.redo : [];
+      pendingHistoryRef.current = null;
+      fieldsRef.current = nextFields;
+      setFields(nextFields);
+      setHistoryTick((prev) => prev + 1);
+    },
+    [],
+  );
 
   const canUndo = historyRef.current.undo.length > 0;
   const canRedo = historyRef.current.redo.length > 0;
@@ -124,6 +149,7 @@ export function useFieldHistory() {
     canUndo,
     canRedo,
     historyTick,
+    restoreState,
     reset,
   };
 }

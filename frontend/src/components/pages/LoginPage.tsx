@@ -1,7 +1,7 @@
 /**
  * Auth page for email/password sign-in with FirebaseUI for OAuth providers.
  */
-import React, { useEffect, useRef, useState } from 'react';
+import React, { startTransition, useEffect, useEffectEvent, useRef, useState } from 'react';
 import type { FirebaseError } from 'firebase/app';
 import {
   getAdditionalUserInfo,
@@ -87,6 +87,9 @@ const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated, onCancel }) => {
     return true;
   })();
   const signupRecaptchaBlocked = mode === 'signup' && signupRecaptchaRequired && !recaptchaSiteKey;
+  const handleAuthenticated = useEffectEvent(() => {
+    onAuthenticated?.();
+  });
 
   useEffect(() => {
     const ui = firebaseui.auth.AuthUI.getInstance() || new firebaseui.auth.AuthUI(firebaseAuth);
@@ -111,7 +114,9 @@ const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated, onCancel }) => {
           if (additionalInfo?.isNewUser) {
             trackGoogleAdsSignup(authResult.user?.uid);
           }
-          onAuthenticated?.();
+          startTransition(() => {
+            handleAuthenticated();
+          });
           return false;
         },
         signInFailure: (authError) => {
@@ -126,7 +131,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated, onCancel }) => {
     return () => {
       ui.reset();
     };
-  }, [mode, onAuthenticated]);
+  }, [mode]);
 
   useEffect(() => {
     if (mode !== 'signup' || !signupRecaptchaRequired || !recaptchaSiteKey) return;
@@ -166,7 +171,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated, onCancel }) => {
     setIsSubmitting(true);
     try {
       const email = form.email.trim();
-      const password = form.password.trim();
+      const password = form.password;
       if (mode === 'signup' && signupRecaptchaRequired) {
         if (!recaptchaSiteKey) {
           setError('reCAPTCHA is required but not configured.');
@@ -184,7 +189,9 @@ const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticated, onCancel }) => {
         trackGoogleAdsSignup(user.uid);
         setInfo('Verification email sent. Check your inbox before continuing.');
       }
-      onAuthenticated?.();
+      startTransition(() => {
+        handleAuthenticated();
+      });
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.message);

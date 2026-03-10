@@ -66,6 +66,10 @@ describe('AccountActionPage', () => {
     expect(verifyEmailActionMocks.verifyPasswordResetActionCode).toHaveBeenCalledWith('reset-code');
     expect(window.location.pathname).toBe('/account-action');
     expect(window.location.search).toBe('');
+    expect((window.history.state as Record<string, unknown>).dullypdfAccountAction).toEqual({
+      kind: 'pending-reset-password',
+      continuePath: '/profile',
+    });
 
     await user.type(screen.getByLabelText('New password'), 'new-secret-123');
     await user.type(screen.getByLabelText('Confirm new password'), 'new-secret-123');
@@ -76,6 +80,40 @@ describe('AccountActionPage', () => {
     });
     expect(verifyEmailActionMocks.confirmPasswordReset).toHaveBeenCalledWith('reset-code', 'new-secret-123');
     expect(screen.getByRole('link', { name: 'Sign in to DullyPDF' }).getAttribute('href')).toBe('/');
+  });
+
+  it('does not restore password reset secrets after the route has been scrubbed and refreshed', async () => {
+    window.history.replaceState(
+      {},
+      '',
+      '/account-action?mode=resetPassword&oobCode=reset-code&continueUrl=https%3A%2F%2Fdullypdf.com%2Fprofile',
+    );
+
+    const { unmount } = render(<AccountActionPage />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Choose a new password' })).toBeTruthy();
+    });
+
+    unmount();
+    render(<AccountActionPage />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'We could not continue the password reset' })).toBeTruthy();
+    });
+
+    expect(
+      screen.getByText(
+        'For security, password reset links are kept only in this tab after they open. Request a fresh reset email to continue.',
+      ),
+    ).toBeTruthy();
+    expect(verifyEmailActionMocks.verifyPasswordResetActionCode).toHaveBeenCalledTimes(1);
+    expect(window.location.pathname).toBe('/account-action');
+    expect(window.location.search).toBe('');
+    expect((window.history.state as Record<string, unknown>).dullypdfAccountAction).toEqual({
+      kind: 'pending-reset-password',
+      continuePath: '/profile',
+    });
   });
 
   it('validates password reset form input before calling Firebase', async () => {

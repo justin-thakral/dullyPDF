@@ -17,7 +17,15 @@ def _reset_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "DETECTOR_TASKS_MAX_ATTEMPTS",
         "DETECTOR_RETRY_AFTER_SECONDS",
         "DETECTOR_TASKS_AUDIENCE",
+        "DETECTOR_TASKS_AUDIENCE_LIGHT",
+        "DETECTOR_TASKS_AUDIENCE_HEAVY",
+        "DETECTOR_TASKS_AUDIENCE_LIGHT_GPU",
+        "DETECTOR_TASKS_AUDIENCE_HEAVY_GPU",
         "DETECTOR_SERVICE_URL",
+        "DETECTOR_SERVICE_URL_LIGHT",
+        "DETECTOR_SERVICE_URL_HEAVY",
+        "DETECTOR_SERVICE_URL_LIGHT_GPU",
+        "DETECTOR_SERVICE_URL_HEAVY_GPU",
         "DETECTOR_CALLER_SERVICE_ACCOUNT",
     ):
         monkeypatch.delenv(key, raising=False)
@@ -125,7 +133,7 @@ def test_retry_headers_omits_retry_after_when_non_positive(
 
 
 def test_require_internal_auth_allows_when_unauthenticated_mode_enabled(mocker) -> None:
-    verify = mocker.patch.object(dm.id_token, "verify_oauth2_token")
+    verify = mocker.patch("backend.services.task_auth_service.id_token.verify_oauth2_token")
     dm._ALLOW_UNAUTHENTICATED = True
 
     assert dm._require_internal_auth(None) == {}
@@ -154,7 +162,10 @@ def test_require_internal_auth_rejects_invalid_token(
 ) -> None:
     dm._ALLOW_UNAUTHENTICATED = False
     monkeypatch.setenv("DETECTOR_SERVICE_URL", "https://detector.example")
-    mocker.patch.object(dm.id_token, "verify_oauth2_token", side_effect=ValueError("bad token"))
+    mocker.patch(
+        "backend.services.task_auth_service.id_token.verify_oauth2_token",
+        side_effect=ValueError("bad token"),
+    )
 
     with pytest.raises(HTTPException) as exc_info:
         dm._require_internal_auth("Bearer token")
@@ -169,7 +180,10 @@ def test_require_internal_auth_requires_service_account_config_in_prod(
     dm._ALLOW_UNAUTHENTICATED = False
     monkeypatch.setenv("DETECTOR_SERVICE_URL", "https://detector.example")
     monkeypatch.setattr(dm, "_is_prod", lambda: True)
-    mocker.patch.object(dm.id_token, "verify_oauth2_token", return_value={"email": "svc@example.com"})
+    mocker.patch(
+        "backend.services.task_auth_service.id_token.verify_oauth2_token",
+        return_value={"email": "svc@example.com"},
+    )
 
     with pytest.raises(HTTPException) as exc_info:
         dm._require_internal_auth("Bearer token")
@@ -184,7 +198,10 @@ def test_require_internal_auth_rejects_disallowed_service_account(
     dm._ALLOW_UNAUTHENTICATED = False
     monkeypatch.setenv("DETECTOR_SERVICE_URL", "https://detector.example")
     monkeypatch.setenv("DETECTOR_CALLER_SERVICE_ACCOUNT", "allowed@example.com")
-    mocker.patch.object(dm.id_token, "verify_oauth2_token", return_value={"email": "other@example.com"})
+    mocker.patch(
+        "backend.services.task_auth_service.id_token.verify_oauth2_token",
+        return_value={"email": "other@example.com"},
+    )
 
     with pytest.raises(HTTPException) as exc_info:
         dm._require_internal_auth("Bearer token")
@@ -200,10 +217,30 @@ def test_require_internal_auth_returns_payload_for_allowed_caller(
     monkeypatch.setenv("DETECTOR_SERVICE_URL", "https://detector.example")
     monkeypatch.setenv("DETECTOR_CALLER_SERVICE_ACCOUNT", "allowed@example.com")
     payload = {"email": "allowed@example.com", "sub": "abc123"}
-    verify = mocker.patch.object(dm.id_token, "verify_oauth2_token", return_value=payload)
+    verify = mocker.patch(
+        "backend.services.task_auth_service.id_token.verify_oauth2_token",
+        return_value=payload,
+    )
 
     assert dm._require_internal_auth("Bearer token") == payload
     verify.assert_called_once()
+
+
+def test_require_internal_auth_accepts_profile_specific_detector_audience(
+    mocker,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dm._ALLOW_UNAUTHENTICATED = False
+    monkeypatch.setenv("DETECTOR_TASKS_AUDIENCE_LIGHT_GPU", "gpu-detector-audience")
+    monkeypatch.setenv("DETECTOR_CALLER_SERVICE_ACCOUNT", "allowed@example.com")
+    payload = {"email": "allowed@example.com", "sub": "gpu-task"}
+    verify = mocker.patch(
+        "backend.services.task_auth_service.id_token.verify_oauth2_token",
+        return_value=payload,
+    )
+
+    assert dm._require_internal_auth("Bearer token") == payload
+    assert verify.call_args.kwargs["audience"] == "gpu-detector-audience"
 
 
 def test_finish_detection_failure_updates_metadata_and_detection_request(mocker) -> None:
@@ -316,7 +353,10 @@ def test_require_internal_auth_skips_caller_check_in_non_prod_without_config(
     monkeypatch.setenv("DETECTOR_SERVICE_URL", "https://detector.example")
     monkeypatch.setenv("ENV", "test")
     payload = {"email": "any@example.com", "sub": "abc"}
-    mocker.patch.object(dm.id_token, "verify_oauth2_token", return_value=payload)
+    mocker.patch(
+        "backend.services.task_auth_service.id_token.verify_oauth2_token",
+        return_value=payload,
+    )
 
     result = dm._require_internal_auth("Bearer valid-token")
     assert result == payload

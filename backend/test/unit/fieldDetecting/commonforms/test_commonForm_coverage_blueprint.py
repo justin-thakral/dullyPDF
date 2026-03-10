@@ -153,6 +153,7 @@ def test_ensure_gcs_model_uses_cache_without_download(monkeypatch: pytest.Monkey
     cache_dir.mkdir(parents=True, exist_ok=True)
     cached = cache_dir / "weights.pt"
     cached.write_bytes(b"cached")
+    cf._cache_ready_marker(cached).write_text("ready\n", encoding="utf-8")
 
     download = mocker.patch.object(cf, "_download_gcs_blob")
 
@@ -173,8 +174,36 @@ def test_ensure_gcs_model_releases_lock_when_download_fails(
     with pytest.raises(RuntimeError, match="download failed"):
         cf._ensure_gcs_model("gs://weights/models/weights.pt", "FFDNet-L")
 
-    lock_path = tmp_path / cf._safe_cache_key("FFDNet-L") / ".download.lock"
+    cache_dir = tmp_path / cf._safe_cache_key("FFDNet-L")
+    lock_path = cache_dir / ".download.lock"
+    local_path = cache_dir / "weights.pt"
     assert lock_path.exists() is False
+    assert local_path.exists() is False
+    assert cf._cache_ready_marker(local_path).exists() is False
+
+
+def test_ensure_gcs_model_redownloads_cache_without_ready_marker(
+    monkeypatch: pytest.MonkeyPatch,
+    mocker,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("COMMONFORMS_WEIGHTS_CACHE_DIR", str(tmp_path))
+    cache_dir = tmp_path / cf._safe_cache_key("FFDNet-L")
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cached = cache_dir / "weights.pt"
+    cached.write_bytes(b"stale-partial")
+
+    def _write_download(_bucket: str, _object_name: str, dest: Path) -> None:
+        dest.write_bytes(b"fresh-model")
+
+    download = mocker.patch.object(cf, "_download_gcs_blob", side_effect=_write_download)
+
+    resolved = cf._ensure_gcs_model("gs://weights/models/weights.pt", "FFDNet-L")
+
+    assert resolved == cached
+    assert cached.read_bytes() == b"fresh-model"
+    assert cf._cache_ready_marker(cached).exists() is True
+    download.assert_called_once()
 
 
 def test_detect_commonforms_fields_missing_pdf_raises_file_not_found(tmp_path: Path) -> None:

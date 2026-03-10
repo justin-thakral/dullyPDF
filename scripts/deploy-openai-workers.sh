@@ -35,6 +35,25 @@ require_nonempty() {
   fi
 }
 
+require_exact() {
+  local name="$1"
+  local expected="$2"
+  local actual="${!name:-}"
+  if [[ "$actual" != "$expected" ]]; then
+    echo "Expected $name=$expected (got '${actual}')." >&2
+    exit 1
+  fi
+}
+
+require_empty() {
+  local name="$1"
+  local actual="${!name:-}"
+  if [[ -n "$actual" ]]; then
+    echo "Expected $name to be empty for prod deploys." >&2
+    exit 1
+  fi
+}
+
 PROJECT_ID="${PROJECT_ID:-${OPENAI_RENAME_TASKS_PROJECT:-${OPENAI_REMAP_TASKS_PROJECT:-${FIREBASE_PROJECT_ID:-dullypdf-dev}}}}"
 REGION="${REGION:-${OPENAI_RENAME_TASKS_LOCATION:-${OPENAI_REMAP_TASKS_LOCATION:-us-central1}}}"
 ARTIFACT_REPO="${WORKER_ARTIFACT_REPO:-dullypdf-backend}"
@@ -50,16 +69,32 @@ REMAP_SERVICE_HEAVY="${OPENAI_REMAP_SERVICE_NAME_HEAVY:-dullypdf-openai-remap-he
 
 RENAME_CALLER_SA="${OPENAI_RENAME_TASKS_SERVICE_ACCOUNT:-}"
 REMAP_CALLER_SA="${OPENAI_REMAP_TASKS_SERVICE_ACCOUNT:-}"
-RUNTIME_SA="${OPENAI_WORKER_RUNTIME_SERVICE_ACCOUNT:-${WORKER_RUNTIME_SERVICE_ACCOUNT:-${RENAME_CALLER_SA:-${REMAP_CALLER_SA:-}}}}"
+RENAME_RUNTIME_SA="${OPENAI_RENAME_RUNTIME_SERVICE_ACCOUNT:-}"
+REMAP_RUNTIME_SA="${OPENAI_REMAP_RUNTIME_SERVICE_ACCOUNT:-}"
 
 require_nonempty PROJECT_ID
 require_nonempty REGION
 require_nonempty FIREBASE_PROJECT_ID
-require_nonempty FORMS_BUCKET
 require_nonempty SANDBOX_SESSION_BUCKET
 require_nonempty OPENAI_RENAME_TASKS_SERVICE_ACCOUNT
 require_nonempty OPENAI_REMAP_TASKS_SERVICE_ACCOUNT
-require_nonempty RUNTIME_SA
+require_nonempty RENAME_RUNTIME_SA
+require_nonempty REMAP_RUNTIME_SA
+
+if [[ "${ENV:-}" == "prod" || "${ENV:-}" == "production" ]]; then
+  require_exact FIREBASE_USE_ADC "true"
+  require_empty FIREBASE_CREDENTIALS
+  require_empty FIREBASE_CREDENTIALS_SECRET
+  require_empty GOOGLE_APPLICATION_CREDENTIALS
+  if [[ "$RENAME_RUNTIME_SA" == "$RENAME_CALLER_SA" || "$REMAP_RUNTIME_SA" == "$REMAP_CALLER_SA" ]]; then
+    echo "OPENAI_*_RUNTIME_SERVICE_ACCOUNT must differ from the matching worker caller service account in prod." >&2
+    exit 1
+  fi
+  if [[ "$RENAME_RUNTIME_SA" == "$REMAP_RUNTIME_SA" ]]; then
+    echo "OPENAI_RENAME_RUNTIME_SERVICE_ACCOUNT and OPENAI_REMAP_RUNTIME_SERVICE_ACCOUNT must be distinct in prod." >&2
+    exit 1
+  fi
+fi
 
 TMP_ENV_FILE="$(mktemp)"
 TMP_RENAME_BUILD_CONFIG="$(mktemp)"
@@ -73,12 +108,41 @@ out_path = sys.argv[2]
 script_only = {"PORT"}
 secret_bindings = {
     "OPENAI_API_KEY_SECRET": "OPENAI_API_KEY",
-    "FIREBASE_GITHUB_CLIENT_SECRET_SECRET": "FIREBASE_GITHUB_CLIENT_SECRET",
-    "FIREBASE_GOOGLE_CLIENT_SECRET_SECRET": "FIREBASE_GOOGLE_CLIENT_SECRET",
-    "GMAIL_CLIENT_SECRET_SECRET": "GMAIL_CLIENT_SECRET",
-    "GMAIL_REFRESH_TOKEN_SECRET": "GMAIL_REFRESH_TOKEN",
-    "ADMIN_TOKEN_SECRET": "ADMIN_TOKEN",
 }
+allowed_exact = {
+    "ENV",
+    "FIREBASE_PROJECT_ID",
+    "FIREBASE_USE_ADC",
+    "FIREBASE_CHECK_REVOKED",
+    "FIREBASE_CLOCK_SKEW_SECONDS",
+    "GCP_PROJECT_ID",
+    "OPENAI_API_KEY",
+    "OPENAI_REQUEST_TIMEOUT_SECONDS",
+    "OPENAI_MAX_RETRIES",
+    "OPENAI_WORKER_MAX_RETRIES",
+    "OPENAI_SCHEMA_MAPPING_MODEL",
+    "OPENAI_SCHEMA_MAX_FIELDS",
+    "OPENAI_TEMPLATE_MAX_FIELDS",
+    "OPENAI_SCHEMA_MAX_PAYLOAD_BYTES",
+    "OPENAI_SCHEMA_MAX_FIELD_NAME_LEN",
+    "OPENAI_PRICE_INPUT_PER_1M_USD",
+    "OPENAI_PRICE_OUTPUT_PER_1M_USD",
+    "OPENAI_PRICE_CACHED_INPUT_PER_1M_USD",
+    "OPENAI_PRICE_REASONING_OUTPUT_PER_1M_USD",
+    "SANDBOX_DEBUG",
+    "SANDBOX_LOG_OPENAI_RESPONSE",
+    "SANDBOX_OPENAI_LOG_TTL_SECONDS",
+    "BASE_OPENAI_CREDITS",
+    "PRO_MONTHLY_OPENAI_CREDITS",
+    "SANDBOX_RENAME_MODEL",
+}
+allowed_prefixes = (
+    "OPENAI_RENAME_",
+    "OPENAI_REMAP_",
+    "OPENAI_TASKS_",
+    "OPENAI_PREWARM_",
+    "SANDBOX_SESSION_",
+)
 
 def parse_env(path):
     values = {}
@@ -108,7 +172,15 @@ for binding_key, target_key in secret_bindings.items():
     if binding_value or not target_value:
         omit_keys.add(target_key)
 
-data = {key: value for key, value in raw_values.items() if key not in omit_keys}
+data = {
+    key: value
+    for key, value in raw_values.items()
+    if key not in omit_keys
+    and (
+        key in allowed_exact
+        or any(key.startswith(prefix) for prefix in allowed_prefixes)
+    )
+}
 with open(out_path, "w", encoding="utf-8") as handle:
     for key in sorted(data.keys()):
         handle.write(f"{key}: {json.dumps(data[key])}\n")
@@ -128,24 +200,15 @@ elif [[ -n "${OPENAI_API_KEY:-}" ]]; then
   # If the service currently uses a Secret Manager binding, remove it first.
   SECRET_UPDATES+=("OPENAI_API_KEY=")
 fi
-if [[ -n "${FIREBASE_GITHUB_CLIENT_SECRET_SECRET:-}" ]]; then
-  SECRET_UPDATES+=("FIREBASE_GITHUB_CLIENT_SECRET=${FIREBASE_GITHUB_CLIENT_SECRET_SECRET}:latest")
-fi
-if [[ -n "${FIREBASE_GOOGLE_CLIENT_SECRET_SECRET:-}" ]]; then
-  SECRET_UPDATES+=("FIREBASE_GOOGLE_CLIENT_SECRET=${FIREBASE_GOOGLE_CLIENT_SECRET_SECRET}:latest")
-fi
-if [[ -n "${GMAIL_CLIENT_SECRET_SECRET:-}" ]]; then
-  SECRET_UPDATES+=("GMAIL_CLIENT_SECRET=${GMAIL_CLIENT_SECRET_SECRET}:latest")
-fi
-if [[ -n "${GMAIL_REFRESH_TOKEN_SECRET:-}" ]]; then
-  SECRET_UPDATES+=("GMAIL_REFRESH_TOKEN=${GMAIL_REFRESH_TOKEN_SECRET}:latest")
-fi
-if [[ -n "${ADMIN_TOKEN_SECRET:-}" ]]; then
-  SECRET_UPDATES+=("ADMIN_TOKEN=${ADMIN_TOKEN_SECRET}:latest")
-fi
 
 SECRET_FLAGS=()
-REMOVE_SECRETS=()
+REMOVE_SECRETS=(
+  "FIREBASE_GITHUB_CLIENT_SECRET"
+  "FIREBASE_GOOGLE_CLIENT_SECRET"
+  "GMAIL_CLIENT_SECRET"
+  "GMAIL_REFRESH_TOKEN"
+  "ADMIN_TOKEN"
+)
 for update in "${SECRET_UPDATES[@]}"; do
   if [[ "$update" == *"=" && "$update" != *":"* ]]; then
     REMOVE_SECRETS+=("${update%=}")
@@ -194,10 +257,45 @@ deploy_worker() {
   local service_name="$1"
   local image="$2"
   local caller_service_account="$3"
-  local allow_var="$4"
-  local caller_var="$5"
-  local service_url_var="$6"
-  local audience_var="$7"
+  local runtime_service_account="$4"
+  local allow_var="$5"
+  local caller_var="$6"
+  local service_url_var="$7"
+  local audience_var="$8"
+
+  reset_invoker_policy() {
+    local allowed_member="$1"
+    local tmp_policy
+    tmp_policy="$(mktemp)"
+
+    gcloud run services get-iam-policy "$service_name" \
+      --region "$REGION" \
+      --project "$PROJECT_ID" \
+      --format=json > "$tmp_policy"
+
+    python3 - <<'PY' "$tmp_policy" "$allowed_member"
+import json
+import sys
+
+policy_path = sys.argv[1]
+allowed_member = sys.argv[2]
+
+with open(policy_path, "r", encoding="utf-8") as handle:
+    policy = json.load(handle)
+
+bindings = [binding for binding in policy.get("bindings", []) if binding.get("role") != "roles/run.invoker"]
+bindings.append({"role": "roles/run.invoker", "members": [allowed_member]})
+policy["bindings"] = bindings
+
+with open(policy_path, "w", encoding="utf-8") as handle:
+    json.dump(policy, handle)
+PY
+
+    gcloud run services set-iam-policy "$service_name" "$tmp_policy" \
+      --region "$REGION" \
+      --project "$PROJECT_ID" >/dev/null
+    rm -f "$tmp_policy"
+  }
 
   # Cloud Run rejects secret->literal type changes in a single deploy call.
   # Remove stale secret bindings first so literals from --env-vars-file can apply.
@@ -213,7 +311,7 @@ deploy_worker() {
     --image "$image" \
     --region "$REGION" \
     --project "$PROJECT_ID" \
-    --service-account "$RUNTIME_SA" \
+    --service-account "$runtime_service_account" \
     --no-allow-unauthenticated \
     --env-vars-file "$TMP_ENV_FILE" \
     "${SECRET_ARGS[@]}"
@@ -235,24 +333,16 @@ deploy_worker() {
     --project "$PROJECT_ID" \
     --update-env-vars "${allow_var}=false,${caller_var}=${caller_service_account},${service_url_var}=${service_url},${audience_var}=${service_url}" >/dev/null
 
-  # Defense in depth: ensure public invoker access is removed even if previously granted.
-  gcloud run services remove-iam-policy-binding "$service_name" \
-    --region "$REGION" \
-    --project "$PROJECT_ID" \
-    --member="allUsers" \
-    --role="roles/run.invoker" >/dev/null 2>&1 || true
-
-  gcloud run services add-iam-policy-binding "$service_name" \
-    --region "$REGION" \
-    --project "$PROJECT_ID" \
-    --member="serviceAccount:${caller_service_account}" \
-    --role="roles/run.invoker" >/dev/null
+  # Reset the invoker binding instead of patching members one at a time so
+  # stale principals from older deploys do not survive a hardened redeploy.
+  reset_invoker_policy "serviceAccount:${caller_service_account}"
 }
 
 deploy_worker \
   "$RENAME_SERVICE_LIGHT" \
   "$RENAME_IMAGE" \
   "$RENAME_CALLER_SA" \
+  "$RENAME_RUNTIME_SA" \
   "OPENAI_RENAME_ALLOW_UNAUTHENTICATED" \
   "OPENAI_RENAME_CALLER_SERVICE_ACCOUNT" \
   "OPENAI_RENAME_SERVICE_URL" \
@@ -262,6 +352,7 @@ deploy_worker \
   "$RENAME_SERVICE_HEAVY" \
   "$RENAME_IMAGE" \
   "$RENAME_CALLER_SA" \
+  "$RENAME_RUNTIME_SA" \
   "OPENAI_RENAME_ALLOW_UNAUTHENTICATED" \
   "OPENAI_RENAME_CALLER_SERVICE_ACCOUNT" \
   "OPENAI_RENAME_SERVICE_URL" \
@@ -271,6 +362,7 @@ deploy_worker \
   "$REMAP_SERVICE_LIGHT" \
   "$REMAP_IMAGE" \
   "$REMAP_CALLER_SA" \
+  "$REMAP_RUNTIME_SA" \
   "OPENAI_REMAP_ALLOW_UNAUTHENTICATED" \
   "OPENAI_REMAP_CALLER_SERVICE_ACCOUNT" \
   "OPENAI_REMAP_SERVICE_URL" \
@@ -280,6 +372,7 @@ deploy_worker \
   "$REMAP_SERVICE_HEAVY" \
   "$REMAP_IMAGE" \
   "$REMAP_CALLER_SA" \
+  "$REMAP_RUNTIME_SA" \
   "OPENAI_REMAP_ALLOW_UNAUTHENTICATED" \
   "OPENAI_REMAP_CALLER_SERVICE_ACCOUNT" \
   "OPENAI_REMAP_SERVICE_URL" \

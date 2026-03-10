@@ -76,7 +76,7 @@ def _patch_request_setup(
         (403, "Detector caller not allowed"),
     ],
 )
-def test_run_detection_re_raises_auth_failures(
+def test_run_detection_auth_failures_finalize_the_session(
     client: TestClient,
     mocker,
     detect_payload: dict[str, Any],
@@ -88,13 +88,25 @@ def test_run_detection_re_raises_auth_failures(
         "_require_internal_auth",
         side_effect=HTTPException(status_code=status_code, detail=detail),
     )
-    finish = mocker.patch.object(dm, "_finish_detection_failure")
+    reject = mocker.patch.object(
+        dm,
+        "_reject_detection_request",
+        return_value={
+            "sessionId": "sess_1",
+            "status": DETECTION_STATUS_FAILED,
+            "error": detail,
+        },
+    )
 
     response = client.post("/internal/detect", json=detect_payload)
 
-    assert response.status_code == status_code
-    assert response.json() == {"detail": detail}
-    finish.assert_not_called()
+    assert response.status_code == 200
+    assert response.json() == {
+        "sessionId": "sess_1",
+        "status": DETECTION_STATUS_FAILED,
+        "error": detail,
+    }
+    reject.assert_called_once_with("sess_1", detail)
 
 
 def test_run_detection_auth_success_path_calls_auth_guard_and_validates_pdf_path(
@@ -104,9 +116,9 @@ def test_run_detection_auth_success_path_calls_auth_guard_and_validates_pdf_path
 ) -> None:
     auth = mocker.patch.object(dm, "_require_internal_auth", return_value={"sub": "task"})
     mocker.patch.object(dm, "is_gcs_path", return_value=False)
-    finish = mocker.patch.object(
+    reject = mocker.patch.object(
         dm,
-        "_finish_detection_failure",
+        "_reject_detection_request",
         return_value={
             "sessionId": "sess_1",
             "status": DETECTION_STATUS_FAILED,
@@ -127,7 +139,7 @@ def test_run_detection_auth_success_path_calls_auth_guard_and_validates_pdf_path
         "error": "Invalid PDF storage path",
     }
     auth.assert_called_once_with("Bearer valid-token")
-    finish.assert_called_once_with("sess_1", "Invalid PDF storage path")
+    reject.assert_called_once_with("sess_1", "Invalid PDF storage path")
 
 
 def test_run_detection_rejects_unsupported_pipeline(
@@ -136,9 +148,9 @@ def test_run_detection_rejects_unsupported_pipeline(
     detect_payload: dict[str, Any],
 ) -> None:
     _patch_request_setup(mocker, metadata=_metadata(detect_payload["pdfPath"]), gcs_path_ok=True)
-    finish = mocker.patch.object(
+    reject = mocker.patch.object(
         dm,
-        "_finish_detection_failure",
+        "_reject_detection_request",
         return_value={
             "sessionId": "sess_1",
             "status": DETECTION_STATUS_FAILED,
@@ -153,7 +165,7 @@ def test_run_detection_rejects_unsupported_pipeline(
 
     assert response.status_code == 200
     assert response.json()["error"] == "Unsupported detection pipeline"
-    finish.assert_called_once_with("sess_1", "Unsupported detection pipeline")
+    reject.assert_called_once_with("sess_1", "Unsupported detection pipeline")
 
 
 def test_run_detection_rejects_when_session_metadata_missing(
@@ -162,9 +174,9 @@ def test_run_detection_rejects_when_session_metadata_missing(
     detect_payload: dict[str, Any],
 ) -> None:
     _patch_request_setup(mocker, metadata=None, gcs_path_ok=True)
-    finish = mocker.patch.object(
+    reject = mocker.patch.object(
         dm,
-        "_finish_detection_failure",
+        "_reject_detection_request",
         return_value={
             "sessionId": "sess_1",
             "status": DETECTION_STATUS_FAILED,
@@ -176,7 +188,7 @@ def test_run_detection_rejects_when_session_metadata_missing(
 
     assert response.status_code == 200
     assert response.json()["error"] == "Session metadata not found"
-    finish.assert_called_once_with("sess_1", "Session metadata not found")
+    reject.assert_called_once_with("sess_1", "Session metadata not found")
 
 
 def test_run_detection_rejects_when_session_pdf_path_mismatches(
@@ -185,9 +197,9 @@ def test_run_detection_rejects_when_session_pdf_path_mismatches(
     detect_payload: dict[str, Any],
 ) -> None:
     _patch_request_setup(mocker, metadata=_metadata("gs://bucket/forms/other.pdf"), gcs_path_ok=True)
-    finish = mocker.patch.object(
+    reject = mocker.patch.object(
         dm,
-        "_finish_detection_failure",
+        "_reject_detection_request",
         return_value={
             "sessionId": "sess_1",
             "status": DETECTION_STATUS_FAILED,
@@ -199,7 +211,26 @@ def test_run_detection_rejects_when_session_pdf_path_mismatches(
 
     assert response.status_code == 200
     assert response.json()["error"] == "Session PDF path mismatch"
-    finish.assert_called_once_with("sess_1", "Session PDF path mismatch")
+    reject.assert_called_once_with("sess_1", "Session PDF path mismatch")
+
+
+def test_run_detection_rejected_preflight_persists_failed_state(
+    client: TestClient,
+    mocker,
+    detect_payload: dict[str, Any],
+) -> None:
+    _, upsert, update = _patch_request_setup(mocker, metadata=None, gcs_path_ok=True)
+
+    response = client.post("/internal/detect", json=detect_payload)
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "sessionId": "sess_1",
+        "status": DETECTION_STATUS_FAILED,
+        "error": "Session metadata not found",
+    }
+    upsert.assert_called_once()
+    update.assert_called_once()
 
 
 def test_run_detection_success_persists_running_and_complete_states(

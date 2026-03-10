@@ -1,24 +1,6 @@
 <!doctype html>
 <html lang="en">
   <head>
-    <script>
-      (() => {
-        const tagId = '%VITE_GOOGLE_ADS_TAG_ID%';
-        if (!tagId) return;
-
-        const script = document.createElement('script');
-        script.async = true;
-        script.src = `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(tagId)}`;
-        document.head.appendChild(script);
-
-        window.dataLayer = window.dataLayer || [];
-        window.gtag = window.gtag || function gtag() {
-          window.dataLayer.push(arguments);
-        };
-        window.gtag('js', new Date());
-        window.gtag('config', tagId);
-      })();
-    </script>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" href="/DullyPDFLogoImproved.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />

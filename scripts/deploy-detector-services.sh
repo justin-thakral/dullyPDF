@@ -50,6 +50,25 @@ require_nonempty() {
   fi
 }
 
+require_exact() {
+  local name="$1"
+  local expected="$2"
+  local actual="${!name:-}"
+  if [[ "$actual" != "$expected" ]]; then
+    echo "Expected $name=$expected (got '${actual}')." >&2
+    exit 1
+  fi
+}
+
+require_empty() {
+  local name="$1"
+  local actual="${!name:-}"
+  if [[ -n "$actual" ]]; then
+    echo "Expected $name to be empty for prod deploys." >&2
+    exit 1
+  fi
+}
+
 normalize_detector_deploy_variants() {
   local raw="${1:-active}"
   case "${raw,,}" in
@@ -190,7 +209,7 @@ else
 fi
 
 CALLER_SA="${DETECTOR_TASKS_SERVICE_ACCOUNT:-}"
-RUNTIME_SA="${DETECTOR_RUNTIME_SERVICE_ACCOUNT:-${WORKER_RUNTIME_SERVICE_ACCOUNT:-${CALLER_SA:-}}}"
+RUNTIME_SA="${DETECTOR_RUNTIME_SERVICE_ACCOUNT:-}"
 
 DETECTOR_TIMEOUT_SECONDS_LIGHT="${DETECTOR_TIMEOUT_SECONDS_LIGHT:-900}"
 DETECTOR_TIMEOUT_SECONDS_HEAVY="${DETECTOR_TIMEOUT_SECONDS_HEAVY:-1200}"
@@ -207,10 +226,20 @@ require_nonempty PROJECT_ID
 require_nonempty REGION
 require_nonempty DEPLOY_REGION
 require_nonempty FIREBASE_PROJECT_ID
-require_nonempty FORMS_BUCKET
 require_nonempty DETECTOR_TASKS_SERVICE_ACCOUNT
 require_nonempty RUNTIME_SA
 require_nonempty COMMONFORMS_MODEL_GCS_URI
+
+if [[ "${ENV:-}" == "prod" || "${ENV:-}" == "production" ]]; then
+  require_exact FIREBASE_USE_ADC "true"
+  require_empty FIREBASE_CREDENTIALS
+  require_empty FIREBASE_CREDENTIALS_SECRET
+  require_empty GOOGLE_APPLICATION_CREDENTIALS
+  if [[ "$CALLER_SA" == "$RUNTIME_SA" ]]; then
+    echo "DETECTOR_RUNTIME_SERVICE_ACCOUNT must differ from DETECTOR_TASKS_SERVICE_ACCOUNT in prod." >&2
+    exit 1
+  fi
+fi
 
 COMMONFORMS_DEVICE_VALUE="${COMMONFORMS_DEVICE:-cpu}"
 if [[ "$DETECTOR_GPU_ENABLED" == "true" ]]; then
@@ -225,6 +254,25 @@ import sys
 env_path = sys.argv[1]
 out_path = sys.argv[2]
 script_only = {"PORT", "COMMONFORMS_DEVICE"}
+allowed_exact = {
+    "ENV",
+    "FIREBASE_PROJECT_ID",
+    "FIREBASE_USE_ADC",
+    "FIREBASE_CHECK_REVOKED",
+    "FIREBASE_CLOCK_SKEW_SECONDS",
+    "GCP_PROJECT_ID",
+    "SANDBOX_DEBUG",
+    "SANDBOX_LOG_OPENAI_RESPONSE",
+    "SANDBOX_OPENAI_LOG_TTL_SECONDS",
+}
+allowed_prefixes = (
+    "COMMONFORMS_",
+    "DETECTOR_",
+    "OPENAI_PREWARM_",
+    "OPENAI_RENAME_",
+    "OPENAI_REMAP_",
+    "SANDBOX_SESSION_",
+)
 
 def parse_env(path):
     values = {}
@@ -246,7 +294,15 @@ def parse_env(path):
     return values
 
 raw_values = parse_env(env_path)
-data = {key: value for key, value in raw_values.items() if key not in script_only}
+data = {
+    key: value
+    for key, value in raw_values.items()
+    if key not in script_only
+    and (
+        key in allowed_exact
+        or any(key.startswith(prefix) for prefix in allowed_prefixes)
+    )
+}
 with open(out_path, "w", encoding="utf-8") as handle:
     for key in sorted(data.keys()):
         handle.write(f"{key}: {json.dumps(data[key])}\n")
@@ -323,6 +379,41 @@ deploy_detector() {
   local memory_limit="$DETECTOR_MEMORY_LIGHT"
   local stable_audience=""
   local runtime_audience=""
+
+  reset_invoker_policy() {
+    local allowed_member="$1"
+    local tmp_policy
+    tmp_policy="$(mktemp)"
+
+    gcloud run services get-iam-policy "$service_name" \
+      --region "$DEPLOY_REGION" \
+      --project "$PROJECT_ID" \
+      --format=json > "$tmp_policy"
+
+    python3 - <<'PY' "$tmp_policy" "$allowed_member"
+import json
+import sys
+
+policy_path = sys.argv[1]
+allowed_member = sys.argv[2]
+
+with open(policy_path, "r", encoding="utf-8") as handle:
+    policy = json.load(handle)
+
+bindings = [binding for binding in policy.get("bindings", []) if binding.get("role") != "roles/run.invoker"]
+bindings.append({"role": "roles/run.invoker", "members": [allowed_member]})
+policy["bindings"] = bindings
+
+with open(policy_path, "w", encoding="utf-8") as handle:
+    json.dump(policy, handle)
+PY
+
+    gcloud run services set-iam-policy "$service_name" "$tmp_policy" \
+      --region "$DEPLOY_REGION" \
+      --project "$PROJECT_ID" \
+      --quiet >/dev/null
+    rm -f "$tmp_policy"
+  }
   local profile_upper=""
   local sync_env_vars=""
   local service_env_file
@@ -423,23 +514,9 @@ PY
     --update-env-vars "$sync_env_vars" >/dev/null
 
   if [[ "$DETECTOR_DEPLOY_ALLOW_UNAUTHENTICATED" == "true" ]]; then
-    gcloud run services add-iam-policy-binding "$service_name" \
-      --region "$DEPLOY_REGION" \
-      --project "$PROJECT_ID" \
-      --member="allUsers" \
-      --role="roles/run.invoker" >/dev/null
+    reset_invoker_policy "allUsers"
   else
-    gcloud run services remove-iam-policy-binding "$service_name" \
-      --region "$DEPLOY_REGION" \
-      --project "$PROJECT_ID" \
-      --member="allUsers" \
-      --role="roles/run.invoker" >/dev/null 2>&1 || true
-
-    gcloud run services add-iam-policy-binding "$service_name" \
-      --region "$DEPLOY_REGION" \
-      --project "$PROJECT_ID" \
-      --member="serviceAccount:${CALLER_SA}" \
-      --role="roles/run.invoker" >/dev/null
+    reset_invoker_policy "serviceAccount:${CALLER_SA}"
   fi
 }
 

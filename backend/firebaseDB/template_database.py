@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional
 
 from backend.logging_config import get_logger
 from ..time_utils import now_iso
+from .firestore_query_utils import where_equals
 from .firebase_service import get_firestore_client
 
 
@@ -46,11 +47,11 @@ def list_templates(user_id: str) -> List[TemplateRecord]:
     if not user_id:
         return []
     client = get_firestore_client()
-    snapshot = (
-        client.collection(TEMPLATES_COLLECTION)
-        .where("user_id", "==", user_id)
-        .get()
-    )
+    snapshot = where_equals(
+        client.collection(TEMPLATES_COLLECTION),
+        "user_id",
+        user_id,
+    ).get()
     records = [_serialize_template(doc) for doc in snapshot]
     records.sort(key=lambda rec: rec.created_at or "", reverse=True)
     logger.debug("Fetched templates: user=%s count=%s", user_id, len(records))

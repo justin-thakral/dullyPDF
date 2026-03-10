@@ -1,7 +1,7 @@
 /**
  * Side panel that lists fields and controls visibility/filtering.
  */
-import { useCallback, useMemo, useState, type ChangeEvent } from 'react';
+import { memo, useCallback, useDeferredValue, useMemo, useState, type ChangeEvent } from 'react';
 import type { ConfidenceFilter, ConfidenceTier, FieldType, PdfField } from '../../types';
 import {
   fieldConfidenceForField,
@@ -17,6 +17,20 @@ const MIN_PAGE = 1;
 
 type SortMode = 'page' | 'name' | 'type' | 'confidence';
 export type FieldListDisplayPreset = 'review' | 'edit' | 'fill' | 'custom';
+
+type PreparedFieldRow = {
+  field: PdfField;
+  searchName: string;
+  typeLabel: string;
+  sizeLabel: string;
+  fieldConfidenceValue: number;
+  fieldTier: ConfidenceTier;
+  nameTier: ConfidenceTier | null;
+  showConfidence: boolean;
+  fieldConfidenceText: string | null;
+  nameConfidenceText: string | null;
+  nameClassName: string;
+};
 
 type FieldListPanelProps = {
   fields: PdfField[];
@@ -55,33 +69,125 @@ function clampPage(value: number, pageCount: number) {
 /**
  * Return a sorted copy of fields according to the selected mode.
  */
-function sortFields(items: PdfField[], mode: SortMode): PdfField[] {
+function sortFields(items: PreparedFieldRow[], mode: SortMode): PreparedFieldRow[] {
   const sorted = [...items];
   sorted.sort((a, b) => {
     if (mode === 'name') {
-      return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+      return a.field.name.localeCompare(b.field.name, undefined, { sensitivity: 'base' });
     }
     if (mode === 'type') {
-      const byType = fieldTypeLabel(a.type).localeCompare(fieldTypeLabel(b.type), undefined, {
+      const byType = a.typeLabel.localeCompare(b.typeLabel, undefined, {
         sensitivity: 'base',
       });
       if (byType !== 0) return byType;
-      return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+      return a.field.name.localeCompare(b.field.name, undefined, { sensitivity: 'base' });
     }
     if (mode === 'confidence') {
-      const aConfidence = fieldConfidenceForField(a) ?? -1;
-      const bConfidence = fieldConfidenceForField(b) ?? -1;
+      const aConfidence = a.fieldConfidenceValue;
+      const bConfidence = b.fieldConfidenceValue;
       if (aConfidence !== bConfidence) return bConfidence - aConfidence;
-      return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+      return a.field.name.localeCompare(b.field.name, undefined, { sensitivity: 'base' });
     }
 
-    if (a.page !== b.page) return a.page - b.page;
-    if (a.rect.y !== b.rect.y) return a.rect.y - b.rect.y;
-    if (a.rect.x !== b.rect.x) return a.rect.x - b.rect.x;
-    return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+    if (a.field.page !== b.field.page) return a.field.page - b.field.page;
+    if (a.field.rect.y !== b.field.rect.y) return a.field.rect.y - b.field.rect.y;
+    if (a.field.rect.x !== b.field.rect.x) return a.field.rect.x - b.field.rect.x;
+    return a.field.name.localeCompare(b.field.name, undefined, { sensitivity: 'base' });
   });
   return sorted;
 }
+
+function prepareFieldRow(field: PdfField): PreparedFieldRow {
+  const fieldConfidence = fieldConfidenceForField(field);
+  const nameConfidence = nameConfidenceForField(field);
+  const fieldTier = fieldConfidenceTierForField(field);
+  const nameTier = nameConfidenceTierForField(field);
+  const showConfidence = hasAnyConfidence(field);
+  const fieldConfidenceText =
+    typeof fieldConfidence === 'number'
+      ? `${Math.round(fieldConfidence * 100)}% field`
+      : null;
+  const nameLabel = typeof field.mappingConfidence === 'number' ? 'field remap' : 'name';
+  const nameConfidenceText =
+    typeof nameConfidence === 'number'
+      ? `${Math.round(nameConfidence * 100)}% ${nameLabel}`
+      : null;
+  const nameClassName =
+    nameTier && nameTier !== 'high' ? `field-row__name--conf-${nameTier}` : '';
+
+  return {
+    field,
+    searchName: field.name.toLowerCase(),
+    typeLabel: fieldTypeLabel(field.type),
+    sizeLabel: formatSize(field.rect),
+    fieldConfidenceValue: fieldConfidence ?? -1,
+    fieldTier,
+    nameTier,
+    showConfidence,
+    fieldConfidenceText,
+    nameConfidenceText,
+    nameClassName,
+  };
+}
+
+type FieldListRowProps = {
+  row: PreparedFieldRow;
+  isSelected: boolean;
+  onActivate: (fieldId: string, page: number) => void;
+};
+
+const FieldListRow = memo(function FieldListRow({
+  row,
+  isSelected,
+  onActivate,
+}: FieldListRowProps) {
+  const rowClassName = [
+    'field-row',
+    isSelected ? 'field-row--active' : '',
+    `field-row--conf-${row.fieldTier}`,
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  return (
+    <button
+      className={rowClassName}
+      type="button"
+      onClick={() => onActivate(row.field.id, row.field.page)}
+    >
+      <div className="field-row__main">
+        <span className={['field-row__name', row.nameClassName].filter(Boolean).join(' ')}>
+          {row.field.name}
+        </span>
+        <span className="field-row__meta">
+          <span className={`field-row__type field-row__type--${row.field.type}`}>
+            {row.typeLabel}
+          </span>
+          <span className="field-row__page">Page {row.field.page}</span>
+          {row.showConfidence ? (
+            <span className="field-row__confidence-group">
+              {row.fieldConfidenceText ? (
+                <span className={`field-row__confidence field-row__confidence--${row.fieldTier}`}>
+                  {row.fieldConfidenceText}
+                </span>
+              ) : null}
+              {row.nameConfidenceText ? (
+                <span
+                  className={`field-row__confidence field-row__confidence--${
+                    row.nameTier || 'high'
+                  }`}
+                >
+                  {row.nameConfidenceText}
+                </span>
+              ) : null}
+            </span>
+          ) : null}
+        </span>
+      </div>
+      <span className="field-row__size">{row.sizeLabel}</span>
+    </button>
+  );
+}, (prev, next) => prev.row === next.row && prev.isSelected === next.isSelected && prev.onActivate === next.onActivate);
 
 /**
  * Render the field list UI with filtering and selection.
@@ -115,20 +221,26 @@ export function FieldListPanel({
   const [filterType, setFilterType] = useState<FieldType | 'all'>('all');
   const [sortMode, setSortMode] = useState<SortMode>('page');
   const [showAllPages, setShowAllPages] = useState(false);
+  const deferredQuery = useDeferredValue(query);
+
+  const preparedFields = useMemo(
+    () => fields.map((field) => prepareFieldRow(field)),
+    [fields],
+  );
 
   const baseFields = useMemo(
-    () => (showAllPages ? fields : fields.filter((field) => field.page === currentPage)),
-    [currentPage, fields, showAllPages],
+    () => (showAllPages ? preparedFields : preparedFields.filter((row) => row.field.page === currentPage)),
+    [currentPage, preparedFields, showAllPages],
   );
 
   const filtered = useMemo(() => {
-    const lowered = query.trim().toLowerCase();
-    return baseFields.filter((field) => {
-      if (filterType !== 'all' && field.type !== filterType) return false;
+    const lowered = deferredQuery.trim().toLowerCase();
+    return baseFields.filter((row) => {
+      if (filterType !== 'all' && row.field.type !== filterType) return false;
       if (!lowered) return true;
-      return field.name.toLowerCase().includes(lowered);
+      return row.searchName.includes(lowered);
     });
-  }, [baseFields, filterType, query]);
+  }, [baseFields, deferredQuery, filterType]);
 
   const sorted = useMemo(() => sortFields(filtered, sortMode), [filtered, sortMode]);
 
@@ -145,7 +257,7 @@ export function FieldListPanel({
 
   const selectedOutsideFilters = useMemo(() => {
     if (!selectedField) return null;
-    if (sorted.some((field) => field.id === selectedField.id)) return null;
+    if (sorted.some((row) => row.field.id === selectedField.id)) return null;
     return selectedField;
   }, [selectedField, sorted]);
 
@@ -192,6 +304,13 @@ export function FieldListPanel({
     }
     onSelectField(selectedOutsideFilters.id);
   }, [currentPage, onPageChange, onResetConfidenceFilters, onSelectField, selectedOutsideFilters]);
+
+  const handleActivateField = useCallback((fieldId: string, page: number) => {
+    if (showAllPages && page !== currentPage) {
+      onPageChange(page);
+    }
+    onSelectField(fieldId);
+  }, [currentPage, onPageChange, onSelectField, showAllPages]);
 
   const isNavDisabled = pageCount === 0;
   const canGoBack = currentPage > MIN_PAGE;
@@ -331,7 +450,7 @@ export function FieldListPanel({
             </label>
             <label
               className={`panel-pill-toggle${transformMode ? ' panel-pill-toggle--active' : ''}`}
-              title="Transform mode enables resize handles; moving stays available when Info is off"
+              title="Transform mode enables field moving and resize handles"
             >
               <input
                 id="panel-toggle-transform"
@@ -464,74 +583,14 @@ export function FieldListPanel({
             {sorted.length === 0 ? (
               <p className="panel__empty">{emptyMessage}</p>
             ) : (
-              sorted.map((field) => {
-                const fieldConfidence = fieldConfidenceForField(field);
-                const nameConfidence = nameConfidenceForField(field);
-                const fieldTier = fieldConfidenceTierForField(field);
-                const nameTier = nameConfidenceTierForField(field);
-                const showConfidence = hasAnyConfidence(field);
-                const fieldConfidenceText =
-                  typeof fieldConfidence === 'number'
-                    ? `${Math.round(fieldConfidence * 100)}% field`
-                    : null;
-                const nameLabel = typeof field.mappingConfidence === 'number' ? 'field remap' : 'name';
-                const nameConfidenceText =
-                  typeof nameConfidence === 'number'
-                    ? `${Math.round(nameConfidence * 100)}% ${nameLabel}`
-                    : null;
-                const nameClassName =
-                  nameTier && nameTier !== 'high' ? `field-row__name--conf-${nameTier}` : '';
-                const rowClassName = [
-                  'field-row',
-                  field.id === selectedFieldId ? 'field-row--active' : '',
-                  `field-row--conf-${fieldTier}`,
-                ]
-                  .filter(Boolean)
-                  .join(' ');
-
+              sorted.map((row) => {
                 return (
-                  <button
-                    key={field.id}
-                    className={rowClassName}
-                    type="button"
-                    onClick={() => {
-                      if (showAllPages && field.page !== currentPage) {
-                        onPageChange(field.page);
-                      }
-                      onSelectField(field.id);
-                    }}
-                  >
-                    <div className="field-row__main">
-                      <span className={['field-row__name', nameClassName].filter(Boolean).join(' ')}>
-                        {field.name}
-                      </span>
-                      <span className="field-row__meta">
-                        <span className={`field-row__type field-row__type--${field.type}`}>
-                          {fieldTypeLabel(field.type)}
-                        </span>
-                        <span className="field-row__page">Page {field.page}</span>
-                        {showConfidence ? (
-                          <span className="field-row__confidence-group">
-                            {fieldConfidenceText ? (
-                              <span className={`field-row__confidence field-row__confidence--${fieldTier}`}>
-                                {fieldConfidenceText}
-                              </span>
-                            ) : null}
-                            {nameConfidenceText ? (
-                              <span
-                                className={`field-row__confidence field-row__confidence--${
-                                  nameTier || 'high'
-                                }`}
-                              >
-                                {nameConfidenceText}
-                              </span>
-                            ) : null}
-                          </span>
-                        ) : null}
-                      </span>
-                    </div>
-                    <span className="field-row__size">{formatSize(field.rect)}</span>
-                  </button>
+                  <FieldListRow
+                    key={row.field.id}
+                    row={row}
+                    isSelected={row.field.id === selectedFieldId}
+                    onActivate={handleActivateField}
+                  />
                 );
               })
             )}

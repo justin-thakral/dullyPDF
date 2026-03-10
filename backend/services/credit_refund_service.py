@@ -7,7 +7,7 @@ from typing import Any, Dict, Optional
 
 from backend.env_utils import int_env
 from backend.firebaseDB.credit_refund_database import record_credit_refund_failure
-from backend.firebaseDB.user_database import ROLE_PRO, normalize_role, refund_openai_credits
+from backend.firebaseDB.user_database import refund_openai_credits
 from backend.logging_config import get_logger
 
 
@@ -38,10 +38,9 @@ def _attempt_refund(
     credits: int,
     credit_breakdown: Optional[Dict[str, Any]] = None,
 ) -> None:
-    normalized_role = normalize_role(role)
     breakdown = _normalize_credit_breakdown(credit_breakdown)
     kwargs: Dict[str, Any] = {}
-    if normalized_role == ROLE_PRO and (breakdown["monthly"] > 0 or breakdown["refill"] > 0):
+    if breakdown["base"] > 0 or breakdown["monthly"] > 0 or breakdown["refill"] > 0:
         kwargs["credit_breakdown"] = breakdown
     refund_openai_credits(
         user_id,

@@ -28,6 +28,8 @@ const RELATED_INTENT_PAGES: Record<string, IntentPageKey[]> = {
   detection: ['pdf-to-fillable-form', 'healthcare-pdf-automation'],
   'rename-mapping': ['pdf-to-database-template', 'fillable-form-field-name'],
   'search-fill': ['fill-pdf-from-csv', 'fill-information-in-pdf'],
+  'fill-by-link': ['fill-pdf-by-link', 'fill-information-in-pdf'],
+  'create-group': ['pdf-to-fillable-form', 'pdf-to-database-template'],
   'save-download-profile': ['pdf-to-fillable-form'],
   troubleshooting: [],
   'editor-workflow': ['pdf-to-fillable-form'],

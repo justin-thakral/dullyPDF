@@ -5,16 +5,26 @@ from __future__ import annotations
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Header
+from fastapi import HTTPException
 
 from backend.ai.credit_pricing import resolve_credit_pricing_config
+from backend.api.schemas import DowngradeRetentionUpdateRequest
 from backend.firebaseDB.user_database import (
+    ROLE_BASE,
     ROLE_GOD,
+    clear_user_downgrade_retention,
     get_user_billing_record,
     get_user_profile,
     normalize_role,
 )
 from backend.services.auth_service import require_user
 from backend.services.billing_service import billing_enabled, resolve_checkout_catalog
+from backend.services.downgrade_retention_service import (
+    DowngradeRetentionInactiveError,
+    delete_user_downgrade_retention_now,
+    select_user_retained_templates,
+    sync_user_downgrade_retention,
+)
 from backend.services.limits_service import resolve_role_limits
 
 router = APIRouter()
@@ -43,6 +53,11 @@ async def get_profile(authorization: Optional[str] = Header(default=None)) -> Di
         refill_credits_remaining = None
         available_credits = None
         refill_credits_locked = False
+    retention_summary = None
+    if role == ROLE_BASE:
+        retention_summary = sync_user_downgrade_retention(user.app_user_id, create_if_missing=True)
+    elif profile and profile.downgrade_retention:
+        clear_user_downgrade_retention(user.app_user_id)
     billing_is_enabled = billing_enabled()
     billing_record = get_user_billing_record(user.app_user_id) if billing_is_enabled else None
     return {
@@ -64,5 +79,44 @@ async def get_profile(authorization: Optional[str] = Header(default=None)) -> Di
             "cancelAt": billing_record.cancel_at if billing_record else None,
             "currentPeriodEnd": billing_record.current_period_end if billing_record else None,
         },
+        "retention": retention_summary,
         "limits": resolve_role_limits(role),
+    }
+
+
+@router.patch("/api/profile/downgrade-retention")
+async def update_profile_downgrade_retention(
+    payload: DowngradeRetentionUpdateRequest,
+    authorization: Optional[str] = Header(default=None),
+) -> Dict[str, Any]:
+    user = require_user(authorization)
+    profile = get_user_profile(user.app_user_id)
+    role = normalize_role(profile.role if profile else user.role)
+    if role != ROLE_BASE:
+        raise HTTPException(status_code=409, detail="Downgrade retention only applies to free accounts.")
+    try:
+        retention_summary = select_user_retained_templates(user.app_user_id, payload.keptTemplateIds)
+    except DowngradeRetentionInactiveError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "success": True,
+        "retention": retention_summary or None,
+    }
+
+
+@router.post("/api/profile/downgrade-retention/delete-now")
+async def delete_profile_downgrade_retention(
+    authorization: Optional[str] = Header(default=None),
+) -> Dict[str, Any]:
+    user = require_user(authorization)
+    profile = get_user_profile(user.app_user_id)
+    role = normalize_role(profile.role if profile else user.role)
+    if role != ROLE_BASE:
+        raise HTTPException(status_code=409, detail="Downgrade retention only applies to free accounts.")
+    result = delete_user_downgrade_retention_now(user.app_user_id)
+    return {
+        "success": True,
+        **result,
     }

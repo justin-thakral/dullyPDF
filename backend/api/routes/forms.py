@@ -19,7 +19,7 @@ from backend.sessions.session_store import store_session_entry as _store_session
 from backend.time_utils import now_iso
 from backend.services.app_config import resolve_stream_cors_headers
 from backend.services.auth_service import require_user
-from backend.services.limits_service import resolve_fillable_max_pages
+from backend.services.limits_service import resolve_detect_max_pages, resolve_fillable_max_pages
 from backend.services.pdf_service import (
     cleanup_paths,
     coerce_field_payloads,
@@ -31,6 +31,40 @@ from backend.services.pdf_service import (
 )
 
 router = APIRouter()
+
+
+@router.post("/api/pdf/page-count")
+async def get_pdf_page_count(
+    pdf: UploadFile = File(...),
+    authorization: Optional[str] = Header(default=None),
+) -> Dict[str, Any]:
+    """Validate a PDF upload and return its page count for workspace preflight checks."""
+    user = require_user(authorization)
+    if not pdf:
+        raise HTTPException(status_code=400, detail="Missing PDF upload")
+
+    source_pdf = pdf.filename or "upload.pdf"
+    content_type = (pdf.content_type or "").lower()
+    if not source_pdf.lower().endswith(".pdf") and content_type not in {"application/pdf", "application/octet-stream"}:
+        raise HTTPException(status_code=400, detail="Only PDF uploads are supported")
+
+    max_mb, max_bytes = resolve_upload_limit()
+    pdf_bytes = await read_upload_bytes(
+        pdf,
+        max_bytes=max_bytes,
+        limit_message=f"PDF exceeds {max_mb}MB upload limit",
+    )
+    if not pdf_bytes:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty")
+
+    validation = validate_pdf_for_detection(pdf_bytes)
+    detect_max_pages = resolve_detect_max_pages(user.role)
+    return {
+        "success": True,
+        "pageCount": validation.page_count,
+        "detectMaxPages": detect_max_pages,
+        "withinDetectLimit": validation.page_count <= detect_max_pages,
+    }
 
 
 @router.post("/api/forms/materialize")

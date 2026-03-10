@@ -37,6 +37,14 @@ These calls are made with relative `/api/...` paths:
 - `GET /api/saved-forms/{formId}`
 - `DELETE /api/saved-forms/{formId}`
 - `POST /api/saved-forms/{formId}/session`
+- `GET /api/fill-links`
+- `POST /api/fill-links`
+- `PATCH /api/fill-links/{linkId}`
+- `POST /api/fill-links/{linkId}/close`
+- `GET /api/fill-links/{linkId}/responses`
+- `GET /api/fill-links/{linkId}/responses/{responseId}`
+- `GET /api/fill-links/public/{token}`
+- `POST /api/fill-links/public/{token}/submit`
 - `POST /api/sessions/{sessionId}/touch`
 
 `frontend/src/main.tsx` also sends a best-effort warmup request to:
@@ -59,7 +67,7 @@ These calls are made with absolute URLs (via `buildApiUrl(...)` or detection bas
 
 ## Production behavior
 
-`firebase.json` includes Hosting rewrites for selected `/api/...` routes (for example `/api/profile`, `/api/contact`, `/api/recaptcha/assess`, billing endpoints under `/api/billing/*`, `/api/saved-forms` patterns, and `/api/health`). Routes not covered by rewrites are called directly by the frontend via backend base URL.
+`firebase.json` includes Hosting rewrites for selected `/api/...` routes (for example `/api/profile`, `/api/contact`, `/api/recaptcha/assess`, billing endpoints under `/api/billing/*`, `/api/saved-forms` patterns, `/api/fill-links*`, and `/api/health`). A final SPA rewrite sends public routes such as `/respond/:token`, usage docs, blog pages, and intent pages to `index.html`.
 
 ## Local development behavior
 

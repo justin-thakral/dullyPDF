@@ -25,7 +25,7 @@ from backend.time_utils import now_iso
 
 from backend.services.app_config import resolve_detection_mode
 from backend.services.auth_service import has_admin_override, verify_token
-from backend.services.detection_service import enqueue_detection_job, run_local_detection
+from backend.services.detection_service import enqueue_detection_job, enqueue_local_detection_job
 from backend.services.limits_service import resolve_detect_max_pages
 from backend.services.pdf_service import (
     get_pdf_page_count,
@@ -38,6 +38,12 @@ from backend.firebaseDB.detection_database import record_detection_request, upda
 
 logger = get_logger(__name__)
 router = APIRouter()
+_SAFE_DETECTION_ERRORS = {
+    "Uploaded file is empty",
+    "PDF appears to be corrupted or unsupported",
+    "PDF is encrypted and cannot be processed",
+    "Unable to read PDF pages",
+}
 
 
 def _is_storage_not_found_error(exc: Exception) -> bool:
@@ -54,6 +60,37 @@ def _is_storage_not_found_error(exc: Exception) -> bool:
 def _form_truthy(value: Optional[str]) -> bool:
     raw = str(value or "").strip().lower()
     return raw in {"1", "true", "yes", "on"}
+
+
+def _resolve_detection_runtime(metadata: Dict[str, Any]) -> Optional[str]:
+    explicit_runtime = str(metadata.get("detection_runtime") or "").strip().lower()
+    if explicit_runtime in {"cpu", "gpu"}:
+        return explicit_runtime
+    runtime_hints = " ".join(
+        str(metadata.get(key) or "").strip().lower()
+        for key in ("detection_service_url", "detection_queue", "detection_profile")
+    )
+    if "-gpu" in runtime_hints:
+        return "gpu"
+    if runtime_hints:
+        return "cpu"
+    return None
+
+
+def _sanitize_detection_error(raw_error: Any) -> str:
+    message = str(raw_error or "").strip()
+    if not message:
+        return "Detection failed"
+    if message in _SAFE_DETECTION_ERRORS:
+        return message
+    lowered = message.lower()
+    if "corrupted or unsupported" in lowered:
+        return "PDF appears to be corrupted or unsupported"
+    if "encrypted" in lowered:
+        return "PDF is encrypted and cannot be processed"
+    if "unable to read pdf pages" in lowered:
+        return "Unable to read PDF pages"
+    return "Detection failed. Please retry the upload."
 
 
 @router.post("/detect-fields")
@@ -101,6 +138,7 @@ async def detect_fields(
             f"detect:user:{user.app_user_id}",
             limit=user_rate,
             window_seconds=window_seconds,
+            fail_closed=True,
         ):
             raise HTTPException(status_code=429, detail="Rate limit exceeded for user")
 
@@ -143,53 +181,16 @@ async def detect_fields(
 
     detection_mode = resolve_detection_mode()
     if detection_mode == "local":
-        session_id = str(uuid.uuid4())
-        record_detection_request(
-            request_id=session_id,
-            session_id=session_id,
-            user_id=user.app_user_id if user else None,
-            status=DETECTION_STATUS_RUNNING,
+        response = enqueue_local_detection_job(
+            pdf_bytes,
+            source_pdf,
+            user,
             page_count=page_count,
+            prewarm_rename=prewarm_rename,
+            prewarm_remap=prewarm_remap,
         )
-        try:
-            resolved = run_local_detection(pdf_bytes)
-            fields = resolved.get("fields", [])
-            _store_session_entry(
-                session_id,
-                {
-                    "pdf_bytes": pdf_bytes,
-                    "fields": fields,
-                    "source_pdf": source_pdf,
-                    "result": resolved,
-                    "page_count": page_count,
-                    "user_id": user.app_user_id if user else None,
-                    "detection_status": DETECTION_STATUS_COMPLETE,
-                    "detection_completed_at": now_iso(),
-                },
-            )
-            update_detection_request(
-                request_id=session_id,
-                status=DETECTION_STATUS_COMPLETE,
-                page_count=page_count,
-            )
-            logger.info(
-                "Session %s -> %s final fields produced (commonforms pipeline)",
-                session_id,
-                len(fields),
-            )
-            return {
-                **resolved,
-                "sessionId": session_id,
-                "status": DETECTION_STATUS_COMPLETE,
-            }
-        except Exception as exc:
-            update_detection_request(
-                request_id=session_id,
-                status=DETECTION_STATUS_FAILED,
-                error=str(exc),
-                page_count=page_count,
-            )
-            raise
+        logger.info("Session %s -> queued local detection job", response.get("sessionId"))
+        return response
 
     if detection_mode == "tasks":
         response = enqueue_detection_job(
@@ -252,12 +253,11 @@ async def get_detection_status(
         "detectionStartedAt": metadata.get("detection_started_at"),
         "detectionDurationSeconds": metadata.get("detection_duration_seconds"),
         "detectionProfile": metadata.get("detection_profile"),
-        "detectionQueue": metadata.get("detection_queue"),
-        "detectionServiceUrl": metadata.get("detection_service_url"),
+        "detectionRuntime": _resolve_detection_runtime(metadata),
     }
 
     if status == DETECTION_STATUS_FAILED:
-        response["error"] = metadata.get("detection_error") or "Detection failed"
+        response["error"] = _sanitize_detection_error(metadata.get("detection_error"))
         return response
 
     if status != DETECTION_STATUS_COMPLETE:

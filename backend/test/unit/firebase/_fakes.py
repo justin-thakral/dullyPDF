@@ -4,12 +4,38 @@ from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any
 
+from firebase_admin import firestore as firebase_firestore
+
+
+def _resolve_nested(data: dict[str, Any], field: str) -> Any:
+    current: Any = data
+    for segment in field.split("."):
+        if not isinstance(current, dict) or segment not in current:
+            return None
+        current = current.get(segment)
+    return current
+
+
+def _is_delete_field(value: Any) -> bool:
+    return value is firebase_firestore.DELETE_FIELD or repr(value) == repr(firebase_firestore.DELETE_FIELD)
+
+
+def _merge_with_delete_fields(current: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+    merged = deepcopy(current)
+    for key, value in payload.items():
+        if _is_delete_field(value):
+            merged.pop(key, None)
+            continue
+        merged[key] = deepcopy(value)
+    return merged
+
 
 @dataclass
 class FakeSnapshot:
     id: str
     _data: dict[str, Any]
     exists: bool = True
+    reference: Any = None
 
     def to_dict(self) -> dict[str, Any]:
         return deepcopy(self._data)
@@ -30,25 +56,27 @@ class FakeDocumentRef:
         return self
 
     def get(self, transaction: Any = None) -> FakeSnapshot:
-        return FakeSnapshot(self.id, deepcopy(self._data), exists=self._exists)
+        return FakeSnapshot(self.id, deepcopy(self._data), exists=self._exists, reference=self)
 
     def set(self, payload: dict[str, Any], merge: bool = False) -> None:
         payload_copy = deepcopy(payload)
         self.set_calls.append({"payload": payload_copy, "merge": merge})
         if merge and self._exists:
-            merged = deepcopy(self._data)
-            merged.update(payload_copy)
-            self._data = merged
+            self._data = _merge_with_delete_fields(self._data, payload_copy)
         else:
             self._data = payload_copy
         self._exists = True
 
+    def create(self, payload: dict[str, Any]) -> None:
+        if self._exists:
+            raise RuntimeError(f"Document already exists: {self.id}")
+        self.set(payload, merge=False)
+
     def update(self, payload: dict[str, Any]) -> None:
         payload_copy = deepcopy(payload)
         self.update_calls.append(payload_copy)
-        merged = deepcopy(self._data) if self._exists else {}
-        merged.update(payload_copy)
-        self._data = merged
+        current = deepcopy(self._data) if self._exists else {}
+        self._data = _merge_with_delete_fields(current, payload_copy)
         self._exists = True
 
     def delete(self) -> None:
@@ -87,7 +115,7 @@ class FakeCollection:
             if not doc.get().exists:
                 continue
             data = doc.get().to_dict()
-            if data.get(field) == value:
+            if _resolve_nested(data, field) == value:
                 matches.append(doc)
         return FakeQuery(matches)
 
@@ -95,11 +123,16 @@ class FakeCollection:
 class FakeTransaction:
     def __init__(self):
         self.set_calls: list[dict[str, Any]] = []
+        self.delete_calls: list[str] = []
 
     def set(self, doc_ref: FakeDocumentRef, payload: dict[str, Any], merge: bool = False) -> None:
         payload_copy = deepcopy(payload)
         self.set_calls.append({"doc_id": doc_ref.id, "payload": payload_copy, "merge": merge})
         doc_ref.set(payload_copy, merge=merge)
+
+    def delete(self, doc_ref: FakeDocumentRef) -> None:
+        self.delete_calls.append(doc_ref.id)
+        doc_ref.delete()
 
 
 class FakeFirestoreClient:

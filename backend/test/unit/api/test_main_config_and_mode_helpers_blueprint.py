@@ -7,8 +7,12 @@ def test_is_prod_and_docs_enabled(monkeypatch, app_main, mocker) -> None:
     assert app_main._docs_enabled() is False
 
     monkeypatch.setenv("ENV", "test")
+    monkeypatch.delenv("SANDBOX_ENABLE_DOCS", raising=False)
     assert app_main._is_prod() is False
     assert app_main._docs_enabled() is True
+
+    monkeypatch.setenv("SANDBOX_ENABLE_DOCS", "false")
+    assert app_main._docs_enabled() is False
 
     mocker.patch.object(app_main, "_is_prod", return_value=True)
     assert app_main._docs_enabled() is False
@@ -61,17 +65,21 @@ def test_require_prod_env_reports_missing_keys(app_main, mocker) -> None:
     message = str(ctx.value)
     assert "Missing required prod env vars" in message
     assert "SANDBOX_CORS_ORIGINS" in message
+    assert "FIREBASE_USE_ADC=true" in message
+    assert "RECAPTCHA_ALLOWED_HOSTNAMES" in message
     assert "STRIPE_SECRET_KEY" in message
     assert "DETECTOR_TASKS_SERVICE_ACCOUNT" in message
+    assert "FILL_LINK_TOKEN_SECRET" in message
 
 
 def test_require_prod_env_rejects_wildcard_cors(monkeypatch, app_main, mocker) -> None:
     values = {
         "SANDBOX_CORS_ORIGINS": "*",
         "FIREBASE_PROJECT_ID": "proj",
-        "FIREBASE_CREDENTIALS": "x",
+        "FIREBASE_USE_ADC": "true",
         "FORMS_BUCKET": "forms",
         "TEMPLATES_BUCKET": "templates",
+        "FILL_LINK_TOKEN_SECRET": "fill-link-secret-0123456789abcdef",
         "CONTACT_TO_EMAIL": "to@example.com",
         "CONTACT_FROM_EMAIL": "from@example.com",
         "GMAIL_CLIENT_ID": "cid",
@@ -84,8 +92,10 @@ def test_require_prod_env_rejects_wildcard_cors(monkeypatch, app_main, mocker) -
         "STRIPE_PRICE_REFILL_500": "price_refill",
         "STRIPE_CHECKOUT_SUCCESS_URL": "https://dullypdf.com/account?billing=success",
         "STRIPE_CHECKOUT_CANCEL_URL": "https://dullypdf.com/account?billing=cancel",
+        "STRIPE_MAX_PROCESSED_EVENTS": "256",
         "RECAPTCHA_SITE_KEY": "site",
         "RECAPTCHA_PROJECT_ID": "proj",
+        "RECAPTCHA_ALLOWED_HOSTNAMES": "dullypdf.com",
         "DETECTOR_TASKS_PROJECT": "proj",
         "DETECTOR_TASKS_LOCATION": "us-central1",
         "DETECTOR_TASKS_QUEUE": "queue",
@@ -106,9 +116,10 @@ def test_require_prod_env_accepts_complete_matrix(app_main, mocker) -> None:
     values = {
         "SANDBOX_CORS_ORIGINS": "https://app.example.com",
         "FIREBASE_PROJECT_ID": "proj",
-        "FIREBASE_CREDENTIALS": "x",
+        "FIREBASE_USE_ADC": "true",
         "FORMS_BUCKET": "forms",
         "TEMPLATES_BUCKET": "templates",
+        "FILL_LINK_TOKEN_SECRET": "fill-link-secret-0123456789abcdef",
         "CONTACT_TO_EMAIL": "to@example.com",
         "CONTACT_FROM_EMAIL": "from@example.com",
         "GMAIL_CLIENT_ID": "cid",
@@ -121,8 +132,10 @@ def test_require_prod_env_accepts_complete_matrix(app_main, mocker) -> None:
         "STRIPE_PRICE_REFILL_500": "price_refill",
         "STRIPE_CHECKOUT_SUCCESS_URL": "https://dullypdf.com/account?billing=success",
         "STRIPE_CHECKOUT_CANCEL_URL": "https://dullypdf.com/account?billing=cancel",
+        "STRIPE_MAX_PROCESSED_EVENTS": "256",
         "RECAPTCHA_SITE_KEY": "site",
         "RECAPTCHA_PROJECT_ID": "proj",
+        "RECAPTCHA_ALLOWED_HOSTNAMES": "dullypdf.com",
         "DETECTOR_TASKS_PROJECT": "proj",
         "DETECTOR_TASKS_LOCATION": "us-central1",
         "DETECTOR_TASKS_QUEUE": "queue",
@@ -141,9 +154,10 @@ def test_require_prod_env_rejects_non_https_checkout_urls(app_main, mocker) -> N
     values = {
         "SANDBOX_CORS_ORIGINS": "https://app.example.com",
         "FIREBASE_PROJECT_ID": "proj",
-        "FIREBASE_CREDENTIALS": "x",
+        "FIREBASE_USE_ADC": "true",
         "FORMS_BUCKET": "forms",
         "TEMPLATES_BUCKET": "templates",
+        "FILL_LINK_TOKEN_SECRET": "fill-link-secret-0123456789abcdef",
         "CONTACT_TO_EMAIL": "to@example.com",
         "CONTACT_FROM_EMAIL": "from@example.com",
         "GMAIL_CLIENT_ID": "cid",
@@ -158,6 +172,7 @@ def test_require_prod_env_rejects_non_https_checkout_urls(app_main, mocker) -> N
         "STRIPE_CHECKOUT_CANCEL_URL": "http://dullypdf.com/account?billing=cancel",
         "RECAPTCHA_SITE_KEY": "site",
         "RECAPTCHA_PROJECT_ID": "proj",
+        "RECAPTCHA_ALLOWED_HOSTNAMES": "dullypdf.com",
         "DETECTOR_TASKS_PROJECT": "proj",
         "DETECTOR_TASKS_LOCATION": "us-central1",
         "DETECTOR_TASKS_QUEUE": "queue",
@@ -180,9 +195,10 @@ def test_require_prod_env_rejects_positive_stripe_processed_event_cap(app_main, 
     values = {
         "SANDBOX_CORS_ORIGINS": "https://app.example.com",
         "FIREBASE_PROJECT_ID": "proj",
-        "FIREBASE_CREDENTIALS": "x",
+        "FIREBASE_USE_ADC": "true",
         "FORMS_BUCKET": "forms",
         "TEMPLATES_BUCKET": "templates",
+        "FILL_LINK_TOKEN_SECRET": "fill-link-secret-0123456789abcdef",
         "CONTACT_TO_EMAIL": "to@example.com",
         "CONTACT_FROM_EMAIL": "from@example.com",
         "GMAIL_CLIENT_ID": "cid",
@@ -195,7 +211,207 @@ def test_require_prod_env_rejects_positive_stripe_processed_event_cap(app_main, 
         "STRIPE_PRICE_REFILL_500": "price_refill",
         "STRIPE_CHECKOUT_SUCCESS_URL": "https://dullypdf.com/account?billing=success",
         "STRIPE_CHECKOUT_CANCEL_URL": "https://dullypdf.com/account?billing=cancel",
-        "STRIPE_MAX_PROCESSED_EVENTS": "10",
+        "STRIPE_MAX_PROCESSED_EVENTS": "0",
+        "RECAPTCHA_SITE_KEY": "site",
+        "RECAPTCHA_PROJECT_ID": "proj",
+        "RECAPTCHA_ALLOWED_HOSTNAMES": "dullypdf.com",
+        "DETECTOR_TASKS_PROJECT": "proj",
+        "DETECTOR_TASKS_LOCATION": "us-central1",
+        "DETECTOR_TASKS_QUEUE": "queue",
+        "DETECTOR_SERVICE_URL": "https://detector",
+        "DETECTOR_TASKS_SERVICE_ACCOUNT": "sa@example.com",
+    }
+    mocker.patch.object(app_main, "_is_prod", return_value=True)
+    mocker.patch.object(app_main, "_recaptcha_required_any", return_value=True)
+    mocker.patch.object(app_main, "_resolve_detection_mode", return_value="tasks")
+    mocker.patch.object(app_main, "_env_truthy", return_value=True)
+    mocker.patch.object(app_main, "_env_value", side_effect=lambda key: values.get(key, ""))
+    with pytest.raises(RuntimeError) as ctx:
+        app_main._require_prod_env()
+    assert "STRIPE_MAX_PROCESSED_EVENTS (must be a positive integer in prod)" in str(ctx.value)
+
+
+def test_require_prod_env_rejects_disabled_fill_link_recaptcha(app_main, mocker) -> None:
+    values = {
+        "SANDBOX_CORS_ORIGINS": "https://app.example.com",
+        "FIREBASE_PROJECT_ID": "proj",
+        "FIREBASE_USE_ADC": "true",
+        "FORMS_BUCKET": "forms",
+        "TEMPLATES_BUCKET": "templates",
+        "FILL_LINK_TOKEN_SECRET": "fill-link-secret-0123456789abcdef",
+        "CONTACT_TO_EMAIL": "to@example.com",
+        "CONTACT_FROM_EMAIL": "from@example.com",
+        "GMAIL_CLIENT_ID": "cid",
+        "GMAIL_CLIENT_SECRET": "secret",
+        "GMAIL_REFRESH_TOKEN": "refresh",
+        "STRIPE_SECRET_KEY": "sk_live_abc",
+        "STRIPE_WEBHOOK_SECRET": "whsec_abc",
+        "STRIPE_PRICE_PRO_MONTHLY": "price_monthly",
+        "STRIPE_PRICE_PRO_YEARLY": "price_yearly",
+        "STRIPE_PRICE_REFILL_500": "price_refill",
+        "STRIPE_CHECKOUT_SUCCESS_URL": "https://dullypdf.com/account?billing=success",
+        "STRIPE_CHECKOUT_CANCEL_URL": "https://dullypdf.com/account?billing=cancel",
+        "RECAPTCHA_SITE_KEY": "site",
+        "RECAPTCHA_PROJECT_ID": "proj",
+        "RECAPTCHA_ALLOWED_HOSTNAMES": "dullypdf.com",
+        "DETECTOR_TASKS_PROJECT": "proj",
+        "DETECTOR_TASKS_LOCATION": "us-central1",
+        "DETECTOR_TASKS_QUEUE": "queue",
+        "DETECTOR_SERVICE_URL": "https://detector",
+        "DETECTOR_TASKS_SERVICE_ACCOUNT": "sa@example.com",
+        "FILL_LINK_REQUIRE_RECAPTCHA": "false",
+    }
+    mocker.patch.object(app_main, "_is_prod", return_value=True)
+    mocker.patch.object(app_main, "_recaptcha_required_any", return_value=True)
+    mocker.patch.object(app_main, "_resolve_detection_mode", return_value="tasks")
+    mocker.patch.object(app_main, "_env_truthy", return_value=True)
+    mocker.patch.object(app_main, "_env_value", side_effect=lambda key: values.get(key, ""))
+    with pytest.raises(RuntimeError) as ctx:
+        app_main._require_prod_env()
+    assert "FILL_LINK_REQUIRE_RECAPTCHA (must be true in prod)" in str(ctx.value)
+
+
+def test_require_prod_env_rejects_placeholder_fill_link_token_secret(app_main, mocker) -> None:
+    values = {
+        "SANDBOX_CORS_ORIGINS": "https://app.example.com",
+        "FIREBASE_PROJECT_ID": "proj",
+        "FIREBASE_USE_ADC": "true",
+        "FORMS_BUCKET": "forms",
+        "TEMPLATES_BUCKET": "templates",
+        "FILL_LINK_TOKEN_SECRET": "change_me_prod_fill_link_token_secret",
+        "CONTACT_TO_EMAIL": "to@example.com",
+        "CONTACT_FROM_EMAIL": "from@example.com",
+        "GMAIL_CLIENT_ID": "cid",
+        "GMAIL_CLIENT_SECRET": "secret",
+        "GMAIL_REFRESH_TOKEN": "refresh",
+        "STRIPE_SECRET_KEY": "sk_live_abc",
+        "STRIPE_WEBHOOK_SECRET": "whsec_abc",
+        "STRIPE_PRICE_PRO_MONTHLY": "price_monthly",
+        "STRIPE_PRICE_PRO_YEARLY": "price_yearly",
+        "STRIPE_PRICE_REFILL_500": "price_refill",
+        "STRIPE_CHECKOUT_SUCCESS_URL": "https://dullypdf.com/account?billing=success",
+        "STRIPE_CHECKOUT_CANCEL_URL": "https://dullypdf.com/account?billing=cancel",
+        "RECAPTCHA_SITE_KEY": "site",
+        "RECAPTCHA_PROJECT_ID": "proj",
+        "RECAPTCHA_ALLOWED_HOSTNAMES": "dullypdf.com",
+        "DETECTOR_TASKS_PROJECT": "proj",
+        "DETECTOR_TASKS_LOCATION": "us-central1",
+        "DETECTOR_TASKS_QUEUE": "queue",
+        "DETECTOR_SERVICE_URL": "https://detector",
+        "DETECTOR_TASKS_SERVICE_ACCOUNT": "sa@example.com",
+    }
+    mocker.patch.object(app_main, "_is_prod", return_value=True)
+    mocker.patch.object(app_main, "_recaptcha_required_any", return_value=True)
+    mocker.patch.object(app_main, "_resolve_detection_mode", return_value="tasks")
+    mocker.patch.object(app_main, "_env_truthy", return_value=True)
+    mocker.patch.object(app_main, "_env_value", side_effect=lambda key: values.get(key, ""))
+    with pytest.raises(RuntimeError) as ctx:
+        app_main._require_prod_env()
+    assert "at least 32 characters" in str(ctx.value)
+
+
+def test_require_prod_env_rejects_short_fill_link_token_secret(app_main, mocker) -> None:
+    values = {
+        "SANDBOX_CORS_ORIGINS": "https://app.example.com",
+        "FIREBASE_PROJECT_ID": "proj",
+        "FIREBASE_USE_ADC": "true",
+        "FORMS_BUCKET": "forms",
+        "TEMPLATES_BUCKET": "templates",
+        "FILL_LINK_TOKEN_SECRET": "short-secret",
+        "CONTACT_TO_EMAIL": "to@example.com",
+        "CONTACT_FROM_EMAIL": "from@example.com",
+        "GMAIL_CLIENT_ID": "cid",
+        "GMAIL_CLIENT_SECRET": "secret",
+        "GMAIL_REFRESH_TOKEN": "refresh",
+        "STRIPE_SECRET_KEY": "sk_live_abc",
+        "STRIPE_WEBHOOK_SECRET": "whsec_abc",
+        "STRIPE_PRICE_PRO_MONTHLY": "price_monthly",
+        "STRIPE_PRICE_PRO_YEARLY": "price_yearly",
+        "STRIPE_PRICE_REFILL_500": "price_refill",
+        "STRIPE_CHECKOUT_SUCCESS_URL": "https://dullypdf.com/account?billing=success",
+        "STRIPE_CHECKOUT_CANCEL_URL": "https://dullypdf.com/account?billing=cancel",
+        "RECAPTCHA_SITE_KEY": "site",
+        "RECAPTCHA_PROJECT_ID": "proj",
+        "RECAPTCHA_ALLOWED_HOSTNAMES": "dullypdf.com",
+        "DETECTOR_TASKS_PROJECT": "proj",
+        "DETECTOR_TASKS_LOCATION": "us-central1",
+        "DETECTOR_TASKS_QUEUE": "queue",
+        "DETECTOR_SERVICE_URL": "https://detector",
+        "DETECTOR_TASKS_SERVICE_ACCOUNT": "sa@example.com",
+    }
+    mocker.patch.object(app_main, "_is_prod", return_value=True)
+    mocker.patch.object(app_main, "_recaptcha_required_any", return_value=True)
+    mocker.patch.object(app_main, "_resolve_detection_mode", return_value="tasks")
+    mocker.patch.object(app_main, "_env_truthy", return_value=True)
+    mocker.patch.object(app_main, "_env_value", side_effect=lambda key: values.get(key, ""))
+    with pytest.raises(RuntimeError) as ctx:
+        app_main._require_prod_env()
+    assert "at least 32 characters" in str(ctx.value)
+
+
+def test_require_prod_env_rejects_explicit_firebase_credentials_in_prod(app_main, mocker) -> None:
+    values = {
+        "SANDBOX_CORS_ORIGINS": "https://app.example.com",
+        "FIREBASE_PROJECT_ID": "proj",
+        "FIREBASE_USE_ADC": "true",
+        "FIREBASE_CREDENTIALS": '{"type":"service_account"}',
+        "GOOGLE_APPLICATION_CREDENTIALS": "/tmp/firebase.json",
+        "FORMS_BUCKET": "forms",
+        "TEMPLATES_BUCKET": "templates",
+        "FILL_LINK_TOKEN_SECRET": "fill-link-secret-0123456789abcdef",
+        "CONTACT_TO_EMAIL": "to@example.com",
+        "CONTACT_FROM_EMAIL": "from@example.com",
+        "GMAIL_CLIENT_ID": "cid",
+        "GMAIL_CLIENT_SECRET": "secret",
+        "GMAIL_REFRESH_TOKEN": "refresh",
+        "STRIPE_SECRET_KEY": "sk_live_abc",
+        "STRIPE_WEBHOOK_SECRET": "whsec_abc",
+        "STRIPE_PRICE_PRO_MONTHLY": "price_monthly",
+        "STRIPE_PRICE_PRO_YEARLY": "price_yearly",
+        "STRIPE_PRICE_REFILL_500": "price_refill",
+        "STRIPE_CHECKOUT_SUCCESS_URL": "https://dullypdf.com/account?billing=success",
+        "STRIPE_CHECKOUT_CANCEL_URL": "https://dullypdf.com/account?billing=cancel",
+        "RECAPTCHA_SITE_KEY": "site",
+        "RECAPTCHA_PROJECT_ID": "proj",
+        "RECAPTCHA_ALLOWED_HOSTNAMES": "dullypdf.com",
+        "DETECTOR_TASKS_PROJECT": "proj",
+        "DETECTOR_TASKS_LOCATION": "us-central1",
+        "DETECTOR_TASKS_QUEUE": "queue",
+        "DETECTOR_SERVICE_URL": "https://detector",
+        "DETECTOR_TASKS_SERVICE_ACCOUNT": "sa@example.com",
+    }
+    mocker.patch.object(app_main, "_is_prod", return_value=True)
+    mocker.patch.object(app_main, "_recaptcha_required_any", return_value=True)
+    mocker.patch.object(app_main, "_resolve_detection_mode", return_value="tasks")
+    mocker.patch.object(app_main, "_env_truthy", return_value=True)
+    mocker.patch.object(app_main, "_env_value", side_effect=lambda key: values.get(key, ""))
+    with pytest.raises(RuntimeError) as ctx:
+        app_main._require_prod_env()
+    message = str(ctx.value)
+    assert "FIREBASE_CREDENTIALS (must be unset in prod; use ADC only)" in message
+    assert "GOOGLE_APPLICATION_CREDENTIALS (must be unset in prod; use ADC only)" in message
+
+
+def test_require_prod_env_rejects_missing_recaptcha_allowed_hostnames(app_main, mocker) -> None:
+    values = {
+        "SANDBOX_CORS_ORIGINS": "https://app.example.com",
+        "FIREBASE_PROJECT_ID": "proj",
+        "FIREBASE_USE_ADC": "true",
+        "FORMS_BUCKET": "forms",
+        "TEMPLATES_BUCKET": "templates",
+        "FILL_LINK_TOKEN_SECRET": "fill-link-secret-0123456789abcdef",
+        "CONTACT_TO_EMAIL": "to@example.com",
+        "CONTACT_FROM_EMAIL": "from@example.com",
+        "GMAIL_CLIENT_ID": "cid",
+        "GMAIL_CLIENT_SECRET": "secret",
+        "GMAIL_REFRESH_TOKEN": "refresh",
+        "STRIPE_SECRET_KEY": "sk_live_abc",
+        "STRIPE_WEBHOOK_SECRET": "whsec_abc",
+        "STRIPE_PRICE_PRO_MONTHLY": "price_monthly",
+        "STRIPE_PRICE_PRO_YEARLY": "price_yearly",
+        "STRIPE_PRICE_REFILL_500": "price_refill",
+        "STRIPE_CHECKOUT_SUCCESS_URL": "https://dullypdf.com/account?billing=success",
+        "STRIPE_CHECKOUT_CANCEL_URL": "https://dullypdf.com/account?billing=cancel",
         "RECAPTCHA_SITE_KEY": "site",
         "RECAPTCHA_PROJECT_ID": "proj",
         "DETECTOR_TASKS_PROJECT": "proj",
@@ -211,7 +427,7 @@ def test_require_prod_env_rejects_positive_stripe_processed_event_cap(app_main, 
     mocker.patch.object(app_main, "_env_value", side_effect=lambda key: values.get(key, ""))
     with pytest.raises(RuntimeError) as ctx:
         app_main._require_prod_env()
-    assert "STRIPE_MAX_PROCESSED_EVENTS (must be 0 in prod to preserve webhook idempotency)" in str(ctx.value)
+    assert "RECAPTCHA_ALLOWED_HOSTNAMES (required in prod when reCAPTCHA is enabled)" in str(ctx.value)
 
 
 def test_resolve_cors_origins_wildcard_debug_gating(monkeypatch, app_main, mocker) -> None:

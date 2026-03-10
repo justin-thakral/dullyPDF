@@ -105,8 +105,17 @@ export type PageSize = {
   height: number;
 };
 
+export type SavedFormEditorSnapshot = {
+  version: number;
+  pageCount: number;
+  pageSizes: Record<number, PageSize>;
+  fields: PdfField[];
+  hasRenamedFields: boolean;
+  hasMappedSchema: boolean;
+};
+
 // Data source selector options.
-export type DataSourceKind = 'csv' | 'excel' | 'json' | 'txt' | 'none';
+export type DataSourceKind = 'csv' | 'excel' | 'json' | 'txt' | 'respondent' | 'none';
 
 // Processing pipeline mode.
 export type ProcessingMode = 'detect' | 'fillable' | 'saved' | null;
@@ -128,8 +137,8 @@ export type PendingAutoActions = {
   autoMap: boolean;
 };
 
-// Demo search preset passed to SearchFillModal.
-export type DemoSearchPreset = {
+// Search preset passed to SearchFillModal for demos and respondent jumps.
+export type SearchFillPreset = {
   query: string;
   searchKey?: string;
   searchMode?: 'contains' | 'equals';
@@ -138,6 +147,8 @@ export type DemoSearchPreset = {
   highlightResult?: boolean;
   token: number;
 };
+
+export type DemoSearchPreset = SearchFillPreset;
 
 // Banner notification displayed at the top of the app.
 export type BannerNotice = {

@@ -41,3 +41,4 @@ CSS imports. Keep `display=swap` so text paints immediately.
 - Shared alert/dialog components live in `frontend/src/components/ui`.
 - Alert colors come from `--alert-*` tokens in `frontend/src/index.css`.
 - Dialogs reuse shared button tokens/styles for visual consistency.
+- The shared `DialogFrame` shell portals every modal/backdrop pair to `document.body`, applies the blur/opaque backdrop from `Dialog.css`, and toggles body scroll lock while any dialog is open. Feature dialogs should attach their root styles to `.ui-dialog...` selectors so they inherit the shared layering behavior instead of creating local stacking contexts.

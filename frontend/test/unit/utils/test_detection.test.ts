@@ -75,4 +75,17 @@ describe('detection status messaging', () => {
       ),
     ).toBe('Detecting fields...');
   });
+
+  it('prefers the sanitized detectionRuntime field when service URLs are not exposed', () => {
+    expect(
+      resolveDetectionStatusMessage(
+        {
+          status: 'running',
+          detectionProfile: 'light',
+          detectionRuntime: 'gpu',
+        },
+        15_000,
+      ),
+    ).toBe('Detecting fields on the GPU...');
+  });
 });

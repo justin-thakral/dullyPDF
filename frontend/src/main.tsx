@@ -12,23 +12,29 @@ import {
   type UsageDocsPageKey,
 } from './components/pages/usageDocsContent';
 import { resolveIntentPath, type IntentPageKey } from './config/intentPages';
+import { resolveFeaturePlanPath, type FeaturePlanPageKey } from './config/featurePlanPages';
+import { initializeGoogleAds } from './utils/googleAds';
 
 const App = lazy(() => import('./App'));
 const LegalPage = lazy(() => import('./components/pages/LegalPage'));
 const PublicNotFoundPage = lazy(() => import('./components/pages/PublicNotFoundPage'));
+const FillLinkPublicPage = lazy(() => import('./components/pages/FillLinkPublicPage'));
 const AccountActionPage = lazy(() => import('./components/pages/AccountActionPage'));
 const UsageDocsPage = lazy(() => import('./components/pages/UsageDocsPage'));
 const UsageDocsNotFoundPage = lazy(() => import('./components/pages/UsageDocsNotFoundPage'));
 const IntentLandingPage = lazy(() => import('./components/pages/IntentLandingPage'));
 const IntentHubPage = lazy(() => import('./components/pages/IntentHubPage'));
+const FeaturePlanPage = lazy(() => import('./components/pages/FeaturePlanPage'));
 const BlogIndexPage = lazy(() => import('./components/pages/BlogIndexPage'));
 const BlogPostPage = lazy(() => import('./components/pages/BlogPostPage'));
 
 type AppRoute =
   | { kind: 'app' }
   | { kind: 'legal'; legalKind: LegalPageKind }
+  | { kind: 'fill-link-public'; token: string }
   | { kind: 'intent'; intentKey: IntentPageKey }
   | { kind: 'intent-hub'; hubKey: 'workflows' | 'industries' }
+  | { kind: 'feature-plan'; planKey: FeaturePlanPageKey }
   | { kind: 'account-action' }
   | { kind: 'usage-docs'; pageKey: UsageDocsPageKey }
   | { kind: 'usage-docs-not-found'; requestedPath: string }
@@ -60,6 +66,14 @@ const resolveRoute = (): AppRoute => {
     return { kind: 'account-action' };
   }
 
+  if (normalizedPath.startsWith('/respond/')) {
+    const token = normalizedPath.slice('/respond/'.length);
+    if (token && !token.includes('/')) {
+      if (path !== normalizedPath) replaceBrowserPath(normalizedPath);
+      return { kind: 'fill-link-public', token };
+    }
+  }
+
   if (normalizedPath === '/blog') {
     if (path !== normalizedPath) replaceBrowserPath(normalizedPath);
     return { kind: 'blog-index' };
@@ -78,6 +92,12 @@ const resolveRoute = (): AppRoute => {
       kind: 'intent-hub',
       hubKey: normalizedPath === '/workflows' ? 'workflows' : 'industries',
     };
+  }
+
+  const featurePlanKey = resolveFeaturePlanPath(normalizedPath);
+  if (featurePlanKey) {
+    if (path !== normalizedPath) replaceBrowserPath(normalizedPath);
+    return { kind: 'feature-plan', planKey: featurePlanKey };
   }
 
   const intentKey = resolveIntentPath(normalizedPath);
@@ -128,6 +148,7 @@ const route = resolveRoute();
 // Best-effort warmup to reduce Cloud Run cold-start latency during signup reCAPTCHA assessment.
 // Run only on app/editor routes so docs/legal visits avoid unnecessary startup network work.
 if (typeof window !== 'undefined' && route.kind === 'app') {
+  initializeGoogleAds();
   fetch('/api/health', { method: 'GET', mode: 'cors' }).catch(() => {});
 }
 
@@ -136,10 +157,14 @@ createRoot(document.getElementById('root')!).render(
     <Suspense fallback={null}>
       {route.kind === 'legal' ? (
         <LegalPage kind={route.legalKind} />
+      ) : route.kind === 'fill-link-public' ? (
+        <FillLinkPublicPage token={route.token} />
       ) : route.kind === 'account-action' ? (
         <AccountActionPage />
       ) : route.kind === 'intent-hub' ? (
         <IntentHubPage hubKey={route.hubKey} />
+      ) : route.kind === 'feature-plan' ? (
+        <FeaturePlanPage pageKey={route.planKey} />
       ) : route.kind === 'intent' ? (
         <IntentLandingPage pageKey={route.intentKey} />
       ) : route.kind === 'usage-docs' ? (

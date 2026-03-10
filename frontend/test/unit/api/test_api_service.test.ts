@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const apiConfigMocks = vi.hoisted(() => ({
   apiFetch: vi.fn(),
@@ -7,6 +7,14 @@ const apiConfigMocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../../../src/services/apiConfig', () => ({
+  ApiError: class ApiError extends Error {
+    status: number;
+
+    constructor(message: string, status: number) {
+      super(message);
+      this.status = status;
+    }
+  },
   apiFetch: apiConfigMocks.apiFetch,
   apiJsonFetch: apiConfigMocks.apiJsonFetch,
   buildApiUrl: apiConfigMocks.buildApiUrl,
@@ -15,6 +23,12 @@ vi.mock('../../../src/services/apiConfig', () => ({
 import { ApiService } from '../../../src/services/api';
 
 describe('ApiService', () => {
+  beforeEach(() => {
+    apiConfigMocks.apiFetch.mockReset();
+    apiConfigMocks.apiJsonFetch.mockReset();
+    apiConfigMocks.buildApiUrl.mockClear();
+  });
+
   it('wires profile and public JSON endpoints with expected methods and payloads', async () => {
     apiConfigMocks.apiFetch
       .mockResolvedValueOnce({ status: 401 })
@@ -42,11 +56,13 @@ describe('ApiService', () => {
     });
 
     expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(2, 'POST', '/api/contact', {
+      authMode: 'anonymous',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ issueType: 'bug', summary: 'S', message: 'M' }),
     });
 
     expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(3, 'POST', '/api/recaptcha/assess', {
+      authMode: 'anonymous',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token: 'token-1', action: 'signup' }),
     });
@@ -55,6 +71,317 @@ describe('ApiService', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ fields: [{ name: 'first_name' }], sampleCount: 2 }),
     });
+  });
+
+  it('wires downgrade retention update and delete endpoints', async () => {
+    apiConfigMocks.apiFetch
+      .mockResolvedValueOnce({ id: 'retention-update-response' })
+      .mockResolvedValueOnce({ id: 'retention-delete-response' });
+    apiConfigMocks.apiJsonFetch
+      .mockResolvedValueOnce({ retention: { status: 'grace_period', keptTemplateIds: ['tpl-1', 'tpl-2', 'tpl-3'] } })
+      .mockResolvedValueOnce({ success: true, deletedTemplateIds: ['tpl-4'], deletedLinkIds: ['link-4'] });
+
+    const retention = await ApiService.updateDowngradeRetention(['tpl-1', 'tpl-2', 'tpl-3']);
+    const deleted = await ApiService.deleteDowngradeRetentionNow();
+
+    expect(retention?.keptTemplateIds).toEqual(['tpl-1', 'tpl-2', 'tpl-3']);
+    expect(deleted.deletedTemplateIds).toEqual(['tpl-4']);
+    expect(deleted.deletedLinkIds).toEqual(['link-4']);
+
+    expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(1, 'PATCH', '/api/profile/downgrade-retention', {
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ keptTemplateIds: ['tpl-1', 'tpl-2', 'tpl-3'] }),
+    });
+    expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(2, 'POST', '/api/profile/downgrade-retention/delete-now');
+  });
+
+  it('wires targeted billing reconciliation payloads', async () => {
+    apiConfigMocks.apiFetch.mockResolvedValueOnce({ id: 'billing-reconcile-response' });
+    apiConfigMocks.apiJsonFetch.mockResolvedValueOnce({
+      success: true,
+      dryRun: false,
+      scope: 'self',
+      auditedEventCount: 1,
+      candidateEventCount: 1,
+      pendingReconciliationCount: 1,
+      reconciledCount: 1,
+      alreadyProcessedCount: 0,
+      processingCount: 0,
+      retryableCount: 0,
+      failedCount: 0,
+      invalidCount: 0,
+      skippedForUserCount: 0,
+      events: [],
+    });
+
+    const payload = await ApiService.reconcileBillingCheckoutFulfillment({
+      lookbackHours: 72,
+      dryRun: false,
+      sessionId: 'cs_reconcile_123',
+      attemptId: 'attempt_reconcile_123',
+    });
+
+    expect(payload.success).toBe(true);
+    expect(apiConfigMocks.apiFetch).toHaveBeenCalledWith('POST', '/api/billing/reconcile', {
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        lookbackHours: 72,
+        maxEvents: undefined,
+        dryRun: false,
+        sessionId: 'cs_reconcile_123',
+        attemptId: 'attempt_reconcile_123',
+      }),
+    });
+  });
+
+  it('wires Fill By Link owner and public endpoints', async () => {
+    apiConfigMocks.apiFetch
+      .mockResolvedValueOnce({ id: 'fill-links-response' })
+      .mockResolvedValueOnce({ id: 'fill-link-create-response' })
+      .mockResolvedValueOnce({ id: 'fill-link-update-response' })
+      .mockResolvedValueOnce({ id: 'fill-link-close-response' })
+      .mockResolvedValueOnce({ id: 'fill-link-responses-response' })
+      .mockResolvedValueOnce({ id: 'fill-link-response-detail' })
+      .mockResolvedValueOnce({ id: 'fill-link-public-response' })
+      .mockResolvedValueOnce({ id: 'fill-link-public-submit' })
+      .mockResolvedValueOnce({
+        ok: true,
+        statusText: 'OK',
+        headers: {
+          get: vi.fn((name: string) => (name.toLowerCase() === 'content-disposition'
+            ? 'attachment; filename="submitted-link-1.pdf"'
+            : null)),
+        },
+        blob: vi.fn().mockResolvedValue(new Blob(['pdf'])),
+      });
+
+    apiConfigMocks.apiJsonFetch
+      .mockResolvedValueOnce({ links: [{ id: 'link-1', publicPath: '/respond/token-1' }] })
+      .mockResolvedValueOnce({ link: { id: 'link-1', publicPath: '/respond/token-1', respondentPdfDownloadEnabled: true } })
+      .mockResolvedValueOnce({ link: { id: 'link-1', status: 'active', respondentPdfDownloadEnabled: true } })
+      .mockResolvedValueOnce({ link: { id: 'link-1', status: 'closed' } })
+      .mockResolvedValueOnce({ link: { id: 'link-1' }, responses: [{ id: 'resp-1' }] })
+      .mockResolvedValueOnce({ response: { id: 'resp-1', answers: { full_name: 'Ada Lovelace' } } })
+      .mockResolvedValueOnce({ link: { id: 'link-1', questions: [], respondentPdfDownloadEnabled: true } })
+      .mockResolvedValueOnce({
+        success: true,
+        responseId: 'resp-1',
+        link: { id: 'link-1', respondentPdfDownloadEnabled: true },
+        download: {
+          enabled: true,
+          responseId: 'resp-1',
+          downloadPath: '/api/fill-links/public/token-1/responses/resp-1/download',
+        },
+      });
+
+    const links = await ApiService.getFillLinks('tpl-1');
+    const created = await ApiService.createFillLink({
+      templateId: 'tpl-1',
+      templateName: 'Template One',
+      requireAllFields: true,
+      allowRespondentPdfDownload: true,
+      fields: [{ name: 'full_name', type: 'text', page: 1 }],
+    });
+    const updated = await ApiService.updateFillLink('link-1', {
+      status: 'active',
+      requireAllFields: true,
+      allowRespondentPdfDownload: true,
+    });
+    const closed = await ApiService.closeFillLink('link-1');
+    const responses = await ApiService.getFillLinkResponses('link-1', { search: 'ada', limit: 25 });
+    const response = await ApiService.getFillLinkResponse('link-1', 'resp-1');
+    const publicLink = await ApiService.getPublicFillLink('token-1');
+    const submitted = await ApiService.submitPublicFillLink('token-1', {
+      answers: { full_name: 'Ada Lovelace' },
+      recaptchaToken: 'token',
+      recaptchaAction: 'fill_link_submit',
+    });
+    const downloaded = await ApiService.downloadPublicFillLinkResponsePdf('token-1', 'resp-1', {
+      downloadPath: '/api/fill-links/public/token-1/responses/resp-1/download',
+    });
+
+    expect(links[0].id).toBe('link-1');
+    expect(created.id).toBe('link-1');
+    expect(created.respondentPdfDownloadEnabled).toBe(true);
+    expect(created.allowRespondentPdfDownload).toBe(true);
+    expect(updated.status).toBe('active');
+    expect(closed.status).toBe('closed');
+    expect(responses.responses[0].id).toBe('resp-1');
+    expect(response.id).toBe('resp-1');
+    expect(publicLink.id).toBe('link-1');
+    expect(publicLink.respondentPdfDownloadEnabled).toBe(true);
+    expect(submitted.success).toBe(true);
+    expect(submitted.responseDownloadAvailable).toBe(true);
+    expect(submitted.responseDownloadPath).toBe('/api/fill-links/public/token-1/responses/resp-1/download');
+    expect(downloaded.filename).toBe('submitted-link-1.pdf');
+
+    expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(1, 'GET', '/api/fill-links?templateId=tpl-1');
+    expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(2, 'POST', '/api/fill-links', expect.objectContaining({
+      headers: { 'Content-Type': 'application/json' },
+      body: expect.any(String),
+    }));
+    expect(JSON.parse(String(apiConfigMocks.apiFetch.mock.calls[1][2]?.body))).toEqual({
+      templateId: 'tpl-1',
+      templateName: 'Template One',
+      requireAllFields: true,
+      respondentPdfDownloadEnabled: true,
+      fields: [{ name: 'full_name', type: 'text', page: 1 }],
+    });
+    expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(3, 'PATCH', '/api/fill-links/link-1', expect.objectContaining({
+      headers: { 'Content-Type': 'application/json' },
+      body: expect.any(String),
+    }));
+    expect(JSON.parse(String(apiConfigMocks.apiFetch.mock.calls[2][2]?.body))).toEqual({
+      status: 'active',
+      requireAllFields: true,
+      respondentPdfDownloadEnabled: true,
+    });
+    expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(4, 'POST', '/api/fill-links/link-1/close');
+    expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(5, 'GET', '/api/fill-links/link-1/responses?search=ada&limit=25');
+    expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(6, 'GET', '/api/fill-links/link-1/responses/resp-1');
+    expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(7, 'GET', '/api/fill-links/public/token-1', {
+      authMode: 'anonymous',
+    });
+    expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(8, 'POST', '/api/fill-links/public/token-1/submit', {
+      authMode: 'anonymous',
+      headers: { 'Content-Type': 'application/json' },
+      body: expect.any(String),
+    });
+    expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(9, 'GET', '/api/fill-links/public/token-1/responses/resp-1/download', {
+      authMode: 'anonymous',
+    });
+    const publicSubmitBody = JSON.parse(String(apiConfigMocks.apiFetch.mock.calls[7][2]?.body));
+    expect(publicSubmitBody).toMatchObject({
+      answers: { full_name: 'Ada Lovelace' },
+      recaptchaToken: 'token',
+      recaptchaAction: 'fill_link_submit',
+    });
+    expect(publicSubmitBody.attemptId).toEqual(expect.any(String));
+  });
+
+  it('wires group-scoped Fill By Link owner endpoints', async () => {
+    apiConfigMocks.apiFetch
+      .mockResolvedValueOnce({ id: 'group-fill-links-response' })
+      .mockResolvedValueOnce({ id: 'group-fill-link-create-response' })
+      .mockResolvedValueOnce({ id: 'group-fill-link-update-response' });
+
+    apiConfigMocks.apiJsonFetch
+      .mockResolvedValueOnce({ links: [{ id: 'group-link-1', scopeType: 'group', groupId: 'group-1' }] })
+      .mockResolvedValueOnce({ link: { id: 'group-link-1', scopeType: 'group', groupId: 'group-1' } })
+      .mockResolvedValueOnce({ link: { id: 'group-link-1', status: 'active', scopeType: 'group' } });
+
+    const links = await ApiService.getFillLinks({ groupId: 'group-1', scopeType: 'group' });
+    const created = await ApiService.createFillLink({
+      scopeType: 'group',
+      groupId: 'group-1',
+      groupName: 'Admissions Packet',
+      requireAllFields: true,
+      fields: [],
+      groupTemplates: [
+        {
+          templateId: 'tpl-1',
+          templateName: 'Template One',
+          fields: [{ name: 'full_name', type: 'text', page: 1 }],
+          checkboxRules: [],
+        },
+      ],
+    });
+    const updated = await ApiService.updateFillLink('group-link-1', {
+      groupName: 'Admissions Packet',
+      status: 'active',
+      groupTemplates: [
+        {
+          templateId: 'tpl-1',
+          templateName: 'Template One',
+          fields: [{ name: 'full_name', type: 'text', page: 1 }],
+          checkboxRules: [],
+        },
+      ],
+    });
+
+    expect(links[0].groupId).toBe('group-1');
+    expect(created.scopeType).toBe('group');
+    expect(updated.status).toBe('active');
+
+    expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(1, 'GET', '/api/fill-links?groupId=group-1&scopeType=group');
+    expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(2, 'POST', '/api/fill-links', {
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        scopeType: 'group',
+        groupId: 'group-1',
+        groupName: 'Admissions Packet',
+        requireAllFields: true,
+        fields: [],
+        groupTemplates: [
+          {
+            templateId: 'tpl-1',
+            templateName: 'Template One',
+            fields: [{ name: 'full_name', type: 'text', page: 1 }],
+            checkboxRules: [],
+          },
+        ],
+      }),
+    });
+    expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(3, 'PATCH', '/api/fill-links/group-link-1', {
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        groupName: 'Admissions Packet',
+        status: 'active',
+        groupTemplates: [
+          {
+            templateId: 'tpl-1',
+            templateName: 'Template One',
+            fields: [{ name: 'full_name', type: 'text', page: 1 }],
+            checkboxRules: [],
+          },
+        ],
+      }),
+    });
+  });
+
+  it('wires group list, create, update, fetch, and delete endpoints', async () => {
+    const signal = new AbortController().signal;
+    apiConfigMocks.apiFetch
+      .mockResolvedValueOnce({ status: 401 })
+      .mockResolvedValueOnce({ id: 'group-create-response' })
+      .mockResolvedValueOnce({ id: 'group-update-response' })
+      .mockResolvedValueOnce({ id: 'group-detail-response' })
+      .mockResolvedValueOnce({ id: 'group-delete-response' });
+    apiConfigMocks.apiJsonFetch
+      .mockResolvedValueOnce({ group: { id: 'group-1', name: 'Admissions', templateIds: ['tpl-1'] } })
+      .mockResolvedValueOnce({ group: { id: 'group-1', name: 'Admissions Updated', templateIds: ['tpl-1', 'tpl-2'] } })
+      .mockResolvedValueOnce({ group: { id: 'group-1', name: 'Admissions Updated', templateIds: ['tpl-1', 'tpl-2'] } })
+      .mockResolvedValueOnce({ success: true });
+
+    const groups = await ApiService.getGroups();
+    const created = await ApiService.createGroup({ name: 'Admissions', templateIds: ['tpl-1'] }, { signal });
+    const updated = await ApiService.updateGroup('group-1', {
+      name: 'Admissions Updated',
+      templateIds: ['tpl-1', 'tpl-2'],
+    });
+    const detail = await ApiService.getGroup('group-1');
+    const deleted = await ApiService.deleteGroup('group-1');
+
+    expect(groups).toEqual([]);
+    expect(created.id).toBe('group-1');
+    expect(updated.name).toBe('Admissions Updated');
+    expect(detail.id).toBe('group-1');
+    expect(deleted.success).toBe(true);
+
+    expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(1, 'GET', '/api/groups', {
+      allowStatuses: [401],
+    });
+    expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(2, 'POST', '/api/groups', {
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Admissions', templateIds: ['tpl-1'] }),
+      signal,
+    });
+    expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(3, 'PATCH', '/api/groups/group-1', {
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Admissions Updated', templateIds: ['tpl-1', 'tpl-2'] }),
+    });
+    expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(4, 'GET', '/api/groups/group-1');
+    expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(5, 'DELETE', '/api/groups/group-1');
   });
 
   it('creates billing checkout sessions with supported kinds', async () => {
@@ -155,37 +482,81 @@ describe('ApiService', () => {
     expect(apiConfigMocks.buildApiUrl).toHaveBeenCalledWith('api', 'renames', 'ai');
     expect(apiConfigMocks.buildApiUrl).toHaveBeenCalledWith('api', 'schema-mappings', 'ai');
 
-    expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(
-      1,
-      'POST',
-      'https://api.local/api/renames/ai',
-      {
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sessionId: 'sess-1',
-          schemaId: 'schema-1',
-          templateFields: [{ name: 'First Name', type: 'text' }],
-        }),
-      },
+    expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(1, 'POST', 'https://api.local/api/renames/ai', {
+      headers: { 'Content-Type': 'application/json' },
+      body: expect.any(String),
+    });
+
+    expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(2, 'POST', 'https://api.local/api/schema-mappings/ai', {
+      headers: { 'Content-Type': 'application/json' },
+      body: expect.any(String),
+    });
+
+    const renameBody = JSON.parse(String(apiConfigMocks.apiFetch.mock.calls[0][2]?.body));
+    const mapBody = JSON.parse(String(apiConfigMocks.apiFetch.mock.calls[1][2]?.body));
+    expect(renameBody).toMatchObject({
+      sessionId: 'sess-1',
+      schemaId: 'schema-1',
+      templateFields: [{ name: 'First Name', type: 'text' }],
+    });
+    expect(renameBody.requestId).toEqual(expect.any(String));
+    expect(mapBody).toMatchObject({
+      schemaId: 'schema-1',
+      templateId: 'template-1',
+      templateFields: [{ name: 'First Name', type: 'text' }],
+      sessionId: 'sess-1',
+    });
+    expect(mapBody.requestId).toEqual(expect.any(String));
+    expect(mapBody.requestId).not.toBe(renameBody.requestId);
+  });
+
+  it('clears cached request ids after abort-like transport failures so retries start fresh OpenAI jobs', async () => {
+    const timeoutError = new TypeError('Request timed out.');
+    apiConfigMocks.apiFetch
+      .mockRejectedValueOnce(timeoutError)
+      .mockResolvedValueOnce({ id: 'rename-response' })
+      .mockRejectedValueOnce(timeoutError)
+      .mockResolvedValueOnce({ id: 'map-response' });
+    apiConfigMocks.apiJsonFetch
+      .mockResolvedValueOnce({ renamed: true })
+      .mockResolvedValueOnce({ mapped: true });
+
+    await expect(ApiService.renameFields({
+      sessionId: 'sess-1',
+      templateFields: [{ name: 'First Name', type: 'text' }],
+    })).rejects.toThrow('Request timed out.');
+
+    await ApiService.renameFields({
+      sessionId: 'sess-1',
+      templateFields: [{ name: 'First Name', type: 'text' }],
+    });
+
+    await expect(ApiService.mapSchema(
+      'schema-1',
+      [{ name: 'First Name', type: 'text' }],
+      'template-1',
+      'sess-1',
+    )).rejects.toThrow('Request timed out.');
+
+    await ApiService.mapSchema(
+      'schema-1',
+      [{ name: 'First Name', type: 'text' }],
+      'template-1',
+      'sess-1',
     );
 
-    expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(
-      2,
-      'POST',
-      'https://api.local/api/schema-mappings/ai',
-      {
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          schemaId: 'schema-1',
-          templateId: 'template-1',
-          templateFields: [{ name: 'First Name', type: 'text' }],
-          sessionId: 'sess-1',
-        }),
-      },
-    );
+    const renameBody1 = JSON.parse(String(apiConfigMocks.apiFetch.mock.calls[0][2]?.body));
+    const renameBody2 = JSON.parse(String(apiConfigMocks.apiFetch.mock.calls[1][2]?.body));
+    const mapBody1 = JSON.parse(String(apiConfigMocks.apiFetch.mock.calls[2][2]?.body));
+    const mapBody2 = JSON.parse(String(apiConfigMocks.apiFetch.mock.calls[3][2]?.body));
+
+    expect(renameBody2.requestId).not.toBe(renameBody1.requestId);
+    expect(mapBody2.requestId).not.toBe(mapBody1.requestId);
+    expect(mapBody1.requestId).not.toBe(renameBody1.requestId);
   });
 
   it('polls queued OpenAI jobs until completion for rename and mapping calls', async () => {
+    const signal = new AbortController().signal;
     apiConfigMocks.apiFetch
       .mockResolvedValueOnce({ id: 'rename-enqueue' })
       .mockResolvedValueOnce({ id: 'rename-status-complete' })
@@ -207,27 +578,80 @@ describe('ApiService', () => {
     const rename = await ApiService.renameFields({
       sessionId: 'sess-1',
       templateFields: [{ name: 'First Name', type: 'text' }],
-    });
+    }, { signal });
     const mapping = await ApiService.mapSchema(
       'schema-1',
       [{ name: 'First Name', type: 'text' }],
       undefined,
       'sess-1',
+      { signal },
     );
 
     expect(rename.fields).toEqual([{ name: 'first_name' }]);
     expect(mapping.mappingResults.mappings).toHaveLength(1);
 
     expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(
+      1,
+      'POST',
+      'https://api.local/api/renames/ai',
+      {
+        headers: { 'Content-Type': 'application/json' },
+        body: expect.any(String),
+        signal,
+      },
+    );
+    expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(
       2,
       'GET',
       'https://api.local/api/renames/ai/rename-job-1',
+      { signal },
+    );
+    expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(
+      3,
+      'POST',
+      'https://api.local/api/schema-mappings/ai',
+      {
+        headers: { 'Content-Type': 'application/json' },
+        body: expect.any(String),
+        signal,
+      },
     );
     expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(
       4,
       'GET',
       'https://api.local/api/schema-mappings/ai/map-job-1',
+      { signal },
     );
+
+    const renameBody = JSON.parse(String(apiConfigMocks.apiFetch.mock.calls[0][2]?.body));
+    const mapBody = JSON.parse(String(apiConfigMocks.apiFetch.mock.calls[2][2]?.body));
+    expect(renameBody.requestId).toEqual(expect.any(String));
+    expect(mapBody.requestId).toEqual(expect.any(String));
+  });
+
+  it('clears cached request ids after a queued OpenAI job fails so the next retry starts fresh', async () => {
+    apiConfigMocks.apiFetch
+      .mockResolvedValueOnce({ id: 'rename-enqueue-1' })
+      .mockResolvedValueOnce({ id: 'rename-status-failed' })
+      .mockResolvedValueOnce({ id: 'rename-enqueue-2' });
+    apiConfigMocks.apiJsonFetch
+      .mockResolvedValueOnce({ status: 'queued', jobId: 'rename-job-1' })
+      .mockResolvedValueOnce({ status: 'failed', error: 'Worker failed.' })
+      .mockResolvedValueOnce({ renamed: true });
+
+    await expect(ApiService.renameFields({
+      sessionId: 'sess-1',
+      templateFields: [{ name: 'First Name', type: 'text' }],
+    })).rejects.toThrow('Worker failed.');
+
+    await ApiService.renameFields({
+      sessionId: 'sess-1',
+      templateFields: [{ name: 'First Name', type: 'text' }],
+    });
+
+    const renameBody1 = JSON.parse(String(apiConfigMocks.apiFetch.mock.calls[0][2]?.body));
+    const renameBody2 = JSON.parse(String(apiConfigMocks.apiFetch.mock.calls[2][2]?.body));
+    expect(renameBody2.requestId).not.toBe(renameBody1.requestId);
   });
 
   it('handles saved-form list/load/download/delete/session/touch operations', async () => {
@@ -237,13 +661,27 @@ describe('ApiService', () => {
       .mockResolvedValueOnce({ ok: true, blob: vi.fn().mockResolvedValue(new Blob(['pdf'])) })
       .mockResolvedValueOnce({ status: 200, id: 'create-saved-session' })
       .mockResolvedValueOnce({ status: 200, id: 'touch-session' })
+      .mockResolvedValueOnce({ status: 200, id: 'update-saved-editor-snapshot' })
       .mockResolvedValueOnce({ status: 200, id: 'delete-saved' });
 
     apiConfigMocks.apiJsonFetch
       .mockResolvedValueOnce({ forms: [{ id: 'f-1', name: 'A', createdAt: '2026-01-01' }] })
-      .mockResolvedValueOnce({ id: 'f-1', name: 'A', url: 'https://file.local/a.pdf' })
+      .mockResolvedValueOnce({
+        id: 'f-1',
+        name: 'A',
+        url: 'https://file.local/a.pdf',
+        editorSnapshot: {
+          version: 1,
+          pageCount: 1,
+          pageSizes: { 1: { width: 612, height: 792 } },
+          fields: [],
+          hasRenamedFields: false,
+          hasMappedSchema: false,
+        },
+      })
       .mockResolvedValueOnce({ success: true, sessionId: 'sess-1', fieldCount: 1 })
       .mockResolvedValueOnce({ success: true, sessionId: 'sess-1' })
+      .mockResolvedValueOnce({ success: true })
       .mockResolvedValueOnce({ success: true });
 
     const savedForms = await ApiService.getSavedForms({ suppressErrors: false, timeoutMs: 3210 });
@@ -254,6 +692,14 @@ describe('ApiService', () => {
       pageCount: 2,
     });
     const touched = await ApiService.touchSession('session / id');
+    const updatedSnapshot = await ApiService.updateSavedFormEditorSnapshot('form id/with spaces', {
+      version: 1,
+      pageCount: 1,
+      pageSizes: { 1: { width: 612, height: 792 } },
+      fields: [],
+      hasRenamedFields: false,
+      hasMappedSchema: false,
+    });
     const deleted = await ApiService.deleteSavedForm('form id/with spaces');
 
     expect(savedForms).toHaveLength(1);
@@ -261,6 +707,7 @@ describe('ApiService', () => {
     expect(blob).toBeInstanceOf(Blob);
     expect(session.sessionId).toBe('sess-1');
     expect(touched.success).toBe(true);
+    expect(updatedSnapshot.success).toBe(true);
     expect(deleted.success).toBe(true);
 
     expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(1, 'GET', '/api/saved-forms', {
@@ -271,11 +718,19 @@ describe('ApiService', () => {
       2,
       'GET',
       '/api/saved-forms/form%20id%2Fwith%20spaces',
+      {
+        signal: undefined,
+        timeoutMs: undefined,
+      },
     );
     expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(
       3,
       'GET',
       'https://api.local/api/saved-forms/form id/with spaces/download',
+      {
+        signal: undefined,
+        timeoutMs: undefined,
+      },
     );
     expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(
       4,
@@ -293,12 +748,31 @@ describe('ApiService', () => {
     );
     expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(
       6,
+      'PATCH',
+      '/api/saved-forms/form%20id%2Fwith%20spaces/editor-snapshot',
+      {
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          snapshot: {
+            version: 1,
+            pageCount: 1,
+            pageSizes: { 1: { width: 612, height: 792 } },
+            fields: [],
+            hasRenamedFields: false,
+            hasMappedSchema: false,
+          },
+        }),
+      },
+    );
+    expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(
+      7,
       'DELETE',
       '/api/saved-forms/form%20id%2Fwith%20spaces',
     );
   });
 
   it('builds FormData payloads for template sessions and save/materialize flows', async () => {
+    const signal = new AbortController().signal;
     apiConfigMocks.apiFetch
       .mockResolvedValueOnce({ id: 'template-session' })
       .mockResolvedValueOnce({ id: 'save-form' })
@@ -314,7 +788,7 @@ describe('ApiService', () => {
     const templateSession = await ApiService.createTemplateSession(templateFile, {
       fields: [{ name: 'first_name' }, { name: 'last_name' }],
       pageCount: 3,
-    });
+    }, { signal });
 
     const saved = await ApiService.saveFormToProfile(
       sourceBlob,
@@ -323,6 +797,16 @@ describe('ApiService', () => {
       'overwrite-1',
       [{ fieldName: 'insurance_opt_in' }],
       [{ groupKey: 'insurance' }],
+      undefined,
+      {
+        version: 1,
+        pageCount: 1,
+        pageSizes: { 1: { width: 612, height: 792 } },
+        fields: [],
+        hasRenamedFields: false,
+        hasMappedSchema: false,
+      },
+      { signal },
     );
 
     const materialized = await ApiService.materializeFormPdf(sourceBlob, [
@@ -334,7 +818,7 @@ describe('ApiService', () => {
         rect: { x: 0, y: 0, width: 10, height: 10 },
         value: 'Alex',
       },
-    ] as any);
+    ] as any, { signal });
 
     expect(templateSession.success).toBe(true);
     expect(saved.id).toBe('saved-1');
@@ -347,6 +831,7 @@ describe('ApiService', () => {
       JSON.stringify({ fields: [{ name: 'first_name' }, { name: 'last_name' }] }),
     );
     expect(templateBody.get('pageCount')).toBe('3');
+    expect(apiConfigMocks.apiFetch.mock.calls[0][2]).toMatchObject({ signal });
 
     const saveBody = apiConfigMocks.apiFetch.mock.calls[1][2].body as FormData;
     expect((saveBody.get('pdf') as File).name).toBe('Patient Intake.pdf');
@@ -355,6 +840,15 @@ describe('ApiService', () => {
     expect(saveBody.get('overwriteFormId')).toBe('overwrite-1');
     expect(saveBody.get('checkboxRules')).toBe(JSON.stringify([{ fieldName: 'insurance_opt_in' }]));
     expect(saveBody.get('checkboxHints')).toBe(JSON.stringify([{ groupKey: 'insurance' }]));
+    expect(saveBody.get('editorSnapshot')).toBe(JSON.stringify({
+      version: 1,
+      pageCount: 1,
+      pageSizes: { 1: { width: 612, height: 792 } },
+      fields: [],
+      hasRenamedFields: false,
+      hasMappedSchema: false,
+    }));
+    expect(apiConfigMocks.apiFetch.mock.calls[1][2]).toMatchObject({ signal });
 
     const materializeBody = apiConfigMocks.apiFetch.mock.calls[2][2].body as FormData;
     expect((materializeBody.get('pdf') as File).name).toBe('form.pdf');
@@ -372,6 +866,7 @@ describe('ApiService', () => {
         ],
       }),
     );
+    expect(apiConfigMocks.apiFetch.mock.calls[2][2]).toMatchObject({ signal });
   });
 
   it('throws clear errors for non-ok blob endpoints', async () => {

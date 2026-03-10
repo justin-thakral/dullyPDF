@@ -20,6 +20,14 @@ _firebase_init_error: Optional[Exception] = None
 _firebase_project_id: Optional[str] = None
 
 
+def _is_prod() -> bool:
+    return (os.getenv("ENV") or "").strip().lower() in {"prod", "production"}
+
+
+def _adc_enabled() -> bool:
+    return (os.getenv("FIREBASE_USE_ADC") or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 @dataclass(frozen=True)
 class RequestUser:
     uid: str
@@ -72,6 +80,24 @@ def _check_revoked_enabled() -> bool:
     return (os.getenv("ENV") or "").strip().lower() in {"prod", "production"}
 
 
+def _validate_prod_firebase_auth_mode() -> None:
+    if not _is_prod():
+        return
+    if not _adc_enabled():
+        raise RuntimeError("Firebase Admin must use ADC in prod (set FIREBASE_USE_ADC=true).")
+    forbidden = []
+    if os.getenv("FIREBASE_CREDENTIALS", "").strip():
+        forbidden.append("FIREBASE_CREDENTIALS")
+    if os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "").strip():
+        forbidden.append("GOOGLE_APPLICATION_CREDENTIALS")
+    if forbidden:
+        raise RuntimeError(
+            "Firebase Admin must use ADC in prod; unset "
+            + ", ".join(forbidden)
+            + "."
+        )
+
+
 def init_firebase() -> None:
     """Initialize Firebase Admin once and cache failures.
     """
@@ -81,6 +107,7 @@ def init_firebase() -> None:
     if _firebase_app or _firebase_init_error:
         return
     try:
+        _validate_prod_firebase_auth_mode()
         cred, embedded_project_id = _load_firebase_credentials()
         project_id = (
             os.getenv("FIREBASE_PROJECT_ID")

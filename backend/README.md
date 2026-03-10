@@ -20,12 +20,15 @@ Detection is executed by the dedicated detector service (`backend/detection/dete
 - Schema metadata: `POST /api/schemas`, `GET /api/schemas`.
 - Schema mapping (OpenAI): `POST /api/schema-mappings/ai` (returns mappings plus fill-time rule payloads; updates session mapping state).
 - Schema mapping job status (task mode): `GET /api/schema-mappings/ai/{jobId}`.
-- Saved forms: `GET /api/saved-forms`, `POST /api/saved-forms` (supports `overwriteFormId` to replace an existing saved form), `GET /api/saved-forms/{id}`, `GET /api/saved-forms/{id}/download`, `POST /api/saved-forms/{id}/session`, `DELETE /api/saved-forms/{id}`.
+- Saved forms: `GET /api/saved-forms`, `POST /api/saved-forms` (supports `overwriteFormId` to replace an existing saved form), `GET /api/saved-forms/{id}`, `GET /api/saved-forms/{id}/download`, `POST /api/saved-forms/{id}/session`, `PATCH /api/saved-forms/{id}/editor-snapshot`, `DELETE /api/saved-forms/{id}`.
+- Template groups: `GET /api/groups`, `POST /api/groups`, `GET /api/groups/{id}`, `DELETE /api/groups/{id}` (named containers for existing saved forms; deleting a saved form automatically removes it from every group).
+- Fill By Link: `GET /api/fill-links`, `POST /api/fill-links`, `PATCH /api/fill-links/{id}`, `POST /api/fill-links/{id}/close`, and public `/api/fill-links/public/*` routes (supports one link per saved template or one merged link per open group). Template links can optionally freeze a publish snapshot so accepted respondents can download a PDF copy of their own submission later via a public response download route.
 - Template session (fillable upload): `POST /api/templates/session` (stores PDF bytes + fields so rename/mapping can run).
 - Materialize fillable: `POST /api/forms/materialize` (auth required; injects fields into a PDF upload and enforces fillable page limits).
-- Profile summary: `GET /api/profile` (tier info, credits, and limits).
-- Billing webhook health: `GET /api/billing/webhook-health` (auth required; reports whether Stripe webhook delivery prerequisites are healthy. Endpoint diagnostics are restricted to `ROLE_GOD`).
-- Billing reconciliation: `POST /api/billing/reconcile` (auth required; audits recent `checkout.session.completed` events and can recover missed fulfillment).
+- Profile summary: `GET /api/profile` (tier info, credits, limits, billing metadata, and downgrade-retention state when applicable).
+- Downgrade retention controls: `PATCH /api/profile/downgrade-retention` (swap the kept saved forms during grace) and `POST /api/profile/downgrade-retention/delete-now` (purge queued saved forms + dependent Fill By Link records immediately).
+- Billing webhook health: `GET /api/billing/webhook-health` (auth required; reports whether Stripe webhook delivery prerequisites are healthy. Full endpoint diagnostics are restricted to `ROLE_GOD`; other users receive a redacted status summary).
+- Billing reconciliation: `POST /api/billing/reconcile` (auth required; regular users reconcile a specific checkout session they started, while `ROLE_GOD` can audit recent `checkout.session.completed` events across users).
 - Contact form: `POST /api/contact` (public; reCAPTCHA required; sends email via Gmail API).
 - reCAPTCHA verify: `POST /api/recaptcha/assess` (public; used for account creation checks).
 
@@ -55,10 +58,13 @@ See `frontend/docs/api-routing.md` for the current rewrite list and frontend cal
 ### Minimum env (dev)
 
 - `FIREBASE_PROJECT_ID`
-- `FIREBASE_CREDENTIALS` (JSON string), `GOOGLE_APPLICATION_CREDENTIALS` (path), or
-  `FIREBASE_USE_ADC=true` on GCP (recommended for prod).
-- `FIREBASE_CREDENTIALS_SECRET` (Secret Manager name loaded by `scripts/*backend*.sh`)
-- `FIREBASE_CREDENTIALS_PROJECT` (Secret Manager project, if different from `FIREBASE_PROJECT_ID`)
+- `BACKEND_RUNTIME_SERVICE_ACCOUNT` for production deploys so Cloud Run attaches the
+  intended runtime identity before ADC-backed Firebase Admin starts.
+- `FIREBASE_CREDENTIALS` (JSON string) or `GOOGLE_APPLICATION_CREDENTIALS` (path) for local/dev,
+  or `FIREBASE_USE_ADC=true` on GCP. Production Cloud Run deploys now require ADC-only and reject
+  Firebase JSON credential env/path overrides.
+- `FIREBASE_CREDENTIALS_SECRET` (local/dev helper Secret Manager name loaded by `scripts/*backend*.sh`)
+- `FIREBASE_CREDENTIALS_PROJECT` (local/dev helper Secret Manager project, if different from `FIREBASE_PROJECT_ID`)
 - `FORMS_BUCKET`, `TEMPLATES_BUCKET`
 - `OPENAI_API_KEY` (only if schema mapping enabled)
 - `CONTACT_TO_EMAIL`, `CONTACT_FROM_EMAIL`
@@ -68,7 +74,7 @@ See `frontend/docs/api-routing.md` for the current rewrite list and frontend cal
 - `RECAPTCHA_PROJECT_ID` (or `FIREBASE_PROJECT_ID` / `GCP_PROJECT_ID`)
 - `RECAPTCHA_CONTACT_ACTION` (default `contact`; overrides legacy `RECAPTCHA_EXPECTED_ACTION`)
 - `RECAPTCHA_SIGNUP_ACTION` (default `signup`; overrides legacy `RECAPTCHA_EXPECTED_ACTION`)
-- `RECAPTCHA_ALLOWED_HOSTNAMES` (optional comma-separated allowlist; supports `*.example.com`)
+- `RECAPTCHA_ALLOWED_HOSTNAMES` (comma-separated allowlist; supports `*.example.com`; required in prod when reCAPTCHA is enabled)
 - `RECAPTCHA_MIN_SCORE` (default 0.5)
 - `CONTACT_REQUIRE_RECAPTCHA` (default true)
 - `CONTACT_RATE_LIMIT_WINDOW_SECONDS`, `CONTACT_RATE_LIMIT_PER_IP`
@@ -76,6 +82,16 @@ See `frontend/docs/api-routing.md` for the current rewrite list and frontend cal
 - `SIGNUP_REQUIRE_RECAPTCHA` (default true)
 - `SIGNUP_RATE_LIMIT_WINDOW_SECONDS`, `SIGNUP_RATE_LIMIT_PER_IP`
 - `SIGNUP_RATE_LIMIT_GLOBAL` (optional; global cap for `/api/recaptcha/assess` regardless of caller IP)
+- `FILL_LINK_REQUIRE_RECAPTCHA` (default true; must remain true in production)
+- `FILL_LINK_TOKEN_SECRET` (required in production; public Fill By Link URLs are signed from the link id instead of storing new plaintext bearer tokens, and the prod example placeholder is rejected at startup/deploy)
+- `FILL_LINK_VIEW_RATE_WINDOW_SECONDS`, `FILL_LINK_VIEW_RATE_PER_IP`
+- `FILL_LINK_VIEW_RATE_GLOBAL` (optional; global cap for anonymous Fill By Link page loads)
+- `FILL_LINK_SUBMIT_RATE_WINDOW_SECONDS`, `FILL_LINK_SUBMIT_RATE_PER_IP`
+- `FILL_LINK_SUBMIT_RATE_GLOBAL` (optional; global cap for anonymous Fill By Link submissions)
+- `FILL_LINK_DOWNLOAD_RATE_WINDOW_SECONDS`, `FILL_LINK_DOWNLOAD_RATE_PER_IP`
+- `FILL_LINK_DOWNLOAD_RATE_GLOBAL` (optional; global cap for anonymous respondent PDF downloads)
+- `FILL_LINK_MAX_ANSWER_VALUE_CHARS`, `FILL_LINK_MAX_TOTAL_ANSWER_CHARS`, `FILL_LINK_MAX_MULTI_SELECT_VALUES`
+- `FILL_LINK_ALLOW_LEGACY_PUBLIC_TOKENS` (default false; temporary fallback for previously issued plaintext Fill By Link URLs only)
 - `SANDBOX_TRUST_PROXY_HEADERS` (default false; only enable when Cloud Run is reachable *only* via a trusted proxy that strips spoofed headers)
 - `SANDBOX_CORS_ORIGINS` (comma-separated list)
 - `SANDBOX_ENABLE_LEGACY_ENDPOINTS` (dev-only; defaults to true; ignored in prod)
@@ -85,7 +101,7 @@ See `frontend/docs/api-routing.md` for the current rewrite list and frontend cal
 - `SANDBOX_SAVED_FORMS_MAX_BASE`, `SANDBOX_SAVED_FORMS_MAX_GOD`
 - `SANDBOX_SCHEMA_TTL_SECONDS`
 - `SANDBOX_OPENAI_LOG_TTL_SECONDS`
-- `SANDBOX_ENABLE_DOCS` (optional; allow OpenAPI/docs in dev only; ignored in prod)
+- `SANDBOX_ENABLE_DOCS` (optional; defaults to enabled outside prod; set to `false` to disable OpenAPI/docs in dev/test; ignored in prod)
 - `DETECTOR_MODE` (`tasks` for production)
 - `DETECTOR_TASKS_PROJECT`, `DETECTOR_TASKS_LOCATION`
 - `DETECTOR_TASKS_QUEUE` or `DETECTOR_TASKS_QUEUE_LIGHT`
@@ -165,20 +181,24 @@ Detector env examples:
 - Base users start with 10 lifetime OpenAI credits. Credits are billed per page bucket using server-side page counts:
   `total_credits = operation_base_cost * ceil(page_count / OPENAI_CREDITS_PAGE_BUCKET_SIZE)`.
   Defaults: Rename base cost `1`, Remap base cost `1`, Rename+Remap base cost `2`; with default bucket size `5`, a 10-page Rename+Remap costs `4`. God role bypasses credits.
-- `GET /api/profile` now includes `creditPricing` (server bucket/base-cost settings) and `billing` metadata (`enabled`, plan catalog, subscription linkage/status, and cancellation schedule fields) so frontend credit checks and billing labels stay aligned with backend/Stripe configuration.
+- `GET /api/profile` now includes `creditPricing` (server bucket/base-cost settings), `billing` metadata (`enabled`, plan catalog, subscription linkage/status, and cancellation schedule fields), and `retention` metadata when a downgraded free account is inside the saved-form grace window.
+- Downgrade retention keeps the default oldest saved forms up to the free limit, stores the rest in a 30-day delete queue, and closes dependent Fill By Link records immediately. The queue can be purged manually with `POST /api/profile/downgrade-retention/delete-now` or automatically through `backend/scripts/purge_downgrade_retention.py`.
 - Email/password logins must be email-verified; OAuth providers are treated as verified.
 - Schema metadata (headers/types) is stored in Firestore; CSV/Excel/JSON rows and field values never reach the server.
 - Schema mapping may emit deterministic fill rules (`fillRules`), including `checkboxRules`, `checkboxHints`, and `textTransformRules` (for split/join text fill cases).
 - Session and saved-form metadata persist `textTransformRules` alongside checkbox rule metadata so Search & Fill can replay deterministic transforms.
+- Template Fill By Link can persist an owner-controlled respondent-download snapshot that freezes the published PDF storage path, normalized field payload, and saved-form fill rules at publish time. Public respondent downloads materialize from that snapshot plus the stored respondent answer record; group links never expose PDF downloads.
+- Saved-form metadata can reference a versioned editor snapshot JSON artifact in storage so reopen/group-switch flows can hydrate page sizes and extracted fields without repeating PDF extraction on every open. Snapshot upload is best-effort during save and can be backfilled later through `PATCH /api/saved-forms/{id}/editor-snapshot`.
 - Postgres/SQL integrations are not part of the runtime path (moved to `legacy/`).
 - OpenAI rate limiting uses Firestore (`SANDBOX_RATE_LIMIT_BACKEND=firestore`) with the `rate_limits` collection by default.
 - Detection rate limiting uses `SANDBOX_DETECT_RATE_LIMIT_WINDOW_SECONDS` and `SANDBOX_DETECT_RATE_LIMIT_PER_USER`.
+- Detection and OpenAI rename/remap rate limits now fail closed when the Firestore limiter is unavailable.
 - Public `/api/contact` and `/api/recaptcha/assess` rate limits fail closed when the Firestore limiter is unavailable.
 - Enable Firestore TTL on `rate_limits.expires_at` to auto-expire rate limit counters.
 - OpenAI and detection request logs use `SANDBOX_OPENAI_LOG_TTL_SECONDS` with Firestore TTL on `openai_requests.expires_at`,
   `openai_rename_requests.expires_at`, `credit_refund_failures.expires_at`, and `detection_requests.expires_at`.
 - One-time cleanup tasks (schema TTL backfill, template mapping purge) live in `scripts/cleanup_firestore_artifacts.py`.
-- OpenAPI/Docs routes are disabled in prod unless `SANDBOX_ENABLE_DOCS=true`.
+- OpenAPI/Docs routes are always disabled in prod. Outside prod they default to enabled and can be disabled with `SANDBOX_ENABLE_DOCS=false`.
 
 ### Local test files
 
@@ -261,6 +281,9 @@ The benchmark script deploys CPU and GPU detector services in separate regions
 when `BENCH_GPU_REGION` or `DETECTOR_GPU_REGION` is set. That lets the local
 backend keep using the existing Cloud Tasks queues while GPU detector services
 live in the region that actually has L4 quota.
+Benchmark deploys now stay private by default and refuse to target the
+`dullypdf` prod project unless `BENCH_ALLOW_PROD_PROJECT=true` is set.
+Public detector benchmarks require an explicit `BENCH_ALLOW_UNAUTHENTICATED=true`.
 
 Detector service entrypoint (for Cloud Run or local dev):
 
@@ -322,14 +345,14 @@ Webhook fulfillment and checkout guardrails:
 - Refill checkout now also binds to a stable Stripe customer and reuses an existing open refill session for that customer when present, which prevents accidental duplicate session creation during quick retries.
 - Checkout session creation can be hard-blocked by Stripe webhook health (`STRIPE_ENFORCE_WEBHOOK_HEALTH=true`) so new purchases are disabled when delivery prerequisites are unhealthy.
 - Set `STRIPE_WEBHOOK_ENDPOINT_URL` to the exact webhook URL your backend receives. Webhook health checks match this specific URL and fail closed when enforcement is enabled but the URL is missing/misconfigured.
-- `POST /api/billing/reconcile` lets authenticated users audit and recover missed paid checkout fulfillment from recent Stripe events; `ROLE_GOD` can reconcile across users.
+- `POST /api/billing/reconcile` lets authenticated users recover missed paid checkout fulfillment for a specific checkout session they started; `ROLE_GOD` can still reconcile across users from recent Stripe events.
 - Subscription lifecycle role changes (`customer.subscription.updated` / `customer.subscription.deleted`) are applied only for configured Pro price ids; unrelated subscription products are ignored.
 - Subscription cancel requests are allowed when the user has a stored Stripe subscription id, even if role state drifted from `pro`, so users can always stop billing.
 - Fresh in-progress webhook locks now return a retriable non-2xx response instead of a duplicate `200` so Stripe retries rather than dropping fulfillment.
 - `BILLING_EVENT_LOCK_TIMEOUT_SECONDS` defaults to `120` seconds to reduce stale-lock retry delays after worker crashes.
 - When lock clearing fails after a webhook error, the handler now attempts a lock-document delete fallback to shorten retry stalls caused by transient Firestore write failures.
 - Pro checkout and invoice fulfillment now promote membership and persist Stripe subscription linkage in one Firestore transaction.
-- `STRIPE_MAX_PROCESSED_EVENTS` defaults to `0` (unbounded) and should remain `0` in production so old Stripe retries cannot bypass dedupe via event-id trimming.
+- `STRIPE_MAX_PROCESSED_EVENTS` defaults to `256` and should stay bounded in production so Stripe dedupe history cannot bloat long-lived user documents. The separate `billing_events` collection remains the primary idempotency record.
 - `STRIPE_CHECKOUT_IDEMPOTENCY_WINDOW_SECONDS` defaults to `300`; this windowed idempotency applies to Pro plan checkout creation. Refill checkouts use attempt-scoped idempotency keys so consecutive refill purchases do not redirect to a previously completed session.
 - Checkout redirect URLs always include a `billing` query parameter (`success`/`cancel`) even when custom URLs are configured.
 - In `ENV=prod`, startup fails fast if Stripe billing vars are missing or if checkout redirect URLs are not `https://`.

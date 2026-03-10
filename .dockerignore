@@ -36,3 +36,15 @@ frontend/test/*
 **/*.pyo
 **/*.pyd
 .DS_Store
+/.env
+/.env.*
+backend/.env
+backend/.env.*
+frontend/.env
+frontend/.env.*
+/.firebase
+/.firebase/
+/.gcloud
+/.gcloud/
+firebase-adminsdk-*.json
+*service_account*.json

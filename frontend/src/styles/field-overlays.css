@@ -185,12 +185,15 @@
   position: absolute;
   left: 50%;
   top: 50%;
-  max-width: calc(100% - 10px);
-  padding: 0.08rem 0.32rem;
+  max-width: var(--field-label-max-width, calc(100% - 10px));
+  max-height: var(--field-label-max-height, calc(100% - 10px));
+  box-sizing: border-box;
+  padding: 0.06rem 0.24rem;
   border-radius: 5px;
   background: rgba(15, 23, 42, 0.45);
   color: #f8fafc;
   font-size: var(--field-label-font-size, 0.34rem);
+  line-height: 1.05;
   letter-spacing: 0.02em;
   text-transform: none;
   white-space: nowrap;

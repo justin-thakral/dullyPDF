@@ -17,6 +17,9 @@ export const DETECTION_RUNNING_GPU_MESSAGE = 'Detecting fields on the GPU...';
 type DetectionRuntime = 'cpu' | 'gpu' | 'unknown';
 
 function resolveDetectionRuntime(payload: any): DetectionRuntime {
+  const runtime = String(payload?.detectionRuntime || '').trim().toLowerCase();
+  if (runtime === 'gpu') return 'gpu';
+  if (runtime === 'cpu') return 'cpu';
   const serviceUrl = String(payload?.detectionServiceUrl || '').trim().toLowerCase();
   if (!serviceUrl) return 'unknown';
   if (serviceUrl.includes('-gpu')) return 'gpu';

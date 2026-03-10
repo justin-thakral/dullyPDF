@@ -728,6 +728,7 @@ def test_ai_endpoints_rate_limit_env_negative_values_fallback_to_safe_defaults(
     rename_call = check_rate_limit_mock.call_args_list[-1].kwargs
     assert rename_call["window_seconds"] == 60
     assert rename_call["limit"] == 6
+    assert rename_call["fail_closed"] is True
 
     map_response = client.post(
         "/api/schema-mappings/ai",
@@ -738,6 +739,7 @@ def test_ai_endpoints_rate_limit_env_negative_values_fallback_to_safe_defaults(
     mapping_call = check_rate_limit_mock.call_args_list[-1].kwargs
     assert mapping_call["window_seconds"] == 60
     assert mapping_call["limit"] == 10
+    assert mapping_call["fail_closed"] is True
 
 
 def test_rename_endpoint_tasks_mode_enqueues_job_and_skips_inline_openai_call(
@@ -750,7 +752,7 @@ def test_rename_endpoint_tasks_mode_enqueues_job_and_skips_inline_openai_call(
     _patch_auth(mocker, app_main, base_user)
     mocker.patch.object(app_main, "_get_session_entry", return_value=_session_entry())
     mocker.patch.object(app_main, "check_rate_limit", return_value=True)
-    mocker.patch.object(app_main, "consume_openai_credits", return_value=(9, True))
+    mocker.patch.object(app_main, "consume_openai_credits", return_value=(9, True, {"base": 1, "monthly": 0, "refill": 0}))
     mocker.patch.object(app_main, "record_openai_rename_request", return_value=None)
     mocker.patch.object(app_main, "resolve_openai_rename_mode", return_value="tasks")
     mocker.patch.object(app_main, "resolve_openai_rename_profile", return_value="light")
@@ -777,8 +779,104 @@ def test_rename_endpoint_tasks_mode_enqueues_job_and_skips_inline_openai_call(
     create_job_mock.assert_called_once()
     enqueue_payload = enqueue_mock.call_args.args[0]
     assert enqueue_payload["sessionId"] == "sess-1"
-    update_job_mock.assert_called_once()
+    assert any(call.kwargs.get("credit_breakdown") == {"base": 1, "monthly": 0, "refill": 0} for call in update_job_mock.call_args_list)
+    assert any(call.kwargs.get("task_name") == "tasks/rename-1" for call in update_job_mock.call_args_list)
     inline_openai_mock.assert_not_called()
+
+
+def test_rename_endpoint_tasks_mode_reuses_existing_idempotent_job_without_recharging(
+    client,
+    app_main,
+    base_user,
+    mocker,
+    auth_headers,
+) -> None:
+    _patch_auth(mocker, app_main, base_user)
+    mocker.patch.object(app_main, "_get_session_entry", return_value=_session_entry())
+    mocker.patch.object(app_main, "check_rate_limit", return_value=True)
+    mocker.patch.object(app_main, "resolve_openai_rename_mode", return_value="tasks")
+    mocker.patch.object(app_main, "_build_openai_request_id", return_value="rename-idem-1")
+    mocker.patch.object(
+        app_main,
+        "get_openai_job",
+        return_value={
+            "job_type": "rename",
+            "user_id": base_user.app_user_id,
+            "request_id": "rename-idem-1",
+            "session_id": "sess-1",
+            "schema_id": None,
+            "status": "queued",
+            "page_count": 1,
+            "credit_pricing": {"totalCredits": 1},
+        },
+    )
+    consume_mock = mocker.patch.object(app_main, "consume_openai_credits", return_value=(9, True))
+    create_job_mock = mocker.patch.object(app_main, "create_openai_job", return_value=None)
+    enqueue_mock = mocker.patch.object(app_main, "enqueue_openai_rename_task", return_value="tasks/rename-1")
+
+    response = client.post(
+        "/api/renames/ai",
+        json={"sessionId": "sess-1", "templateFields": [_template_field_payload()]},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["jobId"] == "rename-idem-1"
+    assert body["status"] == "queued"
+    create_job_mock.assert_not_called()
+    consume_mock.assert_not_called()
+    enqueue_mock.assert_not_called()
+
+
+def test_rename_endpoint_reuses_request_id_for_sync_retry_without_recharging(
+    client,
+    app_main,
+    base_user,
+    mocker,
+    auth_headers,
+) -> None:
+    _patch_auth(mocker, app_main, base_user)
+    mocker.patch.object(app_main, "_get_session_entry", return_value=_session_entry())
+    mocker.patch.object(app_main, "check_rate_limit", return_value=True)
+    mocker.patch.object(app_main, "resolve_openai_rename_mode", return_value="sync")
+    mocker.patch.object(
+        app_main,
+        "get_openai_job",
+        return_value={
+            "job_type": "rename",
+            "user_id": base_user.app_user_id,
+            "request_id": "rename-sync-1",
+            "session_id": "sess-1",
+            "schema_id": None,
+            "status": "complete",
+            "page_count": 1,
+            "credit_pricing": {"totalCredits": 1},
+            "result": {"success": True, "fields": [{"name": "first_name"}], "checkboxRules": []},
+        },
+    )
+    consume_mock = mocker.patch.object(app_main, "consume_openai_credits", return_value=(9, True))
+    create_job_mock = mocker.patch.object(app_main, "create_openai_job", return_value=None)
+    openai_mock = mocker.patch.object(app_main, "run_openai_rename_on_pdf")
+
+    response = client.post(
+        "/api/renames/ai",
+        json={
+            "sessionId": "sess-1",
+            "requestId": "rename-sync-1",
+            "templateFields": [_template_field_payload()],
+        },
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["jobId"] == "rename-sync-1"
+    assert body["status"] == "complete"
+    assert body["fields"] == [{"name": "first_name"}]
+    create_job_mock.assert_not_called()
+    consume_mock.assert_not_called()
+    openai_mock.assert_not_called()
 
 
 def test_mapping_endpoint_tasks_mode_enqueues_job(
@@ -797,7 +895,7 @@ def test_mapping_endpoint_tasks_mode_enqueues_job(
     )
     mocker.patch.object(app_main, "check_rate_limit", return_value=True)
     mocker.patch.object(app_main, "_get_session_entry", return_value={"session": "entry", "page_count": 1})
-    mocker.patch.object(app_main, "consume_openai_credits", return_value=(9, True))
+    mocker.patch.object(app_main, "consume_openai_credits", return_value=(9, True, {"base": 1, "monthly": 0, "refill": 0}))
     mocker.patch.object(app_main, "record_openai_request", return_value=None)
     mocker.patch.object(app_main, "resolve_openai_remap_mode", return_value="tasks")
     mocker.patch.object(app_main, "resolve_openai_remap_profile", return_value="light")
@@ -824,8 +922,177 @@ def test_mapping_endpoint_tasks_mode_enqueues_job(
     create_job_mock.assert_called_once()
     enqueue_payload = enqueue_mock.call_args.args[0]
     assert enqueue_payload["schemaId"] == "schema_1"
-    update_job_mock.assert_called_once()
+    assert any(call.kwargs.get("credit_breakdown") == {"base": 1, "monthly": 0, "refill": 0} for call in update_job_mock.call_args_list)
+    assert any(call.kwargs.get("task_name") == "tasks/remap-1" for call in update_job_mock.call_args_list)
     inline_openai_mock.assert_not_called()
+
+
+def test_mapping_endpoint_tasks_mode_reuses_existing_idempotent_job_without_recharging(
+    client,
+    app_main,
+    base_user,
+    mocker,
+    auth_headers,
+) -> None:
+    _patch_auth(mocker, app_main, base_user)
+    mocker.patch.object(app_main, "get_schema", return_value=_schema_record())
+    mocker.patch.object(
+        app_main,
+        "build_allowlist_payload",
+        return_value={"schemaFields": [{"name": "first_name"}], "templateTags": [{"tag": "A1"}]},
+    )
+    mocker.patch.object(app_main, "check_rate_limit", return_value=True)
+    mocker.patch.object(app_main, "_get_session_entry", return_value={"session": "entry", "page_count": 1})
+    mocker.patch.object(app_main, "resolve_openai_remap_mode", return_value="tasks")
+    mocker.patch.object(app_main, "_build_openai_request_id", return_value="remap-idem-1")
+    mocker.patch.object(
+        app_main,
+        "get_openai_job",
+        return_value={
+            "job_type": "remap",
+            "user_id": base_user.app_user_id,
+            "request_id": "remap-idem-1",
+            "schema_id": "schema_1",
+            "session_id": "sess-1",
+            "status": "queued",
+            "page_count": 1,
+            "credit_pricing": {"totalCredits": 1},
+        },
+    )
+    consume_mock = mocker.patch.object(app_main, "consume_openai_credits", return_value=(9, True))
+    create_job_mock = mocker.patch.object(app_main, "create_openai_job", return_value=None)
+    enqueue_mock = mocker.patch.object(app_main, "enqueue_openai_remap_task", return_value="tasks/remap-1")
+
+    response = client.post(
+        "/api/schema-mappings/ai",
+        json={"schemaId": "schema_1", "templateFields": [_template_field_payload()], "sessionId": "sess-1"},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["jobId"] == "remap-idem-1"
+    assert body["status"] == "queued"
+    create_job_mock.assert_not_called()
+    consume_mock.assert_not_called()
+    enqueue_mock.assert_not_called()
+
+
+def test_rename_endpoint_lost_create_race_reuses_existing_job_without_recharging(
+    client,
+    app_main,
+    base_user,
+    mocker,
+    auth_headers,
+) -> None:
+    _patch_auth(mocker, app_main, base_user)
+    mocker.patch.object(app_main, "_get_session_entry", return_value=_session_entry())
+    mocker.patch.object(app_main, "check_rate_limit", return_value=True)
+    mocker.patch.object(app_main, "resolve_openai_rename_mode", return_value="tasks")
+    mocker.patch.object(app_main, "resolve_openai_rename_profile", return_value="light")
+    mocker.patch.object(
+        app_main,
+        "resolve_openai_task_config",
+        return_value={"profile": "light", "queue": "openai-rename-light", "service_url": "https://rename"},
+    )
+    mocker.patch.object(app_main, "_build_openai_request_id", return_value="rename-race-1")
+    get_job_mock = mocker.patch.object(
+        app_main,
+        "get_openai_job",
+        side_effect=[
+            None,
+            {
+                "job_type": "rename",
+                "user_id": base_user.app_user_id,
+                "request_id": "rename-race-1",
+                "session_id": "sess-1",
+                "schema_id": None,
+                "status": "queued",
+                "page_count": 1,
+                "credit_pricing": {"totalCredits": 1},
+            },
+        ],
+    )
+    create_job_mock = mocker.patch.object(
+        app_main,
+        "create_openai_job",
+        side_effect=app_main.OpenAiJobAlreadyExistsError("OpenAI job already exists: rename-race-1"),
+    )
+    consume_mock = mocker.patch.object(app_main, "consume_openai_credits", return_value=(9, True))
+    enqueue_mock = mocker.patch.object(app_main, "enqueue_openai_rename_task", return_value="tasks/rename-1")
+
+    response = client.post(
+        "/api/renames/ai",
+        json={"sessionId": "sess-1", "templateFields": [_template_field_payload()]},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["jobId"] == "rename-race-1"
+    assert body["status"] == "queued"
+    assert get_job_mock.call_count == 2
+    create_job_mock.assert_called_once()
+    consume_mock.assert_not_called()
+    enqueue_mock.assert_not_called()
+
+
+def test_mapping_endpoint_reuses_request_id_for_sync_retry_without_recharging(
+    client,
+    app_main,
+    base_user,
+    mocker,
+    auth_headers,
+) -> None:
+    _patch_auth(mocker, app_main, base_user)
+    mocker.patch.object(app_main, "get_schema", return_value=_schema_record())
+    mocker.patch.object(
+        app_main,
+        "build_allowlist_payload",
+        return_value={"schemaFields": [{"name": "first_name"}], "templateTags": [{"tag": "A1"}]},
+    )
+    mocker.patch.object(app_main, "check_rate_limit", return_value=True)
+    mocker.patch.object(app_main, "_get_session_entry", return_value={"session": "entry", "page_count": 1})
+    mocker.patch.object(app_main, "resolve_openai_remap_mode", return_value="sync")
+    mocker.patch.object(
+        app_main,
+        "get_openai_job",
+        return_value={
+            "job_type": "remap",
+            "user_id": base_user.app_user_id,
+            "request_id": "remap-sync-1",
+            "schema_id": "schema_1",
+            "session_id": "sess-1",
+            "template_id": None,
+            "status": "complete",
+            "page_count": 1,
+            "credit_pricing": {"totalCredits": 1},
+            "result": {"success": True, "mappingResults": {"mappings": [{"pdfField": "A1"}]}},
+        },
+    )
+    consume_mock = mocker.patch.object(app_main, "consume_openai_credits", return_value=(9, True))
+    create_job_mock = mocker.patch.object(app_main, "create_openai_job", return_value=None)
+    openai_mock = mocker.patch.object(app_main, "call_openai_schema_mapping_chunked")
+
+    response = client.post(
+        "/api/schema-mappings/ai",
+        json={
+            "schemaId": "schema_1",
+            "requestId": "remap-sync-1",
+            "templateFields": [_template_field_payload()],
+            "sessionId": "sess-1",
+        },
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["jobId"] == "remap-sync-1"
+    assert body["status"] == "complete"
+    assert body["mappingResults"]["mappings"] == [{"pdfField": "A1"}]
+    create_job_mock.assert_not_called()
+    consume_mock.assert_not_called()
+    openai_mock.assert_not_called()
 
 
 def test_openai_job_status_endpoints_enforce_ownership_and_return_result(

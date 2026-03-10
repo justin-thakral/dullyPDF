@@ -7,7 +7,10 @@
   "scripts": {
     "dev": "vite",
     "start": "vite",
-    "build": "tsc -b && vite build",
+    "build": "echo 'Use npm run build:dev or npm run build:prod.' && exit 1",
+    "build:raw": "tsc -b && vite build",
+    "build:dev": "bash ../scripts/use-frontend-env.sh dev && npm run build:raw",
+    "build:prod": "bash ../scripts/use-frontend-env.sh prod && npm run build:raw",
     "lint": "eslint .",
     "test": "vitest run",
     "preview": "vite preview"

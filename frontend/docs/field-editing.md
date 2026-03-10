@@ -8,7 +8,7 @@ Field editing is centered around three coordinated areas: overlay (PDF), field l
   - `Review`: overlays + names
   - `Edit`: overlays + transform resize controls (default when a form opens)
   - `Fill`: interactive input controls
-- `Transform`: enables resize handles for geometry editing.
+- `Transform`: enables field moving and resize handles for geometry editing.
 - `Fields`: show/hide overlay boxes.
 - `Names`: show/hide overlay labels.
 - `Info`: show/hide input controls on the PDF for entering values.
@@ -27,9 +27,8 @@ Field editing is centered around three coordinated areas: overlay (PDF), field l
 
 ## Moving, resizing, and geometry
 
-- Move is enabled whenever `Info` is off.
-- Transform mode controls resize handles.
-- Drag a field to move it.
+- Move and resize are enabled only while `Transform` is on.
+- Drag a field to move it when `Transform` is enabled.
 - Drag corner or edge handles to resize standard fields.
 - Corner resizing defaults to standard freeform behavior (width and height change independently).
 - Hold `Shift` while corner-resizing to preserve aspect ratio for that drag.
@@ -43,6 +42,7 @@ Field editing is centered around three coordinated areas: overlay (PDF), field l
 
 - Rename fields and change type/page assignment.
 - Delete the selected field.
+- The `Create field` section includes an `Arrow keys` movement toggle with a configurable point step for keyboard nudging.
 - Undo/redo field edits with keyboard shortcuts (history depth: 10 snapshots).
 
 ## Confidence labels
@@ -84,6 +84,7 @@ Field editing is centered around three coordinated areas: overlay (PDF), field l
 - `Esc`: clear active create tool
 - `Ctrl/Cmd+F` or `/`: focus field search
 - `[` and `]`: previous/next page
+- `Arrow`: move selected field by the configured step when `Arrow keys` movement is enabled in the inspector
 - `Alt+Arrow`: nudge selected field by 1 point
 - `Shift+Alt+Arrow`: nudge selected field by 10 points
 - `Ctrl/Cmd+0`: reset zoom to 100%

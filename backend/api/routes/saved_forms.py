@@ -10,11 +10,13 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 
-from backend.api.schemas import SavedFormSessionRequest
+from backend.api.schemas import (
+    SavedFormEditorSnapshotUpdateRequest,
+    SavedFormSessionRequest,
+)
 from backend.detection.status import DETECTION_STATUS_COMPLETE
 from backend.firebaseDB.template_database import (
     create_template,
-    delete_template,
     get_template,
     list_templates,
     update_template,
@@ -25,16 +27,25 @@ from backend.firebaseDB.storage_service import (
     is_gcs_path,
     stream_pdf,
     upload_form_pdf,
-    upload_pdf_to_bucket_path,
     upload_template_pdf,
 )
+from backend.logging_config import get_logger
 from backend.sessions.session_store import (
     get_session_entry_if_present as _get_session_entry_if_present,
     store_session_entry as _store_session_entry,
 )
+from backend.services.saved_form_snapshot_service import (
+    SAVED_FORM_EDITOR_SNAPSHOT_METADATA_KEY,
+    get_saved_form_editor_snapshot_path,
+    load_saved_form_editor_snapshot,
+    normalize_saved_form_editor_snapshot_payload,
+    parse_saved_form_editor_snapshot_form_value,
+    upload_saved_form_editor_snapshot,
+)
 from backend.time_utils import now_iso
 from backend.services.app_config import resolve_stream_cors_headers
 from backend.services.auth_service import require_user
+from backend.services.downgrade_retention_service import sync_user_downgrade_retention
 from backend.services.limits_service import resolve_fillable_max_pages, resolve_saved_forms_limit
 from backend.services.pdf_service import (
     coerce_field_payloads,
@@ -45,8 +56,10 @@ from backend.services.pdf_service import (
     validate_pdf_for_detection,
     write_upload_to_temp,
 )
+from backend.services.template_cleanup_service import delete_saved_form_assets
 
 router = APIRouter()
+logger = get_logger(__name__)
 
 
 def _is_storage_not_found_error(exc: Exception) -> bool:
@@ -127,6 +140,9 @@ async def get_saved_form(form_id: str, authorization: Optional[str] = Header(def
             "checkboxHints": response.get("checkboxHints") or [],
             "textTransformRules": response.get("textTransformRules") or [],
         }
+    editor_snapshot = load_saved_form_editor_snapshot(metadata)
+    if editor_snapshot is not None:
+        response["editorSnapshot"] = editor_snapshot
     return response
 
 
@@ -217,6 +233,7 @@ async def save_form(
     checkboxHints: Optional[str] = Form(default=None),
     textTransformRules: Optional[str] = Form(default=None),
     templateRules: Optional[str] = Form(default=None),
+    editorSnapshot: Optional[str] = Form(default=None),
     overwriteFormId: Optional[str] = Form(default=None),
     authorization: Optional[str] = Header(default=None),
 ) -> Dict[str, Any]:
@@ -333,21 +350,43 @@ async def save_form(
 
         if overwrite_template and isinstance(overwrite_template.metadata, dict):
             metadata = {**overwrite_template.metadata, **metadata}
+        metadata.pop(SAVED_FORM_EDITOR_SNAPSHOT_METADATA_KEY, None)
+        old_snapshot_path = get_saved_form_editor_snapshot_path(
+            overwrite_template.metadata if overwrite_template and isinstance(overwrite_template.metadata, dict) else None,
+        )
+        editor_snapshot_payload = None
+        if editorSnapshot is not None:
+            try:
+                editor_snapshot_payload = parse_saved_form_editor_snapshot_form_value(editorSnapshot)
+            except ValueError as exc:
+                logger.warning("Ignoring invalid saved-form editor snapshot during save: %s", exc)
 
         old_pdf_path = overwrite_template.pdf_bucket_path if overwrite_template else None
         old_template_path = overwrite_template.template_bucket_path if overwrite_template else None
-        if overwrite_template and old_pdf_path and is_gcs_path(old_pdf_path):
-            pdf_bucket_path = upload_pdf_to_bucket_path(str(temp_path), old_pdf_path)
-        else:
-            pdf_bucket_path = upload_form_pdf(str(temp_path), forms_object)
-            uploaded_paths.append(pdf_bucket_path)
+        # Overwrites upload to fresh storage objects first, then switch metadata.
+        # That keeps the existing saved form intact until the Firestore update
+        # succeeds and prevents partial replacement when a later step fails.
+        pdf_bucket_path = upload_form_pdf(str(temp_path), forms_object)
+        uploaded_paths.append(pdf_bucket_path)
         if overwrite_template and old_template_path and old_template_path == old_pdf_path:
             template_bucket_path = pdf_bucket_path
-        elif overwrite_template and old_template_path and is_gcs_path(old_template_path):
-            template_bucket_path = upload_pdf_to_bucket_path(str(temp_path), old_template_path)
         else:
             template_bucket_path = upload_template_pdf(str(temp_path), templates_object)
             uploaded_paths.append(template_bucket_path)
+
+        next_snapshot_path: str | None = None
+        if editor_snapshot_payload is not None:
+            try:
+                next_snapshot_path, snapshot_manifest = upload_saved_form_editor_snapshot(
+                    user_id=user.app_user_id,
+                    form_id=overwrite_template.id if overwrite_template else form_id,
+                    timestamp_ms=timestamp,
+                    snapshot=editor_snapshot_payload,
+                )
+                metadata[SAVED_FORM_EDITOR_SNAPSHOT_METADATA_KEY] = snapshot_manifest
+                uploaded_paths.append(next_snapshot_path)
+            except Exception as exc:
+                logger.warning("Failed to persist saved-form editor snapshot user=%s form=%s error=%s", user.app_user_id, overwrite_template.id if overwrite_template else form_id, exc)
 
         if overwrite_template:
             updated_template = update_template(
@@ -372,6 +411,11 @@ async def save_form(
             ):
                 try:
                     delete_pdf(old_template_path)
+                except Exception:
+                    pass
+            if old_snapshot_path and old_snapshot_path != next_snapshot_path and is_gcs_path(old_snapshot_path):
+                try:
+                    delete_pdf(old_snapshot_path)
                 except Exception:
                     pass
             return {
@@ -409,27 +453,72 @@ async def delete_saved_form(form_id: str, authorization: Optional[str] = Header(
     user = require_user(authorization)
     if not form_id:
         raise HTTPException(status_code=400, detail="Missing form id")
+    try:
+        removed = delete_saved_form_assets(form_id, user.app_user_id, hard_delete_link_records=False)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Failed to delete saved form") from exc
+    if not removed:
+        raise HTTPException(status_code=404, detail="Form not found")
+    sync_user_downgrade_retention(user.app_user_id)
+    return {"success": True}
+
+
+@router.patch("/api/saved-forms/{form_id}/editor-snapshot")
+async def update_saved_form_editor_snapshot(
+    form_id: str,
+    payload: SavedFormEditorSnapshotUpdateRequest,
+    authorization: Optional[str] = Header(default=None),
+) -> Dict[str, Any]:
+    """Persist a ready-to-hydrate editor snapshot for an existing saved form."""
+    user = require_user(authorization)
+    if not form_id:
+        raise HTTPException(status_code=400, detail="Missing form id")
     template = get_template(form_id, user.app_user_id)
     if not template:
         raise HTTPException(status_code=404, detail="Form not found")
+    try:
+        normalized_snapshot = normalize_saved_form_editor_snapshot_payload(payload.snapshot)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    deletion_tasks = []
-    if template.pdf_bucket_path and is_gcs_path(template.pdf_bucket_path):
-        deletion_tasks.append(template.pdf_bucket_path)
-    if template.template_bucket_path and template.template_bucket_path != template.pdf_bucket_path:
-        if is_gcs_path(template.template_bucket_path):
-            deletion_tasks.append(template.template_bucket_path)
+    timestamp = int(datetime.now(tz=timezone.utc).timestamp() * 1000)
+    metadata = dict(template.metadata or {}) if isinstance(template.metadata, dict) else {}
+    old_snapshot_path = get_saved_form_editor_snapshot_path(metadata)
+    new_snapshot_path: str | None = None
+    try:
+        new_snapshot_path, snapshot_manifest = upload_saved_form_editor_snapshot(
+            user_id=user.app_user_id,
+            form_id=form_id,
+            timestamp_ms=timestamp,
+            snapshot=normalized_snapshot,
+        )
+        metadata[SAVED_FORM_EDITOR_SNAPSHOT_METADATA_KEY] = snapshot_manifest
+        updated_template = update_template(
+            form_id,
+            user.app_user_id,
+            metadata=metadata,
+        )
+        if not updated_template:
+            raise HTTPException(status_code=500, detail="Failed to update saved form snapshot")
+    except HTTPException:
+        if new_snapshot_path and is_gcs_path(new_snapshot_path):
+            try:
+                delete_pdf(new_snapshot_path)
+            except Exception:
+                pass
+        raise
+    except Exception as exc:
+        if new_snapshot_path and is_gcs_path(new_snapshot_path):
+            try:
+                delete_pdf(new_snapshot_path)
+            except Exception:
+                pass
+        raise HTTPException(status_code=500, detail="Failed to update saved form snapshot") from exc
 
-    for bucket_path in deletion_tasks:
+    if old_snapshot_path and old_snapshot_path != new_snapshot_path and is_gcs_path(old_snapshot_path):
         try:
-            delete_pdf(bucket_path)
-        except Exception as exc:
-            if _is_storage_not_found_error(exc):
-                continue
-            raise HTTPException(status_code=500, detail="Failed to delete saved form") from exc
-
-    removed = delete_template(form_id, user.app_user_id)
-    if not removed:
-        raise HTTPException(status_code=404, detail="Form not found")
+            delete_pdf(old_snapshot_path)
+        except Exception:
+            pass
 
     return {"success": True}

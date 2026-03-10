@@ -2,20 +2,25 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const appState = vi.hoisted(() => ({
-  authStateCallback: null as ((user: any) => void | Promise<void>) | null,
+  authStateCallbacks: new Set<(user: any) => void | Promise<void>>(),
 }));
 
 const authMocks = vi.hoisted(() => ({
   onAuthStateChanged: vi.fn((callback: (user: any) => void | Promise<void>) => {
-    appState.authStateCallback = callback;
-    return vi.fn();
+    appState.authStateCallbacks.add(callback);
+    return vi.fn(() => {
+      appState.authStateCallbacks.delete(callback);
+    });
   }),
   signOut: vi.fn().mockResolvedValue(undefined),
 }));
 
 const apiServiceMocks = vi.hoisted(() => ({
   getSavedForms: vi.fn().mockResolvedValue([]),
+  getGroups: vi.fn().mockResolvedValue([]),
   getProfile: vi.fn().mockResolvedValue(null),
+  updateDowngradeRetention: vi.fn(),
+  deleteDowngradeRetentionNow: vi.fn(),
   createBillingCheckoutSession: vi.fn(),
   reconcileBillingCheckoutFulfillment: vi.fn().mockResolvedValue({
     success: true,
@@ -41,6 +46,7 @@ const apiServiceMocks = vi.hoisted(() => ({
   renameFields: vi.fn(),
   mapSchema: vi.fn(),
   createSavedFormSession: vi.fn(),
+  updateSavedFormEditorSnapshot: vi.fn(),
   loadSavedForm: vi.fn(),
   downloadSavedForm: vi.fn(),
   deleteSavedForm: vi.fn(),
@@ -207,6 +213,31 @@ vi.mock('../../../src/components/demo/DemoTour', () => ({
   DemoTour: () => null,
 }));
 
+vi.mock('../../../src/components/features/FillLinkManagerDialog', () => ({
+  FillLinkManagerDialog: () => null,
+}));
+
+vi.mock('../../../src/components/features/DowngradeRetentionDialog', () => ({
+  default: (props: any) => (
+    props.open && props.retention ? (
+      <div data-testid="retention-dialog">
+        <div data-testid="retention-status">{props.retention.status}</div>
+        <div data-testid="retention-kept">{(props.retention.keptTemplateIds || []).join('|')}</div>
+        <div data-testid="retention-pending">{(props.retention.pendingDeleteTemplateIds || []).join('|')}</div>
+        <button data-testid="retention-save" type="button" onClick={() => props.onSaveSelection?.(['tpl-1', 'tpl-2', 'tpl-4'])}>
+          Save kept forms
+        </button>
+        <button data-testid="retention-delete" type="button" onClick={() => props.onDeleteNow?.()}>
+          Delete now
+        </button>
+        <button data-testid="retention-close" type="button" onClick={() => props.onClose?.()}>
+          Keep free plan
+        </button>
+      </div>
+    ) : null
+  ),
+}));
+
 vi.mock('../../../src/components/panels/FieldInspectorPanel', () => ({
   FieldInspectorPanel: uiMocks.fieldInspector,
 }));
@@ -236,7 +267,20 @@ vi.mock('../../../src/components/ui/Alert', () => ({
 }));
 
 vi.mock('../../../src/components/ui/Dialog', () => ({
-  ConfirmDialog: () => null,
+  DialogFrame: ({ open, children }: { open: boolean; children?: any }) => (open ? <div>{children}</div> : null),
+  Dialog: ({ open, children }: { open: boolean; children?: any }) => (open ? <div>{children}</div> : null),
+  ConfirmDialog: ({ open, confirmLabel = 'Confirm', cancelLabel = 'Cancel', onConfirm, onCancel }: any) => (
+    open ? (
+      <div data-testid="confirm-dialog">
+        <button data-testid="confirm-action" type="button" onClick={() => onConfirm?.()}>
+          {confirmLabel}
+        </button>
+        <button data-testid="confirm-cancel" type="button" onClick={() => onCancel?.()}>
+          {cancelLabel}
+        </button>
+      </div>
+    ) : null
+  ),
   PromptDialog: () => null,
   SavedFormsLimitDialog: () => null,
 }));
@@ -261,6 +305,7 @@ const makePdfDoc = () => ({
 });
 
 const makeAuthUser = () => ({
+  uid: 'user-1',
   email: 'qa@example.com',
   emailVerified: true,
   providerData: [{ providerId: 'password' }],
@@ -270,21 +315,113 @@ const makeAuthUser = () => ({
   }),
 });
 
+const makeRetentionProfile = (overrides: Record<string, unknown> = {}) => ({
+  email: 'qa@example.com',
+  role: 'base',
+  creditsRemaining: 10,
+  availableCredits: 10,
+  monthlyCreditsRemaining: 0,
+  refillCreditsRemaining: 0,
+  refillCreditsLocked: false,
+  creditPricing: {
+    pageBucketSize: 5,
+    renameBaseCost: 1,
+    remapBaseCost: 1,
+    renameRemapBaseCost: 2,
+  },
+  billing: {
+    enabled: true,
+    plans: {
+      pro_monthly: {
+        kind: 'pro_monthly',
+        mode: 'subscription',
+        priceId: 'price_monthly',
+        label: 'Pro Monthly',
+        currency: 'usd',
+        unitAmount: 1000,
+        interval: 'month',
+        refillCredits: null,
+      },
+    },
+  },
+  retention: {
+    status: 'grace_period',
+    policyVersion: 1,
+    downgradedAt: '2026-03-01T00:00:00Z',
+    graceEndsAt: '2026-03-31T00:00:00Z',
+    daysRemaining: 21,
+    savedFormsLimit: 3,
+    fillLinksActiveLimit: 1,
+    keptTemplateIds: ['tpl-1', 'tpl-2', 'tpl-3'],
+    pendingDeleteTemplateIds: ['tpl-4'],
+    pendingDeleteLinkIds: ['link-4'],
+    counts: {
+      keptTemplates: 3,
+      pendingTemplates: 1,
+      affectedGroups: 1,
+      pendingLinks: 1,
+      closedLinks: 1,
+    },
+    templates: [
+      { id: 'tpl-1', name: 'Template One', createdAt: '2026-01-01T00:00:00Z', status: 'kept' },
+      { id: 'tpl-2', name: 'Template Two', createdAt: '2026-01-02T00:00:00Z', status: 'kept' },
+      { id: 'tpl-3', name: 'Template Three', createdAt: '2026-01-03T00:00:00Z', status: 'kept' },
+      { id: 'tpl-4', name: 'Template Four', createdAt: '2026-01-04T00:00:00Z', status: 'pending_delete' },
+    ],
+    groups: [
+      {
+        id: 'group-1',
+        name: 'Admissions Packet',
+        templateCount: 4,
+        pendingTemplateCount: 1,
+        willDelete: false,
+      },
+    ],
+    links: [
+      {
+        id: 'link-4',
+        title: 'Template Four Link',
+        scopeType: 'template',
+        status: 'closed',
+        templateId: 'tpl-4',
+        pendingDeleteReason: 'template_pending_delete',
+      },
+    ],
+  },
+  limits: {
+    detectMaxPages: 10,
+    fillableMaxPages: 20,
+    savedFormsMax: 3,
+    fillLinksActiveMax: 1,
+    fillLinkResponsesMax: 100,
+  },
+  ...overrides,
+});
+
 const importApp = async () => {
-  vi.resetModules();
   const module = await import('../../../src/App');
   return module.default;
 };
 
 const settleAuthAsSignedOut = async () => {
+  await waitFor(() => {
+    expect(appState.authStateCallbacks.size).toBeGreaterThan(0);
+  });
   await act(async () => {
-    await appState.authStateCallback?.(null);
+    for (const callback of [...appState.authStateCallbacks]) {
+      await callback(null);
+    }
   });
 };
 
 const settleAuthAsSignedIn = async () => {
+  await waitFor(() => {
+    expect(appState.authStateCallbacks.size).toBeGreaterThan(0);
+  });
   await act(async () => {
-    await appState.authStateCallback?.(makeAuthUser());
+    for (const callback of [...appState.authStateCallbacks]) {
+      await callback(makeAuthUser());
+    }
   });
 };
 
@@ -293,7 +430,10 @@ describe('App', () => {
     window.history.replaceState({}, '', '/');
     window.scrollTo = vi.fn();
     window.sessionStorage.clear();
-    appState.authStateCallback = null;
+    document.documentElement.classList.remove('workspace-no-scroll');
+    document.body.classList.remove('workspace-no-scroll');
+    document.getElementById('root')?.classList.remove('workspace-no-scroll');
+    appState.authStateCallbacks.clear();
     authMocks.onAuthStateChanged.mockClear();
     authMocks.signOut.mockClear();
     analyticsMocks.trackGoogleAdsBillingPurchase.mockClear();
@@ -313,6 +453,7 @@ describe('App', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.clearAllMocks();
   });
 
@@ -365,6 +506,23 @@ describe('App', () => {
     expect(screen.getByTestId('upload-fillable')).toBeTruthy();
   }, 15_000);
 
+  it('locks root scrolling while the workspace runtime is mounted', async () => {
+    const App = await importApp();
+    const { unmount } = render(<App />);
+
+    await settleAuthAsSignedIn();
+    fireEvent.click(await screen.findByTestId('start-workflow'));
+    expect(await screen.findByTestId('upload-detect', {}, { timeout: 10_000 })).toBeTruthy();
+
+    expect(document.documentElement.classList.contains('workspace-no-scroll')).toBe(true);
+    expect(document.body.classList.contains('workspace-no-scroll')).toBe(true);
+
+    unmount();
+
+    expect(document.documentElement.classList.contains('workspace-no-scroll')).toBe(false);
+    expect(document.body.classList.contains('workspace-no-scroll')).toBe(false);
+  }, 15_000);
+
   it('does not register duplicate auth listeners after signed-in state updates', async () => {
     const App = await importApp();
     render(<App />);
@@ -373,13 +531,127 @@ describe('App', () => {
 
     const user = makeAuthUser();
     await act(async () => {
-      await appState.authStateCallback?.(user);
+      for (const callback of [...appState.authStateCallbacks]) {
+        await callback(user);
+      }
     });
 
     await waitFor(() => {
       expect(authMocks.onAuthStateChanged).toHaveBeenCalledTimes(1);
     });
   });
+
+  it('auto-mounts the runtime for signed-in downgraded users landing on the homepage', async () => {
+    apiServiceMocks.getProfile.mockResolvedValue(makeRetentionProfile());
+
+    const App = await importApp();
+    render(<App />);
+
+    await settleAuthAsSignedIn();
+
+    expect(await screen.findByTestId('retention-dialog', {}, { timeout: 10_000 })).toBeTruthy();
+    expect(screen.getByTestId('retention-status').textContent).toBe('grace_period');
+    expect(apiServiceMocks.getProfile).toHaveBeenCalled();
+  }, 15_000);
+
+  it('retries the lightweight-shell retention preflight when the first profile read returns null', async () => {
+    apiServiceMocks.getProfile
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(makeRetentionProfile());
+
+    const App = await importApp();
+    render(<App />);
+
+    await settleAuthAsSignedIn();
+
+    expect(await screen.findByTestId('retention-dialog', {}, { timeout: 10_000 })).toBeTruthy();
+    expect(apiServiceMocks.getProfile.mock.calls.length).toBeGreaterThanOrEqual(2);
+  }, 15_000);
+
+  it('clears the lightweight-shell retention preflight guard after repeated null profiles so the same user can retry later', async () => {
+    apiServiceMocks.getProfile
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(makeRetentionProfile());
+
+    const App = await importApp();
+    render(<App />);
+
+    await settleAuthAsSignedIn();
+    await waitFor(() => {
+      expect(apiServiceMocks.getProfile).toHaveBeenCalledTimes(3);
+    }, { timeout: 4_000 });
+    expect(screen.queryByTestId('retention-dialog')).toBeNull();
+
+    await act(async () => {
+      for (const callback of [...appState.authStateCallbacks]) {
+        await callback(makeAuthUser());
+      }
+    });
+
+    expect(await screen.findByTestId('retention-dialog', {}, { timeout: 10_000 })).toBeTruthy();
+    expect(apiServiceMocks.getProfile.mock.calls.length).toBeGreaterThanOrEqual(4);
+  }, 15_000);
+
+  it('keeps retention UI fresh after saving a new kept-template selection', async () => {
+    const initialProfile = makeRetentionProfile();
+    const updatedRetention = {
+      ...(initialProfile.retention as Record<string, unknown>),
+      keptTemplateIds: ['tpl-1', 'tpl-2', 'tpl-4'],
+      pendingDeleteTemplateIds: ['tpl-3'],
+    };
+    apiServiceMocks.getProfile
+      .mockResolvedValueOnce(initialProfile)
+      .mockResolvedValueOnce(initialProfile)
+      .mockResolvedValueOnce({
+        ...initialProfile,
+        retention: updatedRetention,
+      });
+    apiServiceMocks.updateDowngradeRetention.mockResolvedValue(updatedRetention);
+
+    const App = await importApp();
+    render(<App />);
+
+    await settleAuthAsSignedIn();
+    expect(await screen.findByTestId('retention-dialog', {}, { timeout: 10_000 })).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId('retention-save'));
+
+    await waitFor(() => {
+      expect(apiServiceMocks.updateDowngradeRetention).toHaveBeenCalledWith(['tpl-1', 'tpl-2', 'tpl-4']);
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('retention-kept').textContent).toBe('tpl-1|tpl-2|tpl-4');
+      expect(screen.getByTestId('retention-pending').textContent).toBe('tpl-3');
+    });
+  }, 15_000);
+
+  it('clears the retention dialog locally after delete-now removes queued forms', async () => {
+    const initialProfile = makeRetentionProfile();
+    apiServiceMocks.getProfile.mockResolvedValue(initialProfile);
+    apiServiceMocks.deleteDowngradeRetentionNow.mockResolvedValue({
+      success: true,
+      deletedTemplateIds: ['tpl-4'],
+      deletedLinkIds: ['link-4'],
+    });
+
+    const App = await importApp();
+    render(<App />);
+
+    await settleAuthAsSignedIn();
+    expect(await screen.findByTestId('retention-dialog', {}, { timeout: 10_000 })).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId('retention-delete'));
+    fireEvent.click(await screen.findByTestId('confirm-action'));
+
+    await waitFor(() => {
+      expect(apiServiceMocks.deleteDowngradeRetentionNow).toHaveBeenCalledTimes(1);
+    });
+    await waitFor(() => {
+      expect(screen.queryByTestId('retention-dialog')).toBeNull();
+    });
+  }, 15_000);
 
   it('runs checkout flow from profile and surfaces checkout errors gracefully', async () => {
     apiServiceMocks.getProfile.mockResolvedValue({
@@ -486,7 +758,7 @@ describe('App', () => {
     });
     apiServiceMocks.getProfile.mockImplementation(() => {
       profileCallCount += 1;
-      if (profileCallCount === 1) {
+      if (profileCallCount <= 2) {
         return Promise.resolve(profilePayload);
       }
       return refreshPromise;
@@ -588,21 +860,67 @@ describe('App', () => {
     const App = await importApp();
     render(<App />);
 
-    await settleAuthAsSignedOut();
+    await settleAuthAsSignedIn();
     expect((await screen.findByRole('alert')).textContent || '').toContain('Checkout was canceled.');
     expect(window.location.search.includes('billing=')).toBe(false);
   });
 
+  it('does not clear an existing pending checkout marker for a billing cancel return', async () => {
+    window.history.replaceState({}, '', '/?billing=cancel');
+    window.sessionStorage.setItem(
+      'dullypdf.pendingBillingCheckout',
+      JSON.stringify({
+        userId: 'user-1',
+        requestedKind: 'pro_monthly',
+        sessionId: 'cs_cancel_pending_123',
+        attemptId: 'attempt_cancel_pending_123',
+        checkoutPriceId: 'price_monthly',
+        startedAt: Date.now(),
+      }),
+    );
+    const App = await importApp();
+    render(<App />);
+
+    await settleAuthAsSignedIn();
+    expect((await screen.findByRole('alert')).textContent || '').toContain('Checkout was canceled.');
+    expect(window.sessionStorage.getItem('dullypdf.pendingBillingCheckout')).toContain('"sessionId":"cs_cancel_pending_123"');
+    expect(window.location.search.includes('billing=')).toBe(false);
+  });
+
+  it('ignores unknown billing query params without mounting the runtime', async () => {
+    window.history.replaceState({}, '', '/?billing=foo');
+    const App = await importApp();
+    render(<App />);
+
+    await settleAuthAsSignedOut();
+    expect(await screen.findByTestId('homepage')).toBeTruthy();
+    expect(screen.queryByTestId('upload-detect')).toBeNull();
+    expect(window.location.search.includes('billing=')).toBe(false);
+  });
+
+  it('keeps signed-out billing success links on the lightweight homepage when no pending checkout exists', async () => {
+    window.history.replaceState({}, '', '/?billing=success');
+    const App = await importApp();
+    render(<App />);
+
+    await settleAuthAsSignedOut();
+    expect(await screen.findByTestId('homepage')).toBeTruthy();
+    expect(screen.queryByTestId('upload-detect')).toBeNull();
+    expect(window.location.search.includes('billing=')).toBe(false);
+  });
+
   it('tracks successful Stripe billing returns against the matched checkout session', async () => {
+    const startedAt = Date.now();
     window.history.replaceState({}, '', '/?billing=success');
     window.sessionStorage.setItem(
       'dullypdf.pendingBillingCheckout',
       JSON.stringify({
+        userId: 'user-1',
         requestedKind: 'pro_yearly',
         sessionId: 'cs_completed_123',
         attemptId: 'attempt_completed_123',
         checkoutPriceId: 'price_monthly',
-        startedAt: 1700000000000,
+        startedAt,
       }),
     );
     apiServiceMocks.getProfile.mockResolvedValue({
@@ -680,6 +998,12 @@ describe('App', () => {
 
     await waitFor(() => {
       expect(apiServiceMocks.reconcileBillingCheckoutFulfillment).toHaveBeenCalledTimes(1);
+      expect(apiServiceMocks.reconcileBillingCheckoutFulfillment).toHaveBeenCalledWith({
+        lookbackHours: 72,
+        dryRun: false,
+        sessionId: 'cs_completed_123',
+        attemptId: 'attempt_completed_123',
+      });
       expect(analyticsMocks.trackGoogleAdsBillingPurchase).toHaveBeenCalledWith({
         kind: 'pro_monthly',
         transactionId: 'cs_completed_123',
@@ -688,6 +1012,159 @@ describe('App', () => {
       });
     });
     expect(window.sessionStorage.getItem('dullypdf.pendingBillingCheckout')).toBeNull();
+    expect(window.location.search.includes('billing=')).toBe(false);
+  });
+
+  it('does not reconcile or clear storage for billing success until a verified user exists', async () => {
+    const startedAt = Date.now();
+    window.history.replaceState({}, '', '/?billing=success');
+    window.sessionStorage.setItem(
+      'dullypdf.pendingBillingCheckout',
+      JSON.stringify({
+        userId: 'user-1',
+        requestedKind: 'pro_monthly',
+        sessionId: 'cs_wait_123',
+        attemptId: 'attempt_wait_123',
+        checkoutPriceId: 'price_monthly',
+        startedAt,
+      }),
+    );
+
+    const unverifiedUser = {
+      email: 'qa@example.com',
+      emailVerified: false,
+      providerData: [{ providerId: 'password' }],
+      getIdTokenResult: vi.fn().mockResolvedValue({
+        token: 'token-1',
+        signInProvider: 'password',
+      }),
+    };
+    apiServiceMocks.getProfile.mockResolvedValue({
+      email: 'qa@example.com',
+      role: 'pro',
+      creditsRemaining: 100,
+      availableCredits: 100,
+      monthlyCreditsRemaining: 100,
+      refillCreditsRemaining: 0,
+      refillCreditsLocked: false,
+      creditPricing: {
+        pageBucketSize: 5,
+        renameBaseCost: 1,
+        remapBaseCost: 1,
+        renameRemapBaseCost: 2,
+      },
+      billing: {
+        enabled: true,
+        hasSubscription: true,
+        plans: {
+          pro_monthly: {
+            kind: 'pro_monthly',
+            mode: 'subscription',
+            priceId: 'price_monthly',
+            label: 'Pro Monthly',
+            currency: 'usd',
+            unitAmount: 1000,
+            interval: 'month',
+            refillCredits: null,
+          },
+        },
+      },
+      limits: { detectMaxPages: 10, fillableMaxPages: 20, savedFormsMax: 5 },
+    });
+
+    const App = await importApp();
+    render(<App />);
+
+    await waitFor(() => {
+      expect(appState.authStateCallbacks.size).toBeGreaterThan(0);
+    });
+    await act(async () => {
+      for (const callback of [...appState.authStateCallbacks]) {
+        await callback(unverifiedUser);
+      }
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('verify-page')).toBeTruthy();
+    });
+    expect(apiServiceMocks.reconcileBillingCheckoutFulfillment).not.toHaveBeenCalled();
+    expect(window.sessionStorage.getItem('dullypdf.pendingBillingCheckout')).not.toBeNull();
+    expect(window.location.search).toContain('billing=success');
+  });
+
+  it('keeps the pending checkout marker and avoids a success banner when billing confirmation is still pending', async () => {
+    const startedAt = Date.now();
+    window.history.replaceState({}, '', '/?billing=success');
+    window.sessionStorage.setItem(
+      'dullypdf.pendingBillingCheckout',
+      JSON.stringify({
+        userId: 'user-1',
+        requestedKind: 'pro_monthly',
+        sessionId: 'cs_pending_confirm_123',
+        attemptId: 'attempt_pending_confirm_123',
+        checkoutPriceId: 'price_monthly',
+        startedAt,
+      }),
+    );
+    apiServiceMocks.getProfile.mockResolvedValue({
+      email: 'qa@example.com',
+      role: 'pro',
+      creditsRemaining: 100,
+      availableCredits: 100,
+      monthlyCreditsRemaining: 100,
+      refillCreditsRemaining: 0,
+      refillCreditsLocked: false,
+      creditPricing: {
+        pageBucketSize: 5,
+        renameBaseCost: 1,
+        remapBaseCost: 1,
+        renameRemapBaseCost: 2,
+      },
+      billing: {
+        enabled: true,
+        hasSubscription: true,
+        plans: {
+          pro_monthly: {
+            kind: 'pro_monthly',
+            mode: 'subscription',
+            priceId: 'price_monthly',
+            label: 'Pro Monthly',
+            currency: 'usd',
+            unitAmount: 1000,
+            interval: 'month',
+            refillCredits: null,
+          },
+        },
+      },
+      limits: { detectMaxPages: 10, fillableMaxPages: 20, savedFormsMax: 5 },
+    });
+    apiServiceMocks.reconcileBillingCheckoutFulfillment.mockResolvedValue({
+      success: true,
+      dryRun: false,
+      scope: 'self',
+      auditedEventCount: 1,
+      candidateEventCount: 0,
+      pendingReconciliationCount: 0,
+      reconciledCount: 0,
+      alreadyProcessedCount: 0,
+      processingCount: 0,
+      retryableCount: 0,
+      failedCount: 0,
+      invalidCount: 0,
+      skippedForUserCount: 0,
+      events: [],
+    });
+
+    const App = await importApp();
+    render(<App />);
+
+    await settleAuthAsSignedIn();
+
+    await waitFor(() => {
+      expect(apiServiceMocks.reconcileBillingCheckoutFulfillment).toHaveBeenCalledTimes(1);
+    });
+    expect((await screen.findByRole('alert')).textContent || '').toContain('could not be confirmed yet');
+    expect(window.sessionStorage.getItem('dullypdf.pendingBillingCheckout')).toContain('"sessionId":"cs_pending_confirm_123"');
     expect(window.location.search.includes('billing=')).toBe(false);
   });
 

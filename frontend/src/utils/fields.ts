@@ -180,3 +180,15 @@ export function prepareFieldsForMaterialize(fields: PdfField[]): PdfField[] {
     return value === field.value ? field : { ...field, value };
   });
 }
+
+/**
+ * Strip transient values before persisting a template-definition update.
+ */
+export function clearFieldValues(fields: PdfField[]): PdfField[] {
+  return fields.map((field) => {
+    if (field.value === undefined || field.value === null) {
+      return field;
+    }
+    return { ...field, value: null };
+  });
+}

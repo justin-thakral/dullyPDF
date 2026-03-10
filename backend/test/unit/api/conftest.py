@@ -12,7 +12,10 @@ import backend.api.middleware.security as security_middleware
 import backend.api.routes.ai as ai_routes
 import backend.api.routes.billing as billing_routes
 import backend.api.routes.detection as detection_routes
+import backend.api.routes.fill_links as fill_links_routes
+import backend.api.routes.fill_links_public as fill_links_public_routes
 import backend.api.routes.forms as forms_routes
+import backend.api.routes.groups as groups_routes
 import backend.api.routes.legacy_detection as legacy_detection_routes
 import backend.api.routes.profile as profile_routes
 import backend.api.routes.public as public_routes
@@ -24,12 +27,16 @@ import backend.services.auth_service as auth_service
 import backend.services.billing_service as billing_service
 import backend.services.contact_service as contact_service
 import backend.services.email_service as email_service
+import backend.services.fill_link_scope_service as fill_link_scope_service
+import backend.services.fill_link_download_service as fill_link_download_service
+import backend.services.fill_links_service as fill_links_service
 import backend.services.recaptcha_service as recaptcha_service
 import backend.services.detection_service as detection_service
 import backend.services.limits_service as limits_service
 import backend.services.mapping_service as mapping_service
 import backend.services.pdf_service as pdf_service
 import backend.firebaseDB.billing_database as billing_database
+import backend.firebaseDB.fill_link_database as fill_link_database
 
 
 class _ModuleProxy:
@@ -109,7 +116,10 @@ def app_main():
         ai_routes,
         billing_routes,
         detection_routes,
+        fill_links_routes,
+        fill_links_public_routes,
         forms_routes,
+        groups_routes,
         legacy_detection_routes,
         profile_routes,
         public_routes,
@@ -121,12 +131,16 @@ def app_main():
         billing_service,
         contact_service,
         email_service,
+        fill_link_scope_service,
+        fill_link_download_service,
+        fill_links_service,
         recaptcha_service,
         detection_service,
         limits_service,
         mapping_service,
         pdf_service,
         billing_database,
+        fill_link_database,
     ]
     return _ModuleProxy(modules)
 

@@ -12,6 +12,7 @@ import json
 import os
 import re
 import sys
+import tempfile
 import time
 import types
 from dataclasses import dataclass
@@ -173,23 +174,51 @@ def _download_gcs_blob(bucket_name: str, object_name: str, dest: Path) -> None:
     blob.download_to_filename(str(dest))
 
 
+def _cache_ready_marker(local_path: Path) -> Path:
+    return local_path.with_name(f"{local_path.name}.ready")
+
+
+def _cached_model_is_ready(local_path: Path) -> bool:
+    marker_path = _cache_ready_marker(local_path)
+    return local_path.exists() and local_path.stat().st_size > 0 and marker_path.exists()
+
+
 def _ensure_gcs_model(gcs_uri: str, model_hint: str) -> Path:
     bucket, object_name = _parse_gcs_uri(gcs_uri)
     cache_root = os.getenv("COMMONFORMS_WEIGHTS_CACHE_DIR", "/tmp/commonforms-models").strip()
     cache_dir = Path(cache_root) / _safe_cache_key(model_hint or object_name)
     cache_dir.mkdir(parents=True, exist_ok=True)
     local_path = cache_dir / Path(object_name).name
-    if local_path.exists() and local_path.stat().st_size > 0:
+    ready_marker = _cache_ready_marker(local_path)
+    if _cached_model_is_ready(local_path):
         return local_path
 
     lock_timeout = _parse_int_env("COMMONFORMS_WEIGHTS_LOCK_TIMEOUT_SECONDS", 600)
     lock_path = cache_dir / ".download.lock"
     _acquire_download_lock(lock_path, lock_timeout)
     try:
-        if local_path.exists() and local_path.stat().st_size > 0:
+        if _cached_model_is_ready(local_path):
             return local_path
+        local_path.unlink(missing_ok=True)
+        ready_marker.unlink(missing_ok=True)
+        temp_file = tempfile.NamedTemporaryFile(
+            prefix=f".{local_path.name}.",
+            suffix=".tmp",
+            dir=cache_dir,
+            delete=False,
+        )
+        temp_path = Path(temp_file.name)
+        temp_file.close()
         logger.info("Downloading CommonForms weights from %s", gcs_uri)
-        _download_gcs_blob(bucket, object_name, local_path)
+        try:
+            _download_gcs_blob(bucket, object_name, temp_path)
+            if temp_path.stat().st_size <= 0:
+                raise RuntimeError("Downloaded CommonForms weights were empty.")
+            os.replace(temp_path, local_path)
+            ready_marker.write_text("ready\n", encoding="utf-8")
+        except Exception:
+            temp_path.unlink(missing_ok=True)
+            raise
     finally:
         lock_path.unlink(missing_ok=True)
     return local_path

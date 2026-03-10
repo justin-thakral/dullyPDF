@@ -148,6 +148,34 @@ def test_init_firebase_caches_initialization_error(mocker) -> None:
     assert isinstance(fs._firebase_init_error, RuntimeError)
 
 
+def test_init_firebase_requires_adc_in_prod(monkeypatch, mocker) -> None:
+    monkeypatch.setenv("ENV", "prod")
+    monkeypatch.delenv("FIREBASE_USE_ADC", raising=False)
+    initialize_app = mocker.patch("backend.firebaseDB.firebase_service.initialize_app")
+
+    fs.init_firebase()
+
+    initialize_app.assert_not_called()
+    assert isinstance(fs._firebase_init_error, RuntimeError)
+    assert "FIREBASE_USE_ADC=true" in str(fs._firebase_init_error)
+
+
+def test_init_firebase_rejects_explicit_prod_credentials(monkeypatch, mocker) -> None:
+    monkeypatch.setenv("ENV", "prod")
+    monkeypatch.setenv("FIREBASE_USE_ADC", "true")
+    monkeypatch.setenv("FIREBASE_CREDENTIALS", '{"type":"service_account"}')
+    monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", "/tmp/firebase.json")
+    initialize_app = mocker.patch("backend.firebaseDB.firebase_service.initialize_app")
+
+    fs.init_firebase()
+
+    initialize_app.assert_not_called()
+    assert isinstance(fs._firebase_init_error, RuntimeError)
+    message = str(fs._firebase_init_error)
+    assert "FIREBASE_CREDENTIALS" in message
+    assert "GOOGLE_APPLICATION_CREDENTIALS" in message
+
+
 def test_get_firestore_client_raises_when_init_failed(mocker) -> None:
     fs._firebase_init_error = RuntimeError("broken")
     mocker.patch("backend.firebaseDB.firebase_service.init_firebase")

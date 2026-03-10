@@ -5,6 +5,7 @@ describe('usageDocsContent route resolver', () => {
   it('resolves canonical /usage-docs routes', () => {
     expect(resolveUsageDocsPath('/usage-docs')).toEqual({ kind: 'canonical', pageKey: 'index' });
     expect(resolveUsageDocsPath('/usage-docs/search-fill')).toEqual({ kind: 'canonical', pageKey: 'search-fill' });
+    expect(resolveUsageDocsPath('/usage-docs/fill-by-link')).toEqual({ kind: 'canonical', pageKey: 'fill-by-link' });
     expect(resolveUsageDocsPath('/usage-docs/search-fill/')).toEqual({ kind: 'canonical', pageKey: 'search-fill' });
   });
 
@@ -34,5 +35,6 @@ describe('usageDocsContent route resolver', () => {
   it('builds canonical usage-docs hrefs', () => {
     expect(usageDocsHref('index')).toBe('/usage-docs');
     expect(usageDocsHref('detection')).toBe('/usage-docs/detection');
+    expect(usageDocsHref('create-group')).toBe('/usage-docs/create-group');
   });
 });

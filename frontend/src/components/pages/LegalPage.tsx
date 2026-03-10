@@ -141,8 +141,15 @@ const PRIVACY_COPY: LegalCopy = {
         <>
           <p>
             Session data and request logs are retained only for limited periods configured for performance and
-            troubleshooting. Saved forms are stored until you delete them. Contact messages are retained as needed to
-            respond to you.
+            troubleshooting. Contact messages are retained as needed to respond to you. Saved forms normally remain
+            stored until you delete them, but subscription downgrades can trigger a grace-period delete queue when an
+            account holds more saved forms than the free tier allows.
+          </p>
+          <p>
+            During that downgrade grace period, DullyPDF keeps the free-tier allotment of saved forms, keeps the
+            queued remainder for 30 days, and shows an in-product warning so the account owner can swap which saved
+            forms stay, delete the queued set immediately, or reactivate Pro. If Pro is reactivated before the grace
+            period ends, the pending delete queue is cleared.
           </p>
         </>
       ),

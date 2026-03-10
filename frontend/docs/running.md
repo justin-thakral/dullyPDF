@@ -53,10 +53,14 @@ From repo root:
 - `npm run test:frontend`
 
 From `frontend/`:
-- `npm run build`
+- `npm run build:dev`
+- `npm run build:prod`
 - `npm run preview`
 - `npm run test`
 - `npm run lint`
+
+Avoid plain `npm run build` from `frontend/`. The build now requires an explicit
+env target so the bundle cannot accidentally reuse a stale local `.env.local`.
 
 ## API routing in local dev
 
@@ -64,8 +68,17 @@ From `frontend/`:
 - Detection requests use `VITE_DETECTION_API_URL` when set, otherwise `VITE_SANDBOX_API_URL`, then fallback to `http://localhost:8000`.
 - See `frontend/docs/api-routing.md` for the full same-origin vs direct-call split.
 
+## Public routes worth checking during local dev
+
+- `http://localhost:5173/usage-docs` and child `/usage-docs/*` routes for public documentation copy.
+- `http://localhost:5173/free-features` and `http://localhost:5173/premium-features` for public plan messaging and signed-in premium purchase CTA behavior.
+- Intent/SEO routes such as `/pdf-to-fillable-form`, `/fill-pdf-from-csv`, and `/fill-pdf-by-link`.
+- Fill By Link respondent routes under `/respond/:token`. The route shell is public and mobile-friendly; live submissions still depend on the backend being available.
+- Mobile landing/demo copy should still explain Fill By Link even though the full editor remains desktop-only under the 900px breakpoint.
+
 ## reCAPTCHA env flags
 
 - `VITE_RECAPTCHA_SITE_KEY`
 - `VITE_CONTACT_REQUIRE_RECAPTCHA`
 - `VITE_SIGNUP_REQUIRE_RECAPTCHA`
+- `VITE_FILL_LINK_REQUIRE_RECAPTCHA`

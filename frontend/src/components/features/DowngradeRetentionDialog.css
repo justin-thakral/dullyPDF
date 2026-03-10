@@ -1,0 +1,159 @@
+.retention-dialog {
+  width: min(840px, calc(100vw - 2rem));
+}
+
+.retention-dialog__description {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.retention-dialog__description p,
+.retention-dialog__selection-header p,
+.retention-dialog__note,
+.retention-dialog__selection-count {
+  margin: 0;
+  color: var(--ink-600);
+  line-height: 1.5;
+}
+
+.retention-dialog__meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.retention-dialog__stat {
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 16px;
+  background: rgba(248, 250, 252, 0.9);
+  padding: 0.9rem 1rem;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.retention-dialog__stat span {
+  color: var(--ink-500);
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.retention-dialog__stat strong {
+  color: var(--ink-900);
+  font-size: 1.35rem;
+}
+
+.retention-dialog__selection {
+  margin-top: 1.25rem;
+  display: grid;
+  gap: 0.9rem;
+}
+
+.retention-dialog__selection-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.retention-dialog__selection-header h3 {
+  margin: 0 0 0.35rem;
+  color: var(--ink-900);
+  font-size: 1.05rem;
+}
+
+.retention-dialog__template-list {
+  max-height: 320px;
+  overflow-y: auto;
+  display: grid;
+  gap: 0.7rem;
+  padding-right: 0.25rem;
+}
+
+.retention-dialog__template {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0.9rem;
+  align-items: center;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 16px;
+  background: #ffffff;
+  padding: 0.9rem 1rem;
+}
+
+.retention-dialog__template--checked {
+  border-color: rgba(37, 99, 235, 0.45);
+  background: rgba(239, 246, 255, 0.72);
+}
+
+.retention-dialog__template input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+}
+
+.retention-dialog__template-body {
+  min-width: 0;
+  display: grid;
+  gap: 0.2rem;
+}
+
+.retention-dialog__template-name {
+  color: var(--ink-900);
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.retention-dialog__template-date {
+  color: var(--ink-500);
+  font-size: 0.9rem;
+}
+
+.retention-dialog__template-status {
+  border-radius: 999px;
+  padding: 0.35rem 0.8rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.retention-dialog__template-status--kept {
+  background: rgba(37, 99, 235, 0.14);
+  color: var(--blue-700);
+}
+
+.retention-dialog__template-status--queued {
+  background: rgba(220, 38, 38, 0.12);
+  color: #b91c1c;
+}
+
+.retention-dialog__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 720px) {
+  .retention-dialog__meta {
+    grid-template-columns: 1fr;
+  }
+
+  .retention-dialog__selection-header {
+    flex-direction: column;
+  }
+
+  .retention-dialog__template {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .retention-dialog__template-status {
+    grid-column: 2;
+    justify-self: flex-start;
+  }
+}

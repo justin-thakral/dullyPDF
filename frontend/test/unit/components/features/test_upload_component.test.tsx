@@ -82,8 +82,8 @@ describe('UploadComponent', () => {
     expect(screen.getByText('Saved B')).toBeTruthy();
     expect(screen.getByText('Unknown date')).toBeTruthy();
 
-    const rowAButton = screen.getByText('Saved A').closest('button') as HTMLButtonElement;
-    const rowBButton = screen.getByText('Saved B').closest('button') as HTMLButtonElement;
+    const rowAButton = screen.getByRole('button', { name: /^Saved A/i }) as HTMLButtonElement;
+    const rowBButton = screen.getByRole('button', { name: /^Saved B/i }) as HTMLButtonElement;
     const deleteA = screen.getByRole('button', { name: 'Delete saved form Saved A' }) as HTMLButtonElement;
     const deleteB = screen.getByRole('button', { name: 'Delete saved form Saved B' });
 
@@ -102,6 +102,80 @@ describe('UploadComponent', () => {
     expect(onDeleteSavedForm).toHaveBeenCalledWith('b');
   });
 
+  it('supports group filtering, opening and deleting groups, and launching create group from saved forms', async () => {
+    const user = userEvent.setup();
+    const onSelectGroupFilter = vi.fn();
+    const onOpenGroup = vi.fn();
+    const onDeleteGroup = vi.fn();
+    const onEditGroup = vi.fn();
+    const onOpenCreateGroup = vi.fn();
+    const { rerender } = render(
+      <UploadComponent
+        variant="saved"
+        savedForms={[
+          { id: 'a', name: 'Alpha Packet', createdAt: '2025-01-01T00:00:00.000Z' },
+          { id: 'b', name: 'Bravo Intake', createdAt: '2025-01-02T00:00:00.000Z' },
+          { id: 'c', name: 'Charlie Consent', createdAt: '2025-01-03T00:00:00.000Z' },
+        ]}
+        groups={[
+          {
+            id: 'group-1',
+            name: 'Admissions',
+            templateIds: ['a', 'c'],
+            templateCount: 2,
+            templates: [],
+          },
+        ]}
+        selectedGroupFilterId="all"
+        onSelectGroupFilter={onSelectGroupFilter}
+        onOpenGroup={onOpenGroup}
+        onDeleteGroup={onDeleteGroup}
+        onEditGroup={onEditGroup}
+        onOpenCreateGroup={onOpenCreateGroup}
+      />,
+    );
+
+    await user.selectOptions(screen.getByRole('combobox'), 'group-1');
+    expect(onSelectGroupFilter).toHaveBeenCalledWith('group-1');
+
+    await user.click(screen.getByRole('checkbox', { name: /Switch to groups/i }));
+    await user.click(screen.getByRole('button', { name: /^Admissions/i }));
+    await user.click(screen.getByRole('button', { name: 'Edit group Admissions' }));
+    await user.click(screen.getByRole('button', { name: 'Delete group Admissions' }));
+    await user.click(screen.getByRole('button', { name: 'Create Group' }));
+    expect(onOpenGroup).toHaveBeenCalledWith('group-1');
+    expect(onEditGroup).toHaveBeenCalledWith('group-1');
+    expect(onDeleteGroup).toHaveBeenCalledWith('group-1');
+    expect(onOpenCreateGroup).toHaveBeenCalledTimes(1);
+
+    await user.click(screen.getByRole('checkbox', { name: /Switch to templates/i }));
+
+    rerender(
+      <UploadComponent
+        variant="saved"
+        savedForms={[
+          { id: 'a', name: 'Alpha Packet', createdAt: '2025-01-01T00:00:00.000Z' },
+          { id: 'b', name: 'Bravo Intake', createdAt: '2025-01-02T00:00:00.000Z' },
+          { id: 'c', name: 'Charlie Consent', createdAt: '2025-01-03T00:00:00.000Z' },
+        ]}
+        groups={[
+          {
+            id: 'group-1',
+            name: 'Admissions',
+            templateIds: ['a', 'c'],
+            templateCount: 2,
+            templates: [],
+          },
+        ]}
+        selectedGroupFilterId="group-1"
+      />,
+    );
+
+    expect(screen.getByText('Alpha Packet')).toBeTruthy();
+    expect(screen.getByText('Charlie Consent')).toBeTruthy();
+    expect(screen.queryByText('Bravo Intake')).toBeNull();
+  });
+
   it('applies default headings/subtitles for detect, fillable, and saved variants', () => {
     const { rerender } = render(<UploadComponent variant="detect" />);
     expect(screen.getByText('Upload PDF Document')).toBeTruthy();
@@ -118,10 +192,112 @@ describe('UploadComponent', () => {
     expect(screen.getByText('No saved forms yet. Save a form to see it here.')).toBeTruthy();
   });
 
+  it('renders the group upload variant and opens its dialog callback', async () => {
+    const user = userEvent.setup();
+    const onOpenDialog = vi.fn();
+
+    render(<UploadComponent variant="group" onOpenDialog={onOpenDialog} />);
+
+    expect(screen.getByText('Upload PDF Group')).toBeTruthy();
+    expect(screen.getByText('Detect, rename, map, and group multiple PDFs in one batch')).toBeTruthy();
+
+    await user.click(screen.getByRole('button', { name: /Upload PDF Group/i }));
+    expect(onOpenDialog).toHaveBeenCalledTimes(1);
+  });
+
   it('shows a loading message for empty saved forms while backend startup is pending', () => {
     render(<UploadComponent variant="saved" savedForms={[]} savedFormsLoading />);
 
     expect(screen.getByText('Loading saved forms while the backend starts…')).toBeTruthy();
     expect(screen.queryByText('No saved forms yet. Save a form to see it here.')).toBeNull();
+  });
+
+  it('shows the empty-state message when a selected group has no matching saved forms', () => {
+    render(
+      <UploadComponent
+        variant="saved"
+        savedForms={[{ id: 'a', name: 'Alpha Packet', createdAt: '2025-01-01T00:00:00.000Z' }]}
+        groups={[
+          {
+            id: 'group-1',
+            name: 'Admissions',
+            templateIds: ['missing'],
+            templateCount: 1,
+            templates: [],
+          },
+        ]}
+        selectedGroupFilterId="group-1"
+      />,
+    );
+
+    expect(screen.getByText('No saved forms match this group filter.')).toBeTruthy();
+  });
+
+  it('keeps a stable group-filter label when the selected group is not yet present in the options', async () => {
+    const user = userEvent.setup();
+    const onSelectGroupFilter = vi.fn();
+
+    const { rerender } = render(
+      <UploadComponent
+        variant="saved"
+        savedForms={[{ id: 'a', name: 'Alpha Packet', createdAt: '2025-01-01T00:00:00.000Z' }]}
+        groups={[]}
+        groupsLoading
+        selectedGroupFilterId="group-1"
+        onSelectGroupFilter={onSelectGroupFilter}
+      />,
+    );
+
+    expect((screen.getByRole('combobox') as HTMLSelectElement).value).toBe('__selected_group_pending__');
+    expect(
+      ((screen.getByRole('combobox') as HTMLSelectElement).selectedOptions.item(0)?.textContent) || '',
+    ).toBe('Loading selected group…');
+
+    rerender(
+      <UploadComponent
+        variant="saved"
+        savedForms={[{ id: 'a', name: 'Alpha Packet', createdAt: '2025-01-01T00:00:00.000Z' }]}
+        groups={[
+          {
+            id: 'group-1',
+            name: 'Admissions',
+            templateIds: ['a'],
+            templateCount: 1,
+            templates: [],
+          },
+        ]}
+        selectedGroupFilterId="group-1"
+        onSelectGroupFilter={onSelectGroupFilter}
+      />,
+    );
+
+    expect(
+      ((screen.getByRole('combobox') as HTMLSelectElement).selectedOptions.item(0)?.textContent) || '',
+    ).toBe('Admissions');
+    await user.selectOptions(screen.getByRole('combobox'), 'all');
+    expect(onSelectGroupFilter).toHaveBeenCalledWith('all');
+  });
+
+  it('does not leak all saved forms while a missing selected group is still resolving', () => {
+    render(
+      <UploadComponent
+        variant="saved"
+        savedForms={[
+          { id: 'a', name: 'Alpha Packet', createdAt: '2025-01-01T00:00:00.000Z' },
+          { id: 'b', name: 'Bravo Intake', createdAt: '2025-01-02T00:00:00.000Z' },
+        ]}
+        groups={[]}
+        groupsLoading
+        selectedGroupFilterId="group-1"
+        selectedGroupFilterLabel="Admissions"
+      />,
+    );
+
+    expect(screen.getByText('No saved forms match this group filter.')).toBeTruthy();
+    expect(screen.queryByText('Alpha Packet')).toBeNull();
+    expect(screen.queryByText('Bravo Intake')).toBeNull();
+    expect(
+      ((screen.getByRole('combobox') as HTMLSelectElement).selectedOptions.item(0)?.textContent) || '',
+    ).toBe('Admissions');
   });
 });

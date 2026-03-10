@@ -27,6 +27,7 @@ describe('Dialog', () => {
     );
 
     expect(screen.getByRole('dialog')).toBeTruthy();
+    expect(screen.getByRole('presentation').parentElement).toBe(document.body);
     await user.click(screen.getByText('Body content'));
     expect(onClose).not.toHaveBeenCalled();
 
@@ -46,6 +47,30 @@ describe('Dialog', () => {
 
     await user.keyboard('{Escape}');
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('only closes the topmost dialog on Escape when dialogs are stacked', async () => {
+    const user = userEvent.setup();
+    const onCloseBase = vi.fn();
+    const onCloseTop = vi.fn();
+
+    render(
+      <>
+        <Dialog open title="Base dialog" onClose={onCloseBase}>
+          <p>Base body</p>
+        </Dialog>
+        <Dialog open title="Top dialog" onClose={onCloseTop}>
+          <p>Top body</p>
+        </Dialog>
+      </>,
+    );
+
+    expect(screen.getAllByRole('dialog')).toHaveLength(2);
+
+    await user.keyboard('{Escape}');
+
+    expect(onCloseTop).toHaveBeenCalledTimes(1);
+    expect(onCloseBase).not.toHaveBeenCalled();
   });
 
   it('focuses the confirm button and applies tone classes', async () => {

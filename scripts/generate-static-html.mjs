@@ -223,7 +223,7 @@ function generatePageHtml(route, viteAssets) {
 function main() {
   const indexHtmlPath = join(DIST_DIR, 'index.html');
   if (!existsSync(indexHtmlPath)) {
-    console.error(`Error: ${indexHtmlPath} does not exist. Run 'npm run build' first.`);
+    console.error(`Error: ${indexHtmlPath} does not exist. Run 'npm run frontend:build:prod' first.`);
     process.exit(1);
   }
 

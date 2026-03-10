@@ -15,6 +15,29 @@ logger = get_logger(__name__)
 OPENAI_JOBS_COLLECTION = "openai_jobs"
 
 
+class OpenAiJobAlreadyExistsError(RuntimeError):
+    """Raised when an async OpenAI job document already exists."""
+
+
+def is_openai_job_conflict_error(exc: Exception) -> bool:
+    """Best-effort conflict detection across Firestore client variants."""
+    if isinstance(exc, OpenAiJobAlreadyExistsError):
+        return True
+    status_code = getattr(exc, "status_code", None)
+    if status_code == 409:
+        return True
+    code = getattr(exc, "code", None)
+    if code == 409:
+        return True
+    grpc_code = getattr(code, "value", None)
+    if grpc_code == 409:
+        return True
+    error_name = exc.__class__.__name__.strip().lower()
+    if error_name in {"alreadyexists", "conflict"}:
+        return True
+    return "already exists" in str(exc).strip().lower()
+
+
 def create_openai_job(
     *,
     job_id: str,
@@ -74,7 +97,12 @@ def create_openai_job(
         payload["expires_at"] = expires_at
     client = get_firestore_client()
     doc_ref = client.collection(OPENAI_JOBS_COLLECTION).document(job_id)
-    doc_ref.set(payload)
+    try:
+        doc_ref.create(payload)
+    except Exception as exc:
+        if is_openai_job_conflict_error(exc):
+            raise OpenAiJobAlreadyExistsError(f"OpenAI job already exists: {job_id}") from exc
+        raise
     logger.debug("OpenAI job recorded: %s", job_id)
 
 
@@ -90,6 +118,7 @@ def update_openai_job(
     openai_usage_summary: Optional[Dict[str, Any]] = None,
     openai_usage_events: Optional[List[Dict[str, Any]]] = None,
     attempt_count: Optional[int] = None,
+    credit_breakdown: Optional[Dict[str, Any]] = None,
 ) -> None:
     if not job_id:
         raise ValueError("job_id is required")
@@ -114,6 +143,8 @@ def update_openai_job(
         updates["openai_usage_events"] = openai_usage_events
     if attempt_count is not None:
         updates["attempt_count"] = int(attempt_count)
+    if credit_breakdown is not None:
+        updates["credit_breakdown"] = credit_breakdown
     client = get_firestore_client()
     doc_ref = client.collection(OPENAI_JOBS_COLLECTION).document(job_id)
     doc_ref.set(updates, merge=True)

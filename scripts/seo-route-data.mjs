@@ -101,6 +101,34 @@ const INTENT_PAGES = [
     ],
   },
   {
+    key: 'fill-pdf-by-link',
+    category: 'workflow',
+    path: '/fill-pdf-by-link',
+    navLabel: 'Fill PDF By Link',
+    heroTitle: 'Collect PDF Answers With Native Fill By Link',
+    heroSummary:
+      'Start from a saved DullyPDF template, publish a mobile-friendly form link, collect respondent answers, and generate the filled PDF only when you need it.',
+    seoTitle: 'Fill PDF By Link With Shareable Respondent Forms | DullyPDF',
+    seoDescription:
+      'Publish a native Fill By Link from a saved PDF template, collect respondent answers in a DullyPDF-hosted HTML form, and generate the filled PDF from the response list when needed.',
+    seoKeywords: ['fill pdf by link', 'shareable pdf form link', 'pdf form respondent link', 'collect pdf form responses', 'html form to fill pdf'],
+    valuePoints: [
+      'Publish a DullyPDF-hosted HTML form from any saved template.',
+      'Store respondent answers as structured records under the template owner account.',
+      'Pick a respondent later in the workspace and fill the source PDF on demand.',
+    ],
+    proofPoints: [
+      'Free includes 1 active published link and up to 5 accepted responses.',
+      'Premium unlocks a shareable link for every saved template with up to 10,000 responses per link.',
+      'Respondent records can be reused through the same Search & Fill workflow before download.',
+    ],
+    faqs: [
+      { question: 'Does the respondent fill the actual PDF?', answer: 'No. The respondent fills a DullyPDF-hosted mobile-friendly HTML form, and the owner generates the final PDF from the saved response later.' },
+      { question: 'How many Fill By Link responses are allowed on free and premium?', answer: 'Free includes 1 active link with 5 accepted responses. Premium supports a shareable link on every saved template and up to 10,000 accepted responses per link.' },
+      { question: 'Can I publish one link for every template?', answer: 'Premium users can publish a shareable link for every saved template they keep in DullyPDF. Free users are limited to 1 active published link at a time.' },
+    ],
+  },
+  {
     key: 'fill-information-in-pdf',
     category: 'workflow',
     path: '/fill-information-in-pdf',
@@ -616,6 +644,24 @@ const USAGE_DOCS_PAGES = [
     sectionTitles: ['Data source support', 'Fill flow', 'Guardrails', 'Field resolution heuristics (non-checkbox)', 'Checkbox groups and aliases'],
   },
   {
+    key: 'fill-by-link',
+    slug: 'fill-by-link',
+    path: '/usage-docs/fill-by-link',
+    navLabel: 'Fill By Link',
+    title: 'Fill By Link',
+    summary: 'Publish a DullyPDF-hosted form from a saved template or open group, share the generated link, and turn stored respondent answers into PDFs when needed.',
+    sectionTitles: ['What gets published', 'Owner publishing flow', 'What respondents see', 'Reviewing responses and generating PDFs', 'Limits and sharing guidance'],
+  },
+  {
+    key: 'create-group',
+    slug: 'create-group',
+    path: '/usage-docs/create-group',
+    navLabel: 'Create Group',
+    title: 'Create Group and Group Workflows',
+    summary: 'Use groups to organize multi-document packets, switch between saved templates quickly, and run full document workflows across the group.',
+    sectionTitles: ['What a group is', 'Create and open groups', 'Search and fill full groups', 'Rename and remap entire groups', 'Group Fill By Link and packet publishing'],
+  },
+  {
     key: 'save-download-profile',
     slug: 'save-download-profile',
     path: '/usage-docs/save-download-profile',
@@ -632,6 +678,63 @@ const USAGE_DOCS_PAGES = [
     title: 'Troubleshooting',
     summary: 'Systematic checks for detection quality, OpenAI steps, mapping mismatches, and fill output issues.',
     sectionTitles: ['Detection issues', 'Rename and mapping issues', 'Fill output issues', 'Common validation and runtime messages', 'Support'],
+  },
+];
+
+const FEATURE_PLAN_PAGES = [
+  {
+    key: 'free-features',
+    path: '/free-features',
+    navLabel: 'Free Features',
+    heroTitle: 'Free DullyPDF Features for PDF-to-Form Setup',
+    heroSummary:
+      'Start with unlimited PDF-to-form setup and the form builder, then validate your workflow before upgrading for higher usage.',
+    seoTitle: 'Free PDF Form Builder Features | DullyPDF',
+    seoDescription:
+      'Review the free DullyPDF feature set, including unlimited PDF-to-form setup, form builder access, and the free Fill By Link limits before upgrading.',
+    seoKeywords: ['free pdf form builder', 'free pdf to form tool', 'free fillable pdf builder', 'free pdf workflow software'],
+    valuePoints: [
+      'Unlimited PDF-to-form setup and access to the form builder.',
+      'A practical free tier for validating field detection, cleanup, and saved-template workflows.',
+      'Native Fill By Link support with 1 active published link and up to 5 accepted responses.',
+    ],
+    detailSections: [
+      { title: 'Best fit for', items: ['Teams validating one workflow before rolling out larger intake or packet automation.', 'Owners who want to test field detection, editor cleanup, and mapping quality on real documents.', 'Users who need one live respondent link instead of a larger link portfolio.'] },
+      { title: 'Included workflow access', items: ['Upload PDFs up to 50MB and convert them into editable templates.', 'Use the form builder, field inspector, list panel, and saved-template workflow.', 'Run Search & Fill with local CSV, Excel, JSON, or stored respondent records once your template is mapped.'] },
+      { title: 'Free-tier limits that stay visible', items: ['Fill By Link: 1 active published link and 5 accepted responses per link.', 'OpenAI credits and some effective profile limits are enforced server-side and shown in Profile.', 'When you need higher usage, premium expands link capacity and monthly OpenAI credit access.'] },
+    ],
+    faqs: [
+      { question: 'Does free still let me convert PDFs into fillable templates?', answer: 'Yes. Free includes unlimited PDF-to-form setup plus the form builder so you can detect, clean up, and save reusable templates.' },
+      { question: 'What is the main free-tier Fill By Link limit?', answer: 'Free supports 1 active published link at a time, and each link accepts up to 5 responses before it closes.' },
+      { question: 'Where do I confirm my current limits?', answer: 'The signed-in Profile view shows your effective account limits, billing status, and remaining credits.' },
+    ],
+  },
+  {
+    key: 'premium-features',
+    path: '/premium-features',
+    navLabel: 'Premium Features',
+    heroTitle: 'Premium DullyPDF Features for Higher-Usage Workflows',
+    heroSummary:
+      'Premium is the higher-usage tier for teams running repeat PDF automation, larger Fill By Link traffic, and Stripe-backed account billing.',
+    seoTitle: 'Premium PDF Automation Features and Billing | DullyPDF',
+    seoDescription:
+      'Review premium DullyPDF features, including higher usage across the platform, expanded Fill By Link capacity, monthly OpenAI credits, and sign-in purchase options.',
+    seoKeywords: ['premium pdf automation software', 'pdf form builder subscription', 'fill by link premium plan', 'stripe pdf software billing'],
+    valuePoints: [
+      'Higher usage across DullyPDF workflows instead of the lighter free-tier guardrails.',
+      'A shareable Fill By Link on every saved template with up to 10,000 accepted responses per link.',
+      'Stripe-backed monthly or yearly purchase options when you are signed in.',
+    ],
+    detailSections: [
+      { title: 'Premium unlocks', items: ['Higher-usage access across PDF detection, template reuse, mapping, and Fill By Link workflows.', 'One shareable Fill By Link per saved template instead of the free single-link cap.', 'Up to 10,000 accepted responses per link for respondent-driven workflows.'] },
+      { title: 'OpenAI and billing', items: ['Pro billing actions run through Stripe Checkout with monthly and yearly subscriptions.', 'Premium profiles receive a monthly OpenAI credit pool, and refill packs remain available from Profile.', 'Cancellation is managed from the signed-in profile billing section and is scheduled for period end.'] },
+      { title: 'Best fit for', items: ['Teams operating repeat intake or packet workflows across many saved templates.', 'Owners publishing multiple public respondent links at once.', 'Accounts that need higher sustained usage instead of one-off free-tier validation.'] },
+    ],
+    faqs: [
+      { question: 'What is the biggest premium Fill By Link difference?', answer: 'Premium removes the single-link cap by allowing a shareable link on every saved template and raises response capacity to 10,000 per link.' },
+      { question: 'Can I buy premium from this page?', answer: 'Yes. When you are signed in and billing is available, this page can launch the Stripe Checkout flow for monthly or yearly premium.' },
+      { question: 'What if I already have premium?', answer: 'The page will show that the current account already has premium access instead of offering another upgrade button.' },
+    ],
   },
 ];
 
@@ -739,6 +842,22 @@ const USAGE_DOCS_FAQ_SCHEMAS = {
       { '@type': 'Question', name: 'What data sources are supported for row-based fill?', acceptedAnswer: { '@type': 'Answer', text: 'CSV, XLSX, and JSON support row-based fill. TXT is schema-only and does not provide row data for filling.' } },
     ],
   }],
+  'fill-by-link': [{
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    mainEntity: [
+      { '@type': 'Question', name: 'Does Fill By Link publish the PDF itself?', acceptedAnswer: { '@type': 'Answer', text: 'No. DullyPDF publishes a hosted HTML form and generates the final PDF later from the saved respondent submission.' } },
+      { '@type': 'Question', name: 'Can one group publish a single shared respondent form?', acceptedAnswer: { '@type': 'Answer', text: 'Yes. An open group can publish one merged Fill By Link that includes every distinct respondent-facing field across the group.' } },
+    ],
+  }],
+  'create-group': [{
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    mainEntity: [
+      { '@type': 'Question', name: 'What does a DullyPDF group do?', acceptedAnswer: { '@type': 'Answer', text: 'A group bundles saved templates into one packet so teams can switch documents quickly, fill the packet from one record, and run batch rename and mapping actions.' } },
+      { '@type': 'Question', name: 'Can Rename + Map run across the whole group?', acceptedAnswer: { '@type': 'Answer', text: 'Yes. Rename + Map Group runs across every saved template in the open group and overwrites each template on success.' } },
+    ],
+  }],
 };
 
 const USAGE_DOCS_ROUTE_SEO = {};
@@ -773,6 +892,16 @@ for (const page of USAGE_DOCS_PAGES) {
       title: 'Auto Fill PDF from CSV, Excel, and JSON | DullyPDF Docs',
       description: 'Connect local data rows, search records, and auto-fill mapped PDF templates from CSV, Excel, or JSON sources.',
       keywords: ['auto fill pdf from csv', 'fill pdf from excel', 'fill pdf from json'],
+    },
+    'fill-by-link': {
+      title: 'Fill By Link Workflow and Respondent Forms | DullyPDF Docs',
+      description: 'Publish native DullyPDF Fill By Link forms from saved templates or groups, share respondent links, and generate PDFs later from stored submissions.',
+      keywords: ['fill by link pdf', 'shareable pdf form link', 'respondent form workflow', 'html form to fill pdf'],
+    },
+    'create-group': {
+      title: 'Create Group Workflows for Full PDF Packets | DullyPDF Docs',
+      description: 'Create groups of saved templates, switch packet members quickly, Search and Fill full document sets, and batch Rename + Map every template in the group.',
+      keywords: ['create group pdf templates', 'group pdf workflow', 'batch rename map pdf packet', 'pdf packet automation'],
     },
     'save-download-profile': {
       title: 'Save Reusable PDF Templates and Download Outputs | DullyPDF Docs',
@@ -862,6 +991,27 @@ const INTENT_HUB_ROUTE_SEO = {
   },
 };
 
+const FEATURE_PLAN_ROUTE_SEO = {};
+for (const page of FEATURE_PLAN_PAGES) {
+  FEATURE_PLAN_ROUTE_SEO[page.key] = {
+    title: page.seoTitle,
+    description: page.seoDescription,
+    canonicalPath: page.path,
+    keywords: page.seoKeywords,
+    structuredData: toFaqSchema(page.faqs),
+    bodyContent: {
+      heading: page.heroTitle,
+      paragraphs: [page.heroSummary],
+      valuePoints: page.valuePoints,
+      sections: page.detailSections.map((section) => ({
+        title: section.title,
+        description: section.items.join(' '),
+      })),
+      faqs: page.faqs,
+    },
+  };
+}
+
 // ---------------------------------------------------------------------------
 // All routes consolidated
 // ---------------------------------------------------------------------------
@@ -873,6 +1023,12 @@ export const ALL_ROUTES = [
   { path: '/terms', seo: LEGAL_ROUTE_SEO.terms, kind: 'legal', pageKey: 'terms' },
   { path: '/workflows', seo: INTENT_HUB_ROUTE_SEO.workflows, kind: 'intent-hub', pageKey: 'workflows' },
   { path: '/industries', seo: INTENT_HUB_ROUTE_SEO.industries, kind: 'intent-hub', pageKey: 'industries' },
+  ...FEATURE_PLAN_PAGES.map((page) => ({
+    path: page.path,
+    seo: FEATURE_PLAN_ROUTE_SEO[page.key],
+    kind: 'feature-plan',
+    pageKey: page.key,
+  })),
   ...USAGE_DOCS_PAGES.map((page) => ({
     path: page.path,
     seo: USAGE_DOCS_ROUTE_SEO[page.key],
