@@ -64,7 +64,9 @@ admin tokens, or auth headers (search terms: `FIREBASE_`, `GOOGLE_APPLICATION_CR
 1) Backend should start with a runtime service account and `FIREBASE_USE_ADC=true`
    on Cloud Run (recommended). In this repo, set `BACKEND_RUNTIME_SERVICE_ACCOUNT`
    in the prod env file so `scripts/deploy-backend.sh` pins the backend service to
-   the intended runtime identity. Use `FIREBASE_CREDENTIALS` only for non-GCP runs.
+   the intended runtime identity. That runtime identity also needs Firebase Auth
+   read access such as `roles/firebaseauth.viewer` when prod revocation checks are
+   enabled. Use `FIREBASE_CREDENTIALS` only for non-GCP runs.
 2) `scripts/run-backend-prod.sh` can be used for local prod testing; in real prod,
    prefer ADC (no JSON keys on disk).
 3) Frontend uses `config/public/frontend.prod.env` values (Firebase web config).

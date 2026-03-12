@@ -43,6 +43,11 @@ Given the current signed-in startup flow, production should keep `BACKEND_MIN_IN
 `env/backend.prod.env` so the backend stays warm for same-origin `/api/profile`, `/api/groups`, and
 `/api/saved-forms` bootstrap requests. A future warm-shell split could relax that requirement.
 
+Be careful with ad hoc `gcloud run services update` or `gcloud run services update-traffic`
+commands in prod: if they omit `--min` or pin traffic to an older revision, Cloud Run can fall back
+to scale-from-zero behavior or stale code even though the deploy scripts are configured to keep the
+latest revision warm.
+
 Some endpoints are intentionally not proxied (OpenAI routes, detection routes, and large upload/stream
 routes) to avoid Firebase Hosting's Cloud Run rewrite timeout (approximately 60 seconds) and to keep
 large transfers direct-to-Cloud-Run.

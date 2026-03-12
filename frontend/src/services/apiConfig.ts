@@ -1,11 +1,17 @@
 /**
  * API configuration utilities with auth token handling.
  */
-import { getFreshIdToken } from './auth';
+import { Auth, getFreshIdToken } from './auth';
 
 const DEFAULT_API_BASE = 'http://localhost:8000';
+const DEFAULT_BACKEND_READY_MAX_WAIT_MS = 90000;
+const MAX_BACKEND_READY_MAX_WAIT_MS = 300000;
+const BACKEND_READY_REQUEST_TIMEOUT_MS = 4000;
+const CLOUD_RUN_NO_INSTANCE_MARKER = 'no available instance';
 
 let cachedBase: string | null = null;
+const backendReadyPromisesByHealthUrl = new Map<string, Promise<void>>();
+let authFailureRecoveryPromise: Promise<void> | null = null;
 
 type ApiErrorPayload = {
   message?: string;
@@ -69,6 +75,207 @@ function normalizeErrorMessage(status: number, payload: ApiErrorPayload | null, 
   return raw || statusText || fallback;
 }
 
+function resolveRequestUrl(url: string): URL | null {
+  const baseOrigin = typeof window !== 'undefined' && window.location?.origin
+    ? window.location.origin
+    : DEFAULT_API_BASE;
+  try {
+    return new URL(url, baseOrigin);
+  } catch {
+    return null;
+  }
+}
+
+function resolveHostedOriginBase(): string | null {
+  if (!import.meta.env?.PROD) {
+    return null;
+  }
+  if (typeof window === 'undefined' || !window.location?.origin) {
+    return null;
+  }
+  const origin = window.location.origin.trim().replace(/\/+$/, '');
+  if (!origin) {
+    return null;
+  }
+  const resolved = resolveRequestUrl(origin);
+  const host = resolved?.hostname?.toLowerCase() ?? '';
+  if (!host || host === 'localhost' || host === '127.0.0.1') {
+    return null;
+  }
+  return origin;
+}
+
+function isBackendApiGet(method: string, url: string): boolean {
+  if (method.trim().toUpperCase() !== 'GET') {
+    return false;
+  }
+  const resolved = resolveRequestUrl(url);
+  return Boolean(resolved?.pathname.startsWith('/api/'));
+}
+
+function isCloudRunColdStart429(response: Response, bodyText: string): boolean {
+  if (response.status !== 429) {
+    return false;
+  }
+  const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
+  const normalizedBody = bodyText.trim().toLowerCase();
+  if (normalizedBody.includes(CLOUD_RUN_NO_INSTANCE_MARKER)) {
+    return true;
+  }
+  return !contentType.includes('application/json') && normalizedBody.length > 0;
+}
+
+function resolveBackendReadyMaxWaitMs(): number {
+  const raw = import.meta.env?.VITE_BACKEND_READY_MAX_WAIT_MS;
+  const parsed = Number.parseInt(typeof raw === 'string' ? raw.trim() : '', 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return DEFAULT_BACKEND_READY_MAX_WAIT_MS;
+  }
+  return Math.min(parsed, MAX_BACKEND_READY_MAX_WAIT_MS);
+}
+
+function backendReadyDelayMsForAttempt(attempt: number): number {
+  if (attempt <= 0) {
+    return 0;
+  }
+  return Math.min(1000 * (2 ** (attempt - 1)), 8000);
+}
+
+async function delayWithSignal(ms: number, signal?: AbortSignal): Promise<void> {
+  if (ms <= 0) {
+    if (signal?.aborted) {
+      throw new TypeError('Request timed out.');
+    }
+    return;
+  }
+  await new Promise<void>((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timeoutId);
+      signal?.removeEventListener('abort', onAbort);
+      reject(new TypeError('Request timed out.'));
+    };
+    if (signal) {
+      if (signal.aborted) {
+        onAbort();
+        return;
+      }
+      signal.addEventListener('abort', onAbort, { once: true });
+    }
+  });
+}
+
+function resolveBackendHealthUrl(url?: string): string {
+  const fallbackHealthUrl = buildApiUrl('api', 'health');
+  if (!url) {
+    return fallbackHealthUrl;
+  }
+  const resolved = resolveRequestUrl(url);
+  if (!resolved) {
+    return fallbackHealthUrl;
+  }
+  if (resolved.pathname === '/api/health') {
+    return resolved.toString();
+  }
+  return new URL('/api/health', `${resolved.origin}/`).toString();
+}
+
+async function waitForBackendHealthUrlReady(healthUrl: string, signal?: AbortSignal): Promise<void> {
+  const existing = backendReadyPromisesByHealthUrl.get(healthUrl);
+  if (existing) {
+    return existing;
+  }
+
+  // Share a single backend warmup loop per health endpoint so concurrent shell requests
+  // do not all hammer `/api/health` while Cloud Run is still starting.
+  const warmupPromise = (async () => {
+    const deadline = Date.now() + resolveBackendReadyMaxWaitMs();
+    let attempt = 0;
+
+    while (Date.now() <= deadline) {
+      const delayMs = backendReadyDelayMsForAttempt(attempt);
+      await delayWithSignal(delayMs, signal);
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), BACKEND_READY_REQUEST_TIMEOUT_MS);
+      const onAbort = () => controller.abort();
+      if (signal) {
+        if (signal.aborted) {
+          controller.abort();
+        } else {
+          signal.addEventListener('abort', onAbort, { once: true });
+        }
+      }
+
+      try {
+        const response = await fetch(healthUrl, {
+          method: 'GET',
+          cache: 'no-store',
+          signal: controller.signal,
+        });
+        if (response.ok) {
+          return;
+        }
+      } catch {
+        if (signal?.aborted) {
+          throw new TypeError('Request timed out.');
+        }
+      } finally {
+        clearTimeout(timeoutId);
+        signal?.removeEventListener('abort', onAbort);
+      }
+
+      attempt += 1;
+    }
+    throw new TypeError('Backend is still starting. Please wait a moment and try again.');
+  })().finally(() => {
+    backendReadyPromisesByHealthUrl.delete(healthUrl);
+  });
+
+  backendReadyPromisesByHealthUrl.set(healthUrl, warmupPromise);
+  return warmupPromise;
+}
+
+export async function ensureBackendReady(options?: {
+  healthUrl?: string;
+  signal?: AbortSignal;
+}): Promise<void> {
+  await waitForBackendHealthUrlReady(resolveBackendHealthUrl(options?.healthUrl), options?.signal);
+}
+
+async function retryIfCloudRunColdStart(params: {
+  method: string;
+  url: string;
+  response: Response;
+  runFetch: (headersToUse: Headers) => Promise<Response>;
+  requestHeaders: Headers;
+  signal?: AbortSignal;
+}): Promise<Response> {
+  if (!isBackendApiGet(params.method, params.url)) {
+    return params.response;
+  }
+
+  const resolvedUrl = resolveRequestUrl(params.url);
+  if (!resolvedUrl) {
+    return params.response;
+  }
+
+  let current = params.response;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const bodyText = await current.clone().text().catch(() => '');
+    if (!isCloudRunColdStart429(current, bodyText)) {
+      return current;
+    }
+    await waitForBackendHealthUrlReady(resolveBackendHealthUrl(resolvedUrl.toString()), params.signal);
+    current = await params.runFetch(new Headers(params.requestHeaders));
+  }
+
+  return current;
+}
+
 /**
  * Resolve an admin token from env or localStorage in dev.
  */
@@ -98,6 +305,11 @@ function resolveAdminToken(): string | null {
  */
 export function getApiBaseUrl(): string {
   if (cachedBase) return cachedBase;
+  const hostedOriginBase = resolveHostedOriginBase();
+  if (hostedOriginBase) {
+    cachedBase = hostedOriginBase;
+    return cachedBase;
+  }
   const env = import.meta.env;
   const raw = env?.VITE_API_URL || env?.VITE_SANDBOX_API_URL || env?.VITE_DETECTION_API_URL;
   const trimmed = typeof raw === 'string' ? raw.trim() : '';
@@ -124,6 +336,20 @@ export interface ApiFetchOptions extends RequestInit {
   allowStatuses?: number[];
   authMode?: 'default' | 'anonymous';
   timeoutMs?: number;
+}
+
+async function recoverFromAuthFailure(): Promise<void> {
+  if (authFailureRecoveryPromise) {
+    return authFailureRecoveryPromise;
+  }
+  authFailureRecoveryPromise = Auth.signOut()
+    .catch((error) => {
+      console.error('[api] Failed to clear invalid auth session', error);
+    })
+    .finally(() => {
+      authFailureRecoveryPromise = null;
+    });
+  return authFailureRecoveryPromise;
 }
 
 /**
@@ -191,6 +417,14 @@ export async function apiFetch(
   };
 
   let response = await runFetch(requestHeaders);
+  response = await retryIfCloudRunColdStart({
+    method,
+    url,
+    response,
+    runFetch,
+    requestHeaders,
+    signal: inputSignal ?? undefined,
+  });
 
   if (response.status === 401 && managedAuth) {
     const refreshedToken = await getFreshIdToken(true);
@@ -198,6 +432,9 @@ export async function apiFetch(
       const retryHeaders = new Headers(requestHeaders);
       retryHeaders.set('Authorization', `Bearer ${refreshedToken}`);
       response = await runFetch(retryHeaders);
+    }
+    if (response.status === 401) {
+      await recoverFromAuthFailure();
     }
   }
 

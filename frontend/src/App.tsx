@@ -2,8 +2,7 @@
  * Lightweight app shell that keeps the marketing homepage fast,
  * and lazy-loads the full workspace runtime on user intent.
  */
-import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
-import { useRef } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { User } from 'firebase/auth';
 import './App.css';
 import Homepage from './components/pages/Homepage';
@@ -27,7 +26,11 @@ function App() {
 
   const [runtimeMounted, setRuntimeMounted] = useState(false);
   const [launchIntent, setLaunchIntent] = useState<WorkspaceLaunchIntent>(null);
-  const checkedDowngradeRetentionUidRef = useRef<string | null>(null);
+  const [runtimeStarting, setRuntimeStarting] = useState(false);
+  const [runtimeStartingMessage, setRuntimeStartingMessage] = useState<string | null>(null);
+  const [runtimeStartError, setRuntimeStartError] = useState<string | null>(null);
+  const runtimeStartAttemptRef = useRef(0);
+  const runtimeStartAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     applyRouteSeo({ kind: 'app' });
@@ -84,9 +87,84 @@ function App() {
   );
   const userEmail = useMemo(() => verifiedUser?.email ?? null, [verifiedUser]);
 
-  const launchWorkspace = useCallback((intent: WorkspaceLaunchIntent) => {
+  const abortRuntimeStart = useCallback(() => {
+    runtimeStartAbortRef.current?.abort();
+    runtimeStartAbortRef.current = null;
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      abortRuntimeStart();
+    };
+  }, [abortRuntimeStart]);
+
+  const startRuntime = useCallback(async (
+    intent: WorkspaceLaunchIntent,
+    options?: {
+      waitForBackend?: boolean;
+      loadingMessage?: string;
+    },
+  ) => {
+    abortRuntimeStart();
+    setRuntimeStartError(null);
     setLaunchIntent(intent);
-    setRuntimeMounted(true);
+    if (!options?.waitForBackend) {
+      setRuntimeStarting(false);
+      setRuntimeStartingMessage(null);
+      setRuntimeMounted(true);
+      return;
+    }
+
+    const attemptId = runtimeStartAttemptRef.current + 1;
+    runtimeStartAttemptRef.current = attemptId;
+    const controller = new AbortController();
+    runtimeStartAbortRef.current = controller;
+    setRuntimeStarting(true);
+    setRuntimeStartingMessage(options.loadingMessage ?? 'Backend is starting…');
+
+    try {
+      await ApiService.ensureBackendReady({
+        signal: controller.signal,
+        healthUrl: '/api/health',
+      });
+      if (controller.signal.aborted || runtimeStartAttemptRef.current !== attemptId) {
+        return;
+      }
+      setRuntimeMounted(true);
+    } catch (error) {
+      if (controller.signal.aborted || runtimeStartAttemptRef.current !== attemptId) {
+        return;
+      }
+      const message = error instanceof Error && error.message.trim()
+        ? error.message
+        : 'Backend is still starting. Please wait a moment and try again.';
+      setRuntimeStartError(message);
+      setLaunchIntent(null);
+    } finally {
+      if (runtimeStartAttemptRef.current === attemptId) {
+        setRuntimeStarting(false);
+        if (runtimeStartAbortRef.current === controller) {
+          runtimeStartAbortRef.current = null;
+        }
+      }
+    }
+  }, [abortRuntimeStart]);
+
+  const launchWorkspace = useCallback((intent: WorkspaceLaunchIntent) => {
+    if (runtimeMounted || runtimeStarting) {
+      return;
+    }
+    const waitForBackend = Boolean(verifiedUser) && (intent === 'workflow' || intent === 'profile');
+    const loadingMessage = intent === 'profile'
+      ? 'Starting backend for your profile…'
+      : 'Backend is starting…';
+    void startRuntime(intent, { waitForBackend, loadingMessage });
+  }, [runtimeMounted, runtimeStarting, startRuntime, verifiedUser]);
+
+  const handleDismissRuntimeStartError = useCallback(() => {
+    setRuntimeStartError(null);
+    setRuntimeStartingMessage(null);
+    setLaunchIntent(null);
   }, []);
 
   useEffect(() => {
@@ -116,51 +194,6 @@ function App() {
     }
     launchWorkspace(verifiedUser ? 'workflow' : 'signin');
   }, [authReady, launchWorkspace, runtimeMounted, verifiedUser]);
-
-  useEffect(() => {
-    if (!verifiedUser) {
-      checkedDowngradeRetentionUidRef.current = null;
-      return;
-    }
-    if (!authReady || runtimeMounted) {
-      return;
-    }
-    if (checkedDowngradeRetentionUidRef.current === verifiedUser.uid) {
-      return;
-    }
-
-    let cancelled = false;
-    checkedDowngradeRetentionUidRef.current = verifiedUser.uid;
-    void (async () => {
-      try {
-        let profile = null;
-        for (let attempt = 0; attempt < 3; attempt += 1) {
-          profile = await ApiService.getProfile();
-          if (cancelled || runtimeMounted) return;
-          if (profile) {
-            break;
-          }
-          if (attempt < 2) {
-            await new Promise((resolve) => window.setTimeout(resolve, 1200));
-          }
-        }
-        if (!profile) {
-          checkedDowngradeRetentionUidRef.current = null;
-          return;
-        }
-        if (profile?.retention?.status === 'grace_period') {
-          setRuntimeMounted(true);
-        }
-      } catch (error) {
-        checkedDowngradeRetentionUidRef.current = null;
-        debugLog('Failed to preflight downgrade retention from lightweight shell', error);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [authReady, runtimeMounted, verifiedUser]);
 
   const handleStartWorkflow = useCallback(() => {
     launchWorkspace(verifiedUser ? 'workflow' : 'signin');
@@ -224,6 +257,26 @@ function App() {
         onRefresh={handleRefreshVerification}
         onSignOut={handleSignOut}
       />
+    );
+  }
+
+  if (!runtimeMounted && (runtimeStarting || runtimeStartError)) {
+    return (
+      <div className="auth-loading-screen">
+        <div className="auth-loading-card">
+          <div>{runtimeStarting ? (runtimeStartingMessage ?? 'Backend is starting…') : 'Backend startup delayed'}</div>
+          <div>
+            {runtimeStarting
+              ? 'The first request after inactivity can take a few seconds.'
+              : runtimeStartError}
+          </div>
+          {!runtimeStarting ? (
+            <button type="button" onClick={handleDismissRuntimeStartError}>
+              Back
+            </button>
+          ) : null}
+        </div>
+      </div>
     );
   }
 

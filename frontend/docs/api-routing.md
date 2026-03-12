@@ -75,7 +75,9 @@ These calls are made with absolute URLs (via `buildApiUrl(...)` or detection bas
 
 ## Production behavior
 
-`firebase.json` must rewrite the backend-owned same-origin path families to Cloud Run before the final SPA rewrite. In practice that means `/api/profile` plus `/api/profile/**`, `/api/saved-forms` plus `/api/saved-forms/**`, `/api/groups` plus `/api/groups/**`, `/api/fill-links` plus `/api/fill-links/**`, along with the exact health/contact/recaptcha/billing/schema routes. If a same-origin API path is missing from Hosting rewrites, Firebase serves `index.html` and the frontend will fail when it tries to parse HTML as JSON.
+Production frontend builds resolve backend traffic against the current site origin instead of a direct Cloud Run hostname. `firebase.json` must therefore rewrite the backend-owned same-origin families to Cloud Run before the final SPA rewrite. The durable setup is catch-all rewrites for `/api/**` and `/detect-fields/**` (plus their exact-root variants) so new backend routes do not silently fall through to `index.html`.
+
+For the lightweight shell endpoints (`/api/health`, `/api/profile`, `/api/saved-forms`, `/api/groups`, and related nested GET routes), the frontend also treats Cloud Run platform `429 no available instance` responses as transient cold-start failures. The homepage shell waits on `/api/health` before it mounts signed-in workflow/profile runtime flows, and the shared GET fetch wrapper retries the original request after the health probe succeeds instead of surfacing the first cold-start response to the user. The health wait now uses bounded exponential backoff up to a longer deadline (90 seconds by default, configurable with `VITE_BACKEND_READY_MAX_WAIT_MS`) because real prod cold starts can outlast the old short retry window during Cloud Run instance provisioning or revision cutovers.
 
 ## Local development behavior
 
@@ -85,4 +87,4 @@ These calls are made with absolute URLs (via `buildApiUrl(...)` or detection bas
 ## Rule of thumb for new frontend calls
 
 - Use relative `/api/...` for endpoints that should stay same-origin.
-- Use `buildApiUrl(...)` (or detection base helpers) when a direct backend call is intended.
+- In production, `buildApiUrl(...)` and the detection base helpers should still resolve to the current site origin so Hosting rewrites stay in the request path.

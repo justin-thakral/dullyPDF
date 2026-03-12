@@ -48,6 +48,7 @@ npm run dev:stack:stop
 The dev scripts source env vars via `scripts/use-frontend-env.sh`. Common entries:
 - `VITE_API_URL` / `VITE_DETECTION_API_URL` for backend base URLs.
 - `VITE_DETECTION_POLL_TIMEOUT_MS` to cap how long detection polling waits before returning.
+- `VITE_BACKEND_READY_MAX_WAIT_MS` to control how long the homepage shell waits for `/api/health` during Cloud Run cold starts before surfacing a retry message.
 - Firebase Identity Platform keys (`VITE_FIREBASE_*`).
 - `VITE_GOOGLE_ADS_TAG_ID` to inject the Google Ads `gtag.js` base tag in prod builds.
 - `VITE_GOOGLE_ADS_SIGNUP_LABEL`, `VITE_GOOGLE_ADS_PRO_PURCHASE_LABEL`, and `VITE_GOOGLE_ADS_REFILL_PURCHASE_LABEL` for native Google Ads conversion events.

@@ -44,6 +44,16 @@ describe('detectionApi', () => {
     expect(module.getDetectionApiBase()).toBe('http://localhost:8000');
   });
 
+  it('prefers the current site origin for production detection requests', async () => {
+    vi.stubEnv('PROD', '1');
+    vi.stubEnv('VITE_DETECTION_API_URL', 'https://broken-backend.run.app');
+    vi.stubGlobal('window', { location: { origin: 'https://dullypdf.web.app' } });
+
+    const module = await importDetectionApi();
+
+    expect(module.getDetectionApiBase()).toBe('https://dullypdf.web.app');
+  });
+
   it('builds detect request form data and returns immediate payloads when polling is unnecessary', async () => {
     const module = await importDetectionApi();
     apiMocks.apiFetch

@@ -61,6 +61,9 @@ From `frontend/`:
 
 Avoid plain `npm run build` from `frontend/`. The build now requires an explicit
 env target so the bundle cannot accidentally reuse a stale local `.env.local`.
+For prod builds, keep `VITE_FIREBASE_AUTH_DOMAIN` on `dullypdf.firebaseapp.com`
+unless you have also updated every OAuth provider callback to allow the custom
+domain `__/auth/handler` endpoint and widened the hosting CSP accordingly.
 
 ## API routing in local dev
 

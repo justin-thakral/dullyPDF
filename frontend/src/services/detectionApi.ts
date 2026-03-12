@@ -30,6 +30,20 @@ type PollOptions = {
  * Resolve the detection API base URL from env with fallback.
  */
 export function getDetectionApiBase(): string {
+  if (import.meta.env?.PROD && typeof window !== 'undefined' && window.location?.origin) {
+    const origin = window.location.origin.trim().replace(/\/+$/, '');
+    if (origin) {
+      try {
+        const url = new URL(origin);
+        const host = url.hostname.toLowerCase();
+        if (host && host !== 'localhost' && host !== '127.0.0.1') {
+          return origin;
+        }
+      } catch {
+        // Fall back to env-driven detection routing below if the browser origin is malformed.
+      }
+    }
+  }
   const env = import.meta.env;
   const raw = env?.VITE_DETECTION_API_URL || env?.VITE_SANDBOX_API_URL;
   const trimmed = typeof raw === 'string' ? raw.trim() : '';

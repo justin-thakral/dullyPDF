@@ -2,9 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const authMocks = vi.hoisted(() => ({
   getFreshIdToken: vi.fn(),
+  signOut: vi.fn(),
 }));
 
 vi.mock('../../../src/services/auth', () => ({
+  Auth: {
+    signOut: authMocks.signOut,
+  },
   getFreshIdToken: authMocks.getFreshIdToken,
 }));
 
@@ -16,6 +20,7 @@ const importApiConfig = async () => {
 describe('apiConfig', () => {
   beforeEach(() => {
     authMocks.getFreshIdToken.mockReset().mockResolvedValue(null);
+    authMocks.signOut.mockReset().mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -43,6 +48,17 @@ describe('apiConfig', () => {
     expect(buildApiUrl('api', 'health')).toBe('https://backend.local/api/health');
   });
 
+  it('prefers the current site origin for production builds', async () => {
+    vi.stubEnv('PROD', '1');
+    vi.stubEnv('VITE_API_URL', 'https://broken-backend.run.app');
+    vi.stubGlobal('window', { location: { origin: 'https://dullypdf.web.app' } });
+
+    const { getApiBaseUrl, buildApiUrl } = await importApiConfig();
+
+    expect(getApiBaseUrl()).toBe('https://dullypdf.web.app');
+    expect(buildApiUrl('api', 'profile')).toBe('https://dullypdf.web.app/api/profile');
+  });
+
   it('attaches bearer auth and retries once on 401 with refreshed token', async () => {
     authMocks.getFreshIdToken
       .mockResolvedValueOnce('token-initial')
@@ -64,6 +80,126 @@ describe('apiConfig', () => {
     const retryHeaders = fetchMock.mock.calls[1][1].headers as Headers;
     expect(firstHeaders.get('Authorization')).toBe('Bearer token-initial');
     expect(retryHeaders.get('Authorization')).toBe('Bearer token-refreshed');
+    expect(authMocks.signOut).not.toHaveBeenCalled();
+  });
+
+  it('clears the auth session after a repeated 401 on an authenticated request', async () => {
+    authMocks.getFreshIdToken
+      .mockResolvedValueOnce('token-initial')
+      .mockResolvedValueOnce('token-refreshed');
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ detail: 'Invalid Authorization token' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ detail: 'Invalid Authorization token' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' },
+      }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { apiFetch } = await importApiConfig();
+
+    await expect(apiFetch('GET', '/api/profile')).rejects.toMatchObject({
+      message: 'Please sign in again to continue.',
+      status: 401,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(authMocks.signOut).toHaveBeenCalledTimes(1);
+  });
+
+  it('polls backend health and retries transient Cloud Run cold-start GET failures', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response('The request was aborted because there was no available instance.', {
+          status: 429,
+          headers: { 'Content-Type': 'text/html; charset=utf-8' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ status: 'ok' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ groups: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { apiFetch } = await importApiConfig();
+    const response = await apiFetch('GET', '/api/groups');
+
+    expect(response.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(String(fetchMock.mock.calls[1][0])).toMatch(/\/api\/health$/);
+    expect(fetchMock.mock.calls[2][0]).toBe('/api/groups');
+  });
+
+  it('shares one backend warmup loop across concurrent readiness checks', async () => {
+    vi.useFakeTimers();
+    vi.stubEnv('VITE_API_URL', 'http://localhost:8000');
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response('Rate exceeded.', {
+          status: 429,
+          headers: { 'Content-Type': 'text/html; charset=utf-8' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ status: 'ok' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { ensureBackendReady } = await importApiConfig();
+    const pending = Promise.all([ensureBackendReady(), ensureBackendReady()]);
+
+    await vi.advanceTimersByTimeAsync(1000);
+    await pending;
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[0][0]).toBe('http://localhost:8000/api/health');
+    expect(fetchMock.mock.calls[1][0]).toBe('http://localhost:8000/api/health');
+  });
+
+  it('keeps polling backend readiness beyond the initial cold-start window', async () => {
+    vi.useFakeTimers();
+
+    const fetchMock = vi.fn();
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      fetchMock.mockResolvedValueOnce(
+        new Response('Rate exceeded.', {
+          status: 429,
+          headers: { 'Content-Type': 'text/html; charset=utf-8' },
+        }),
+      );
+    }
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ status: 'ok' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { ensureBackendReady } = await importApiConfig();
+    const pending = ensureBackendReady();
+
+    await vi.runAllTimersAsync();
+    await expect(pending).resolves.toBeUndefined();
+
+    expect(fetchMock).toHaveBeenCalledTimes(7);
   });
 
   it('injects dev admin token unless explicitly disabled', async () => {

@@ -17,6 +17,22 @@ function debugLog(...args: unknown[]) {
   console.log('[dullypdf-ui/pdf]', ...args);
 }
 
+function shouldUseSystemFontFallbackForDisplay(): boolean {
+  if (typeof navigator === 'undefined') return true;
+  const browserNavigator = navigator as Navigator & {
+    userAgentData?: { platform?: string };
+  };
+  const uaPlatform = typeof browserNavigator.userAgentData?.platform === 'string'
+    ? browserNavigator.userAgentData.platform
+    : '';
+  const platform = uaPlatform || navigator.platform || '';
+  // Windows often has Office fonts like Aptos/Calibri/Wingdings installed system-wide.
+  // When PDF.js falls back to those fonts for Office-exported PDFs, text metrics can
+  // drift from the backend raster used for detection overlays. Prefer embedded fonts
+  // on Windows to keep the browser canvas and detected geometry aligned.
+  return !/win/i.test(platform);
+}
+
 // Ensure the PDF.js worker runs in a separate thread for heavy parsing work.
 GlobalWorkerOptions.workerSrc = workerSrc;
 
@@ -86,7 +102,7 @@ export async function loadPdfFromFile(file: File): Promise<PDFDocumentProxy> {
   const options = {
     data: buffer,
     enableXfa: true,
-    useSystemFonts: true,
+    useSystemFonts: shouldUseSystemFontFallbackForDisplay(),
   };
 
   try {

@@ -50,7 +50,7 @@
         "headers": [
           {
             "key": "Content-Security-Policy",
-            "value": "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; object-src 'none'; form-action 'self'; script-src 'self' https://www.googletagmanager.com https://www.google.com https://www.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https: wss:; frame-src https://www.google.com https://recaptcha.google.com; worker-src 'self' blob:; media-src 'self' data: blob: https:"
+            "value": "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; object-src 'none'; form-action 'self'; script-src 'self' https://www.googletagmanager.com https://www.google.com https://www.gstatic.com https://apis.google.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https: wss:; frame-src 'self' https://www.google.com https://recaptcha.google.com https://dullypdf.firebaseapp.com; worker-src 'self' blob:; media-src 'self' data: blob: https:"
           },
           {
             "key": "X-Frame-Options",
@@ -149,122 +149,31 @@
         "destination": "/index.html"
       },
       {
-        "source": "/api/health",
+        "source": "/api/**",
         "run": {
-          "serviceId": "dullypdf-backend",
-          "region": "us-central1"
+          "serviceId": "dullypdf-backend-east4",
+          "region": "us-east4"
         }
       },
       {
-        "source": "/api/recaptcha/assess",
+        "source": "/api",
         "run": {
-          "serviceId": "dullypdf-backend",
-          "region": "us-central1"
+          "serviceId": "dullypdf-backend-east4",
+          "region": "us-east4"
         }
       },
       {
-        "source": "/api/contact",
+        "source": "/detect-fields",
         "run": {
-          "serviceId": "dullypdf-backend",
-          "region": "us-central1"
+          "serviceId": "dullypdf-backend-east4",
+          "region": "us-east4"
         }
       },
       {
-        "source": "/api/profile",
+        "source": "/detect-fields/**",
         "run": {
-          "serviceId": "dullypdf-backend",
-          "region": "us-central1"
-        }
-      },
-      {
-        "source": "/api/profile/**",
-        "run": {
-          "serviceId": "dullypdf-backend",
-          "region": "us-central1"
-        }
-      },
-      {
-        "source": "/api/billing/checkout-session",
-        "run": {
-          "serviceId": "dullypdf-backend",
-          "region": "us-central1"
-        }
-      },
-      {
-        "source": "/api/billing/subscription/cancel",
-        "run": {
-          "serviceId": "dullypdf-backend",
-          "region": "us-central1"
-        }
-      },
-      {
-        "source": "/api/billing/reconcile",
-        "run": {
-          "serviceId": "dullypdf-backend",
-          "region": "us-central1"
-        }
-      },
-      {
-        "source": "/api/billing/webhook-health",
-        "run": {
-          "serviceId": "dullypdf-backend",
-          "region": "us-central1"
-        }
-      },
-      {
-        "source": "/api/schemas",
-        "run": {
-          "serviceId": "dullypdf-backend",
-          "region": "us-central1"
-        }
-      },
-      {
-        "source": "/api/sessions/*/touch",
-        "run": {
-          "serviceId": "dullypdf-backend",
-          "region": "us-central1"
-        }
-      },
-      {
-        "source": "/api/saved-forms",
-        "run": {
-          "serviceId": "dullypdf-backend",
-          "region": "us-central1"
-        }
-      },
-      {
-        "source": "/api/saved-forms/**",
-        "run": {
-          "serviceId": "dullypdf-backend",
-          "region": "us-central1"
-        }
-      },
-      {
-        "source": "/api/groups",
-        "run": {
-          "serviceId": "dullypdf-backend",
-          "region": "us-central1"
-        }
-      },
-      {
-        "source": "/api/groups/**",
-        "run": {
-          "serviceId": "dullypdf-backend",
-          "region": "us-central1"
-        }
-      },
-      {
-        "source": "/api/fill-links",
-        "run": {
-          "serviceId": "dullypdf-backend",
-          "region": "us-central1"
-        }
-      },
-      {
-        "source": "/api/fill-links/**",
-        "run": {
-          "serviceId": "dullypdf-backend",
-          "region": "us-central1"
+          "serviceId": "dullypdf-backend-east4",
+          "region": "us-east4"
         }
       },
       {

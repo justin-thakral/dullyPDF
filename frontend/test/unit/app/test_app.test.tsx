@@ -16,6 +16,7 @@ const authMocks = vi.hoisted(() => ({
 }));
 
 const apiServiceMocks = vi.hoisted(() => ({
+  ensureBackendReady: vi.fn().mockResolvedValue(undefined),
   getSavedForms: vi.fn().mockResolvedValue([]),
   getGroups: vi.fn().mockResolvedValue([]),
   getProfile: vi.fn().mockResolvedValue(null),
@@ -304,6 +305,23 @@ const makePdfDoc = () => ({
   getData: vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3])),
 });
 
+const defaultBillingReconcilePayload = {
+  success: true,
+  dryRun: false,
+  scope: 'self',
+  auditedEventCount: 0,
+  candidateEventCount: 0,
+  pendingReconciliationCount: 0,
+  reconciledCount: 0,
+  alreadyProcessedCount: 0,
+  processingCount: 0,
+  retryableCount: 0,
+  failedCount: 0,
+  invalidCount: 0,
+  skippedForUserCount: 0,
+  events: [],
+};
+
 const makeAuthUser = () => ({
   uid: 'user-1',
   email: 'qa@example.com',
@@ -435,13 +453,29 @@ describe('App', () => {
     document.getElementById('root')?.classList.remove('workspace-no-scroll');
     appState.authStateCallbacks.clear();
     authMocks.onAuthStateChanged.mockClear();
-    authMocks.signOut.mockClear();
+    authMocks.signOut.mockReset().mockResolvedValue(undefined);
     analyticsMocks.trackGoogleAdsBillingPurchase.mockClear();
-    for (const mock of Object.values(apiServiceMocks)) {
-      if ('mockClear' in mock) {
-        (mock as unknown as { mockClear: () => void }).mockClear();
-      }
-    }
+    apiServiceMocks.ensureBackendReady.mockReset().mockResolvedValue(undefined);
+    apiServiceMocks.getSavedForms.mockReset().mockResolvedValue([]);
+    apiServiceMocks.getGroups.mockReset().mockResolvedValue([]);
+    apiServiceMocks.getProfile.mockReset().mockResolvedValue(null);
+    apiServiceMocks.updateDowngradeRetention.mockReset();
+    apiServiceMocks.deleteDowngradeRetentionNow.mockReset();
+    apiServiceMocks.createBillingCheckoutSession.mockReset();
+    apiServiceMocks.reconcileBillingCheckoutFulfillment.mockReset().mockResolvedValue(defaultBillingReconcilePayload);
+    apiServiceMocks.cancelBillingSubscription.mockReset();
+    apiServiceMocks.createTemplateSession.mockReset().mockResolvedValue({ success: true, sessionId: 'session-1', fieldCount: 1 });
+    apiServiceMocks.materializeFormPdf.mockReset().mockResolvedValue(new Blob(['pdf'], { type: 'application/pdf' }));
+    apiServiceMocks.saveFormToProfile.mockReset().mockResolvedValue({ success: true, id: 'saved-1' });
+    apiServiceMocks.createSchema.mockReset();
+    apiServiceMocks.renameFields.mockReset();
+    apiServiceMocks.mapSchema.mockReset();
+    apiServiceMocks.createSavedFormSession.mockReset();
+    apiServiceMocks.updateSavedFormEditorSnapshot.mockReset();
+    apiServiceMocks.loadSavedForm.mockReset();
+    apiServiceMocks.downloadSavedForm.mockReset();
+    apiServiceMocks.deleteSavedForm.mockReset();
+    apiServiceMocks.touchSession.mockReset();
     for (const mock of Object.values(detectionApiMocks)) {
       if ('mockReset' in mock) {
         (mock as unknown as { mockReset: () => void }).mockReset();
@@ -506,6 +540,29 @@ describe('App', () => {
     expect(screen.getByTestId('upload-fillable')).toBeTruthy();
   }, 15_000);
 
+  it('shows a backend startup screen before mounting the signed-in runtime', async () => {
+    let releaseBackendStartup: (() => void) | null = null;
+    apiServiceMocks.ensureBackendReady.mockImplementationOnce(() => new Promise<void>((resolve) => {
+      releaseBackendStartup = resolve;
+    }));
+
+    const App = await importApp();
+    render(<App />);
+
+    await settleAuthAsSignedIn();
+    fireEvent.click(await screen.findByTestId('start-workflow'));
+
+    expect(await screen.findByText('Backend is starting…')).toBeTruthy();
+    expect(screen.queryByTestId('upload-detect')).toBeNull();
+
+    await act(async () => {
+      releaseBackendStartup?.();
+    });
+
+    expect(await screen.findByTestId('upload-detect', {}, { timeout: 10_000 })).toBeTruthy();
+    expect(apiServiceMocks.ensureBackendReady).toHaveBeenCalledTimes(1);
+  }, 15_000);
+
   it('locks root scrolling while the workspace runtime is mounted', async () => {
     const App = await importApp();
     const { unmount } = render(<App />);
@@ -541,57 +598,40 @@ describe('App', () => {
     });
   });
 
-  it('auto-mounts the runtime for signed-in downgraded users landing on the homepage', async () => {
+  it('keeps the signed-in homepage shell idle until the user launches the runtime', async () => {
     apiServiceMocks.getProfile.mockResolvedValue(makeRetentionProfile());
 
     const App = await importApp();
     render(<App />);
 
     await settleAuthAsSignedIn();
+    expect(await screen.findByTestId('homepage')).toBeTruthy();
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(apiServiceMocks.ensureBackendReady).not.toHaveBeenCalled();
+    expect(apiServiceMocks.getProfile).not.toHaveBeenCalled();
+    expect(apiServiceMocks.getSavedForms).not.toHaveBeenCalled();
+    expect(apiServiceMocks.getGroups).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('retention-dialog')).toBeNull();
+  });
+
+  it('shows the retention dialog after a signed-in downgraded user launches the workspace', async () => {
+    apiServiceMocks.getProfile.mockResolvedValue(makeRetentionProfile());
+
+    const App = await importApp();
+    render(<App />);
+
+    await settleAuthAsSignedIn();
+    expect(await screen.findByTestId('homepage')).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId('start-workflow'));
 
     expect(await screen.findByTestId('retention-dialog', {}, { timeout: 10_000 })).toBeTruthy();
     expect(screen.getByTestId('retention-status').textContent).toBe('grace_period');
     expect(apiServiceMocks.getProfile).toHaveBeenCalled();
-  }, 15_000);
-
-  it('retries the lightweight-shell retention preflight when the first profile read returns null', async () => {
-    apiServiceMocks.getProfile
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce(makeRetentionProfile());
-
-    const App = await importApp();
-    render(<App />);
-
-    await settleAuthAsSignedIn();
-
-    expect(await screen.findByTestId('retention-dialog', {}, { timeout: 10_000 })).toBeTruthy();
-    expect(apiServiceMocks.getProfile.mock.calls.length).toBeGreaterThanOrEqual(2);
-  }, 15_000);
-
-  it('clears the lightweight-shell retention preflight guard after repeated null profiles so the same user can retry later', async () => {
-    apiServiceMocks.getProfile
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce(makeRetentionProfile());
-
-    const App = await importApp();
-    render(<App />);
-
-    await settleAuthAsSignedIn();
-    await waitFor(() => {
-      expect(apiServiceMocks.getProfile).toHaveBeenCalledTimes(3);
-    }, { timeout: 4_000 });
-    expect(screen.queryByTestId('retention-dialog')).toBeNull();
-
-    await act(async () => {
-      for (const callback of [...appState.authStateCallbacks]) {
-        await callback(makeAuthUser());
-      }
-    });
-
-    expect(await screen.findByTestId('retention-dialog', {}, { timeout: 10_000 })).toBeTruthy();
-    expect(apiServiceMocks.getProfile.mock.calls.length).toBeGreaterThanOrEqual(4);
   }, 15_000);
 
   it('keeps retention UI fresh after saving a new kept-template selection', async () => {
@@ -603,7 +643,6 @@ describe('App', () => {
     };
     apiServiceMocks.getProfile
       .mockResolvedValueOnce(initialProfile)
-      .mockResolvedValueOnce(initialProfile)
       .mockResolvedValueOnce({
         ...initialProfile,
         retention: updatedRetention,
@@ -614,6 +653,7 @@ describe('App', () => {
     render(<App />);
 
     await settleAuthAsSignedIn();
+    fireEvent.click(await screen.findByTestId('start-workflow'));
     expect(await screen.findByTestId('retention-dialog', {}, { timeout: 10_000 })).toBeTruthy();
 
     fireEvent.click(screen.getByTestId('retention-save'));
@@ -640,6 +680,7 @@ describe('App', () => {
     render(<App />);
 
     await settleAuthAsSignedIn();
+    fireEvent.click(await screen.findByTestId('start-workflow'));
     expect(await screen.findByTestId('retention-dialog', {}, { timeout: 10_000 })).toBeTruthy();
 
     fireEvent.click(screen.getByTestId('retention-delete'));
@@ -751,23 +792,25 @@ describe('App', () => {
       limits: { detectMaxPages: 10, fillableMaxPages: 20, savedFormsMax: 5 },
     };
 
-    let profileCallCount = 0;
+    let refreshArmed = false;
     let resolveRefresh: ((value: typeof profilePayload) => void) | null = null;
     const refreshPromise = new Promise<typeof profilePayload>((resolve) => {
       resolveRefresh = resolve;
     });
     apiServiceMocks.getProfile.mockImplementation(() => {
-      profileCallCount += 1;
-      if (profileCallCount <= 2) {
+      if (!refreshArmed) {
         return Promise.resolve(profilePayload);
       }
       return refreshPromise;
     });
-    apiServiceMocks.cancelBillingSubscription.mockResolvedValue({
-      success: true,
-      subscriptionId: 'sub_123',
-      status: 'active',
-      cancelAtPeriodEnd: false,
+    apiServiceMocks.cancelBillingSubscription.mockImplementation(async () => {
+      refreshArmed = true;
+      return {
+        success: true,
+        subscriptionId: 'sub_123',
+        status: 'active',
+        cancelAtPeriodEnd: false,
+      };
     });
 
     const App = await importApp();

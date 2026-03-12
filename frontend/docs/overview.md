@@ -80,6 +80,7 @@ The frontend is a React + TypeScript app for loading PDFs, editing fields, organ
 
 - Firebase auth supports email/password, Google, and GitHub.
 - Password users must verify email before editor access.
+- The lightweight homepage shell keeps signed-in users on the marketing shell until they explicitly open workflow/profile, then waits for `/api/health` before mounting the runtime so Cloud Run scale-from-zero shows a startup screen instead of background profile/groups/saved-form failures on page load.
 - Firebase email action links land on the branded `/account-action` handler, which applies email verification codes and handles password reset flows before returning users to the app.
 - Legacy `/verify-email` links still normalize into `/account-action` so older emails continue working.
 - Verification email resend is throttled in the UI (60-second cooldown, max 5 sends per day per account on that browser).
