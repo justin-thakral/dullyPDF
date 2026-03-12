@@ -401,12 +401,20 @@ function WorkspaceRuntime({
 
   const handleSelectSavedFormFromProfile = useCallback(
     async (formId: string) => {
+      if (isMobileView) {
+        dialog.setBannerNotice({
+          tone: 'info',
+          message: 'Opening saved forms is desktop-only. Increase window width above 900px to reopen templates.',
+          autoDismissMs: 8000,
+        });
+        return;
+      }
       const opened = await handleSelectSavedForm(formId);
       if (opened) {
         auth.setShowProfile(false);
       }
     },
-    [auth, handleSelectSavedForm],
+    [auth, dialog, handleSelectSavedForm, isMobileView],
   );
 
   const headerActiveGroupTemplateId =
@@ -1063,18 +1071,20 @@ function WorkspaceRuntime({
     void auth.syncAuthSession(bootstrapAuthUser, { forceTokenRefresh: true, deferSavedForms: true });
   }, [auth, bootstrapAuthUser]);
 
+  const shouldLockWorkspaceScroll = !showHomepage && !showLogin && !showProfile && !requiresEmailVerification;
+
   useEffect(() => {
     if (typeof document === 'undefined') return undefined;
     const root = document.getElementById('root');
-    document.documentElement.classList.add('workspace-no-scroll');
-    document.body.classList.add('workspace-no-scroll');
-    root?.classList.add('workspace-no-scroll');
+    document.documentElement.classList.toggle('workspace-no-scroll', shouldLockWorkspaceScroll);
+    document.body.classList.toggle('workspace-no-scroll', shouldLockWorkspaceScroll);
+    root?.classList.toggle('workspace-no-scroll', shouldLockWorkspaceScroll);
     return () => {
       document.documentElement.classList.remove('workspace-no-scroll');
       document.body.classList.remove('workspace-no-scroll');
       root?.classList.remove('workspace-no-scroll');
     };
-  }, []);
+  }, [shouldLockWorkspaceScroll]);
 
   const handledLaunchIntentRef = useRef<WorkspaceLaunchIntent>(null);
   useEffect(() => {
@@ -1307,6 +1317,7 @@ function WorkspaceRuntime({
           creditPricing={userProfile?.creditPricing}
           isLoading={profileLoading}
           limits={profileLimits} savedForms={savedFormsList} savedFormsLoading={savedFormsLoading}
+          allowSavedFormOpen={!isMobileView}
           onSelectSavedForm={handleSelectSavedFormFromProfile} onDeleteSavedForm={handleDeleteSavedForm}
           deletingFormId={deletingFormId}
           billingCheckoutInProgressKind={billingCheckoutInProgressKind}

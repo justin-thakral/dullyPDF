@@ -451,8 +451,17 @@
   overflow-wrap: anywhere;
 }
 
+.saved-form-row__name--static {
+  display: block;
+  cursor: default;
+}
+
 .saved-form-row__name:hover:not(:disabled) {
   color: var(--blue-700);
+}
+
+.saved-form-row__name--static:hover {
+  color: var(--ink-950);
 }
 
 .saved-form-row__name:disabled {

@@ -24,6 +24,7 @@ interface ProfilePageProps {
   limits: ProfileLimits;
   savedForms: SavedFormSummary[];
   savedFormsLoading?: boolean;
+  allowSavedFormOpen?: boolean;
   onSelectSavedForm: (formId: string) => void;
   onDeleteSavedForm?: (formId: string) => void;
   deletingFormId?: string | null;
@@ -155,6 +156,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({
   limits,
   savedForms,
   savedFormsLoading = false,
+  allowSavedFormOpen = true,
   onSelectSavedForm,
   onDeleteSavedForm,
   deletingFormId,
@@ -565,6 +567,11 @@ const ProfilePage: React.FC<ProfilePageProps> = ({
                       ? 'Loading saved forms from the backend...'
                       : `${formatCountLabel(filteredForms.length)} of ${formatCountLabel(savedForms.length)} saved forms shown`}
                   </p>
+                  {!allowSavedFormOpen ? (
+                    <p className="profile-panel__supporting-copy">
+                      Opening saved forms is desktop-only. Increase window width above 900px to reopen templates.
+                    </p>
+                  ) : null}
                 </div>
                 <div className="profile-search">
                   <label className="profile-search__label" htmlFor="saved-form-search">
@@ -613,15 +620,21 @@ const ProfilePage: React.FC<ProfilePageProps> = ({
                         role="listitem"
                       >
                         <div className="saved-form-row__info">
-                          <button
-                            type="button"
-                            className="saved-form-row__name"
-                            onClick={() => onSelectSavedForm(form.id)}
-                            title={form.name}
-                            disabled={isDeleting}
-                          >
-                            {form.name}
-                          </button>
+                          {allowSavedFormOpen ? (
+                            <button
+                              type="button"
+                              className="saved-form-row__name"
+                              onClick={() => onSelectSavedForm(form.id)}
+                              title={form.name}
+                              disabled={isDeleting}
+                            >
+                              {form.name}
+                            </button>
+                          ) : (
+                            <span className="saved-form-row__name saved-form-row__name--static" title={form.name}>
+                              {form.name}
+                            </span>
+                          )}
                           <div className="saved-form-row__meta">
                             <span>{createdLabel ? `Saved ${createdLabel}` : 'Saved date unavailable'}</span>
                             {retentionStatusLabel ? (
@@ -639,14 +652,16 @@ const ProfilePage: React.FC<ProfilePageProps> = ({
                           </div>
                         </div>
                         <div className="saved-form-row__actions">
-                          <button
-                            type="button"
-                            className="profile-button profile-button--secondary"
-                            onClick={() => onSelectSavedForm(form.id)}
-                            disabled={isDeleting}
-                          >
-                            Open
-                          </button>
+                          {allowSavedFormOpen ? (
+                            <button
+                              type="button"
+                              className="profile-button profile-button--secondary"
+                              onClick={() => onSelectSavedForm(form.id)}
+                              disabled={isDeleting}
+                            >
+                              Open
+                            </button>
+                          ) : null}
                           {onDeleteSavedForm ? (
                             <button
                               type="button"

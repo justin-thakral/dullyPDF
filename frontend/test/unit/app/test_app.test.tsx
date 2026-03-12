@@ -5,6 +5,52 @@ const appState = vi.hoisted(() => ({
   authStateCallbacks: new Set<(user: any) => void | Promise<void>>(),
 }));
 
+type MatchMediaListener = (event: MediaQueryListEvent) => void;
+type MatchMediaState = {
+  matches: boolean;
+  listeners: Set<MatchMediaListener>;
+  legacyListeners: Set<MatchMediaListener>;
+};
+
+const originalMatchMedia = window.matchMedia;
+let matchMediaStates = new Map<string, MatchMediaState>();
+
+const installMatchMedia = (initial: Record<string, boolean> = {}) => {
+  matchMediaStates = new Map();
+  window.matchMedia = ((query: string) => {
+    let state = matchMediaStates.get(query);
+    if (!state) {
+      state = {
+        matches: initial[query] ?? false,
+        listeners: new Set<MatchMediaListener>(),
+        legacyListeners: new Set<MatchMediaListener>(),
+      };
+      matchMediaStates.set(query, state);
+    }
+
+    return {
+      get matches() {
+        return state!.matches;
+      },
+      media: query,
+      onchange: null,
+      addEventListener: (_eventName: string, listener: MatchMediaListener) => {
+        state!.listeners.add(listener);
+      },
+      removeEventListener: (_eventName: string, listener: MatchMediaListener) => {
+        state!.listeners.delete(listener);
+      },
+      addListener: (listener: MatchMediaListener) => {
+        state!.legacyListeners.add(listener);
+      },
+      removeListener: (listener: MatchMediaListener) => {
+        state!.legacyListeners.delete(listener);
+      },
+      dispatchEvent: () => true,
+    } as MediaQueryList;
+  }) as typeof window.matchMedia;
+};
+
 const authMocks = vi.hoisted(() => ({
   onAuthStateChanged: vi.fn((callback: (user: any) => void | Promise<void>) => {
     appState.authStateCallbacks.add(callback);
@@ -160,6 +206,7 @@ vi.mock('../../../src/components/pages/ProfilePage', () => ({
     <div data-testid="profile-page">
       <div data-testid="billing-kind">{props.billingCheckoutInProgressKind ?? 'idle'}</div>
       <div data-testid="billing-cancel">{String(Boolean(props.billingCancelInProgress))}</div>
+      <div data-testid="profile-allow-open">{String(props.allowSavedFormOpen !== false)}</div>
       <button
         data-testid="profile-start-monthly"
         type="button"
@@ -445,6 +492,9 @@ const settleAuthAsSignedIn = async () => {
 
 describe('App', () => {
   beforeEach(() => {
+    installMatchMedia({
+      '(max-width: 900px)': false,
+    });
     window.history.replaceState({}, '', '/');
     window.scrollTo = vi.fn();
     window.sessionStorage.clear();
@@ -489,6 +539,7 @@ describe('App', () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.clearAllMocks();
+    window.matchMedia = originalMatchMedia;
   });
 
   it('shows auth loading state until auth callback settles', async () => {
@@ -525,6 +576,29 @@ describe('App', () => {
     fireEvent.click(screen.getByTestId('start-workflow'));
     expect(await screen.findByTestId('login-page', {}, { timeout: 10_000 })).toBeTruthy();
     expect(screen.queryByTestId('upload-detect')).toBeNull();
+  }, 15_000);
+
+  it('releases workspace scroll lock when mobile users back out of the runtime login shell', async () => {
+    installMatchMedia({
+      '(max-width: 900px)': true,
+    });
+
+    const App = await importApp();
+    render(<App />);
+
+    await settleAuthAsSignedOut();
+    fireEvent.click(await screen.findByTestId('start-workflow'));
+    expect(await screen.findByTestId('login-page', {}, { timeout: 10_000 })).toBeTruthy();
+
+    await waitFor(() => {
+      expect(document.documentElement.classList.contains('workspace-no-scroll')).toBe(false);
+      expect(document.body.classList.contains('workspace-no-scroll')).toBe(false);
+    });
+
+    fireEvent.click(screen.getByTestId('login-cancel'));
+    expect(await screen.findByTestId('homepage')).toBeTruthy();
+    expect(document.documentElement.classList.contains('workspace-no-scroll')).toBe(false);
+    expect(document.body.classList.contains('workspace-no-scroll')).toBe(false);
   }, 15_000);
 
   it('transitions from homepage to upload view via start workflow for signed-in users', async () => {
@@ -578,6 +652,39 @@ describe('App', () => {
 
     expect(document.documentElement.classList.contains('workspace-no-scroll')).toBe(false);
     expect(document.body.classList.contains('workspace-no-scroll')).toBe(false);
+  }, 15_000);
+
+  it('keeps mobile profile saved-form reopening disabled and returns home without scroll lock', async () => {
+    installMatchMedia({
+      '(max-width: 900px)': true,
+    });
+
+    const App = await importApp();
+    render(<App />);
+
+    await settleAuthAsSignedIn();
+    fireEvent.click(await screen.findByTestId('open-profile'));
+
+    expect(await screen.findByTestId('profile-page', {}, { timeout: 10_000 })).toBeTruthy();
+    expect(screen.getByTestId('profile-allow-open').textContent).toBe('false');
+    expect(document.documentElement.classList.contains('workspace-no-scroll')).toBe(false);
+    expect(document.body.classList.contains('workspace-no-scroll')).toBe(false);
+
+    fireEvent.click(screen.getByTestId('profile-close'));
+    expect(await screen.findByTestId('homepage')).toBeTruthy();
+    expect(document.documentElement.classList.contains('workspace-no-scroll')).toBe(false);
+    expect(document.body.classList.contains('workspace-no-scroll')).toBe(false);
+  }, 15_000);
+
+  it('keeps desktop profile saved-form reopening enabled', async () => {
+    const App = await importApp();
+    render(<App />);
+
+    await settleAuthAsSignedIn();
+    fireEvent.click(await screen.findByTestId('open-profile'));
+
+    expect(await screen.findByTestId('profile-page', {}, { timeout: 10_000 })).toBeTruthy();
+    expect(screen.getByTestId('profile-allow-open').textContent).toBe('true');
   }, 15_000);
 
   it('does not register duplicate auth listeners after signed-in state updates', async () => {
