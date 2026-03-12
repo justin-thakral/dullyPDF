@@ -109,7 +109,7 @@ describe('ProfilePage', () => {
       />,
     );
 
-    expect(screen.getByText('Basic tier')).toBeTruthy();
+    expect(screen.getAllByText('Basic tier').length).toBeGreaterThan(0);
     expect(screen.getByText('8')).toBeTruthy();
     expect(screen.getByText(String(limits.detectMaxPages))).toBeTruthy();
     expect(screen.getByText(String(limits.fillableMaxPages))).toBeTruthy();
@@ -139,9 +139,9 @@ describe('ProfilePage', () => {
       />,
     );
 
-    expect(screen.getByText('God tier')).toBeTruthy();
+    expect(screen.getAllByText('God tier').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Unlimited').length).toBeGreaterThan(0);
-    expect(screen.queryByText('Billing')).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Stripe billing controls' })).toBeNull();
   });
 
   it('filters saved forms by search query and shows empty state', async () => {
@@ -196,7 +196,7 @@ describe('ProfilePage', () => {
       />,
     );
 
-    expect(screen.getByText('Loading saved forms while the backend starts…')).toBeTruthy();
+    expect(screen.getByText('Loading saved forms while the backend responds...')).toBeTruthy();
     expect(screen.queryByText('No saved forms match your search.')).toBeNull();
   });
 
@@ -246,6 +246,35 @@ describe('ProfilePage', () => {
     expect(onDeleteSavedForm).toHaveBeenCalledTimes(1);
   });
 
+  it('removes saved-form open affordances on mobile while keeping management actions', () => {
+    render(
+      <ProfilePage
+        email="mobile@example.com"
+        role="basic"
+        creditsRemaining={2}
+        monthlyCreditsRemaining={0}
+        refillCreditsRemaining={0}
+        availableCredits={2}
+        billingEnabled={billingConfig.enabled}
+        billingPlans={billingConfig.plans}
+        limits={limits}
+        savedForms={savedForms}
+        allowSavedFormOpen={false}
+        onSelectSavedForm={vi.fn()}
+        onDeleteSavedForm={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByText('Opening saved forms is desktop-only. Increase window width above 900px to reopen templates.'),
+    ).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Intake Form Alpha' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Open' })).toBeNull();
+    expect(screen.getByText('Intake Form Alpha')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Delete saved form Intake Form Alpha' })).toBeTruthy();
+  });
+
   it('wires header navigation callbacks for close and sign out', async () => {
     const user = userEvent.setup();
     const onClose = vi.fn();
@@ -270,7 +299,7 @@ describe('ProfilePage', () => {
       />,
     );
 
-    await user.click(screen.getByRole('button', { name: '← Back to workspace' }));
+    await user.click(screen.getByRole('button', { name: 'Return to workspace' }));
     await user.click(screen.getByRole('button', { name: 'Sign out' }));
 
     expect(onClose).toHaveBeenCalledTimes(1);
@@ -307,7 +336,7 @@ describe('ProfilePage', () => {
     expect(screen.getByRole('button', { name: /Refill 500 Credits/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Cancel Pro Subscription' })).toBeTruthy();
     expect(
-      screen.getByText('Active Pro subscription detected. Cancel your current subscription before starting a new Pro checkout.'),
+      screen.getByText('Active Pro subscription detected. Cancel the current subscription before starting a new Pro checkout.'),
     ).toBeTruthy();
 
     rerender(
@@ -355,7 +384,7 @@ describe('ProfilePage', () => {
       />,
     );
 
-    expect(screen.getByText('You have refill credits stored. Upgrade back to Pro to use them.')).toBeTruthy();
+    expect(screen.getByText('You have stored refill credits. Upgrade back to Pro to use them.')).toBeTruthy();
   });
 
   it('hides billing actions when billing is disabled', () => {
@@ -375,7 +404,7 @@ describe('ProfilePage', () => {
       />,
     );
 
-    expect(screen.getByText('Stripe billing is currently unavailable.')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Stripe billing unavailable' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: /Upgrade to Pro Monthly/ })).toBeNull();
   });
 
@@ -399,7 +428,7 @@ describe('ProfilePage', () => {
 
     expect(screen.getByText('Profile refresh failed: Request timed out.')).toBeTruthy();
     expect(
-      screen.getByText('Billing status is temporarily unavailable because profile data could not be refreshed.'),
+      screen.getByText('Billing details are temporarily unavailable because the profile payload could not refresh.'),
     ).toBeTruthy();
   });
 
@@ -426,7 +455,7 @@ describe('ProfilePage', () => {
       />,
     );
 
-    expect(screen.getByText('Downgrade retention')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Downgrade retention queue' })).toBeTruthy();
     expect(screen.getByText(/queued for deletion on/)).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Review retention queue' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Follow Up Delta' })).toBeTruthy();
@@ -488,7 +517,7 @@ describe('ProfilePage', () => {
       />,
     );
 
-    expect(screen.getByRole('button', { name: 'Starting checkout…' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Canceling…' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Starting checkout...' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Canceling...' })).toBeTruthy();
   });
 });

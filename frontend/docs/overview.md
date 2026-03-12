@@ -85,6 +85,7 @@ The frontend is a React + TypeScript app for loading PDFs, editing fields, organ
 - Legacy `/verify-email` links still normalize into `/account-action` so older emails continue working.
 - Verification email resend is throttled in the UI (60-second cooldown, max 5 sends per day per account on that browser).
 - Profile view shows limits, credits, Stripe billing/subscription status, saved forms, and Fill By Link pricing/limit messaging.
+- On mobile, profile browsing remains available, but reopening saved forms is desktop-only so the editor never loads below the 900px mobile breakpoint.
 - When a Pro account downgrades to free and exceeds the free saved-form cap, the profile payload includes a downgrade-retention summary. The UI opens a warning dialog on each site visit, lets the owner swap which saved forms remain, and keeps the queued set for 30 days before purge unless Pro is reactivated or the owner chooses delete-now.
 
 ## Demo and fixtures
