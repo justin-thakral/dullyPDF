@@ -422,7 +422,7 @@ function WorkspaceRuntime({
 
   const activeTemplateName = savedForms.activeSavedFormName || sourceFileName || null;
   const {
-    canManageFillLink,
+    canTriggerFillLink,
     handleOpenFillLinkManager,
     clearAllFillLinks,
     dialogProps: fillLinkManagerDialogProps,
@@ -1408,7 +1408,7 @@ function WorkspaceRuntime({
         canSave={canSaveToProfile}
         userEmail={userEmail}
         onOpenFillLink={verifiedUser ? handleOpenFillLinkManager : undefined}
-        canFillLink={canManageFillLink}
+        canFillLink={canTriggerFillLink}
         onOpenProfile={verifiedUser ? auth.handleOpenProfile : undefined}
         onSignIn={!verifiedUser ? () => auth.setShowLogin(true) : undefined}
         onSignOut={verifiedUser ? handleSignOut : undefined}

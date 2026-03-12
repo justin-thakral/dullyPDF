@@ -53,9 +53,8 @@ describe('HeaderBar', () => {
 
     render(<HeaderBar {...props} />);
 
-    expect(screen.getByText('2 / 8')).toBeTruthy();
-    expect(screen.getByText('150%')).toBeTruthy();
-    expect((screen.getByRole('slider', { name: 'Zoom' }) as HTMLInputElement).value).toBe('1.5');
+    expect(screen.getByText('Page 2/8')).toBeTruthy();
+    expect((screen.getByRole('spinbutton', { name: 'Zoom percentage' }) as HTMLInputElement).value).toBe('150');
 
     await user.click(screen.getByRole('button', { name: 'Return to homepage' }));
     await user.click(screen.getByRole('button', { name: /owner@example\.com/i }));
@@ -150,6 +149,27 @@ describe('HeaderBar', () => {
     expect(screen.getByText('Requires CSV/Excel/JSON/respondent rows')).toBeTruthy();
   });
 
+  it('keeps Fill By Link clickable when the workspace needs to surface a banner guard', async () => {
+    const user = userEvent.setup();
+    const onOpenFillLink = vi.fn();
+
+    render(
+      <HeaderBar
+        {...createProps({
+          onOpenFillLink,
+          canFillLink: true,
+        })}
+      />,
+    );
+
+    const fillLinkButton = screen.getByRole('button', { name: 'Fill By Link' }) as HTMLButtonElement;
+    expect(fillLinkButton.disabled).toBe(false);
+
+    await user.click(fillLinkButton);
+
+    expect(onOpenFillLink).toHaveBeenCalledTimes(1);
+  });
+
   it('switches into group mode with a selector and batch rename + map action', async () => {
     const user = userEvent.setup();
     const onSelectGroupTemplate = vi.fn();
@@ -172,13 +192,14 @@ describe('HeaderBar', () => {
       />,
     );
 
-    expect(screen.getByRole('combobox')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Open template in Admissions' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Rename + Map 1/2' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Rename' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Map Schema' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Rename + Map' })).toBeNull();
 
-    await user.selectOptions(screen.getByRole('combobox'), 'tpl-b');
+    await user.click(screen.getByRole('button', { name: 'Open template in Admissions' }));
+    await user.click(screen.getByRole('option', { name: 'Bravo Intake' }));
     await user.click(screen.getByRole('button', { name: 'Rename + Map 1/2' }));
 
     expect(onSelectGroupTemplate).toHaveBeenCalledWith('tpl-b');
@@ -204,7 +225,7 @@ describe('HeaderBar', () => {
       />,
     );
 
-    expect(screen.queryByRole('combobox')).toBeNull();
+    expect(screen.queryByRole('listbox', { name: 'Templates in Admissions' })).toBeNull();
     expect(screen.getByText('Alpha Packet')).toBeTruthy();
   });
 
@@ -227,11 +248,13 @@ describe('HeaderBar', () => {
       />,
     );
 
-    expect(screen.queryByRole('combobox')).toBeNull();
+    expect(screen.queryByRole('listbox', { name: 'Templates in Admissions' })).toBeNull();
     expect(screen.getByText('Bravo Intake (Preparing...)')).toBeTruthy();
   });
 
-  it('keeps the active loading group template label selectable while the switch is in progress', () => {
+  it('keeps the active loading group template label selectable while the switch is in progress', async () => {
+    const user = userEvent.setup();
+
     render(
       <HeaderBar
         {...createProps({
@@ -249,9 +272,10 @@ describe('HeaderBar', () => {
       />,
     );
 
-    const selector = screen.getByRole('combobox') as HTMLSelectElement;
-    const activeOption = within(selector).getByRole('option', { name: 'Bravo Intake (Preparing...)' }) as HTMLOptionElement;
-    expect(selector.value).toBe('tpl-b');
+    await user.click(screen.getByRole('button', { name: 'Open template in Admissions' }));
+
+    const selector = screen.getByRole('listbox', { name: 'Templates in Admissions' });
+    const activeOption = within(selector).getByRole('option', { name: 'Bravo Intake (Preparing...)' }) as HTMLButtonElement;
     expect(activeOption.disabled).toBe(false);
   });
 

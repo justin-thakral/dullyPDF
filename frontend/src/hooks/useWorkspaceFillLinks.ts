@@ -104,7 +104,10 @@ export function useWorkspaceFillLinks(deps: UseWorkspaceFillLinksDeps) {
 
   const hasActiveTemplateScope = Boolean(activeTemplateId && fields.length > 0);
   const hasActiveGroupScope = Boolean(activeGroupId && activeGroupTemplates.length > 0);
-  const canManageFillLink = Boolean(verifiedUser && (hasActiveTemplateScope || hasActiveGroupScope));
+  const hasUnsavedTemplateDraft = Boolean(!activeTemplateId && !activeGroupId && fields.length > 0);
+  const canTriggerFillLink = Boolean(
+    verifiedUser && (hasActiveTemplateScope || hasActiveGroupScope || hasUnsavedTemplateDraft),
+  );
 
   const templateFillLinks = useFillLinks({
     verifiedUser,
@@ -283,12 +286,27 @@ export function useWorkspaceFillLinks(deps: UseWorkspaceFillLinksDeps) {
       setBannerNotice({ tone: 'error', message: 'Sign in to use Fill By Link.' });
       return;
     }
+    if (hasUnsavedTemplateDraft) {
+      setBannerNotice({
+        tone: 'error',
+        message: 'Save form first to share link.',
+        autoDismissMs: 7000,
+      });
+      return;
+    }
     if (!hasActiveTemplateScope && !hasActiveGroupScope) {
       setBannerNotice({ tone: 'error', message: 'Load a saved form or open a group before publishing Fill By Link.' });
       return;
     }
     setManagerOpen(true);
-  }, [hasActiveGroupScope, hasActiveTemplateScope, setBannerNotice, setManagerOpen, verifiedUser]);
+  }, [
+    hasActiveGroupScope,
+    hasActiveTemplateScope,
+    hasUnsavedTemplateDraft,
+    setBannerNotice,
+    setManagerOpen,
+    verifiedUser,
+  ]);
 
   const handlePublishTemplate = useCallback(async (options?: {
     requireAllFields?: boolean;
@@ -660,7 +678,7 @@ export function useWorkspaceFillLinks(deps: UseWorkspaceFillLinksDeps) {
   ]);
 
   return {
-    canManageFillLink,
+    canTriggerFillLink,
     handleOpenFillLinkManager,
     clearAllFillLinks,
     dialogProps,

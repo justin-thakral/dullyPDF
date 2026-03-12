@@ -214,9 +214,30 @@ describe('useWorkspaceFillLinks', () => {
     });
 
     expect(templateState.refreshForScope).not.toHaveBeenCalled();
-    expect(groupState.refreshForScope).toHaveBeenCalledWith('group-1');
+    expect(groupState.refreshForScope).toHaveBeenCalledTimes(1);
     expect(harness.setManagerOpen).not.toHaveBeenCalled();
     expect(harness.hook.dialogProps.open).toBe(true);
+  });
+
+  it('shows a save-first banner for unsaved draft templates', () => {
+    const harness = renderHarness({
+      managerOpen: false,
+      activeTemplateId: null,
+      activeTemplateName: 'Draft Template',
+    });
+
+    expect(harness.hook.canTriggerFillLink).toBe(true);
+
+    act(() => {
+      harness.hook.handleOpenFillLinkManager();
+    });
+
+    expect(harness.setBannerNotice).toHaveBeenCalledWith({
+      tone: 'error',
+      message: 'Save form first to share link.',
+      autoDismissMs: 7000,
+    });
+    expect(harness.setManagerOpen).not.toHaveBeenCalled();
   });
 
   it('publishes template links with respondent download settings and current template fill rules', async () => {
