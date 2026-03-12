@@ -42,3 +42,8 @@ CSS imports. Keep `display=swap` so text paints immediately.
 - Alert colors come from `--alert-*` tokens in `frontend/src/index.css`.
 - Dialogs reuse shared button tokens/styles for visual consistency.
 - The shared `DialogFrame` shell portals every modal/backdrop pair to `document.body`, applies the blur/opaque backdrop from `Dialog.css`, and toggles body scroll lock while any dialog is open. Feature dialogs should attach their root styles to `.ui-dialog...` selectors so they inherit the shared layering behavior instead of creating local stacking contexts.
+
+## Full-screen workspace views
+
+- `WorkspaceRuntime` applies `workspace-no-scroll` to `html`, `body`, and `#root` so the editor shell never relies on document scrolling.
+- Any full-screen workspace surface rendered in that runtime, such as the profile screen, must therefore own its own scroll region with an internal `overflow-y: auto` container. If a view only grows with normal document flow, shorter viewports will clip the bottom of the page.

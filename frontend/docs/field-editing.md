@@ -41,6 +41,7 @@ Field editing is centered around three coordinated areas: overlay (PDF), field l
 ## Inspector editing
 
 - Rename fields and change type/page assignment.
+- The inspector header shows the selected field name and calls out that `Enter` confirms edits.
 - Delete the selected field.
 - The `Create field` section includes an `Arrow keys` movement toggle with a configurable point step for keyboard nudging.
 - Undo/redo field edits with keyboard shortcuts (history depth: 10 snapshots).

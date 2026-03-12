@@ -22,10 +22,11 @@ def test_firebase_hosting_config_applies_security_headers_globally() -> None:
     assert header_values["Content-Security-Policy"] == (
         "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; object-src 'none'; "
         "form-action 'self'; script-src 'self' https://www.googletagmanager.com "
-        "https://www.google.com https://www.gstatic.com; style-src 'self' 'unsafe-inline' "
-        "https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; "
-        "img-src 'self' data: blob: https:; connect-src 'self' https: wss:; "
-        "frame-src https://www.google.com https://recaptcha.google.com; "
+        "https://www.google.com https://www.gstatic.com https://apis.google.com; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' "
+        "data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; "
+        "connect-src 'self' https: wss:; frame-src 'self' https://www.google.com "
+        "https://recaptcha.google.com https://dullypdf.firebaseapp.com; "
         "worker-src 'self' blob:; media-src 'self' data: blob: https:"
     )
     assert header_values["X-Frame-Options"] == "DENY"

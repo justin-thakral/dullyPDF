@@ -55,6 +55,9 @@ def test_deploy_backend_requires_adc_only_firebase_auth_in_prod() -> None:
     text = _script_text()
     assert 'require_exact FIREBASE_USE_ADC "true"' in text
     assert "require_nonempty BACKEND_RUNTIME_SERVICE_ACCOUNT" in text
+    assert 'service_account_has_project_iam_permission "$runtime_sa" "firebaseauth.users.get"' in text
+    assert "roles/firebaseauth.viewer" in text
+    assert "require_firebase_auth_runtime_access" in text
     assert "require_empty FIREBASE_CREDENTIALS" in text
     assert "require_empty FIREBASE_CREDENTIALS_SECRET" in text
     assert "require_empty GOOGLE_APPLICATION_CREDENTIALS" in text
@@ -92,6 +95,7 @@ def test_backend_prod_env_example_documents_adc_only_and_fill_link_placeholder_r
     text = _prod_env_example_text()
     assert "at least 32 characters" in text
     assert "must use ADC" in text
+    assert "roles/firebaseauth.viewer" in text
     assert "BACKEND_RUNTIME_SERVICE_ACCOUNT=dullypdf-backend-runtime@dullypdf.iam.gserviceaccount.com" in text
     assert "BACKEND_MIN_INSTANCES=1" in text
     assert 'Keep one backend instance warm in prod' in text

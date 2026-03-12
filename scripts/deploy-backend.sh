@@ -110,6 +110,65 @@ require_integer_ge() {
   fi
 }
 
+service_account_has_project_iam_permission() {
+  local service_account="$1"
+  local permission="$2"
+  local policy_json
+
+  policy_json="$(
+    gcloud projects get-iam-policy "$PROJECT_ID" --format=json 2>/dev/null
+  )" || return 1
+
+  python3 - "$service_account" "$permission" "$policy_json" <<'PY'
+import json
+import subprocess
+import sys
+
+service_account = sys.argv[1]
+permission = sys.argv[2]
+policy = json.loads(sys.argv[3])
+member = f"serviceAccount:{service_account}"
+
+for binding in policy.get("bindings", []):
+    members = binding.get("members") or []
+    if member not in members:
+        continue
+    role = (binding.get("role") or "").strip()
+    if not role:
+        continue
+    if role == "roles/owner":
+        print("true")
+        raise SystemExit(0)
+    cmd = ["gcloud", "iam", "roles", "describe", role, "--format=json"]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        continue
+    try:
+        role_payload = json.loads(result.stdout or "{}")
+    except json.JSONDecodeError:
+        continue
+    permissions = set(role_payload.get("includedPermissions") or [])
+    if permission in permissions:
+        print("true")
+        raise SystemExit(0)
+
+raise SystemExit(1)
+PY
+}
+
+require_firebase_auth_runtime_access() {
+  local runtime_sa="${BACKEND_RUNTIME_SERVICE_ACCOUNT:-}"
+  if [[ -z "$runtime_sa" ]]; then
+    echo "Missing required BACKEND_RUNTIME_SERVICE_ACCOUNT in $ENV_FILE." >&2
+    exit 1
+  fi
+  if ! service_account_has_project_iam_permission "$runtime_sa" "firebaseauth.users.get"; then
+    echo "BACKEND_RUNTIME_SERVICE_ACCOUNT must include Firebase Authentication read access" >&2
+    echo "(for example roles/firebaseauth.viewer) when FIREBASE_CHECK_REVOKED=true." >&2
+    exit 1
+  fi
+}
+
 require_fill_link_secret_quality() {
   local name="$1"
   local actual="${!name:-}"
@@ -194,6 +253,7 @@ require_value_or_secret STRIPE_WEBHOOK_SECRET STRIPE_WEBHOOK_SECRET_SECRET
 
 require_nonempty DETECTOR_SERVICE_URL_LIGHT_ACTIVE
 require_nonempty DETECTOR_SERVICE_URL_HEAVY_ACTIVE
+require_firebase_auth_runtime_access
 
 if [[ -n "${STRIPE_SECRET_KEY:-}" || -n "${STRIPE_WEBHOOK_SECRET:-}" ]]; then
   echo "Use STRIPE_SECRET_KEY_SECRET and STRIPE_WEBHOOK_SECRET_SECRET for prod; literal STRIPE_* values are not allowed." >&2

@@ -72,6 +72,8 @@ describe('FieldInspectorPanel', () => {
       />,
     );
 
+    expect(screen.getByText('Editing Full Name (enter to confirm)')).toBeTruthy();
+
     const nameInput = screen.getByLabelText('Name');
     await user.click(nameInput);
     expect(onBeginFieldChange).toHaveBeenCalledTimes(1);

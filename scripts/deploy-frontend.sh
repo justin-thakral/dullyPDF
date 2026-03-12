@@ -67,6 +67,15 @@ require_file() {
   fi
 }
 
+require_file_contains() {
+  local path="$1"
+  local needle="$2"
+  if ! grep -Fq "$needle" "$path"; then
+    echo "Expected $path to contain: $needle" >&2
+    exit 1
+  fi
+}
+
 check_remote_content_type() {
   local url="$1"
   local expected_prefix="$2"
@@ -90,8 +99,18 @@ if [[ "${VITE_API_URL}" == *"localhost"* || "${VITE_API_URL}" == *"127.0.0.1"* ]
   exit 1
 fi
 
+if [[ "${VITE_API_URL}" == *".run.app"* ]]; then
+  echo "VITE_API_URL must point to the public app origin, not a direct Cloud Run URL." >&2
+  exit 1
+fi
+
 if [[ "${VITE_DETECTION_API_URL}" == *"localhost"* || "${VITE_DETECTION_API_URL}" == *"127.0.0.1"* ]]; then
   echo "VITE_DETECTION_API_URL must point to prod backend, not localhost." >&2
+  exit 1
+fi
+
+if [[ "${VITE_DETECTION_API_URL}" == *".run.app"* ]]; then
+  echo "VITE_DETECTION_API_URL must point to the public app origin, not a direct Cloud Run URL." >&2
   exit 1
 fi
 
@@ -99,12 +118,16 @@ if [[ "$VITE_FIREBASE_PROJECT_ID" != "$PROJECT_ID" ]]; then
   echo "VITE_FIREBASE_PROJECT_ID must match $PROJECT_ID for prod deploys." >&2
   exit 1
 fi
+require_exact VITE_FIREBASE_AUTH_DOMAIN "${PROJECT_ID}.firebaseapp.com"
 
 require_empty VITE_ADMIN_TOKEN
 
 if [[ "${VITE_CONTACT_REQUIRE_RECAPTCHA:-true}" == "true" || "${VITE_SIGNUP_REQUIRE_RECAPTCHA:-true}" == "true" ]]; then
   require_nonempty VITE_RECAPTCHA_SITE_KEY
 fi
+
+require_file_contains "firebase.json" "https://apis.google.com"
+require_file_contains "firebase.json" "https://${PROJECT_ID}.firebaseapp.com"
 
 if command -v convert >/dev/null 2>&1; then
   bash scripts/convert-webp-assets.sh

@@ -204,7 +204,7 @@ export function FieldInspectorPanel({
         <div>
           <h2>Inspector</h2>
           <p className="panel__hint">
-            {selected ? `Editing ${selected.name}.` : 'Select a field to edit its details.'}
+            {selected ? `Editing ${selected.name} (enter to confirm)` : 'Select a field to edit its details.'}
           </p>
         </div>
       </div>

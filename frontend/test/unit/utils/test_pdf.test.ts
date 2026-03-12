@@ -62,8 +62,18 @@ function createMockDoc({
 }
 
 describe('pdf utils', () => {
+  const originalPlatform = navigator.platform;
+
+  function mockNavigatorPlatform(platform: string) {
+    Object.defineProperty(window.navigator, 'platform', {
+      configurable: true,
+      value: platform,
+    });
+  }
+
   beforeEach(() => {
     getDocumentMock.mockReset();
+    mockNavigatorPlatform(originalPlatform);
   });
 
   it('sets the PDF.js worker source during module initialization', () => {
@@ -92,6 +102,23 @@ describe('pdf utils', () => {
     expect(options.enableXfa).toBe(true);
     expect(options.useSystemFonts).toBe(true);
     expect(Array.from(new Uint8Array(options.data))).toEqual([1, 2, 3]);
+  });
+
+  it('prefers embedded fonts over system fallback for display loads on Windows', async () => {
+    mockNavigatorPlatform('Win32');
+    const mockDoc = { numPages: 1 };
+    getDocumentMock.mockReturnValue({ promise: Promise.resolve(mockDoc) });
+    const file = {
+      name: 'office-export.pdf',
+      arrayBuffer: vi.fn(async () => Uint8Array.from([4, 5, 6]).buffer),
+    } as unknown as File;
+
+    await loadPdfFromFile(file);
+
+    const options = getDocumentMock.mock.calls[0][0] as {
+      useSystemFonts: boolean;
+    };
+    expect(options.useSystemFonts).toBe(false);
   });
 
   it('loads page counts with lighter PDF.js options and destroys the document after counting', async () => {

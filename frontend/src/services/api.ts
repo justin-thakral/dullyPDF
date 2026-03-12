@@ -5,7 +5,13 @@ import type {
   PdfField,
   SavedFormEditorSnapshot,
 } from '../types';
-import { ApiError, apiFetch, apiJsonFetch, buildApiUrl } from './apiConfig';
+import {
+  ApiError,
+  apiFetch,
+  apiJsonFetch,
+  buildApiUrl,
+  ensureBackendReady as ensureBackendConnectionReady,
+} from './apiConfig';
 import { FillLinksApiService } from './fillLinksApi';
 
 // Re-export all fill-link types so existing callers that import from
@@ -27,6 +33,7 @@ const OPENAI_REQUEST_ID_CACHE = new Map<string, string>();
 
 type AbortableRequestOptions = {
   signal?: AbortSignal;
+  healthUrl?: string;
 };
 
 class OpenAiJobTerminalError extends Error {}
@@ -272,6 +279,13 @@ export type RecaptchaAssessmentPayload = {
 };
 
 export class ApiService {
+  static async ensureBackendReady(options?: AbortableRequestOptions): Promise<void> {
+    await ensureBackendConnectionReady({
+      signal: options?.signal,
+      healthUrl: options?.healthUrl,
+    });
+  }
+
   private static async pollOpenAiJob(
     resource: 'renames' | 'schema-mappings',
     jobId: string,
