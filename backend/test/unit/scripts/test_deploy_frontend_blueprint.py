@@ -21,3 +21,9 @@ def test_deploy_frontend_requires_oauth_csp_sources_before_hosting_deploy() -> N
     text = _script_text()
     assert 'require_file_contains "firebase.json" "https://apis.google.com"' in text
     assert 'require_file_contains "firebase.json" "https://${PROJECT_ID}.firebaseapp.com"' in text
+
+
+def test_deploy_frontend_requires_google_ads_csp_source_when_ads_are_enabled() -> None:
+    text = _script_text()
+    assert 'if [[ -n "${VITE_GOOGLE_ADS_TAG_ID:-}" ]]; then' in text
+    assert 'require_file_contains "firebase.json" "https://googleads.g.doubleclick.net"' in text

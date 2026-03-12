@@ -64,6 +64,9 @@ env target so the bundle cannot accidentally reuse a stale local `.env.local`.
 For prod builds, keep `VITE_FIREBASE_AUTH_DOMAIN` on `dullypdf.firebaseapp.com`
 unless you have also updated every OAuth provider callback to allow the custom
 domain `__/auth/handler` endpoint and widened the hosting CSP accordingly.
+When `VITE_GOOGLE_ADS_TAG_ID` is enabled for prod, the hosting CSP also needs
+`https://googleads.g.doubleclick.net` in `script-src` so Google Ads conversion
+follow-up requests do not get blocked after `gtag.js` loads.
 
 ## API routing in local dev
 

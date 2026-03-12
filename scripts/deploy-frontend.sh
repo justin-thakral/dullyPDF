@@ -128,6 +128,9 @@ fi
 
 require_file_contains "firebase.json" "https://apis.google.com"
 require_file_contains "firebase.json" "https://${PROJECT_ID}.firebaseapp.com"
+if [[ -n "${VITE_GOOGLE_ADS_TAG_ID:-}" ]]; then
+  require_file_contains "firebase.json" "https://googleads.g.doubleclick.net"
+fi
 
 if command -v convert >/dev/null 2>&1; then
   bash scripts/convert-webp-assets.sh
