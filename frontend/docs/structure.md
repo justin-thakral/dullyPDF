@@ -45,7 +45,7 @@ frontend/
 - `frontend/src/components/pages/IntentHubPage.tsx`: Hub directory pages for `/workflows` and `/industries` that aggregate intent routes.
 - `frontend/src/components/pages/IntentPageShell.tsx`: Shared shell for intent marketing pages (global header nav, breadcrumb + hero/CTA block, and footer).
 - `frontend/src/config/appConstants.tsx`: Shared app-level constants (history limits, demo assets/steps, processing copy).
-- `frontend/src/utils/pdf.ts`: PDF.js loading, page size extraction, and AcroForm field extraction. Windows display loads prefer embedded fonts over system-font fallback to reduce Office-export render drift.
+- `frontend/src/utils/pdf.ts`: PDF.js loading, page size extraction, and AcroForm field extraction. On Windows, Excel/Microsoft 365 exports are reopened with embedded-font preference to reduce Office-export render drift.
 - `frontend/src/styles/*.css` + `frontend/src/components/**/*.css`: Shared shell styles and component-scoped styles.
 - `scripts/seo-route-data.mjs`: Build-time mirror of public SEO routes used by the static HTML and sitemap generators. Keep it aligned with `routeSeo.ts`.
 

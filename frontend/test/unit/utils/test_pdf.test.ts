@@ -104,21 +104,63 @@ describe('pdf utils', () => {
     expect(Array.from(new Uint8Array(options.data))).toEqual([1, 2, 3]);
   });
 
-  it('prefers embedded fonts over system fallback for display loads on Windows', async () => {
+  it('keeps system font fallback enabled on Windows for non-Office PDFs', async () => {
     mockNavigatorPlatform('Win32');
-    const mockDoc = { numPages: 1 };
+    const mockDoc = {
+      numPages: 1,
+      getMetadata: vi.fn(async () => ({
+        info: {
+          Creator: 'Adobe Acrobat',
+          Producer: 'Adobe PDF Library',
+        },
+      })),
+    };
     getDocumentMock.mockReturnValue({ promise: Promise.resolve(mockDoc) });
+    const file = {
+      name: 'standard.pdf',
+      arrayBuffer: vi.fn(async () => Uint8Array.from([4, 5, 6]).buffer),
+    } as unknown as File;
+
+    const doc = await loadPdfFromFile(file);
+
+    expect(doc).toBe(mockDoc);
+    expect(getDocumentMock).toHaveBeenCalledTimes(1);
+
+    const options = getDocumentMock.mock.calls[0][0] as {
+      useSystemFonts: boolean;
+    };
+    expect(options.useSystemFonts).toBe(true);
+  });
+
+  it('reloads Windows Office exports with embedded-font preference after metadata inspection', async () => {
+    mockNavigatorPlatform('Win32');
+    const destroyMock = vi.fn().mockResolvedValue(undefined);
+    const initialDoc = {
+      numPages: 1,
+      destroy: destroyMock,
+      getMetadata: vi.fn(async () => ({
+        info: {
+          Creator: 'Microsoft Excel for Microsoft 365',
+          Producer: 'Microsoft Excel for Microsoft 365',
+        },
+      })),
+    };
+    const reloadedDoc = { numPages: 1 };
+    getDocumentMock
+      .mockReturnValueOnce({ promise: Promise.resolve(initialDoc) })
+      .mockReturnValueOnce({ promise: Promise.resolve(reloadedDoc) });
     const file = {
       name: 'office-export.pdf',
       arrayBuffer: vi.fn(async () => Uint8Array.from([4, 5, 6]).buffer),
     } as unknown as File;
 
-    await loadPdfFromFile(file);
+    const doc = await loadPdfFromFile(file);
 
-    const options = getDocumentMock.mock.calls[0][0] as {
-      useSystemFonts: boolean;
-    };
-    expect(options.useSystemFonts).toBe(false);
+    expect(doc).toBe(reloadedDoc);
+    expect(getDocumentMock).toHaveBeenCalledTimes(2);
+    expect((getDocumentMock.mock.calls[0][0] as { useSystemFonts: boolean }).useSystemFonts).toBe(true);
+    expect((getDocumentMock.mock.calls[1][0] as { useSystemFonts: boolean }).useSystemFonts).toBe(false);
+    expect(destroyMock).toHaveBeenCalledTimes(1);
   });
 
   it('loads page counts with lighter PDF.js options and destroys the document after counting', async () => {
