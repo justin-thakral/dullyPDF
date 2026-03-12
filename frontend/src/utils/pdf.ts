@@ -17,20 +17,40 @@ function debugLog(...args: unknown[]) {
   console.log('[dullypdf-ui/pdf]', ...args);
 }
 
-function shouldUseSystemFontFallbackForDisplay(): boolean {
-  if (typeof navigator === 'undefined') return true;
+function getDisplayPlatform(): string {
+  if (typeof navigator === 'undefined') return '';
   const browserNavigator = navigator as Navigator & {
     userAgentData?: { platform?: string };
   };
   const uaPlatform = typeof browserNavigator.userAgentData?.platform === 'string'
     ? browserNavigator.userAgentData.platform
     : '';
-  const platform = uaPlatform || navigator.platform || '';
-  // Windows often has Office fonts like Aptos/Calibri/Wingdings installed system-wide.
-  // When PDF.js falls back to those fonts for Office-exported PDFs, text metrics can
-  // drift from the backend raster used for detection overlays. Prefer embedded fonts
-  // on Windows to keep the browser canvas and detected geometry aligned.
-  return !/win/i.test(platform);
+  return uaPlatform || navigator.platform || '';
+}
+
+function isWindowsDisplayPlatform(): boolean {
+  return /win/i.test(getDisplayPlatform());
+}
+
+function metadataLooksLikeWindowsOfficeExport(rawMetadata: unknown): boolean {
+  if (!rawMetadata || typeof rawMetadata !== 'object') return false;
+  const info = (rawMetadata as { info?: Record<string, unknown> }).info;
+  if (!info || typeof info !== 'object') return false;
+  const creator = typeof info.Creator === 'string' ? info.Creator : '';
+  const producer = typeof info.Producer === 'string' ? info.Producer : '';
+  const combined = `${creator}\n${producer}`.toLowerCase();
+  return combined.includes('microsoft excel') || combined.includes('microsoft 365');
+}
+
+async function shouldPreferEmbeddedFontsForDisplay(doc: PDFDocumentProxy): Promise<boolean> {
+  if (!isWindowsDisplayPlatform()) return false;
+  try {
+    const metadata = await doc.getMetadata();
+    return metadataLooksLikeWindowsOfficeExport(metadata);
+  } catch (error) {
+    debugLog('Failed to inspect PDF metadata for display font strategy', error);
+    return false;
+  }
 }
 
 // Ensure the PDF.js worker runs in a separate thread for heavy parsing work.
@@ -99,15 +119,34 @@ function extractFieldConfidence(annotation: PdfJsAnnotation): number | undefined
 
 export async function loadPdfFromFile(file: File): Promise<PDFDocumentProxy> {
   const buffer = await file.arrayBuffer();
-  const options = {
+  const initialOptions = {
     data: buffer,
     enableXfa: true,
-    useSystemFonts: shouldUseSystemFontFallbackForDisplay(),
+    useSystemFonts: true,
   };
 
   try {
-    const task = getDocument(options);
+    const task = getDocument(initialOptions);
     const doc = await task.promise;
+    if (await shouldPreferEmbeddedFontsForDisplay(doc)) {
+      debugLog('Reloading Office-exported PDF with embedded-font preference on Windows', {
+        name: file.name,
+      });
+      try {
+        const reloadTask = getDocument({
+          ...initialOptions,
+          useSystemFonts: false,
+        });
+        const reloadedDoc = await reloadTask.promise;
+        if (typeof doc.destroy === 'function') {
+          void doc.destroy().catch(() => {});
+        }
+        debugLog('Reloaded PDF with embedded-font preference', { name: file.name, pages: reloadedDoc.numPages });
+        return reloadedDoc;
+      } catch (reloadError) {
+        debugLog('Failed to reload PDF with embedded-font preference; keeping initial document', reloadError);
+      }
+    }
     debugLog('Loaded PDF', { name: file.name, pages: doc.numPages });
     return doc;
   } catch (error) {
