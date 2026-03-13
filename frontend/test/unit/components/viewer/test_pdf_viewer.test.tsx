@@ -144,6 +144,10 @@ function buildProps(overrides: Partial<ComponentProps<typeof PdfViewer>> = {}) {
   };
 }
 
+function pageNode(pageNumber: number) {
+  return document.querySelector(`[data-page-number="${pageNumber}"]`) as HTMLElement | null;
+}
+
 describe('PdfViewer', () => {
   const originalScrollIntoView = Element.prototype.scrollIntoView;
   const originalGetContext = HTMLCanvasElement.prototype.getContext;
@@ -174,24 +178,40 @@ describe('PdfViewer', () => {
     expect(screen.getByText('Upload a PDF to start editing fields.')).toBeTruthy();
   });
 
-  it('virtualizes active pages around current page and pending page jump anchors', () => {
+  it('keeps all pages mounted for normal multi-page documents', () => {
     const pdfDoc = createPdfDoc(7);
     const props = buildProps({
       pdfDoc: pdfDoc as any,
       pageNumber: 4,
       pageSizes: makePageSizes(7),
     });
+    render(<PdfViewer {...props} />);
+
+    expect(pageNode(1)?.querySelector('.viewer__canvas')).toBeTruthy();
+    expect(pageNode(4)?.querySelector('.viewer__canvas')).toBeTruthy();
+    expect(pageNode(6)?.querySelector('.viewer__canvas')).toBeTruthy();
+    expect(pageNode(7)?.querySelector('.viewer__canvas')).toBeTruthy();
+    expect(document.querySelectorAll('.viewer__page-placeholder')).toHaveLength(0);
+  });
+
+  it('virtualizes active pages around current page and pending page jump anchors for larger documents', () => {
+    const pdfDoc = createPdfDoc(1200);
+    const props = buildProps({
+      pdfDoc: pdfDoc as any,
+      pageNumber: 10,
+      pageSizes: makePageSizes(1200),
+    });
     const { rerender } = render(<PdfViewer {...props} />);
 
-    expect(screen.getByText('Page 1')).toBeTruthy();
-    expect(screen.getByText('Page 7')).toBeTruthy();
-    expect(screen.queryByText('Page 4')).toBeNull();
-    expect(screen.queryByText('Page 6')).toBeNull();
+    expect(pageNode(8)?.querySelector('.viewer__canvas')).toBeTruthy();
+    expect(pageNode(12)?.querySelector('.viewer__canvas')).toBeTruthy();
+    expect(pageNode(7)?.querySelector('.viewer__page-placeholder')).toBeTruthy();
+    expect(pageNode(13)?.querySelector('.viewer__page-placeholder')).toBeTruthy();
 
-    rerender(<PdfViewer {...props} pendingPageJump={6} />);
-    expect(screen.getByText('Page 2')).toBeTruthy();
-    expect(screen.getByText('Page 3')).toBeTruthy();
-    expect(screen.queryByText('Page 6')).toBeNull();
+    rerender(<PdfViewer {...props} pendingPageJump={15} />);
+    expect(pageNode(13)?.querySelector('.viewer__canvas')).toBeTruthy();
+    expect(pageNode(17)?.querySelector('.viewer__canvas')).toBeTruthy();
+    expect(pageNode(12)?.querySelector('.viewer__page-placeholder')).toBeTruthy();
   });
 
   it('scrolls to pending page jump and calls completion callback after timeout', async () => {

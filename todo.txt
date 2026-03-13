@@ -1,4 +1,5 @@
 1: Tech Debt Including: More QA on share by link, Ensuring Repo and test are properly organized. Ensure that now files shuold be refactored or split into multiple.
 2: UI refresh: Currennt, refreshing the dullypdf UI causes you to be sent to homepage. This should not happen, instead I want to be sent to the dullyPDf UI and saved forms read files from l1-l2 cahce. Think of pros and cons of session cahcing to saved frontend state locally. idk.
-3: HIPPA.pdf looks malformed on windows only. I can't explain why this needs investigating though. 
+3: Viewer follow-up: replace the current full-render threshold approach with a cached page canvas/bitmap system so long PDFs stay stable without keeping every page mounted.
 4: Unit test and integration coverage is good, need more human based E2E testing. Try and break this site yk.
+5: Make an internal dashbord for viewer user stats including email, role, detections, credits used.

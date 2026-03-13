@@ -1,7 +1,7 @@
 /**
  * PDF canvas renderer with field overlay layers.
  */
-import { memo, useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AnnotationMode } from 'pdfjs-dist';
 import type { PDFDocumentProxy, RenderTask } from 'pdfjs-dist/types/src/display/api';
 import type { FieldRect, FieldType, PageSize, PdfField } from '../../types';
@@ -12,6 +12,7 @@ import { Alert } from '../ui/Alert';
 const EMPTY_SIZE: PageSize = { width: 0, height: 0 };
 const EMPTY_FIELDS: PdfField[] = [];
 const RENDER_RADIUS = 2;
+const FULL_RENDER_PAGE_THRESHOLD = 1000;
 
 type PdfViewerProps = {
   pdfDoc: PDFDocumentProxy | null;
@@ -291,9 +292,13 @@ export function PdfViewer({
     return Array.from({ length: pdfDoc.numPages }, (_, idx) => idx + 1);
   }, [pdfDoc]);
 
-  // Only render a window of pages around the active page to limit canvas cost.
+  const shouldVirtualize = pages.length > FULL_RENDER_PAGE_THRESHOLD;
+
+  // Only virtualize larger documents. Keeping normal multi-page packets mounted
+  // avoids scroll-triggered unmount/remount cycles that can desync canvas render state.
   const activePages = useMemo(() => {
     if (!pages.length) return new Set<number>();
+    if (!shouldVirtualize) return new Set<number>(pages);
     const anchor = pendingPageJump || pageNumber;
     const start = Math.max(1, anchor - RENDER_RADIUS);
     const end = Math.min(pages.length, anchor + RENDER_RADIUS);
@@ -302,7 +307,7 @@ export function PdfViewer({
       active.add(page);
     }
     return active;
-  }, [pages, pageNumber, pendingPageJump]);
+  }, [pages, pageNumber, pendingPageJump, shouldVirtualize]);
 
   // Track the largest page size to determine fit-to-container scaling.
   const maxPageSize = useMemo(() => {
@@ -326,8 +331,6 @@ export function PdfViewer({
   }, [containerSize, maxPageSize]);
 
   const effectiveScale = fitScale * scale;
-  // Defer raster work so the page shell and overlays can respond to zoom immediately.
-  const deferredRenderScale = useDeferredValue(effectiveScale);
 
   // Bucket fields by page for faster overlay rendering.
   const fieldsByPage = useMemo(() => {
@@ -411,13 +414,12 @@ export function PdfViewer({
     const container = scrollRef.current;
 
     const updateSize = () => {
-      const rect = container.getBoundingClientRect();
       const styles = window.getComputedStyle(container);
       const paddingX = parseFloat(styles.paddingLeft) + parseFloat(styles.paddingRight);
       const paddingY = parseFloat(styles.paddingTop) + parseFloat(styles.paddingBottom);
       setContainerSize({
-        width: Math.max(0, rect.width - paddingX),
-        height: Math.max(0, rect.height - paddingY),
+        width: Math.max(0, container.clientWidth - paddingX),
+        height: Math.max(0, container.clientHeight - paddingY),
       });
     };
 
@@ -470,7 +472,7 @@ export function PdfViewer({
             pdfDoc={pdfDoc}
             pageNumber={page}
             scale={effectiveScale}
-            renderScale={deferredRenderScale}
+            renderScale={effectiveScale}
             pageSize={pageSizes[page] || EMPTY_SIZE}
             fields={fieldsByPage.get(page) || EMPTY_FIELDS}
             showFields={showFields}
