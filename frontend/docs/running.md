@@ -35,6 +35,7 @@ npm run dev:stack
 ```
 
 This runs the prod-like dev stack (backend container + frontend dev server).
+When `STRIPE_SECRET_KEY` is present and `stripe` is installed, the stack also auto-starts Stripe CLI forwarding to the local billing webhook on host port `8010` by default.
 
 ```bash
 npm run dev:stack:stop

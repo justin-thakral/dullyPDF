@@ -316,10 +316,12 @@ uvicorn backend.ai.remap_worker_app:app --host 0.0.0.0 --port 8000
 
 `npm run dev` now auto-starts Stripe CLI forwarding for local billing when `STRIPE_SECRET_KEY` is present in `env/backend.dev.env`, forwarding to `http://localhost:${PORT}/api/billing/webhook` and injecting the listener session webhook secret into the backend process.
 
+`npm run dev:stack` now does the same for the prod-like stack when `STRIPE_SECRET_KEY` is present in `env/backend.dev.stack.env`, forwarding to `http://localhost:${DEV_STACK_BACKEND_PORT:-8010}/api/billing/webhook` and injecting the listener session webhook secret into the backend container.
+
 Local Stripe forwarding notes:
 - Local forwarding is tunnel-based and does not create a Stripe dashboard webhook endpoint.
-- Because of that, local `npm run dev` forces `STRIPE_ENFORCE_WEBHOOK_HEALTH=false` for the backend process so checkout is not blocked by endpoint-health enforcement.
-- Set `STRIPE_DEV_LISTEN_ENABLED=false` to run local dev without Stripe forwarding.
+- Because of that, local `npm run dev` and `npm run dev:stack` force `STRIPE_ENFORCE_WEBHOOK_HEALTH=false` for the backend process/container so checkout is not blocked by endpoint-health enforcement.
+- Set `STRIPE_DEV_LISTEN_ENABLED=false` to run local dev or dev stack without Stripe forwarding.
 
 Use these commands when validating Stripe billing checkout/webhook behavior:
 
