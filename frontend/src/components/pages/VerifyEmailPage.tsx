@@ -89,7 +89,9 @@ const VerifyEmailPage: React.FC<VerifyEmailPageProps> = ({ email, onRefresh, onS
   const resendBlocked = dailyLimitReached || cooldownRemainingMs > 0;
   const summaryItems = [
     'Open the message from DullyPDF and follow the secure verification link.',
-    'If the message does not appear in your inbox right away, check spam or promotions.',
+    <span className="verify-page-summary-warning">
+      If the message does not appear in your inbox right away, check spam or promotions.
+    </span>,
     'After verification, return here and confirm so the workspace can refresh your session.',
   ];
   const resendStatusMessage = dailyLimitReached

@@ -87,6 +87,11 @@
   text-align: center;
 }
 
+.verify-page-summary-warning {
+  color: var(--alert-error-accent);
+  font-weight: 600;
+}
+
 .verify-page-footer {
   align-items: center;
 }

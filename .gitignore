@@ -63,6 +63,7 @@ backend/fieldDetecting/sandbox/ML/data/raw/
 /samples/
 
 # Local generated assets
+/collaborators/
 /mcp/debugging/
 mcp/codexBugs/
 /mcpDebugging/

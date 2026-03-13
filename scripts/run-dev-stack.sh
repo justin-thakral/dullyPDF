@@ -186,8 +186,23 @@ if [[ -z "${BACKEND_HEALTH_HOST}" ]]; then
   fi
 fi
 BACKEND_HEALTH_URL="http://${BACKEND_HEALTH_HOST}:${BACKEND_PORT}/api/health"
+FORWARD_TO="${STRIPE_DEV_FORWARD_URL:-http://${BACKEND_HEALTH_HOST}:${BACKEND_PORT}/api/billing/webhook}"
+EVENTS="${STRIPE_DEV_FORWARD_EVENTS:-checkout.session.completed,invoice.paid,customer.subscription.updated,customer.subscription.deleted}"
+ENABLE_LISTENER_RAW="${STRIPE_DEV_LISTEN_ENABLED:-true}"
+ENABLE_LISTENER="$(printf '%s' "$ENABLE_LISTENER_RAW" | tr '[:upper:]' '[:lower:]')"
+STACK_WEBHOOK_ENDPOINT_URL="${STRIPE_WEBHOOK_ENDPOINT_URL:-${FORWARD_TO}}"
+
+LISTENER_PID=""
+LISTENER_LOG=""
 
 cleanup() {
+  if [[ -n "$LISTENER_PID" ]] && kill -0 "$LISTENER_PID" >/dev/null 2>&1; then
+    kill "$LISTENER_PID" >/dev/null 2>&1 || true
+    wait "$LISTENER_PID" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "$LISTENER_LOG" && -f "$LISTENER_LOG" ]]; then
+    rm -f "$LISTENER_LOG" || true
+  fi
   if docker ps -a --format '{{.Names}}' | grep -Fxq "$CONTAINER_NAME"; then
     docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
   fi
@@ -230,6 +245,48 @@ fi
 
 if docker ps -a --format '{{.Names}}' | grep -Fxq "$CONTAINER_NAME"; then
   docker rm -f "$CONTAINER_NAME" >/dev/null
+fi
+
+if [[ "$ENABLE_LISTENER" != "false" && "$ENABLE_LISTENER" != "0" && "$ENABLE_LISTENER" != "no" ]]; then
+  if [[ -z "${STRIPE_SECRET_KEY:-}" ]]; then
+    echo "Stripe forwarding skipped for dev stack: STRIPE_SECRET_KEY is missing in $ENV_FILE."
+  elif ! command -v stripe >/dev/null 2>&1; then
+    echo "Stripe forwarding skipped for dev stack: Stripe CLI is not installed."
+  else
+    LISTENER_LOG="$(mktemp -t dullypdf-stripe-stack-listen-XXXX.log)"
+    echo "Starting Stripe CLI forwarding for dev stack to ${FORWARD_TO}"
+    echo "Forwarded events: ${EVENTS}"
+    STRIPE_API_KEY="${STRIPE_SECRET_KEY}" stripe listen --events "$EVENTS" --forward-to "$FORWARD_TO" \
+      > >(tee -a "$LISTENER_LOG") \
+      2> >(tee -a "$LISTENER_LOG" >&2) &
+    LISTENER_PID="$!"
+
+    secret=""
+    deadline=$((SECONDS + 20))
+    while (( SECONDS < deadline )); do
+      if ! kill -0 "$LISTENER_PID" >/dev/null 2>&1; then
+        echo "Stripe listener exited before readiness. See output above for details." >&2
+        exit 1
+      fi
+      secret="$(grep -Eo 'whsec_[A-Za-z0-9]+' "$LISTENER_LOG" | tail -n 1 || true)"
+      if [[ -n "$secret" ]]; then
+        break
+      fi
+      sleep 0.2
+    done
+
+    if [[ -z "$secret" ]]; then
+      echo "Failed to capture Stripe webhook signing secret from listener output." >&2
+      exit 1
+    fi
+
+    # Stripe CLI forwarding is tunnel-based and does not create a dashboard
+    # webhook endpoint, so stack-mode checkout health enforcement must be off.
+    export STRIPE_WEBHOOK_SECRET="$secret"
+    export STRIPE_ENFORCE_WEBHOOK_HEALTH=false
+    export STRIPE_WEBHOOK_ENDPOINT_URL="$STACK_WEBHOOK_ENDPOINT_URL"
+    echo "Stripe forwarding active for dev stack. Using ephemeral webhook secret from this listener session."
+  fi
 fi
 
 ENV_ARGS=(
@@ -276,6 +333,7 @@ ENV_ARGS=(
   "-e" "OPENAI_PREWARM_REMAINING_PAGES=${OPENAI_PREWARM_REMAINING_PAGES:-3}"
   "-e" "OPENAI_PREWARM_TIMEOUT_SECONDS=${OPENAI_PREWARM_TIMEOUT_SECONDS:-2}"
   "-e" "SANDBOX_ENABLE_LEGACY_ENDPOINTS=false"
+  "-e" "STRIPE_WEBHOOK_ENDPOINT_URL=${STRIPE_WEBHOOK_ENDPOINT_URL:-${STACK_WEBHOOK_ENDPOINT_URL}}"
   "-e" "ADMIN_TOKEN="
   "-e" "SANDBOX_DEBUG=false"
   "-e" "SANDBOX_DEBUG_FORCE=false"
@@ -284,6 +342,12 @@ ENV_ARGS=(
 
 if [[ -n "${OPENAI_API_KEY:-}" ]]; then
   ENV_ARGS+=("-e" "OPENAI_API_KEY=${OPENAI_API_KEY}")
+fi
+if [[ -n "${STRIPE_WEBHOOK_SECRET:-}" ]]; then
+  ENV_ARGS+=("-e" "STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}")
+fi
+if [[ -n "${STRIPE_ENFORCE_WEBHOOK_HEALTH:-}" ]]; then
+  ENV_ARGS+=("-e" "STRIPE_ENFORCE_WEBHOOK_HEALTH=${STRIPE_ENFORCE_WEBHOOK_HEALTH}")
 fi
 
 docker run --rm -d \

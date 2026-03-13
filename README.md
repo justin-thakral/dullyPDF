@@ -31,6 +31,21 @@ You can still run frontend/backend separately with `npm run backend:dev` and `np
 
 Open the UI at `http://localhost:5173`.
 
+### Run the prod-like stack
+
+From the repo root:
+
+```bash
+npm run dev:stack
+```
+
+This runs the backend in Docker on host port `8010`, starts the frontend dev server on `5173`, targets the `dullypdf-dev` Cloud Tasks / Cloud Run services, and also auto-starts Stripe CLI webhook forwarding to `http://localhost:8010/api/billing/webhook` when `STRIPE_SECRET_KEY` is configured.
+
+Notes for Stripe stack billing:
+- `npm run dev:stack` injects the Stripe CLI session `whsec_...` into the backend container for that run.
+- Checkout health enforcement is forced off for local CLI forwarding (`STRIPE_ENFORCE_WEBHOOK_HEALTH=false`) because Stripe CLI forwarding does not create a dashboard webhook endpoint.
+- Set `STRIPE_DEV_LISTEN_ENABLED=false` to skip automatic Stripe forwarding.
+
 ### Environment setup
 
 Backend dev env is local-only and created on first run:

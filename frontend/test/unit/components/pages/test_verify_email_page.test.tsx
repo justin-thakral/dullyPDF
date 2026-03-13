@@ -121,4 +121,13 @@ describe('VerifyEmailPage', () => {
       screen.getByText('You can resend up to 5 verification emails per day from this browser.'),
     ).toBeTruthy();
   });
+
+  it('highlights the spam reminder in red warning styling', () => {
+    render(<VerifyEmailPage email="verify@example.com" />);
+
+    const reminder = screen.getByText(
+      'If the message does not appear in your inbox right away, check spam or promotions.',
+    );
+    expect(reminder.className).toContain('verify-page-summary-warning');
+  });
 });

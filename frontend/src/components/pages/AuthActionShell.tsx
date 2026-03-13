@@ -7,7 +7,7 @@ type AuthActionShellProps = {
   description: ReactNode;
   toneClass: string;
   summaryTitle: string;
-  summaryItems: string[];
+  summaryItems: ReactNode[];
   body?: ReactNode;
   footer?: ReactNode;
 };
@@ -51,8 +51,8 @@ const AuthActionShell = ({
       <div className="verify-action-summary">
         <h2>{summaryTitle}</h2>
         <ul>
-          {summaryItems.map((entry) => (
-            <li key={entry}>{entry}</li>
+          {summaryItems.map((entry, index) => (
+            <li key={typeof entry === 'string' ? entry : `summary-item-${index}`}>{entry}</li>
           ))}
         </ul>
       </div>
