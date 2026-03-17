@@ -49,13 +49,14 @@ import { useWorkspaceGroupCoordinator } from './hooks/useWorkspaceGroupCoordinat
 import { useWorkspaceFillLinks } from './hooks/useWorkspaceFillLinks';
 import { useDataSource } from './hooks/useDataSource';
 import { useOpenAiPipeline } from './hooks/useOpenAiPipeline';
-import { useDetection } from './hooks/useDetection';
+import { useDetection, type SavedFormSessionResume } from './hooks/useDetection';
 import { usePipelineModal } from './hooks/usePipelineModal';
 import { useGroupDownload } from './hooks/useGroupDownload';
 import { useDowngradeRetentionRuntime } from './hooks/useDowngradeRetentionRuntime';
 import { useSaveDownload } from './hooks/useSaveDownload';
 import { useDemo } from './hooks/useDemo';
 import { useUploadBrowserViewModel } from './hooks/useUploadBrowserViewModel';
+import { ApiService } from './services/api';
 import { applyRouteSeo } from './utils/seo';
 import { clampRectToPage } from './utils/coords';
 import {
@@ -69,6 +70,16 @@ import {
   sanitizeArrowKeyMoveStep,
 } from './utils/fieldMovement';
 import { buildFillLinkPublishFingerprint } from './utils/fillLinks';
+import {
+  clearWorkspaceResumeState,
+  findMatchingWorkspaceResumeState,
+  writeWorkspaceResumeState,
+} from './utils/workspaceResumeState';
+import {
+  areWorkspaceBrowserRoutesEqual,
+  getWorkspaceBrowserRouteKey,
+  type WorkspaceBrowserRoute,
+} from './utils/workspaceRoutes';
 
 /**
  * Launch actions that can be requested by the lightweight homepage shell.
@@ -81,6 +92,8 @@ type WorkspaceRuntimeProps = {
   assumeAuthReady?: boolean;
   bootstrapHasVerifiedUser?: boolean;
   bootstrapAuthUser?: User | null;
+  browserRoute?: WorkspaceBrowserRoute;
+  onBrowserRouteChange?: (route: WorkspaceBrowserRoute, options?: { replace?: boolean }) => void;
 };
 
 type SearchFillPresetState = {
@@ -102,6 +115,8 @@ function WorkspaceRuntime({
   assumeAuthReady = false,
   bootstrapHasVerifiedUser = false,
   bootstrapAuthUser = null,
+  browserRoute = { kind: 'homepage' },
+  onBrowserRouteChange,
 }: WorkspaceRuntimeProps) {
   // ── Ref bridges to break circular hook dependencies ────────────────
   const savedFormsBridge = useRef<{
@@ -189,10 +204,23 @@ function WorkspaceRuntime({
   const [sourceFileIsDemo, setSourceFileIsDemo] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [savedFillLinkPublishFingerprint, setSavedFillLinkPublishFingerprint] = useState<string | null>(null);
+  const browserRouteKey = useMemo(() => getWorkspaceBrowserRouteKey(browserRoute), [browserRoute]);
+  const [pendingBrowserRouteKey, setPendingBrowserRouteKey] = useState<string | null>(
+    browserRoute.kind === 'homepage' ? null : browserRouteKey,
+  );
+  const routeRestoreInFlightKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     applyRouteSeo({ kind: 'app' });
   }, []);
+
+  useEffect(() => {
+    if (browserRoute.kind === 'homepage') {
+      setPendingBrowserRouteKey(null);
+      return;
+    }
+    setPendingBrowserRouteKey((current) => (current === browserRouteKey ? current : browserRouteKey));
+  }, [browserRoute.kind, browserRouteKey]);
 
   const pdfState = useMemo(() => ({
     setPdfDoc, setPageSizes, setPageCount, setCurrentPage, setScale, setPendingPageJump,
@@ -417,6 +445,84 @@ function WorkspaceRuntime({
     [auth, dialog, handleSelectSavedForm, isMobileView],
   );
 
+  const activeWorkspaceBrowserRoute = useMemo<WorkspaceBrowserRoute>(() => {
+    if (showHomepage && browserRoute.kind === 'homepage') {
+      return { kind: 'homepage' };
+    }
+    if (auth.showProfile) {
+      return { kind: 'profile' };
+    }
+    if (activeGroupId) {
+      return {
+        kind: 'group',
+        groupId: activeGroupId,
+        templateId: savedForms.activeSavedFormId,
+      };
+    }
+    if (savedForms.activeSavedFormId) {
+      return {
+        kind: 'saved-form',
+        formId: savedForms.activeSavedFormId,
+      };
+    }
+    if (pdfDoc || detection.isProcessing) {
+      return { kind: 'ui-root' };
+    }
+    return { kind: 'upload-root' };
+  }, [activeGroupId, auth.showProfile, browserRoute.kind, detection.isProcessing, pdfDoc, savedForms.activeSavedFormId, showHomepage]);
+
+  const restoreViewportFromResume = useCallback((resumeState: ReturnType<typeof findMatchingWorkspaceResumeState>) => {
+    if (!resumeState) {
+      return;
+    }
+    const nextPage = Number.isFinite(resumeState.currentPage) && resumeState.currentPage
+      ? Math.max(1, Math.min(Math.round(resumeState.currentPage), Math.max(1, pageCount)))
+      : null;
+    if (nextPage !== null) {
+      setCurrentPage(nextPage);
+    }
+    if (Number.isFinite(resumeState.scale) && resumeState.scale && resumeState.scale > 0) {
+      setScale(resumeState.scale);
+    }
+  }, [pageCount]);
+
+  const resolvePreferredSessionResume = useCallback((
+    resumeState: ReturnType<typeof findMatchingWorkspaceResumeState>,
+  ): SavedFormSessionResume | null => {
+    const preferredSessionId = resumeState?.mappingSessionId || resumeState?.detectSessionId;
+    if (!preferredSessionId) {
+      return null;
+    }
+    return {
+      sessionId: preferredSessionId,
+      fieldCount: resumeState?.fieldCount ?? null,
+      pageCount: resumeState?.pageCount ?? null,
+    };
+  }, []);
+
+  const tryReuseResumedSession = useCallback(async (
+    resumeState: ReturnType<typeof findMatchingWorkspaceResumeState>,
+  ) => {
+    const preferredSession = resolvePreferredSessionResume(resumeState);
+    if (!preferredSession?.sessionId) {
+      return false;
+    }
+    if (
+      (preferredSession.fieldCount !== null && preferredSession.fieldCount !== fieldHistory.fields.length) ||
+      (preferredSession.pageCount !== null && preferredSession.pageCount !== pageCount)
+    ) {
+      return false;
+    }
+    try {
+      await ApiService.touchSession(preferredSession.sessionId);
+      detection.setDetectSessionId(preferredSession.sessionId);
+      detection.setMappingSessionId(preferredSession.sessionId);
+      return true;
+    } catch {
+      return false;
+    }
+  }, [detection, fieldHistory.fields.length, pageCount, resolvePreferredSessionResume]);
+
   const headerActiveGroupTemplateId =
     pendingGroupTemplateId || groupSwitchingTemplateId || savedForms.activeSavedFormId;
   const headerGroupTemplateStatuses = useMemo(() => {
@@ -530,6 +636,7 @@ function WorkspaceRuntime({
     const confirmed = await confirmDiscardDirtyGroupChanges('signing out');
     if (!confirmed) return;
     await auth.handleSignOut();
+    clearWorkspaceResumeState();
     clearWorkspace();
     savedForms.clearSavedForms();
     setShowHomepage(true);
@@ -538,11 +645,13 @@ function WorkspaceRuntime({
     demo.setDemoStepIndex(null);
     demo.setDemoCompletionOpen(false);
     demo.setDemoSearchPreset(null);
-  }, [auth, clearWorkspace, confirmDiscardDirtyGroupChanges, demo, savedForms]);
+    onBrowserRouteChange?.({ kind: 'homepage' }, { replace: true });
+  }, [auth, clearWorkspace, confirmDiscardDirtyGroupChanges, demo, onBrowserRouteChange, savedForms]);
 
   const handleNavigateHome = useCallback(async () => {
     const confirmed = await confirmDiscardDirtyGroupChanges('returning home');
     if (!confirmed) return;
+    clearWorkspaceResumeState();
     clearWorkspace();
     setLoadError(null);
     setShowHomepage(true);
@@ -550,7 +659,8 @@ function WorkspaceRuntime({
     demo.setDemoStepIndex(null);
     demo.setDemoCompletionOpen(false);
     demo.setDemoSearchPreset(null);
-  }, [clearWorkspace, confirmDiscardDirtyGroupChanges, demo]);
+    onBrowserRouteChange?.({ kind: 'homepage' }, { replace: true });
+  }, [clearWorkspace, confirmDiscardDirtyGroupChanges, demo, onBrowserRouteChange]);
 
   // ── Save & Download ────────────────────────────────────────────────
   const saveDownload = useSaveDownload({
@@ -1113,6 +1223,220 @@ function WorkspaceRuntime({
     verifiedUser,
   ]);
 
+  useEffect(() => {
+    if (!verifiedUser?.uid || launchIntent === 'demo') {
+      return;
+    }
+    if (pendingBrowserRouteKey !== null) {
+      return;
+    }
+    if (activeWorkspaceBrowserRoute.kind !== 'saved-form' && activeWorkspaceBrowserRoute.kind !== 'group') {
+      clearWorkspaceResumeState();
+      return;
+    }
+    writeWorkspaceResumeState({
+      version: 1,
+      userId: verifiedUser.uid,
+      route: activeWorkspaceBrowserRoute,
+      currentPage,
+      scale,
+      detectSessionId: detection.detectSessionId,
+      mappingSessionId: detection.mappingSessionId,
+      fieldCount: fieldHistory.fields.length,
+      pageCount,
+      updatedAtMs: Date.now(),
+    });
+  }, [
+    activeWorkspaceBrowserRoute,
+    currentPage,
+    detection.detectSessionId,
+    detection.mappingSessionId,
+    fieldHistory.fields.length,
+    launchIntent,
+    pageCount,
+    pendingBrowserRouteKey,
+    scale,
+    verifiedUser?.uid,
+  ]);
+
+  useEffect(() => {
+    if (!onBrowserRouteChange || pendingBrowserRouteKey !== null || launchIntent === 'demo') {
+      return;
+    }
+    if (areWorkspaceBrowserRoutesEqual(browserRoute, activeWorkspaceBrowserRoute)) {
+      return;
+    }
+    onBrowserRouteChange(activeWorkspaceBrowserRoute);
+  }, [
+    activeWorkspaceBrowserRoute,
+    browserRoute,
+    launchIntent,
+    onBrowserRouteChange,
+    pendingBrowserRouteKey,
+  ]);
+
+  useEffect(() => {
+    if (browserRoute.kind === 'homepage' || pendingBrowserRouteKey !== browserRouteKey) {
+      return;
+    }
+    let cancelled = false;
+    const finishRouteRestore = () => {
+      if (cancelled) return;
+      setPendingBrowserRouteKey((current) => (current === browserRouteKey ? null : current));
+    };
+    const failRouteRestore = (message?: string) => {
+      if (cancelled) return;
+      if (message) {
+        dialog.setBannerNotice({
+          tone: 'error',
+          message,
+          autoDismissMs: 8000,
+        });
+      }
+      clearWorkspaceResumeState();
+      onBrowserRouteChange?.({ kind: 'upload-root' }, { replace: true });
+      setPendingBrowserRouteKey(null);
+    };
+    const restoreRequestedRoute = async () => {
+      if (browserRoute.kind === 'profile') {
+        if (!auth.showProfile) {
+          setShowHomepage(false);
+          if (verifiedUser || bootstrapHasVerifiedUser) {
+            auth.setShowProfile(true);
+          } else {
+            auth.setShowLogin(true);
+          }
+          return;
+        }
+        finishRouteRestore();
+        return;
+      }
+
+      if (browserRoute.kind === 'upload-root') {
+        if (auth.showProfile) {
+          auth.setShowProfile(false);
+          return;
+        }
+        if (showHomepage) {
+          setShowHomepage(false);
+          return;
+        }
+        finishRouteRestore();
+        return;
+      }
+
+      if (browserRoute.kind === 'ui-root') {
+        if (auth.showProfile) {
+          auth.setShowProfile(false);
+          return;
+        }
+        if (showHomepage) {
+          setShowHomepage(false);
+          return;
+        }
+        finishRouteRestore();
+        return;
+      }
+
+      if (!verifiedUser) {
+        return;
+      }
+
+      if (isMobileView) {
+        clearWorkspaceResumeState();
+        onBrowserRouteChange?.({ kind: 'homepage' }, { replace: true });
+        setPendingBrowserRouteKey(null);
+        return;
+      }
+
+      const resumeState = findMatchingWorkspaceResumeState(browserRoute, verifiedUser.uid);
+      if (browserRoute.kind === 'saved-form') {
+        if (routeRestoreInFlightKeyRef.current === browserRouteKey) {
+          return;
+        }
+        if (activeGroupId || savedForms.activeSavedFormId !== browserRoute.formId) {
+          routeRestoreInFlightKeyRef.current = browserRouteKey;
+          let opened = false;
+          try {
+            opened = await handleSelectSavedForm(browserRoute.formId, {
+              preferredSession: resolvePreferredSessionResume(resumeState),
+            });
+          } finally {
+            if (routeRestoreInFlightKeyRef.current === browserRouteKey) {
+              routeRestoreInFlightKeyRef.current = null;
+            }
+          }
+          if (!opened) {
+            failRouteRestore('Failed to reopen the saved form.');
+            return;
+          }
+          restoreViewportFromResume(resumeState);
+          finishRouteRestore();
+          return;
+        }
+        restoreViewportFromResume(resumeState);
+        void tryReuseResumedSession(resumeState);
+        finishRouteRestore();
+        return;
+      }
+
+      if (
+        activeGroupId !== browserRoute.groupId ||
+        (browserRoute.templateId && savedForms.activeSavedFormId !== browserRoute.templateId)
+      ) {
+        if (routeRestoreInFlightKeyRef.current === browserRouteKey) {
+          return;
+        }
+        routeRestoreInFlightKeyRef.current = browserRouteKey;
+        let opened = false;
+        try {
+          opened = await handleOpenGroup(browserRoute.groupId, {
+            preferredTemplateId: browserRoute.templateId,
+            preferredSession: resolvePreferredSessionResume(resumeState),
+          });
+        } finally {
+          if (routeRestoreInFlightKeyRef.current === browserRouteKey) {
+            routeRestoreInFlightKeyRef.current = null;
+          }
+        }
+        if (!opened) {
+          failRouteRestore('Failed to reopen the saved group.');
+          return;
+        }
+        restoreViewportFromResume(resumeState);
+        finishRouteRestore();
+        return;
+      }
+
+      restoreViewportFromResume(resumeState);
+      void tryReuseResumedSession(resumeState);
+      finishRouteRestore();
+    };
+
+    void restoreRequestedRoute();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeGroupId,
+    auth,
+    bootstrapHasVerifiedUser,
+    browserRoute,
+    browserRouteKey,
+    dialog,
+    handleOpenGroup,
+    handleSelectSavedForm,
+    isMobileView,
+    onBrowserRouteChange,
+    pendingBrowserRouteKey,
+    resolvePreferredSessionResume,
+    restoreViewportFromResume,
+    savedForms.activeSavedFormId,
+    showHomepage,
+    tryReuseResumedSession,
+    verifiedUser,
+  ]);
+
   const hasDocument = !!pdfDoc;
   const canSaveToProfile = Boolean(pdfDoc && verifiedUser);
   const canDownload = Boolean(pdfDoc && verifiedUser);
@@ -1132,8 +1456,16 @@ function WorkspaceRuntime({
   }, []);
 
   const currentView = showHomepage ? 'homepage' : isProcessing ? 'processing' : hasDocument ? 'editor' : 'upload';
+  const workspaceRouteLoading = (
+    pendingBrowserRouteKey !== null &&
+    !isProcessing &&
+    browserRoute.kind !== 'saved-form' &&
+    browserRoute.kind !== 'group'
+  );
   const activeDemoStep = demoStepIndex !== null ? DEMO_STEPS[demoStepIndex] : null;
-  const showDemoTour = demoActive && currentView === 'editor';
+  const suppressDemoTourForSearchFillStep =
+    showSearchFill && activeDemoStep?.id === 'search-fill';
+  const showDemoTour = demoActive && currentView === 'editor' && !suppressDemoTourForSearchFillStep;
   const shouldShowProcessingAd = processingMode === 'detect' && Boolean(PROCESSING_AD_VIDEO_URL);
   const handleOpenSearchFill = useCallback(() => {
     setSearchFillPreset(null);
@@ -1144,6 +1476,13 @@ function WorkspaceRuntime({
     setShowSearchFill(false);
     setSearchFillPreset(null);
   }, []);
+
+  const handleCancelLogin = useCallback(() => {
+    auth.setShowLogin(false);
+    if (!verifiedUser) {
+      onBrowserRouteChange?.({ kind: 'homepage' }, { replace: true });
+    }
+  }, [auth, onBrowserRouteChange, verifiedUser]);
 
   useEffect(() => {
     if (currentView === 'editor') return;
@@ -1225,10 +1564,10 @@ function WorkspaceRuntime({
   );
   const dataSourceInputs = (
     <>
-      <input ref={dataSource.csvInputRef} id="csv-file-input" name="csv-file" type="file" accept=".csv,text/csv" style={{ display: 'none' }} onChange={dataSource.handleCsvFileSelected} />
-      <input ref={dataSource.excelInputRef} id="excel-file-input" name="excel-file" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" style={{ display: 'none' }} onChange={dataSource.handleExcelFileSelected} />
-      <input ref={dataSource.jsonInputRef} id="json-file-input" name="json-file" type="file" accept=".json,application/json" style={{ display: 'none' }} onChange={dataSource.handleJsonFileSelected} />
-      <input ref={dataSource.txtInputRef} id="txt-file-input" name="txt-file" type="file" accept=".txt,text/plain" style={{ display: 'none' }} onChange={dataSource.handleTxtFileSelected} />
+      <input ref={dataSource.csvInputRef} id="csv-file-input" name="csv-file" type="file" accept=".csv,text/csv" aria-label="Upload CSV schema file" style={{ display: 'none' }} onChange={dataSource.handleCsvFileSelected} />
+      <input ref={dataSource.excelInputRef} id="excel-file-input" name="excel-file" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" aria-label="Upload Excel schema file" style={{ display: 'none' }} onChange={dataSource.handleExcelFileSelected} />
+      <input ref={dataSource.jsonInputRef} id="json-file-input" name="json-file" type="file" accept=".json,application/json" aria-label="Upload JSON schema file" style={{ display: 'none' }} onChange={dataSource.handleJsonFileSelected} />
+      <input ref={dataSource.txtInputRef} id="txt-file-input" name="txt-file" type="file" accept=".txt,text/plain" aria-label="Upload TXT schema file" style={{ display: 'none' }} onChange={dataSource.handleTxtFileSelected} />
     </>
   );
   const uploadBrowserViewModel = useUploadBrowserViewModel({
@@ -1288,11 +1627,14 @@ function WorkspaceRuntime({
   if (!authReady && !assumeAuthReady) {
     return (<div className="auth-loading-screen"><div className="auth-loading-card">Loading workspace…</div></div>);
   }
+  if (workspaceRouteLoading) {
+    return (<div className="auth-loading-screen"><div className="auth-loading-card">Loading workspace…</div></div>);
+  }
   if (requiresEmailVerification) {
     return (<VerifyEmailPage email={authUser?.email ?? null} onRefresh={auth.handleRefreshVerification} onSignOut={handleSignOut} />);
   }
   if (showLogin) {
-    return (<LoginPage onAuthenticated={() => auth.setShowLogin(false)} onCancel={() => auth.setShowLogin(false)} />);
+    return (<LoginPage onAuthenticated={() => auth.setShowLogin(false)} onCancel={handleCancelLogin} />);
   }
   if (showProfile && verifiedUser) {
     return (
@@ -1510,7 +1852,8 @@ function WorkspaceRuntime({
           }}
           onError={(message) => dataSource.setSchemaError(message)}
           onRequestDataSource={(kind) => dataSource.handleChooseDataSource(kind)}
-          demoSearch={demoActive ? demoSearchPreset : null} />
+          demoSearch={demoActive ? demoSearchPreset : null}
+          demoInstruction={demoActive && activeDemoStep?.id === 'search-fill' ? activeDemoStep.body : null} />
       ) : null}
       {dataSourceInputs}
       {showDemoTour ? (

@@ -52,14 +52,29 @@ export type FillLinkQuestionOption = {
 };
 
 export type FillLinkQuestion = {
+  id?: string;
   key: string;
-  label: string;
-  type: 'text' | 'date' | 'boolean' | 'radio' | 'multi_select' | string;
+  label?: string;
+  type: 'text' | 'textarea' | 'date' | 'boolean' | 'radio' | 'multi_select' | 'select' | 'email' | 'phone' | string;
+  sourceType?: 'pdf_field' | 'checkbox_group' | 'custom' | 'synthetic' | string;
   requiredForRespondentIdentity?: boolean;
+  required?: boolean;
   synthetic?: boolean;
+  visible?: boolean;
+  maxLength?: number | null;
+  placeholder?: string | null;
+  helpText?: string | null;
+  order?: number;
   sourceField?: string;
   groupKey?: string;
   options?: FillLinkQuestionOption[];
+};
+
+export type FillLinkWebFormConfig = {
+  schemaVersion?: number;
+  introText?: string | null;
+  defaultTextMaxLength?: number | null;
+  questions?: FillLinkQuestion[];
 };
 
 export type FillLinkSummary = {
@@ -86,6 +101,8 @@ export type FillLinkSummary = {
   requireAllFields?: boolean;
   allowRespondentPdfDownload?: boolean;
   respondentPdfDownloadEnabled?: boolean;
+  introText?: string | null;
+  webFormConfig?: FillLinkWebFormConfig | null;
   questions?: FillLinkQuestion[];
 };
 
@@ -145,6 +162,13 @@ export function normalizeFillLinkSummary(link: FillLinkSummary | null | undefine
     ...link,
     allowRespondentPdfDownload: respondentPdfDownloadEnabled,
     respondentPdfDownloadEnabled,
+    webFormConfig:
+      link.webFormConfig && typeof link.webFormConfig === 'object'
+        ? {
+          ...link.webFormConfig,
+          questions: Array.isArray(link.webFormConfig.questions) ? link.webFormConfig.questions : [],
+        }
+        : null,
   };
 }
 
@@ -205,6 +229,7 @@ export class FillLinksApiService {
     title?: string;
     requireAllFields?: boolean;
     allowRespondentPdfDownload?: boolean;
+    webFormConfig?: FillLinkWebFormConfig;
     fields: FillLinkTemplateFieldPayload[];
     checkboxRules?: Array<Record<string, unknown>>;
     checkboxHints?: CheckboxHint[];
@@ -237,6 +262,7 @@ export class FillLinksApiService {
       groupName?: string;
       requireAllFields?: boolean;
       allowRespondentPdfDownload?: boolean;
+      webFormConfig?: FillLinkWebFormConfig;
       status?: 'active' | 'closed';
       fields?: FillLinkTemplateFieldPayload[];
       checkboxRules?: Array<Record<string, unknown>>;

@@ -4,14 +4,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FillLinkManagerDialog } from '../../../../src/components/features/FillLinkManagerDialog';
 
 describe('FillLinkManagerDialog', () => {
-  const baseLimits = {
-    detectMaxPages: 10,
-    fillableMaxPages: 10,
-    savedFormsMax: 10,
-    fillLinksActiveMax: 1,
-    fillLinkResponsesMax: 1000,
-  };
-
   const buildGroupDialogProps = (overrides: Partial<ComponentProps<typeof FillLinkManagerDialog>> = {}) => {
     const onClose = vi.fn();
     const onPublishTemplate = vi.fn();
@@ -34,7 +26,6 @@ describe('FillLinkManagerDialog', () => {
       hasActiveTemplate: false,
       groupName: 'Hiring Packet',
       hasActiveGroup: true,
-      limits: baseLimits,
       templateLink: null,
       templateResponses: [],
       onPublishTemplate,
@@ -120,6 +111,8 @@ describe('FillLinkManagerDialog', () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
+    vi.stubGlobal('open', vi.fn());
+    window.open = vi.fn() as unknown as typeof window.open;
   });
 
   afterEach(() => {
@@ -139,8 +132,11 @@ describe('FillLinkManagerDialog', () => {
   it('shows the respondent PDF toggle only for template links and reuses the saved flag state', () => {
     renderTemplateDialog();
 
-    expect(screen.getByText('Allow respondents to download a PDF copy after submit')).toBeTruthy();
-    expect(screen.getByText('Download enabled')).toBeTruthy();
+    const respondentPdfToggleLabel = screen.getByText('Allow respondents to download a PDF copy after submit');
+    const respondentPdfToggle = respondentPdfToggleLabel.closest('label')?.querySelector('input') as HTMLInputElement | null;
+
+    expect(respondentPdfToggleLabel).toBeTruthy();
+    expect(respondentPdfToggle?.checked).toBe(true);
     expect(screen.queryByText('Template links only. The download button appears on the success screen after a valid submission.')).toBeTruthy();
 
     renderGroupDialog();
@@ -161,16 +157,21 @@ describe('FillLinkManagerDialog', () => {
 
     const toggles = screen.getAllByRole('checkbox');
     fireEvent.click(toggles[1]);
-    fireEvent.click(screen.getByRole('button', { name: 'Publish Template Fill By Link' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Publish link' }));
 
-    expect(onPublishTemplate).toHaveBeenCalledWith({
+    expect(onPublishTemplate).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'Template One',
       requireAllFields: false,
       allowRespondentPdfDownload: true,
-    });
+      webFormConfig: expect.objectContaining({
+        schemaVersion: 2,
+      }),
+    }));
   });
 
   it('searches after typing and keeps manual refresh available for the current query', async () => {
     const { onRefreshGroup, onSearchGroupResponses } = renderGroupDialog();
+    fireEvent.click(screen.getByRole('button', { name: 'Responses' }));
 
     const input = screen.getByPlaceholderText('Name, email, phone, or answer');
     fireEvent.change(input, { target: { value: 'ada' } });
@@ -190,6 +191,7 @@ describe('FillLinkManagerDialog', () => {
   it('clears the group respondent query when the dialog closes and reopens', () => {
     const props = buildGroupDialogProps();
     const { rerender } = render(<FillLinkManagerDialog {...props} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Responses' }));
     const input = screen.getByPlaceholderText('Name, email, phone, or answer');
 
     fireEvent.change(input, { target: { value: 'ada' } });
@@ -198,6 +200,7 @@ describe('FillLinkManagerDialog', () => {
 
     rerender(<FillLinkManagerDialog {...props} open={false} />);
     rerender(<FillLinkManagerDialog {...props} open />);
+    fireEvent.click(screen.getByRole('button', { name: 'Responses' }));
 
     const reopenedInput = screen.getByPlaceholderText('Name, email, phone, or answer') as HTMLInputElement;
     expect(reopenedInput.value).toBe('');
@@ -210,6 +213,7 @@ describe('FillLinkManagerDialog', () => {
   it('clears the group respondent query when switching to a different group', () => {
     const props = buildGroupDialogProps();
     const { rerender } = render(<FillLinkManagerDialog {...props} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Responses' }));
     const input = screen.getByPlaceholderText('Name, email, phone, or answer');
 
     fireEvent.change(input, { target: { value: 'ada' } });
@@ -233,6 +237,7 @@ describe('FillLinkManagerDialog', () => {
         groupResponses={[]}
       />,
     );
+    fireEvent.click(screen.getByRole('button', { name: 'Responses' }));
 
     const switchedInput = screen.getByPlaceholderText('Name, email, phone, or answer') as HTMLInputElement;
     expect(switchedInput.value).toBe('');
@@ -264,7 +269,6 @@ describe('FillLinkManagerDialog', () => {
       hasActiveTemplate: false,
       groupName: 'Hiring Packet',
       hasActiveGroup: true,
-      limits: baseLimits,
       templateLink: null,
       templateResponses: [],
       onPublishTemplate,
@@ -304,6 +308,7 @@ describe('FillLinkManagerDialog', () => {
     };
 
     const { rerender } = render(<FillLinkManagerDialog {...props} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Responses' }));
     const input = screen.getByPlaceholderText('Name, email, phone, or answer');
 
     fireEvent.change(input, { target: { value: 'ada' } });
@@ -319,9 +324,33 @@ describe('FillLinkManagerDialog', () => {
         onSearchGroupResponses={nextOnSearchGroupResponses}
       />,
     );
+    fireEvent.click(screen.getByRole('button', { name: 'Responses' }));
 
     vi.advanceTimersByTime(300);
     expect(nextOnSearchGroupResponses).not.toHaveBeenCalled();
     expect(nextOnRefreshGroup).not.toHaveBeenCalled();
+  });
+
+  it('closes the open field details when the same field row is clicked again', () => {
+    renderGroupDialog({
+      groupSourceQuestions: [
+        {
+          key: 'respondent_identifier',
+          label: 'Respondent name or ID',
+          type: 'text',
+          sourceType: 'synthetic',
+          required: true,
+          requiredForRespondentIdentity: true,
+          synthetic: true,
+          order: 0,
+        },
+      ],
+    });
+
+    expect(screen.getByDisplayValue('Respondent Name or ID')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: /Respondent name or ID/i }));
+
+    expect(screen.queryByDisplayValue('Respondent Name or ID')).toBeNull();
   });
 });

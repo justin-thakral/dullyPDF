@@ -172,6 +172,84 @@ class TemplateGroupUpdateRequest(TemplateGroupCreateRequest):
     """Update a named group with a new name and template membership."""
 
 
+class FillLinkWebFormOption(BaseModel):
+    key: str = Field(..., min_length=1, max_length=160)
+    label: Optional[str] = Field(default=None, max_length=200)
+
+    model_config = {"extra": "ignore"}
+
+    @field_validator("key", "label", mode="before")
+    @classmethod
+    def _trim_web_form_option_strings(cls, value: Any) -> Any:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            trimmed = value.strip()
+            return trimmed if trimmed else None
+        return value
+
+
+class FillLinkWebFormQuestion(BaseModel):
+    id: Optional[str] = Field(default=None, max_length=200)
+    key: Optional[str] = Field(default=None, max_length=160)
+    label: Optional[str] = Field(default=None, max_length=200)
+    type: Optional[str] = Field(default=None, max_length=40)
+    sourceType: Optional[str] = Field(default=None, max_length=40)
+    sourceField: Optional[str] = Field(default=None, max_length=160)
+    groupKey: Optional[str] = Field(default=None, max_length=160)
+    required: bool = False
+    requiredForRespondentIdentity: bool = False
+    synthetic: bool = False
+    visible: bool = True
+    maxLength: Optional[int] = Field(default=None, ge=1, le=4000)
+    placeholder: Optional[str] = Field(default=None, max_length=200)
+    helpText: Optional[str] = Field(default=None, max_length=400)
+    order: Optional[int] = Field(default=None, ge=0, le=100000)
+    options: List[FillLinkWebFormOption] = Field(default_factory=list)
+
+    model_config = {"extra": "ignore"}
+
+    @field_validator(
+        "id",
+        "key",
+        "label",
+        "type",
+        "sourceType",
+        "sourceField",
+        "groupKey",
+        "placeholder",
+        "helpText",
+        mode="before",
+    )
+    @classmethod
+    def _trim_web_form_question_strings(cls, value: Any) -> Any:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            trimmed = value.strip()
+            return trimmed if trimmed else None
+        return value
+
+
+class FillLinkWebFormConfig(BaseModel):
+    schemaVersion: Optional[int] = Field(default=None, ge=1, le=100)
+    introText: Optional[str] = Field(default=None, max_length=2000)
+    defaultTextMaxLength: Optional[int] = Field(default=None, ge=1, le=4000)
+    questions: List[FillLinkWebFormQuestion] = Field(default_factory=list)
+
+    model_config = {"extra": "ignore"}
+
+    @field_validator("introText", mode="before")
+    @classmethod
+    def _trim_web_form_config_strings(cls, value: Any) -> Any:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            trimmed = value.strip()
+            return trimmed if trimmed else None
+        return value
+
+
 class FillLinkCreateRequest(BaseModel):
     """Publish or refresh a Fill By Link endpoint for a saved template."""
 
@@ -183,6 +261,7 @@ class FillLinkCreateRequest(BaseModel):
     groupName: Optional[str] = Field(default=None, max_length=200)
     requireAllFields: bool = False
     respondentPdfDownloadEnabled: bool = False
+    webFormConfig: Optional[FillLinkWebFormConfig] = None
     fields: List[TemplateOverlayField] = Field(default_factory=list)
     checkboxRules: List[Dict[str, Any]] = Field(default_factory=list)
     groupTemplates: List["FillLinkGroupTemplateSource"] = Field(default_factory=list)
@@ -241,6 +320,7 @@ class FillLinkUpdateRequest(BaseModel):
     title: Optional[str] = Field(default=None, max_length=200)
     requireAllFields: Optional[bool] = None
     respondentPdfDownloadEnabled: Optional[bool] = None
+    webFormConfig: Optional[FillLinkWebFormConfig] = None
     fields: Optional[List[TemplateOverlayField]] = None
     checkboxRules: Optional[List[Dict[str, Any]]] = None
     groupName: Optional[str] = Field(default=None, max_length=200)

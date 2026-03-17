@@ -531,7 +531,7 @@ async function main() {
     logStep('Opening a saved form');
     const firstSavedFormName = savedFormNameA;
     await page.locator('[aria-label="Saved templates"] .saved-chip__content').filter({ hasText: savedFormNameA }).first().click();
-    await assertProcessingCopy(page, 'Opening your saved form…', 'Grabbing your saved form from the cloud.');
+    await assertProcessingCopy(page, 'Loading form…', '');
     await page.waitForTimeout(750);
 
     logStep('Opening a saved group');
@@ -548,7 +548,7 @@ async function main() {
     await page.getByRole('button', { name: 'Cancel' }).click();
 
     await firstGroupChip.locator('.saved-chip__content').click();
-    await assertProcessingCopy(page, 'Opening your group…', 'Opening the first template in this group.');
+    await assertProcessingCopy(page, 'Loading form…', '');
     await waitForEditor(page, { timeoutMs: 180000 });
     await page.locator('.ui-group-select').waitFor({ timeout: 30000 });
     await overwriteOpenGroupTemplate(page);

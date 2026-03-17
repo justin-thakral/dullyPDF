@@ -80,16 +80,16 @@ export const PROCESSING_AD_POSTER_URL =
   typeof env.VITE_PROCESSING_AD_POSTER_URL === 'string' ? env.VITE_PROCESSING_AD_POSTER_URL.trim() : '';
 export const DETECT_PROCESSING_TITLE = 'Preparing your form…';
 export const FILLABLE_TEMPLATE_PROCESSING_TITLE = 'Opening your fillable PDF…';
-export const SAVED_FORM_PROCESSING_TITLE = 'Opening your saved form…';
-export const SAVED_GROUP_PROCESSING_TITLE = 'Opening your group…';
+export const SAVED_FORM_PROCESSING_TITLE = 'Loading form…';
+export const SAVED_GROUP_PROCESSING_TITLE = 'Loading form…';
 export const DEFAULT_PROCESSING_MESSAGE = 'Detecting fields and building the editor.';
 export const DETECTION_WARMUP_MESSAGE = 'Warming up rename detector';
 export const DETECTION_POST_WARMUP_MESSAGE = 'Detecting fields...';
 export const DETECTION_WARMUP_DURATION_MS = 5_000;
 export const DETECTION_WARMUP_DELAY_MS = 3_000;
 export const DETECTION_WARMUP_PAGE_THRESHOLD = 3;
-export const SAVED_FORM_PROCESSING_MESSAGE = 'Grabbing your saved form from the cloud.';
-export const SAVED_GROUP_PROCESSING_MESSAGE = 'Opening the first template in this group.';
+export const SAVED_FORM_PROCESSING_MESSAGE = '';
+export const SAVED_GROUP_PROCESSING_MESSAGE = '';
 export const FILLABLE_TEMPLATE_PROCESSING_MESSAGE = 'Opening your fillable PDF in the editor.';
 export const QUEUE_WAIT_THRESHOLD_MS = 15000;
 

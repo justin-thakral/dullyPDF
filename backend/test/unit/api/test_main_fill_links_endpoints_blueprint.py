@@ -33,7 +33,11 @@ def _fill_link_record(
     public_token: str | None = None,
     respondent_pdf_download_enabled: bool = False,
     respondent_pdf_snapshot: dict | None = None,
+    require_all_fields: bool = False,
+    questions: list[dict] | None = None,
+    web_form_config: dict | None = None,
 ) -> FillLinkRecord:
+    resolved_questions = questions or [{"key": "full_name", "label": "Full Name", "type": "text"}]
     return FillLinkRecord(
         id="link-1",
         user_id="user_base",
@@ -49,8 +53,9 @@ def _fill_link_record(
         closed_reason=None if status == "active" else "owner_closed",
         max_responses=max_responses,
         response_count=response_count,
-        questions=[{"key": "full_name", "label": "Full Name", "type": "text"}],
-        require_all_fields=False,
+        questions=resolved_questions,
+        require_all_fields=require_all_fields,
+        web_form_config=web_form_config or {"schemaVersion": 2, "questions": resolved_questions},
         created_at="2024-01-01T00:00:00+00:00",
         updated_at="2024-01-01T00:00:00+00:00",
         published_at="2024-01-01T00:00:00+00:00",
@@ -91,6 +96,7 @@ def _group_record() -> TemplateGroupRecord:
 
 
 def _group_fill_link_record() -> FillLinkRecord:
+    questions = [{"key": "full_name", "label": "Full Name", "type": "text"}]
     return FillLinkRecord(
         id="group-link-1",
         user_id="user_base",
@@ -106,8 +112,9 @@ def _group_fill_link_record() -> FillLinkRecord:
         closed_reason=None,
         max_responses=25,
         response_count=0,
-        questions=[{"key": "full_name", "label": "Full Name", "type": "text"}],
+        questions=questions,
         require_all_fields=True,
+        web_form_config={"schemaVersion": 2, "questions": questions},
         created_at="2024-01-01T00:00:00+00:00",
         updated_at="2024-01-01T00:00:00+00:00",
         published_at="2024-01-01T00:00:00+00:00",
@@ -130,8 +137,11 @@ def test_fill_links_list_create_and_response_endpoints(client, app_main, base_us
     mocker.patch.object(app_main, "list_fill_links", return_value=[])
     mocker.patch.object(
         app_main,
-        "build_fill_link_questions",
-        return_value=[{"key": "full_name", "label": "Full Name", "type": "text"}],
+        "_build_template_web_form_schema",
+        return_value=(
+            {"schemaVersion": 2, "questions": [{"key": "full_name", "label": "Full Name", "type": "text"}]},
+            [{"key": "full_name", "label": "Full Name", "type": "text"}],
+        ),
     )
     snapshot_mock = mocker.patch.object(
         app_main,
@@ -146,7 +156,11 @@ def test_fill_links_list_create_and_response_endpoints(client, app_main, base_us
             "filename": "template-one-response.pdf",
         },
     )
-    mocker.patch.object(app_main, "create_or_update_fill_link", return_value=_fill_link_record())
+    mocker.patch.object(
+        app_main,
+        "create_or_update_fill_link",
+        return_value=_fill_link_record(require_all_fields=True),
+    )
 
     create_response = client.post(
         "/api/fill-links",
@@ -163,7 +177,7 @@ def test_fill_links_list_create_and_response_endpoints(client, app_main, base_us
     )
     assert create_response.status_code == 200
     assert create_response.json()["link"]["status"] == "active"
-    assert create_response.json()["link"]["requireAllFields"] is False
+    assert create_response.json()["link"]["requireAllFields"] is True
     sync_mock.assert_called_once_with(base_user.app_user_id, create_if_missing=True)
     snapshot_mock.assert_called_once()
     app_main.create_or_update_fill_link.assert_called_once_with(
@@ -177,6 +191,7 @@ def test_fill_links_list_create_and_response_endpoints(client, app_main, base_us
         title="Template One Intake",
         questions=[{"key": "full_name", "label": "Full Name", "type": "text"}],
         require_all_fields=True,
+        web_form_config={"schemaVersion": 2, "questions": [{"key": "full_name", "label": "Full Name", "type": "text"}]},
         max_responses=5,
         respondent_pdf_download_enabled=True,
         respondent_pdf_snapshot={
@@ -218,8 +233,11 @@ def test_fill_links_update_endpoint_uses_link_id_and_serializes_canonical_signed
     mocker.patch.object(app_main, "sync_user_downgrade_retention", return_value=None)
     mocker.patch.object(
         app_main,
-        "build_fill_link_questions",
-        return_value=[{"key": "full_name", "label": "Full Name", "type": "text"}],
+        "_build_template_web_form_schema",
+        return_value=(
+            {"schemaVersion": 2, "questions": [{"key": "full_name", "label": "Full Name", "type": "text"}]},
+            [{"key": "full_name", "label": "Full Name", "type": "text"}],
+        ),
     )
     snapshot_mock = mocker.patch.object(
         app_main,
@@ -281,6 +299,7 @@ def test_fill_links_update_endpoint_uses_link_id_and_serializes_canonical_signed
         group_name=None,
         template_ids=None,
         require_all_fields=True,
+        web_form_config={"schemaVersion": 2, "questions": [{"key": "full_name", "label": "Full Name", "type": "text"}]},
         respondent_pdf_download_enabled=True,
         respondent_pdf_snapshot={
             "version": 1,

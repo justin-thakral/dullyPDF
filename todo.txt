@@ -3,3 +3,4 @@
 3: Viewer follow-up: replace the current full-render threshold approach with a cached page canvas/bitmap system so long PDFs stay stable without keeping every page mounted.
 4: Unit test and integration coverage is good, need more human based E2E testing. Try and break this site yk.
 5: Make an internal dashbord for viewer user stats including email, role, detections, credits used.
+6: Refactor database to have users first then breakdown subsections for what they own.

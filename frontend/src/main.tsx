@@ -14,6 +14,10 @@ import {
 import { resolveIntentPath, type IntentPageKey } from './config/intentPages';
 import { resolveFeaturePlanPath, type FeaturePlanPageKey } from './config/featurePlanPages';
 import { initializeGoogleAds } from './utils/googleAds';
+import {
+  parseWorkspaceBrowserRoute,
+  type WorkspaceBrowserRoute,
+} from './utils/workspaceRoutes';
 
 const App = lazy(() => import('./App'));
 const LegalPage = lazy(() => import('./components/pages/LegalPage'));
@@ -29,7 +33,7 @@ const BlogIndexPage = lazy(() => import('./components/pages/BlogIndexPage'));
 const BlogPostPage = lazy(() => import('./components/pages/BlogPostPage'));
 
 type AppRoute =
-  | { kind: 'app' }
+  | { kind: 'app'; browserRoute: WorkspaceBrowserRoute }
   | { kind: 'legal'; legalKind: LegalPageKind }
   | { kind: 'fill-link-public'; token: string }
   | { kind: 'intent'; intentKey: IntentPageKey }
@@ -49,9 +53,21 @@ const replaceBrowserPath = (targetPath: string): void => {
 };
 
 const resolveRoute = (): AppRoute => {
-  if (typeof window === 'undefined') return { kind: 'app' };
+  if (typeof window === 'undefined') {
+    return {
+      kind: 'app',
+      browserRoute: { kind: 'homepage' },
+    };
+  }
   const path = window.location.pathname || '/';
   const normalizedPath = path.replace(/\/+$/, '') || '/';
+  const workspaceBrowserRoute = parseWorkspaceBrowserRoute(path, window.location.search);
+  if (workspaceBrowserRoute) {
+    return {
+      kind: 'app',
+      browserRoute: workspaceBrowserRoute,
+    };
+  }
 
   if (normalizedPath === '/privacy' || normalizedPath === '/privacy-policy') {
     return { kind: 'legal', legalKind: 'privacy' };
@@ -137,19 +153,13 @@ const resolveRoute = (): AppRoute => {
       requestedPath: usageDocsRoute.requestedPath,
     };
   }
-
-  if (normalizedPath === '/') return { kind: 'app' };
-
   return { kind: 'not-found', requestedPath: normalizedPath };
 };
 
 const route = resolveRoute();
 
-// Best-effort warmup to reduce Cloud Run cold-start latency during signup reCAPTCHA assessment.
-// Run only on app/editor routes so docs/legal visits avoid unnecessary startup network work.
 if (typeof window !== 'undefined' && route.kind === 'app') {
   initializeGoogleAds();
-  fetch('/api/health', { method: 'GET', mode: 'cors' }).catch(() => {});
 }
 
 createRoot(document.getElementById('root')!).render(
@@ -178,7 +188,7 @@ createRoot(document.getElementById('root')!).render(
       ) : route.kind === 'not-found' ? (
         <PublicNotFoundPage requestedPath={route.requestedPath} />
       ) : (
-        <App />
+        <App initialBrowserRoute={route.browserRoute} />
       )}
     </Suspense>
   </StrictMode>,

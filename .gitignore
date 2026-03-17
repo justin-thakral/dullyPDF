@@ -98,6 +98,10 @@ firebase-debug.log*
 Thumbs.db
 *.log
 *~RF*.TMP
+*:Zone.Identifier
+
+# Local scratch screenshots
+/image.png
 
 # Service account credentials
 .gcloud/

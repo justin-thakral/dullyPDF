@@ -47,6 +47,7 @@ def _fill_link_record(
     status: str = "active",
     title: str | None = "Admissions",
 ) -> FillLinkRecord:
+    questions = [{"key": "full_name", "label": "Full Name", "type": "text"}]
     return FillLinkRecord(
         id=link_id,
         user_id="user_base",
@@ -62,8 +63,9 @@ def _fill_link_record(
         closed_reason=None if status == "active" else "owner_closed",
         max_responses=5,
         response_count=0,
-        questions=[{"key": "full_name", "label": "Full Name", "type": "text"}],
+        questions=questions,
         require_all_fields=False,
+        web_form_config={"schemaVersion": 2, "questions": questions},
         created_at="2025-01-02T00:00:00.000Z",
         updated_at="2025-01-02T00:00:00.000Z",
         published_at="2025-01-02T00:00:00.000Z",

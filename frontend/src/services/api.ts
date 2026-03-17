@@ -23,6 +23,7 @@ export type {
   FillLinkResponse,
   FillLinkSummary,
   FillLinkTemplateFieldPayload,
+  FillLinkWebFormConfig,
   PublicFillLinkSubmitResult,
 } from './fillLinksApi';
 export { FillLinksApiService } from './fillLinksApi';

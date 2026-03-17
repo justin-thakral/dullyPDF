@@ -42,6 +42,10 @@ describe('FillLinkPublicPage', () => {
       configurable: true,
       value: vi.fn(),
     });
+    Object.defineProperty(HTMLAnchorElement.prototype, 'click', {
+      configurable: true,
+      value: vi.fn(),
+    });
     vi.stubGlobal('URL', {
       ...URL,
       createObjectURL: vi.fn(() => 'blob:submitted-pdf'),

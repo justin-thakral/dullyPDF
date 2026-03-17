@@ -35,8 +35,10 @@ function deferred<T>() {
 
 function renderHarness(options?: {
   handleSelectSavedForm?: ReturnType<typeof vi.fn>;
+  refreshGroups?: ReturnType<typeof vi.fn>;
 }) {
   const pendingOpen = options?.handleSelectSavedForm ?? vi.fn().mockResolvedValue(undefined);
+  const refreshGroups = options?.refreshGroups ?? vi.fn().mockResolvedValue([]);
   let latestHook: ReturnType<typeof useWorkspaceGroupCoordinator> | null = null;
 
   function Harness() {
@@ -68,7 +70,7 @@ function renderHarness(options?: {
         deletingGroupId: null,
         selectedGroupFilterId: 'all',
         setSelectedGroupFilterId: vi.fn(),
-        refreshGroups: vi.fn().mockResolvedValue([]),
+        refreshGroups,
         createGroup: vi.fn(),
         updateExistingGroup: vi.fn(),
         deleteGroup: vi.fn(),
@@ -193,6 +195,7 @@ function renderHarness(options?: {
 
   return {
     pendingOpen,
+    refreshGroups,
     get hook() {
       if (!latestHook) {
         throw new Error('hook not initialized');
@@ -238,7 +241,7 @@ describe('useWorkspaceGroupCoordinator', () => {
       expect(handleSelectSavedForm).toHaveBeenCalledWith(
         'tpl-a',
         expect.any(Object),
-        { source: 'saved-group' },
+        expect.objectContaining({ source: 'saved-group' }),
       );
     });
     expect(harness.hook.pendingGroupTemplateId).toBe('tpl-a');
@@ -250,6 +253,15 @@ describe('useWorkspaceGroupCoordinator', () => {
 
     await waitFor(() => {
       expect(harness.hook.pendingGroupTemplateId).toBeNull();
+    });
+  });
+
+  it('does not trigger a redundant group refresh on mount', async () => {
+    const refreshGroups = vi.fn().mockResolvedValue([]);
+    renderHarness({ refreshGroups });
+
+    await waitFor(() => {
+      expect(refreshGroups).not.toHaveBeenCalled();
     });
   });
 });

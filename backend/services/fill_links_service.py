@@ -54,6 +54,10 @@ _IDENTIFIER_ID_KEYS = {
     "case_id",
     "mrn",
 }
+_FILL_LINK_WEB_FORM_SCHEMA_VERSION = 2
+_FILL_LINK_TEXT_TYPES = frozenset({"text", "textarea", "date", "email", "phone"})
+_FILL_LINK_OPTION_TYPES = frozenset({"radio", "multi_select", "select"})
+_FILL_LINK_BOOLEAN_TYPES = frozenset({"boolean", "checkbox"})
 logger = get_logger(__name__)
 _DEV_FILL_LINK_TOKEN_SECRET = secrets.token_urlsafe(48)
 _WARNED_DEV_FILL_LINK_TOKEN_SECRET = False
@@ -252,22 +256,31 @@ def _question_supports_respondent_identity(question: Dict[str, Any]) -> bool:
 def _ensure_fill_link_identifier_question(questions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     normalized_questions: list[dict[str, Any]] = []
     found_identifier = False
-    for question in questions:
+    for index, question in enumerate(questions):
         if not isinstance(question, dict):
             continue
         next_question = dict(question)
         if _question_supports_respondent_identity(next_question):
             next_question["requiredForRespondentIdentity"] = True
             found_identifier = True
+        next_question.setdefault("id", _default_fill_link_question_id(next_question.get("key"), next_question.get("sourceType")))
+        next_question.setdefault("visible", True)
+        next_question.setdefault("required", False)
+        next_question.setdefault("order", index)
         normalized_questions.append(next_question)
     if found_identifier:
         return normalized_questions
     synthetic_question = {
+        "id": _default_fill_link_question_id(_RESPONDENT_IDENTIFIER_KEY, "synthetic"),
         "key": _RESPONDENT_IDENTIFIER_KEY,
         "label": _RESPONDENT_IDENTIFIER_LABEL,
         "type": "text",
+        "sourceType": "synthetic",
         "requiredForRespondentIdentity": True,
+        "required": True,
         "synthetic": True,
+        "visible": True,
+        "order": -1,
     }
     return [synthetic_question, *normalized_questions]
 
@@ -317,6 +330,60 @@ def _resolve_checkbox_question_type(
     return "radio"
 
 
+def _question_supports_text_limits(question_type: Optional[str]) -> bool:
+    return normalize_fill_link_key(question_type) in _FILL_LINK_TEXT_TYPES
+
+
+def _question_supports_options(question_type: Optional[str]) -> bool:
+    return normalize_fill_link_key(question_type) in _FILL_LINK_OPTION_TYPES
+
+
+def _question_is_boolean(question_type: Optional[str]) -> bool:
+    return normalize_fill_link_key(question_type) in _FILL_LINK_BOOLEAN_TYPES
+
+
+def _normalize_question_type(question_type: Optional[str]) -> str:
+    normalized = normalize_fill_link_key(question_type) or "text"
+    if normalized == "checkbox":
+        return "boolean"
+    if normalized in _FILL_LINK_TEXT_TYPES | _FILL_LINK_OPTION_TYPES | _FILL_LINK_BOOLEAN_TYPES:
+        return normalized
+    return "text"
+
+
+def _normalize_positive_int(value: Any, *, maximum: Optional[int] = None) -> Optional[int]:
+    if value is None or value == "":
+        return None
+    try:
+        numeric = int(value)
+    except (TypeError, ValueError):
+        return None
+    if numeric <= 0:
+        return None
+    if maximum is not None:
+        numeric = min(numeric, maximum)
+    return numeric
+
+
+def _default_fill_link_question_id(key: Optional[str], source_type: Optional[str]) -> str:
+    normalized_key = normalize_fill_link_key(key) or "question"
+    normalized_source = normalize_fill_link_key(source_type) or "question"
+    return f"{normalized_source}:{normalized_key}"
+
+
+def _normalize_fill_link_option(option: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    if not isinstance(option, dict):
+        return None
+    option_key = _coerce_text_answer(option.get("key")) or normalize_fill_link_key(option.get("label"))
+    normalized_option_key = normalize_fill_link_key(option_key)
+    if not normalized_option_key:
+        return None
+    return {
+        "key": option_key,
+        "label": humanize_fill_link_label(option.get("label") or option_key, fallback="Option"),
+    }
+
+
 def build_fill_link_questions(
     fields: List[Dict[str, Any]],
     checkbox_rules: Optional[List[Dict[str, Any]]] = None,
@@ -344,10 +411,15 @@ def build_fill_link_questions(
             question_type = "date" if field_type == "date" else "text"
             questions.append(
                 {
+                    "id": _default_fill_link_question_id(source_field, "pdf_field"),
                     "key": source_field,
                     "label": humanize_fill_link_label(source_field),
                     "type": question_type,
+                    "sourceType": "pdf_field",
                     "sourceField": source_field,
+                    "visible": True,
+                    "required": False,
+                    "order": len(questions),
                 }
             )
             continue
@@ -362,12 +434,17 @@ def build_fill_link_questions(
         if group is None:
             label_source = field.get("groupLabel") or (rule.get("databaseField") if isinstance(rule, dict) else None) or raw_group_key
             group = {
+                "id": _default_fill_link_question_id(answer_key, "checkbox_group"),
                 "key": answer_key,
                 "label": humanize_fill_link_label(label_source, fallback="Choice"),
                 "type": "radio",
+                "sourceType": "checkbox_group",
                 "groupKey": raw_group_key,
                 "options": [],
                 "operation": rule.get("operation") if isinstance(rule, dict) else None,
+                "visible": True,
+                "required": False,
+                "order": len(questions),
             }
             checkbox_groups[normalized_group_key] = group
             questions.append(group)
@@ -390,6 +467,8 @@ def build_fill_link_questions(
         if question.get("groupKey"):
             options = question.get("options") if isinstance(question.get("options"), list) else []
             question["type"] = _resolve_checkbox_question_type(len(options), question.get("operation"))
+            if question["type"] == "boolean":
+                question.pop("options", None)
     return _ensure_fill_link_identifier_question(questions)
 
 
@@ -399,26 +478,23 @@ def _dedupe_fill_link_options(options: Any) -> List[Dict[str, Any]]:
     deduped: List[Dict[str, Any]] = []
     seen_option_keys: set[str] = set()
     for option in options:
-        if not isinstance(option, dict):
+        normalized = _normalize_fill_link_option(option)
+        if not normalized:
             continue
-        option_key = _coerce_text_answer(option.get("key")) or normalize_fill_link_key(option.get("label"))
-        normalized_option_key = normalize_fill_link_key(option_key)
+        normalized_option_key = normalize_fill_link_key(normalized.get("key"))
         if not normalized_option_key or normalized_option_key in seen_option_keys:
             continue
         seen_option_keys.add(normalized_option_key)
-        deduped.append(
-            {
-                "key": option_key,
-                "label": humanize_fill_link_label(option.get("label") or option_key, fallback="Option"),
-            }
-        )
+        deduped.append(normalized)
     return deduped
 
 
 def _merge_fill_link_question_type(left_type: str, right_type: str) -> str:
-    normalized = {normalize_fill_link_key(left_type), normalize_fill_link_key(right_type)}
+    normalized = {_normalize_question_type(left_type), _normalize_question_type(right_type)}
     if "multi_select" in normalized:
         return "multi_select"
+    if "select" in normalized:
+        return "select"
     if "radio" in normalized:
         return "radio"
     if normalized == {"date"}:
@@ -435,15 +511,31 @@ def _merge_fill_link_question(existing: Dict[str, Any], incoming: Dict[str, Any]
         _coerce_text_answer(existing.get("type")) or "text",
         _coerce_text_answer(incoming.get("type")) or "text",
     )
+    merged["id"] = (
+        _coerce_text_answer(existing.get("id"))
+        or _coerce_text_answer(incoming.get("id"))
+        or _default_fill_link_question_id(existing.get("key") or incoming.get("key"), existing.get("sourceType") or incoming.get("sourceType"))
+    )
+    merged["sourceType"] = _coerce_text_answer(existing.get("sourceType")) or _coerce_text_answer(incoming.get("sourceType")) or "pdf_field"
     merged["requiredForRespondentIdentity"] = bool(
         existing.get("requiredForRespondentIdentity") or incoming.get("requiredForRespondentIdentity")
     )
+    merged["required"] = bool(existing.get("required") or incoming.get("required"))
+    merged["visible"] = existing.get("visible") is not False or incoming.get("visible") is not False
     if not merged.get("sourceField") and incoming.get("sourceField"):
         merged["sourceField"] = incoming.get("sourceField")
     if not merged.get("groupKey") and incoming.get("groupKey"):
         merged["groupKey"] = incoming.get("groupKey")
     if not merged.get("operation") and incoming.get("operation"):
         merged["operation"] = incoming.get("operation")
+    existing_order = _normalize_positive_int(existing.get("order"))
+    incoming_order = _normalize_positive_int(incoming.get("order"))
+    if existing_order is not None or incoming_order is not None:
+        merged["order"] = min(
+            value
+            for value in [existing_order, incoming_order]
+            if value is not None
+        )
     merged_options = _dedupe_fill_link_options(
         [*(_dedupe_fill_link_options(existing.get("options"))), *(_dedupe_fill_link_options(incoming.get("options")))]
     )
@@ -507,6 +599,220 @@ def build_group_fill_link_questions(template_sources: Iterable[Dict[str, Any]]) 
         if next_questions:
             question_sets.append(next_questions)
     return merge_fill_link_questions(question_sets)
+
+
+def _normalize_fill_link_builder_question(
+    question: Dict[str, Any],
+    *,
+    fallback_order: int,
+) -> Optional[Dict[str, Any]]:
+    if not isinstance(question, dict):
+        return None
+    source_type = normalize_fill_link_key(question.get("sourceType"))
+    if not source_type:
+        if question.get("synthetic"):
+            source_type = "synthetic"
+        elif question.get("groupKey"):
+            source_type = "checkbox_group"
+        elif normalize_fill_link_key(question.get("key")).startswith("custom"):
+            source_type = "custom"
+        else:
+            source_type = "pdf_field"
+    key = _coerce_text_answer(question.get("key") or question.get("sourceField"))
+    if not key:
+        key = _RESPONDENT_IDENTIFIER_KEY
+    question_type = _normalize_question_type(question.get("type"))
+    normalized: Dict[str, Any] = {
+        "id": _coerce_text_answer(question.get("id")) or _default_fill_link_question_id(key, source_type),
+        "key": key,
+        "label": humanize_fill_link_label(question.get("label") or key),
+        "type": question_type,
+        "sourceType": source_type,
+        "requiredForRespondentIdentity": bool(
+            question.get("requiredForRespondentIdentity") or _question_supports_respondent_identity(question)
+        ),
+        "required": bool(question.get("required")),
+        "synthetic": bool(question.get("synthetic")),
+        "visible": question.get("visible") is not False,
+        "order": _normalize_positive_int(question.get("order")) or fallback_order,
+        "sourceField": _coerce_text_answer(question.get("sourceField")),
+        "groupKey": _coerce_text_answer(question.get("groupKey")),
+        "placeholder": _coerce_text_answer(question.get("placeholder")),
+        "helpText": _coerce_text_answer(question.get("helpText")),
+    }
+    if normalized["requiredForRespondentIdentity"] and normalized["synthetic"]:
+        normalized["required"] = True
+    if _question_supports_text_limits(question_type):
+        normalized["maxLength"] = _normalize_positive_int(question.get("maxLength"), maximum=4000)
+    if _question_supports_options(question_type):
+        normalized["options"] = _dedupe_fill_link_options(question.get("options"))
+    return normalized
+
+
+def _apply_fill_link_builder_overrides(
+    base_question: Dict[str, Any],
+    override_question: Dict[str, Any],
+) -> Dict[str, Any]:
+    next_question = dict(base_question)
+    next_question["label"] = _coerce_text_answer(override_question.get("label")) or next_question.get("label")
+    next_question["visible"] = override_question.get("visible") is not False
+    next_question["required"] = bool(override_question.get("required"))
+    next_question["order"] = _normalize_positive_int(override_question.get("order")) or next_question.get("order") or 0
+    next_question["placeholder"] = _coerce_text_answer(override_question.get("placeholder"))
+    next_question["helpText"] = _coerce_text_answer(override_question.get("helpText"))
+    if _question_supports_text_limits(next_question.get("type")):
+        next_question["maxLength"] = _normalize_positive_int(override_question.get("maxLength"), maximum=4000)
+    else:
+        next_question.pop("maxLength", None)
+    return next_question
+
+
+def _sort_fill_link_builder_questions(questions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    sortable: List[Tuple[int, int, Dict[str, Any]]] = []
+    for index, question in enumerate(questions):
+        sortable.append((_normalize_positive_int(question.get("order")) or index, index, dict(question)))
+    sortable.sort(key=lambda item: (item[0], item[1]))
+    normalized: List[Dict[str, Any]] = []
+    for index, (_, __, question) in enumerate(sortable):
+        next_question = dict(question)
+        next_question["order"] = index
+        normalized.append(next_question)
+    return normalized
+
+
+def build_fill_link_web_form_schema(
+    default_questions: List[Dict[str, Any]],
+    *,
+    require_all_fields: bool = False,
+    web_form_config: Optional[Dict[str, Any]] = None,
+    allow_custom_questions: bool = True,
+) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
+    normalized_default_questions: List[Dict[str, Any]] = []
+    for index, default_question in enumerate(_ensure_fill_link_identifier_question(default_questions)):
+        normalized_question = _normalize_fill_link_builder_question(default_question, fallback_order=index)
+        if normalized_question is None:
+            continue
+        normalized_default_questions.append(normalized_question)
+    normalized_defaults = _sort_fill_link_builder_questions(normalized_default_questions)
+    default_by_id = {
+        normalize_fill_link_key(question.get("id")): question
+        for question in normalized_defaults
+        if normalize_fill_link_key(question.get("id"))
+    }
+    default_by_key = {
+        normalize_fill_link_key(question.get("key")): question
+        for question in normalized_defaults
+        if normalize_fill_link_key(question.get("key"))
+    }
+
+    incoming_questions = web_form_config.get("questions") if isinstance(web_form_config, dict) else None
+    stored_questions: List[Dict[str, Any]] = []
+    seen_default_keys: set[str] = set()
+    seen_custom_ids: set[str] = set()
+
+    if isinstance(incoming_questions, list):
+        for index, raw_question in enumerate(incoming_questions):
+            normalized_question = _normalize_fill_link_builder_question(raw_question, fallback_order=index)
+            if not normalized_question:
+                continue
+            if normalized_question.get("sourceType") == "custom":
+                if not allow_custom_questions:
+                    raise ValueError("Custom web-form questions are currently supported only for template Fill By Link.")
+                normalized_id = normalize_fill_link_key(normalized_question.get("id"))
+                if normalized_id and normalized_id in seen_custom_ids:
+                    continue
+                if normalized_id:
+                    seen_custom_ids.add(normalized_id)
+                stored_questions.append(normalized_question)
+                continue
+
+            matched_default = (
+                default_by_id.get(normalize_fill_link_key(normalized_question.get("id")))
+                or default_by_key.get(normalize_fill_link_key(normalized_question.get("key")))
+                or default_by_key.get(normalize_fill_link_key(normalized_question.get("sourceField")))
+            )
+            if not matched_default:
+                continue
+            seen_default_keys.add(normalize_fill_link_key(matched_default.get("key")))
+            stored_questions.append(_apply_fill_link_builder_overrides(matched_default, normalized_question))
+    else:
+        stored_questions = [dict(question) for question in normalized_defaults]
+
+    for default_question in normalized_defaults:
+        normalized_key = normalize_fill_link_key(default_question.get("key"))
+        if normalized_key in seen_default_keys:
+            continue
+        stored_questions.append(dict(default_question))
+
+    stored_questions = _sort_fill_link_builder_questions(
+        _ensure_fill_link_identifier_question(stored_questions)
+    )
+
+    default_text_max_length = _normalize_positive_int(
+        web_form_config.get("defaultTextMaxLength") if isinstance(web_form_config, dict) else None,
+        maximum=4000,
+    )
+    published_questions: List[Dict[str, Any]] = []
+    for question in stored_questions:
+        if question.get("visible") is False:
+            continue
+        question_type = _normalize_question_type(question.get("type"))
+        next_question = dict(question)
+        next_question["type"] = question_type
+        next_question["required"] = bool(
+            require_all_fields
+            or question.get("required")
+            or (question.get("synthetic") and question.get("requiredForRespondentIdentity"))
+        )
+        next_question["visible"] = True
+        next_question["order"] = len(published_questions)
+        if _question_supports_text_limits(question_type):
+            next_question["maxLength"] = _normalize_positive_int(
+                question.get("maxLength"),
+                maximum=4000,
+            ) or default_text_max_length
+        else:
+            next_question.pop("maxLength", None)
+        if _question_supports_options(question_type):
+            options = _dedupe_fill_link_options(question.get("options"))
+            if not options:
+                label = humanize_fill_link_label(question.get("label") or question.get("key"))
+                raise ValueError(f"{label} needs at least one option before publishing.")
+            next_question["options"] = options
+        else:
+            next_question.pop("options", None)
+        if _question_is_boolean(question_type):
+            next_question.pop("options", None)
+            next_question.pop("maxLength", None)
+        published_questions.append(next_question)
+
+    if not any(question.get("requiredForRespondentIdentity") for question in published_questions):
+        synthetic_question = _normalize_fill_link_builder_question(
+            {
+                "id": _default_fill_link_question_id(_RESPONDENT_IDENTIFIER_KEY, "synthetic"),
+                "key": _RESPONDENT_IDENTIFIER_KEY,
+                "label": _RESPONDENT_IDENTIFIER_LABEL,
+                "type": "text",
+                "sourceType": "synthetic",
+                "required": True,
+                "requiredForRespondentIdentity": True,
+                "synthetic": True,
+                "visible": True,
+                "maxLength": default_text_max_length,
+                "order": 0,
+            },
+            fallback_order=0,
+        )
+        if synthetic_question:
+            published_questions = _sort_fill_link_builder_questions([synthetic_question, *published_questions])
+
+    stored_config = {
+        "schemaVersion": _FILL_LINK_WEB_FORM_SCHEMA_VERSION,
+        "introText": _coerce_text_answer(web_form_config.get("introText")) if isinstance(web_form_config, dict) else None,
+        "defaultTextMaxLength": default_text_max_length,
+        "questions": stored_questions,
+    }
+    return stored_config, published_questions
 
 
 def _coerce_boolean_answer(value: Any) -> Optional[bool]:
@@ -589,19 +895,20 @@ def coerce_fill_link_answers(
         if not key or key not in payload:
             continue
         label = humanize_fill_link_label(question.get("label") or key)
-        question_type = normalize_fill_link_key(question.get("type")) or "text"
+        question_type = _normalize_question_type(question.get("type"))
         raw_value = payload.get(key)
+        max_chars = _normalize_positive_int(question.get("maxLength"), maximum=limits.max_value_chars) or limits.max_value_chars
         if question_type == "boolean":
             coerced = _coerce_boolean_answer(raw_value)
             if coerced is not None:
                 normalized[key] = coerced
             continue
-        if question_type == "radio":
+        if question_type in {"radio", "select"}:
             coerced_text = _coerce_text_answer(raw_value)
             if coerced_text is None:
                 continue
-            if len(coerced_text) > limits.max_value_chars:
-                raise _answer_size_error(label, max_chars=limits.max_value_chars)
+            if len(coerced_text) > max_chars:
+                raise _answer_size_error(label, max_chars=max_chars)
             allowed_options = _resolve_allowed_option_keys(question)
             if allowed_options and coerced_text not in allowed_options:
                 raise ValueError(f"{label} contains an unsupported option.")
@@ -616,8 +923,8 @@ def coerce_fill_link_answers(
                 raise ValueError(f"{label} has too many selections.")
             allowed_options = _resolve_allowed_option_keys(question)
             for entry in coerced:
-                if len(entry) > limits.max_value_chars:
-                    raise _answer_size_error(label, max_chars=limits.max_value_chars)
+                if len(entry) > max_chars:
+                    raise _answer_size_error(label, max_chars=max_chars)
                 if allowed_options and entry not in allowed_options:
                     raise ValueError(f"{label} contains an unsupported option.")
                 total_chars += len(entry)
@@ -626,8 +933,8 @@ def coerce_fill_link_answers(
         coerced_text = _coerce_text_answer(raw_value)
         if coerced_text is None:
             continue
-        if len(coerced_text) > limits.max_value_chars:
-            raise _answer_size_error(label, max_chars=limits.max_value_chars)
+        if len(coerced_text) > max_chars:
+            raise _answer_size_error(label, max_chars=max_chars)
         total_chars += len(coerced_text)
         normalized[key] = coerced_text
     if total_chars > limits.max_total_chars:
@@ -638,6 +945,8 @@ def coerce_fill_link_answers(
 def list_missing_required_fill_link_questions(
     answers: Optional[Dict[str, Any]],
     questions: Iterable[Dict[str, Any]],
+    *,
+    require_all_fields: bool = False,
 ) -> List[str]:
     """Return respondent-facing labels for required Fill By Link questions that were left blank.
 
@@ -654,8 +963,10 @@ def list_missing_required_fill_link_questions(
         key = (question.get("key") or "").strip()
         if not key:
             continue
+        if not (require_all_fields or bool(question.get("required"))):
+            continue
         label = humanize_fill_link_label(question.get("label") or key)
-        question_type = normalize_fill_link_key(question.get("type")) or "text"
+        question_type = _normalize_question_type(question.get("type"))
         raw_value = payload.get(key)
 
         if question_type == "boolean":
@@ -664,6 +975,10 @@ def list_missing_required_fill_link_questions(
             continue
         if question_type == "multi_select":
             if not _coerce_multi_value_answer(raw_value):
+                missing.append(label)
+            continue
+        if question_type in {"radio", "select"}:
+            if _coerce_text_answer(raw_value) is None:
                 missing.append(label)
             continue
         if _coerce_text_answer(raw_value) is None:

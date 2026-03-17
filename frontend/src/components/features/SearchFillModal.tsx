@@ -1,7 +1,7 @@
 /**
  * Search & Fill modal for populating fields from data sources.
  */
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import type {
   DataSourceKind,
   PdfField,
@@ -61,6 +61,7 @@ type SearchFillModalProps = {
     highlightResult?: boolean;
     token?: number;
   } | null;
+  demoInstruction?: ReactNode | null;
   fillTargets?: Array<{ id: string; name: string }>;
   activeFillTargetId?: string | null;
   onFillTargets?: (row: Record<string, unknown>, targetIds: string[]) => void | Promise<void>;
@@ -132,6 +133,7 @@ export default function SearchFillModal({
   onRequestDataSource,
   searchPreset,
   demoSearch,
+  demoInstruction = null,
   fillTargets,
   activeFillTargetId = null,
   onFillTargets,
@@ -498,6 +500,13 @@ export default function SearchFillModal({
         </button>
       </div>
       <div className="searchfill-modal__body">
+        {demoInstruction ? (
+          <div className="searchfill-demo-note" role="note" aria-label="Demo instruction">
+            <p className="searchfill-demo-note__eyebrow">Demo</p>
+            <div className="searchfill-demo-note__body">{demoInstruction}</div>
+          </div>
+        ) : null}
+
         <div className="searchfill-meta">
           <div className="searchfill-source">
             <span className="searchfill-source__label">Source</span>

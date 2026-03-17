@@ -407,10 +407,6 @@ const Homepage: React.FC<HomepageProps> = ({
             {' '}
             for field detections.
           </p>
-          <p className="mobile-credit">
-            Fill By Link is native to DullyPDF: free includes 1 active link with up to 5 accepted responses, while
-            premium unlocks a shareable link for every saved template with up to 10,000 responses per link.
-          </p>
         </div>
 
         <div className="mobile-steps">

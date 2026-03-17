@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import type {
   BannerNotice,
@@ -9,9 +9,11 @@ import type {
 } from '../types';
 import type {
   FillLinkGroupTemplatePayload,
+  FillLinkQuestion,
   FillLinkResponse,
   FillLinkSummary,
   FillLinkTemplateFieldPayload,
+  FillLinkWebFormConfig,
   ProfileLimits,
   SavedFormSummary,
 } from '../services/api';
@@ -25,6 +27,10 @@ import {
   FILL_LINK_RESPONDENT_LABEL_KEY,
   fillLinkRespondentPdfDownloadEnabled,
 } from '../utils/fillLinks';
+import {
+  buildFillLinkQuestionsFromFields,
+  mergeFillLinkQuestionSets,
+} from '../utils/fillLinkWebForm';
 
 type SearchFillPresetState = {
   query: string;
@@ -102,7 +108,7 @@ export function useWorkspaceFillLinks(deps: UseWorkspaceFillLinksDeps) {
     bumpSearchFillSession,
   } = deps;
 
-  const hasActiveTemplateScope = Boolean(activeTemplateId && fields.length > 0);
+  const hasActiveTemplateScope = Boolean(activeTemplateId);
   const hasActiveGroupScope = Boolean(activeGroupId && activeGroupTemplates.length > 0);
   const hasUnsavedTemplateDraft = Boolean(!activeTemplateId && !activeGroupId && fields.length > 0);
   const canTriggerFillLink = Boolean(
@@ -163,6 +169,14 @@ export function useWorkspaceFillLinks(deps: UseWorkspaceFillLinksDeps) {
     searchResponses: searchGroupLinkResponses,
     loadAllResponses: loadAllGroupResponses,
   } = groupFillLinks;
+
+  const [groupSourceQuestions, setGroupSourceQuestions] = useState<FillLinkQuestion[]>([]);
+  const [groupBuilderLoading, setGroupBuilderLoading] = useState(false);
+
+  const templateSourceQuestions = useMemo(
+    () => buildFillLinkQuestionsFromFields(fields, checkboxRules),
+    [checkboxRules, fields],
+  );
 
   const fillLinkSchemaDirty = useMemo(() => {
     if (!activeTemplateId || savedFillLinkPublishFingerprint === null) {
@@ -225,6 +239,58 @@ export function useWorkspaceFillLinks(deps: UseWorkspaceFillLinksDeps) {
     refreshGroupLinkScope,
     setBannerNotice,
     verifiedUser,
+  ]);
+
+  useEffect(() => {
+    if (!managerOpen || !hasActiveGroupScope || !activeGroupId) {
+      setGroupSourceQuestions([]);
+      setGroupBuilderLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setGroupBuilderLoading(true);
+    void (async () => {
+      try {
+        const questionSets: FillLinkQuestion[][] = [];
+        for (const template of activeGroupTemplates) {
+          if (template.id === activeTemplateId) {
+            questionSets.push(buildFillLinkQuestionsFromFields(fields, checkboxRules));
+            continue;
+          }
+          const snapshot = await ensureGroupTemplateSnapshot(template.id, template.name);
+          questionSets.push(buildFillLinkQuestionsFromFields(snapshot.fields, snapshot.checkboxRules));
+        }
+        if (cancelled) {
+          return;
+        }
+        setGroupSourceQuestions(mergeFillLinkQuestionSets(questionSets));
+      } catch (error) {
+        if (!cancelled) {
+          const message = error instanceof Error
+            ? error.message
+            : 'Failed to prepare merged group web-form fields.';
+          setBannerNotice({ tone: 'error', message });
+          setGroupSourceQuestions([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setGroupBuilderLoading(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeGroupId,
+    activeGroupTemplates,
+    activeTemplateId,
+    checkboxRules,
+    ensureGroupTemplateSnapshot,
+    fields,
+    hasActiveGroupScope,
+    managerOpen,
+    setBannerNotice,
   ]);
 
   const guardDirtyTemplateSchema = useCallback(() => {
@@ -309,8 +375,10 @@ export function useWorkspaceFillLinks(deps: UseWorkspaceFillLinksDeps) {
   ]);
 
   const handlePublishTemplate = useCallback(async (options?: {
+    title?: string;
     requireAllFields?: boolean;
     allowRespondentPdfDownload?: boolean;
+    webFormConfig?: FillLinkWebFormConfig;
   }) => {
     if (!activeTemplateId) return;
     if (guardDirtyTemplateSchema()) return;
@@ -319,9 +387,10 @@ export function useWorkspaceFillLinks(deps: UseWorkspaceFillLinksDeps) {
         scopeType: 'template',
         templateId: activeTemplateId,
         templateName: activeTemplateName,
-        title: activeTemplateName || 'Fill By Link',
+        title: options?.title || activeTemplateName || 'Fill By Link',
         requireAllFields: Boolean(options?.requireAllFields),
         allowRespondentPdfDownload: Boolean(options?.allowRespondentPdfDownload),
+        webFormConfig: options?.webFormConfig,
         fields: serializeCurrentFillLinkFields(),
         checkboxRules: checkboxRules as Array<Record<string, unknown>>,
         checkboxHints: checkboxHints as CheckboxHint[],
@@ -348,7 +417,11 @@ export function useWorkspaceFillLinks(deps: UseWorkspaceFillLinksDeps) {
     textTransformRules,
   ]);
 
-  const handlePublishGroup = useCallback(async (options?: { requireAllFields?: boolean }) => {
+  const handlePublishGroup = useCallback(async (options?: {
+    title?: string;
+    requireAllFields?: boolean;
+    webFormConfig?: FillLinkWebFormConfig;
+  }) => {
     if (!activeGroupId) return;
     if (guardDirtyGroupSchema()) return;
     try {
@@ -357,8 +430,9 @@ export function useWorkspaceFillLinks(deps: UseWorkspaceFillLinksDeps) {
         scopeType: 'group',
         groupId: activeGroupId,
         groupName: activeGroupName,
-        title: activeGroupName || 'Group Fill By Link',
+        title: options?.title || activeGroupName || 'Group Fill By Link',
         requireAllFields: Boolean(options?.requireAllFields),
+        webFormConfig: options?.webFormConfig,
         fields: [],
         groupTemplates,
       });
@@ -393,8 +467,10 @@ export function useWorkspaceFillLinks(deps: UseWorkspaceFillLinksDeps) {
   }, [activeTemplateLink, closeTemplateLink, setBannerNotice]);
 
   const handleReopenTemplate = useCallback(async (options?: {
+    title?: string;
     requireAllFields?: boolean;
     allowRespondentPdfDownload?: boolean;
+    webFormConfig?: FillLinkWebFormConfig;
   }) => {
     const activeLink = activeTemplateLink;
     const linkId = activeLink?.id;
@@ -402,11 +478,12 @@ export function useWorkspaceFillLinks(deps: UseWorkspaceFillLinksDeps) {
     if (guardDirtyTemplateSchema()) return;
     try {
       await reopenTemplateLink(linkId, {
-        title: activeTemplateName || activeLink.title || undefined,
+        title: options?.title || activeTemplateName || activeLink.title || undefined,
         requireAllFields: options?.requireAllFields ?? activeLink.requireAllFields,
         allowRespondentPdfDownload:
           options?.allowRespondentPdfDownload
           ?? fillLinkRespondentPdfDownloadEnabled(activeLink),
+        webFormConfig: options?.webFormConfig,
         fields: serializeCurrentFillLinkFields(),
         checkboxRules: checkboxRules as Array<Record<string, unknown>>,
         checkboxHints: checkboxHints as CheckboxHint[],
@@ -441,7 +518,11 @@ export function useWorkspaceFillLinks(deps: UseWorkspaceFillLinksDeps) {
     }
   }, [activeGroupLink, closeGroupLink, setBannerNotice]);
 
-  const handleReopenGroup = useCallback(async (options?: { requireAllFields?: boolean }) => {
+  const handleReopenGroup = useCallback(async (options?: {
+    title?: string;
+    requireAllFields?: boolean;
+    webFormConfig?: FillLinkWebFormConfig;
+  }) => {
     const activeLink = activeGroupLink;
     const linkId = activeLink?.id;
     if (!activeLink || !linkId || !activeGroupId) return;
@@ -449,9 +530,10 @@ export function useWorkspaceFillLinks(deps: UseWorkspaceFillLinksDeps) {
     try {
       const groupTemplates = await buildGroupFillLinkTemplateSources();
       await reopenGroupLink(linkId, {
-        title: activeGroupName || activeLink.title || undefined,
+        title: options?.title || activeGroupName || activeLink.title || undefined,
         groupName: activeGroupName || undefined,
         requireAllFields: options?.requireAllFields ?? activeLink.requireAllFields,
+        webFormConfig: options?.webFormConfig,
         groupTemplates,
       });
       setBannerNotice({ tone: 'success', message: 'Group Fill By Link reopened.' });
@@ -612,7 +694,10 @@ export function useWorkspaceFillLinks(deps: UseWorkspaceFillLinksDeps) {
     hasActiveTemplate: hasActiveTemplateScope,
     groupName: activeGroupName,
     hasActiveGroup: hasActiveGroupScope,
-    limits: profileLimits,
+    templateSourceQuestions,
+    templateBuilderLoading: false,
+    groupSourceQuestions,
+    groupBuilderLoading,
     templateLink: activeTemplateLink,
     templateResponses,
     templateLoadingLink,
@@ -650,6 +735,8 @@ export function useWorkspaceFillLinks(deps: UseWorkspaceFillLinksDeps) {
     groupPublishing,
     groupResponses,
     groupResponsesLoading,
+    groupSourceQuestions,
+    groupBuilderLoading,
     handleApplyGroupResponse,
     handleApplyTemplateResponse,
     handleCloseGroup,
@@ -667,8 +754,8 @@ export function useWorkspaceFillLinks(deps: UseWorkspaceFillLinksDeps) {
     hasActiveGroupScope,
     hasActiveTemplateScope,
     managerOpen,
-    profileLimits,
     setManagerOpen,
+    templateSourceQuestions,
     templateClosing,
     templateError,
     templateLoadingLink,

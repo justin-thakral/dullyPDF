@@ -65,6 +65,7 @@ const apiServiceMocks = vi.hoisted(() => ({
   ensureBackendReady: vi.fn().mockResolvedValue(undefined),
   getSavedForms: vi.fn().mockResolvedValue([]),
   getGroups: vi.fn().mockResolvedValue([]),
+  getGroup: vi.fn(),
   getProfile: vi.fn().mockResolvedValue(null),
   updateDowngradeRetention: vi.fn(),
   deleteDowngradeRetentionNow: vi.fn(),
@@ -352,6 +353,27 @@ const makePdfDoc = () => ({
   getData: vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3])),
 });
 
+const makeSavedFormMeta = (overrides: Record<string, unknown> = {}) => ({
+  name: 'Saved Form.pdf',
+  fillRules: {
+    version: 1,
+    checkboxRules: [],
+    checkboxHints: [],
+    textTransformRules: [],
+  },
+  editorSnapshot: {
+    version: 1,
+    pageCount: 1,
+    pageSizes: {
+      '1': { width: 612, height: 792 },
+    },
+    fields: [makeField()],
+    hasRenamedFields: false,
+    hasMappedSchema: false,
+  },
+  ...overrides,
+});
+
 const defaultBillingReconcilePayload = {
   success: true,
   dryRun: false,
@@ -508,6 +530,7 @@ describe('App', () => {
     apiServiceMocks.ensureBackendReady.mockReset().mockResolvedValue(undefined);
     apiServiceMocks.getSavedForms.mockReset().mockResolvedValue([]);
     apiServiceMocks.getGroups.mockReset().mockResolvedValue([]);
+    apiServiceMocks.getGroup.mockReset();
     apiServiceMocks.getProfile.mockReset().mockResolvedValue(null);
     apiServiceMocks.updateDowngradeRetention.mockReset();
     apiServiceMocks.deleteDowngradeRetentionNow.mockReset();
@@ -612,7 +635,118 @@ describe('App', () => {
 
     expect(await screen.findByTestId('upload-detect', {}, { timeout: 10_000 })).toBeTruthy();
     expect(screen.getByTestId('upload-fillable')).toBeTruthy();
+    expect(window.location.pathname).toBe('/upload');
   }, 15_000);
+
+  it('keeps hidden schema picker inputs labeled for accessibility', async () => {
+    const App = await importApp();
+    render(<App />);
+
+    await settleAuthAsSignedIn();
+    fireEvent.click(await screen.findByTestId('start-workflow'));
+    expect(await screen.findByTestId('upload-detect', {}, { timeout: 10_000 })).toBeTruthy();
+
+    expect(document.getElementById('csv-file-input')?.getAttribute('aria-label')).toBe('Upload CSV schema file');
+    expect(document.getElementById('excel-file-input')?.getAttribute('aria-label')).toBe('Upload Excel schema file');
+    expect(document.getElementById('json-file-input')?.getAttribute('aria-label')).toBe('Upload JSON schema file');
+    expect(document.getElementById('txt-file-input')?.getAttribute('aria-label')).toBe('Upload TXT schema file');
+  }, 15_000);
+
+  it('restores a saved form directly from a /ui/forms route, reuses the matching resume session, and avoids duplicate restore fetches', async () => {
+    window.history.replaceState({}, '', '/ui/forms/saved-1');
+    window.sessionStorage.setItem(
+      'dullypdf.workspaceResumeState',
+      JSON.stringify({
+        version: 1,
+        userId: 'user-1',
+        route: { kind: 'saved-form', formId: 'saved-1' },
+        currentPage: 1,
+        scale: 1.35,
+        detectSessionId: 'resume-session-1',
+        mappingSessionId: 'resume-session-1',
+        fieldCount: 1,
+        pageCount: 1,
+        updatedAtMs: Date.now(),
+      }),
+    );
+    apiServiceMocks.loadSavedForm.mockResolvedValue(makeSavedFormMeta());
+    apiServiceMocks.downloadSavedForm.mockResolvedValue(new Blob(['pdf'], { type: 'application/pdf' }));
+    apiServiceMocks.touchSession.mockResolvedValue({ success: true, sessionId: 'resume-session-1' });
+
+    const App = await importApp();
+    render(<App initialBrowserRoute={{ kind: 'saved-form', formId: 'saved-1' }} />);
+
+    await settleAuthAsSignedIn();
+    expect(await screen.findByTestId('field-list', {}, { timeout: 10_000 })).toBeTruthy();
+
+    await waitFor(() => {
+      expect(apiServiceMocks.loadSavedForm).toHaveBeenCalledWith('saved-1');
+    });
+    await waitFor(() => {
+      expect(apiServiceMocks.touchSession).toHaveBeenCalledWith('resume-session-1');
+    });
+    expect(apiServiceMocks.loadSavedForm).toHaveBeenCalledTimes(1);
+    expect(apiServiceMocks.downloadSavedForm).toHaveBeenCalledTimes(1);
+    expect(apiServiceMocks.createSavedFormSession).not.toHaveBeenCalled();
+    expect(window.location.pathname).toBe('/ui/forms/saved-1');
+    expect(await screen.findByTestId('field-list')).toBeTruthy();
+  });
+
+  it('restores a saved group directly from a /ui/groups route and opens the requested template first', async () => {
+    window.history.replaceState({}, '', '/ui/groups/group-1?template=saved-2');
+    window.sessionStorage.setItem(
+      'dullypdf.workspaceResumeState',
+      JSON.stringify({
+        version: 1,
+        userId: 'user-1',
+        route: { kind: 'group', groupId: 'group-1', templateId: 'saved-2' },
+        currentPage: 1,
+        scale: 1.1,
+        detectSessionId: 'group-resume-session',
+        mappingSessionId: 'group-resume-session',
+        fieldCount: 1,
+        pageCount: 1,
+        updatedAtMs: Date.now(),
+      }),
+    );
+    apiServiceMocks.getSavedForms.mockResolvedValue([
+      { id: 'saved-1', name: 'Alpha.pdf', createdAt: '2026-03-17T00:00:00Z' },
+      { id: 'saved-2', name: 'Bravo.pdf', createdAt: '2026-03-17T00:00:00Z' },
+    ]);
+    apiServiceMocks.getGroups.mockResolvedValue([
+      {
+        id: 'group-1',
+        name: 'Resume Group',
+        templateIds: ['saved-1', 'saved-2'],
+        templateCount: 2,
+        templates: [
+          { id: 'saved-1', name: 'Alpha.pdf', createdAt: '2026-03-17T00:00:00Z' },
+          { id: 'saved-2', name: 'Bravo.pdf', createdAt: '2026-03-17T00:00:00Z' },
+        ],
+      },
+    ]);
+    apiServiceMocks.loadSavedForm.mockResolvedValue(makeSavedFormMeta({ name: 'Bravo.pdf' }));
+    apiServiceMocks.downloadSavedForm.mockResolvedValue(new Blob(['pdf'], { type: 'application/pdf' }));
+    apiServiceMocks.touchSession.mockResolvedValue({ success: true, sessionId: 'group-resume-session' });
+
+    const App = await importApp();
+    render(<App initialBrowserRoute={{ kind: 'group', groupId: 'group-1', templateId: 'saved-2' }} />);
+
+    await settleAuthAsSignedIn();
+    expect(await screen.findByTestId('field-list', {}, { timeout: 10_000 })).toBeTruthy();
+
+    await waitFor(() => {
+      expect(apiServiceMocks.loadSavedForm).toHaveBeenCalledWith('saved-2');
+    });
+    await waitFor(() => {
+      expect(apiServiceMocks.touchSession).toHaveBeenCalledWith('group-resume-session');
+    });
+    expect(apiServiceMocks.loadSavedForm).toHaveBeenCalledTimes(1);
+    expect(apiServiceMocks.downloadSavedForm).toHaveBeenCalledTimes(1);
+    expect(apiServiceMocks.createSavedFormSession).not.toHaveBeenCalled();
+    expect(window.location.pathname).toBe('/ui/groups/group-1');
+    expect(window.location.search).toBe('?template=saved-2');
+  });
 
   it('shows a backend startup screen before mounting the signed-in runtime', async () => {
     let releaseBackendStartup: (() => void) | null = null;
@@ -626,7 +760,7 @@ describe('App', () => {
     await settleAuthAsSignedIn();
     fireEvent.click(await screen.findByTestId('start-workflow'));
 
-    expect(await screen.findByText('Backend is starting…')).toBeTruthy();
+    expect(await screen.findByText('Loading workspace…')).toBeTruthy();
     expect(screen.queryByTestId('upload-detect')).toBeNull();
 
     await act(async () => {

@@ -77,7 +77,7 @@ type UseGroupUploadModalDeps = {
     payload: { name: string; templateIds: string[] },
     options?: { signal?: AbortSignal },
   ) => Promise<TemplateGroupSummary>;
-  openGroup: (groupId: string) => Promise<void> | void;
+  openGroup: (groupId: string) => Promise<boolean> | boolean;
   refreshSavedForms: (opts?: { allowRetry?: boolean; throwOnError?: boolean }) => Promise<unknown>;
   refreshProfile?: () => Promise<unknown> | void;
   setBannerNotice: (notice: BannerNotice | null) => void;

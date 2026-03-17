@@ -1,6 +1,6 @@
 # Frontend
 
-React + TypeScript UI for viewing PDFs, editing detected fields, organizing saved forms into named groups, running Search & Fill, publishing native Fill By Link forms for either one saved template or an open group, and saving forms. The upload screen includes a compact saved-form browser with group filtering, a stable selected-group label during group refreshes, an `Open groups` toggle, create/delete group actions, and pill-style saved-template chips. Saved forms now persist versioned editor snapshots so reopen/group-switch flows can hydrate fields and page sizes without re-extracting them on every open. The frontend talks to the FastAPI backend for detection, OpenAI rename, schema mapping (schema headers only), group management, and owner/respondent workflows, including deterministic `fillRules` for checkbox and text split/join fill behavior.
+React + TypeScript UI for viewing PDFs, editing detected fields, organizing saved forms into named groups, running Search & Fill, publishing native Fill By Link forms for either one saved template or an open group, and saving forms. The upload screen includes a compact saved-form browser with group filtering, a stable selected-group label during group refreshes, an `Open groups` toggle, create/delete group actions, and pill-style saved-template chips. Fill By Link now uses a large builder dialog with sticky global settings, searchable question management, live preview, per-question requiredness and text limits, template-only custom web-form questions, and a separate responses tab for Search & Fill handoff. Saved forms now persist versioned editor snapshots so reopen/group-switch flows can hydrate fields and page sizes without re-extracting them on every open. The frontend talks to the FastAPI backend for detection, OpenAI rename, schema mapping (schema headers only), group management, and owner/respondent workflows, including deterministic `fillRules` for checkbox and text split/join fill behavior. Workspace navigation is route-driven under `/upload` and `/ui`, with direct routes for the upload shell, profile, saved forms, and saved groups so refresh/bookmark flows reopen the same workspace context instead of dropping back to `/`.
 Public product usage documentation is available at canonical `/usage-docs/*` URLs. Legacy `/docs/*` URLs permanently redirect to matching canonical docs routes.
 Public intent landing pages are also available for search-oriented entry routes (for example `/pdf-to-fillable-form`, `/pdf-to-database-template`, and `/fill-pdf-from-csv`) and industry-focused routes (for example `/healthcare-pdf-automation` and `/acord-form-automation`).
 Public plan explainer pages are available at `/free-features` and `/premium-features`, and the premium page can launch Stripe Checkout for signed-in users when billing is available.
@@ -70,6 +70,16 @@ The dev stack runs the backend in prod mode (revocation checks on, legacy
 endpoints disabled) while targeting dev resources. It reads
 `config/public/frontend.stack.env` so admin override headers stay disabled for
 prod-like testing.
+
+## Workspace routes
+
+- `/` keeps the marketing shell.
+- `/upload` opens the signed-in upload shell.
+- `/ui` is the generic editor/runtime route for unsaved uploads and in-flight workspace processing.
+- `/ui/profile` opens the profile view.
+- `/ui/forms/:formId` reopens a saved form directly.
+- `/ui/groups/:groupId?template=:formId` reopens a saved group and, when present, prefers the requested template.
+- Refresh restore is session-scoped. The browser stores a small resume manifest in `sessionStorage` for the active saved form or group route so page/zoom and live session ids can be restored, but it does not persist PDF bytes, unsaved uploads, or unsaved field edits locally.
 
 Builds should use an explicit env target so the generated bundle never depends
 on whatever stale `.env.local` happens to be in the workspace:

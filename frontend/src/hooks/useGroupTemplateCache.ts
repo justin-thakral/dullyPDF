@@ -108,7 +108,7 @@ type SavedFormsRuntimeState = {
   openSavedFormWithinGroup: (
     formId: string,
     groupContext?: { id: string; name: string; templateIds: string[] } | null,
-  ) => Promise<void>;
+  ) => Promise<boolean>;
 };
 
 type DocumentRuntimeState = {
@@ -681,17 +681,16 @@ export function useGroupTemplateCache(deps: UseGroupTemplateCacheDeps) {
 
   const handleSelectActiveGroupTemplate = useCallback(async (formId: string) => {
     if (!group.activeGroupId || !group.activeGroupName || !group.activeGroupTemplateIds.includes(formId)) {
-      await savedForms.openSavedFormWithinGroup(formId, null);
-      return;
+      return savedForms.openSavedFormWithinGroup(formId, null);
     }
-    if (formId === savedForms.activeSavedFormId) return;
+    if (formId === savedForms.activeSavedFormId) return true;
     if (openAi.renameInProgress || openAi.mappingInProgress || openAi.mapSchemaInProgress || group.groupRenameMapInProgress) {
       setBannerNotice({
         tone: 'info',
         message: 'Finish the current AI action before switching group templates.',
         autoDismissMs: 6000,
       });
-      return;
+      return false;
     }
     storeActiveGroupTemplateSnapshot();
     const cached = groupTemplateCacheRef.current.get(formId);
@@ -701,20 +700,22 @@ export function useGroupTemplateCache(deps: UseGroupTemplateCacheDeps) {
         message: 'Wait for this group template to finish preparing before opening it.',
         autoDismissMs: 5000,
       });
-      return;
+      return false;
     }
     if (cached?.status === 'ready') {
       applyGroupTemplateSnapshot(cached.snapshot);
-      return;
+      return true;
     }
     const targetTemplate = savedForms.savedForms.find((template) => template.id === formId) ?? null;
     setGroupSwitchingTemplateId(formId);
     try {
       const snapshot = await ensureGroupTemplateSnapshot(formId, targetTemplate?.name);
       applyGroupTemplateSnapshot(snapshot);
+      return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to switch group template.';
       setBannerNotice({ tone: 'error', message, autoDismissMs: 8000 });
+      return false;
     } finally {
       setGroupSwitchingTemplateId(null);
     }

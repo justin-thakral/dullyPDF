@@ -15,11 +15,12 @@ export default function ProcessingView({
   adVideoUrl,
   adPosterUrl,
 }: ProcessingViewProps) {
+  const hasDetail = detail.trim().length > 0;
   return (
     <div className="processing-indicator">
       <div className="spinner"></div>
       <h3>{heading}</h3>
-      <p>{detail}</p>
+      {hasDetail ? <p>{detail}</p> : null}
       {showAd && adVideoUrl ? (
         <div className="processing-ad" aria-live="polite">
           <video className="processing-ad__video" src={adVideoUrl}

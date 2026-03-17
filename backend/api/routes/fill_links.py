@@ -29,6 +29,7 @@ from backend.services.fill_link_download_service import (
 from backend.services.fill_links_service import (
     build_group_fill_link_questions,
     build_fill_link_questions,
+    build_fill_link_web_form_schema,
     build_fill_link_public_token,
 )
 from backend.services.fill_link_scope_service import close_fill_link_if_scope_invalid, validate_fill_link_scope
@@ -44,6 +45,7 @@ router = APIRouter()
 def _serialize_link(record) -> Dict[str, Any]:
     public_token = build_fill_link_public_token(record.id)
     default_title = record.title or record.group_name or record.template_name or "Fill By Link"
+    web_form_config = dict(record.web_form_config) if isinstance(record.web_form_config, dict) else None
     return {
         "id": record.id,
         "scopeType": record.scope_type,
@@ -66,6 +68,8 @@ def _serialize_link(record) -> Dict[str, Any]:
         "canAcceptResponses": record.status == "active" and record.response_count < record.max_responses,
         "requireAllFields": record.require_all_fields,
         "respondentPdfDownloadEnabled": respondent_pdf_download_enabled(record),
+        "introText": web_form_config.get("introText") if isinstance(web_form_config, dict) else None,
+        "webFormConfig": web_form_config,
         "questions": record.questions,
     }
 
@@ -84,18 +88,76 @@ def _serialize_response(record) -> Dict[str, Any]:
     }
 
 
-def _require_template_questions(fields: List[Dict[str, Any]], checkbox_rules: Optional[List[Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
-    questions = build_fill_link_questions(fields, checkbox_rules)
-    if not questions:
-        raise HTTPException(status_code=400, detail="No usable template fields were provided for Fill By Link.")
-    return questions
+def _normalize_web_form_config(
+    payload: FillLinkCreateRequest | FillLinkUpdateRequest,
+) -> Optional[Dict[str, Any]]:
+    if payload.webFormConfig is None:
+        return None
+    return payload.webFormConfig.model_dump(exclude_none=True)
 
 
-def _require_group_questions(group_templates: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    questions = build_group_fill_link_questions(group_templates)
-    if not questions:
+def _build_template_web_form_schema(
+    fields: List[Dict[str, Any]],
+    *,
+    checkbox_rules: Optional[List[Dict[str, Any]]] = None,
+    web_form_config: Optional[Dict[str, Any]] = None,
+    require_all_fields: bool = False,
+) -> tuple[Dict[str, Any], List[Dict[str, Any]]]:
+    default_questions = build_fill_link_questions(fields, checkbox_rules)
+    try:
+        stored_config, published_questions = build_fill_link_web_form_schema(
+            default_questions,
+            require_all_fields=require_all_fields,
+            web_form_config=web_form_config,
+            allow_custom_questions=True,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not published_questions:
+        raise HTTPException(status_code=400, detail="Add at least one visible template web-form question before publishing Fill By Link.")
+    return stored_config, published_questions
+
+
+def _build_group_web_form_schema(
+    group_templates: List[Dict[str, Any]],
+    *,
+    web_form_config: Optional[Dict[str, Any]] = None,
+    require_all_fields: bool = False,
+) -> tuple[Dict[str, Any], List[Dict[str, Any]]]:
+    default_questions = build_group_fill_link_questions(group_templates)
+    try:
+        stored_config, published_questions = build_fill_link_web_form_schema(
+            default_questions,
+            require_all_fields=require_all_fields,
+            web_form_config=web_form_config,
+            allow_custom_questions=False,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not published_questions:
         raise HTTPException(status_code=400, detail="No usable group template fields were provided for Fill By Link.")
-    return questions
+    return stored_config, published_questions
+
+
+def _build_web_form_schema_from_default_questions(
+    default_questions: List[Dict[str, Any]],
+    *,
+    web_form_config: Optional[Dict[str, Any]] = None,
+    require_all_fields: bool = False,
+    allow_custom_questions: bool = True,
+) -> tuple[Dict[str, Any], List[Dict[str, Any]]]:
+    try:
+        stored_config, published_questions = build_fill_link_web_form_schema(
+            default_questions,
+            require_all_fields=require_all_fields,
+            web_form_config=web_form_config,
+            allow_custom_questions=allow_custom_questions,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not published_questions:
+        raise HTTPException(status_code=400, detail="Add at least one visible web-form question before publishing Fill By Link.")
+    return stored_config, published_questions
 
 
 def _normalize_group_template_sources(payload: FillLinkCreateRequest | FillLinkUpdateRequest) -> List[Dict[str, Any]]:
@@ -216,6 +278,8 @@ async def create_owner_fill_link(
     group = None
     template_ids: List[str] = []
     fields: List[Dict[str, Any]] = []
+    web_form_config = _normalize_web_form_config(payload)
+    stored_web_form_config: Dict[str, Any]
     questions: List[Dict[str, Any]]
     existing = None
 
@@ -236,7 +300,11 @@ async def create_owner_fill_link(
             template_ids,
             _normalize_group_template_sources(payload),
         )
-        questions = _require_group_questions(normalized_sources)
+        stored_web_form_config, questions = _build_group_web_form_schema(
+            normalized_sources,
+            web_form_config=web_form_config,
+            require_all_fields=payload.requireAllFields,
+        )
         existing = get_fill_link_for_group(group.id, user.app_user_id)
     else:
         template = get_template(payload.templateId, user.app_user_id)
@@ -244,7 +312,12 @@ async def create_owner_fill_link(
             raise HTTPException(status_code=404, detail="Saved form not found")
         template_ids = [template.id]
         fields = [field.model_dump(exclude_none=True) for field in payload.fields]
-        questions = _require_template_questions(fields, payload.checkboxRules)
+        stored_web_form_config, questions = _build_template_web_form_schema(
+            fields,
+            checkbox_rules=payload.checkboxRules,
+            web_form_config=web_form_config,
+            require_all_fields=payload.requireAllFields,
+        )
         existing = get_fill_link_for_template(payload.templateId, user.app_user_id)
     respondent_download_enabled = bool(payload.respondentPdfDownloadEnabled and scope_type == "template")
     respondent_download_snapshot = (
@@ -277,6 +350,7 @@ async def create_owner_fill_link(
             title=payload.title or (group.name if group else template.name),
             questions=questions,
             require_all_fields=payload.requireAllFields,
+            web_form_config=stored_web_form_config,
             max_responses=max_responses,
             respondent_pdf_download_enabled=respondent_download_enabled,
             respondent_pdf_snapshot=respondent_download_snapshot,
@@ -315,6 +389,7 @@ async def update_owner_fill_link(
     next_questions = record.questions
     next_template_ids = list(record.template_ids)
     next_group_name = record.group_name
+    next_web_form_config = dict(record.web_form_config) if isinstance(record.web_form_config, dict) else None
     next_respondent_download_enabled = bool(
         payload.respondentPdfDownloadEnabled
         if payload.respondentPdfDownloadEnabled is not None
@@ -344,21 +419,70 @@ async def update_owner_fill_link(
                 next_template_ids,
                 _normalize_group_template_sources(payload),
             )
-            next_questions = _require_group_questions(normalized_sources)
-    elif payload.fields is not None:
+            next_web_form_config, next_questions = _build_group_web_form_schema(
+                normalized_sources,
+                web_form_config=_normalize_web_form_config(payload) or next_web_form_config,
+                require_all_fields=(
+                    payload.requireAllFields
+                    if payload.requireAllFields is not None
+                    else record.require_all_fields
+                ),
+            )
+        elif payload.webFormConfig is not None:
+            default_questions = (
+                next_web_form_config.get("questions")
+                if isinstance(next_web_form_config, dict) and isinstance(next_web_form_config.get("questions"), list)
+                else record.questions
+            )
+            next_web_form_config, next_questions = _build_web_form_schema_from_default_questions(
+                default_questions if isinstance(default_questions, list) else [],
+                web_form_config=_normalize_web_form_config(payload),
+                require_all_fields=(
+                    payload.requireAllFields
+                    if payload.requireAllFields is not None
+                    else record.require_all_fields
+                ),
+                allow_custom_questions=False,
+            )
+    elif payload.fields is not None or payload.webFormConfig is not None:
         template = get_template(record.template_id, user.app_user_id) if record.template_id else None
         if not template:
             raise HTTPException(status_code=404, detail="Saved form not found")
-        next_fields = [field.model_dump(exclude_none=True) for field in payload.fields]
-        next_questions = _require_template_questions(
-            next_fields,
-            payload.checkboxRules,
-        )
-        next_respondent_download_snapshot = (
-            _resolve_template_download_snapshot(template, next_fields)
-            if next_respondent_download_enabled
-            else None
-        )
+        if payload.fields is not None:
+            next_fields = [field.model_dump(exclude_none=True) for field in payload.fields]
+            next_web_form_config, next_questions = _build_template_web_form_schema(
+                next_fields,
+                checkbox_rules=payload.checkboxRules,
+                web_form_config=_normalize_web_form_config(payload) or next_web_form_config,
+                require_all_fields=(
+                    payload.requireAllFields
+                    if payload.requireAllFields is not None
+                    else record.require_all_fields
+                ),
+            )
+            next_respondent_download_snapshot = (
+                _resolve_template_download_snapshot(template, next_fields)
+                if next_respondent_download_enabled
+                else None
+            )
+        else:
+            default_questions = (
+                next_web_form_config.get("questions")
+                if isinstance(next_web_form_config, dict) and isinstance(next_web_form_config.get("questions"), list)
+                else record.questions
+            )
+            next_web_form_config, next_questions = _build_web_form_schema_from_default_questions(
+                default_questions if isinstance(default_questions, list) else [],
+                web_form_config=_normalize_web_form_config(payload),
+                require_all_fields=(
+                    payload.requireAllFields
+                    if payload.requireAllFields is not None
+                    else record.require_all_fields
+                ),
+                allow_custom_questions=True,
+            )
+            if not next_respondent_download_enabled:
+                next_respondent_download_snapshot = None
     elif not next_respondent_download_enabled:
         next_respondent_download_snapshot = None
     elif record.scope_type == "template" and next_respondent_download_snapshot is None:
@@ -393,10 +517,19 @@ async def update_owner_fill_link(
             link_id,
             user.app_user_id,
             title=payload.title,
-            questions=next_questions if (payload.fields is not None or payload.groupTemplates is not None) else None,
+            questions=(
+                next_questions
+                if (payload.fields is not None or payload.groupTemplates is not None or payload.webFormConfig is not None)
+                else None
+            ),
             group_name=next_group_name if payload.groupName is not None else None,
             template_ids=next_template_ids if payload.groupTemplates is not None else None,
             require_all_fields=payload.requireAllFields,
+            web_form_config=(
+                next_web_form_config
+                if (payload.fields is not None or payload.groupTemplates is not None or payload.webFormConfig is not None)
+                else None
+            ),
             respondent_pdf_download_enabled=(
                 next_respondent_download_enabled if record.scope_type == "template" else None
             ),

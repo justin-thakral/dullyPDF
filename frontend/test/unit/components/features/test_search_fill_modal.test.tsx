@@ -534,6 +534,20 @@ describe('SearchFillModal', () => {
     expect(document.body.querySelector('.searchfill-modal__card')).toBeTruthy();
   });
 
+  it('renders demo instruction copy inside the modal when provided', () => {
+    render(
+      <SearchFillModal
+        {...buildProps({
+          demoInstruction: 'Click Search to end the demo and fill Justin Thakral\'s information.',
+        })}
+      />,
+    );
+
+    expect(screen.getByRole('note', { name: 'Demo instruction' })).toBeTruthy();
+    expect(screen.getByText('Demo')).toBeTruthy();
+    expect(screen.getByText('Click Search to end the demo and fill Justin Thakral\'s information.')).toBeTruthy();
+  });
+
   it('applies multiple checkbox rules targeting different options in the same group', async () => {
     const user = userEvent.setup();
     const onFieldsChange = vi.fn();

@@ -30,10 +30,11 @@ function renderHookHarness() {
     return null;
   }
 
-  render(<Harness />);
+  const rendered = render(<Harness />);
 
   return {
     setBannerNotice,
+    unmount: rendered.unmount,
     get current() {
       if (!latest) {
         throw new Error('hook not initialized');
@@ -137,5 +138,80 @@ describe('useGroups', () => {
 
     expect(hook.current.selectedGroupFilterId).toBe('group-1');
     expect(hook.current.selectedGroupFilterLabel).toBe('Admissions Intake');
+  });
+
+  it('shares one in-flight refresh request across repeated callers', async () => {
+    let resolveGroups: ((value: Array<Record<string, unknown>>) => void) | null = null;
+    getGroupsMock
+      .mockResolvedValueOnce([])
+      .mockImplementationOnce(() => new Promise((resolve) => {
+        resolveGroups = resolve as (value: Array<Record<string, unknown>>) => void;
+      }));
+
+    const hook = renderHookHarness();
+
+    await waitFor(() => {
+      expect(hook.current.groupsLoading).toBe(false);
+    });
+
+    let firstPromise: Promise<unknown> | null = null;
+    let secondPromise: Promise<unknown> | null = null;
+    act(() => {
+      firstPromise = hook.current.refreshGroups();
+      secondPromise = hook.current.refreshGroups();
+    });
+
+    expect(getGroupsMock).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      resolveGroups?.([
+        {
+          id: 'group-1',
+          name: 'Admissions',
+          templateIds: ['tpl-a'],
+          templateCount: 1,
+          templates: [],
+        },
+      ]);
+      await Promise.all([firstPromise, secondPromise]);
+    });
+
+    expect(hook.current.groups).toHaveLength(1);
+  });
+
+  it('reuses the same in-flight refresh across remounts', async () => {
+    let resolveGroups: ((value: Array<Record<string, unknown>>) => void) | null = null;
+    getGroupsMock.mockImplementation(() => new Promise((resolve) => {
+      resolveGroups = resolve as (value: Array<Record<string, unknown>>) => void;
+    }));
+
+    const firstHook = renderHookHarness();
+    await waitFor(() => {
+      expect(getGroupsMock).toHaveBeenCalledTimes(1);
+    });
+
+    firstHook.unmount();
+
+    const secondHook = renderHookHarness();
+    expect(getGroupsMock).toHaveBeenCalledTimes(1);
+    let secondPromise: Promise<unknown> | null = null;
+    act(() => {
+      secondPromise = secondHook.current.refreshGroups();
+    });
+
+    await act(async () => {
+      resolveGroups?.([
+        {
+          id: 'group-1',
+          name: 'Admissions',
+          templateIds: ['tpl-a'],
+          templateCount: 1,
+          templates: [],
+        },
+      ]);
+      await secondPromise;
+    });
+
+    expect(secondHook.current.groups).toHaveLength(1);
   });
 });

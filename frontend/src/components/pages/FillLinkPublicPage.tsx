@@ -10,6 +10,12 @@ import {
   fillLinkRespondentPdfDownloadEnabled,
   fillLinkResponseDownloadEnabled,
 } from '../../utils/fillLinks';
+import {
+  fillLinkQuestionSupportsRespondentIdentity,
+  fillLinkQuestionIsBoolean,
+  fillLinkQuestionSupportsTextLimit,
+  normalizeFillLinkQuestionType,
+} from '../../utils/fillLinkWebForm';
 import { getRecaptchaToken, loadRecaptcha } from '../../utils/recaptcha';
 import { Alert } from '../ui/Alert';
 import '../../styles/ui-buttons.css';
@@ -62,16 +68,17 @@ function renderQuestionLabel(question: FillLinkQuestion): string {
   return question.label || question.key;
 }
 
-function isQuestionRequired(link: FillLinkSummary | null): boolean {
-  return Boolean(link?.requireAllFields);
+function isQuestionRequired(link: FillLinkSummary | null, question: FillLinkQuestion): boolean {
+  return Boolean(link?.requireAllFields || question.required);
 }
 
 function seedAnswers(questions: FillLinkQuestion[] | undefined): Record<string, unknown> {
   const seededAnswers: Record<string, unknown> = {};
   for (const question of questions || []) {
-    if (question.type === 'multi_select') {
+    const normalizedType = normalizeFillLinkQuestionType(question.type);
+    if (normalizedType === 'multi_select') {
       seededAnswers[question.key] = [];
-    } else if (question.type === 'boolean') {
+    } else if (fillLinkQuestionIsBoolean(normalizedType)) {
       seededAnswers[question.key] = false;
     } else {
       seededAnswers[question.key] = '';
@@ -81,17 +88,18 @@ function seedAnswers(questions: FillLinkQuestion[] | undefined): Record<string, 
 }
 
 function sanitizeAnswerForQuestion(question: FillLinkQuestion, value: unknown): unknown {
-  if (question.type === 'boolean') {
+  const normalizedType = normalizeFillLinkQuestionType(question.type);
+  if (fillLinkQuestionIsBoolean(normalizedType)) {
     return typeof value === 'boolean' ? value : false;
   }
-  if (question.type === 'multi_select') {
+  if (normalizedType === 'multi_select') {
     if (!Array.isArray(value)) return [];
     const normalized = value.map((entry) => String(entry ?? '').trim()).filter(Boolean);
     const allowed = new Set((question.options || []).map((option) => option.key).filter(Boolean));
     if (!allowed.size) return normalized;
     return normalized.filter((entry) => allowed.has(entry));
   }
-  if (question.type === 'radio') {
+  if (normalizedType === 'radio' || normalizedType === 'select') {
     const normalized = String(value ?? '').trim();
     if (!normalized) return '';
     const allowed = new Set((question.options || []).map((option) => option.key).filter(Boolean));
@@ -114,10 +122,11 @@ function reconcileAnswers(
 }
 
 function isQuestionAnswered(question: FillLinkQuestion, value: unknown): boolean {
-  if (question.type === 'boolean') {
+  const normalizedType = normalizeFillLinkQuestionType(question.type);
+  if (fillLinkQuestionIsBoolean(normalizedType)) {
     return typeof value === 'boolean';
   }
-  if (question.type === 'multi_select') {
+  if (normalizedType === 'multi_select') {
     return Array.isArray(value) && value.length > 0;
   }
   if (Array.isArray(value)) {
@@ -133,7 +142,7 @@ function listMissingRequiredQuestionLabels(
 ): string[] {
   const missing: string[] = [];
   for (const question of questions || []) {
-    if (!isQuestionRequired(link)) continue;
+    if (!isQuestionRequired(link, question)) continue;
     if (isQuestionAnswered(question, answers[question.key])) continue;
     missing.push(renderQuestionLabel(question));
   }
@@ -145,8 +154,8 @@ function hasRespondentIdentityAnswer(
   answers: Record<string, unknown>,
 ): boolean {
   for (const question of questions || []) {
-    if (!question.requiredForRespondentIdentity) continue;
-    if (question.type === 'boolean') continue;
+    if (!fillLinkQuestionSupportsRespondentIdentity(question)) continue;
+    if (fillLinkQuestionIsBoolean(question.type)) continue;
     if (isQuestionAnswered(question, answers[question.key])) {
       return true;
     }
@@ -154,12 +163,27 @@ function hasRespondentIdentityAnswer(
   return false;
 }
 
-function formatMissingRequiredQuestionMessage(labels: string[]): string {
+function formatMissingRequiredQuestionMessage(labels: string[], requireAllFields: boolean): string {
   if (!labels.length) return 'All fields are required for this form.';
   if (labels.length <= 3) {
-    return `All fields are required. Missing: ${labels.join(', ')}.`;
+    return requireAllFields
+      ? `All fields are required. Missing: ${labels.join(', ')}.`
+      : `Required questions are missing: ${labels.join(', ')}.`;
   }
-  return `All fields are required. Missing: ${labels.slice(0, 3).join(', ')}, and ${labels.length - 3} more.`;
+  return requireAllFields
+    ? `All fields are required. Missing: ${labels.slice(0, 3).join(', ')}, and ${labels.length - 3} more.`
+    : `Required questions are missing: ${labels.slice(0, 3).join(', ')}, and ${labels.length - 3} more.`;
+}
+
+function resolveTextInputType(question: FillLinkQuestion): string {
+  const normalizedType = normalizeFillLinkQuestionType(question.type);
+  if (normalizedType === 'email') {
+    return 'email';
+  }
+  if (normalizedType === 'phone') {
+    return 'tel';
+  }
+  return 'text';
 }
 
 export default function FillLinkPublicPage({ token }: FillLinkPublicPageProps) {
@@ -180,6 +204,11 @@ export default function FillLinkPublicPage({ token }: FillLinkPublicPageProps) {
   const recaptchaRequired = useMemo(isRecaptchaRequired, []);
   const linkClosed = isLinkClosed(link);
   const respondentPdfDownloadAvailable = fillLinkRespondentPdfDownloadEnabled(link);
+  const questionCount = link?.questions?.length ?? 0;
+  const requiredQuestionCount = useMemo(
+    () => (link?.questions || []).filter((question) => isQuestionRequired(link, question)).length,
+    [link],
+  );
   const canDownloadSubmittedPdf = Boolean(
     submittedDownloadAvailable
     && (submittedResponseId || submittedDownloadPath),
@@ -270,10 +299,17 @@ export default function FillLinkPublicPage({ token }: FillLinkPublicPageProps) {
       if (link.requireAllFields) {
         const missingLabels = listMissingRequiredQuestionLabels(link, link.questions, answers);
         if (missingLabels.length > 0) {
-          setError(formatMissingRequiredQuestionMessage(missingLabels));
+          setError(formatMissingRequiredQuestionMessage(missingLabels, true));
           return;
         }
-      } else if (!hasRespondentIdentityAnswer(link.questions, answers)) {
+      } else {
+        const missingLabels = listMissingRequiredQuestionLabels(link, link.questions, answers);
+        if (missingLabels.length > 0) {
+          setError(formatMissingRequiredQuestionMessage(missingLabels, false));
+          return;
+        }
+      }
+      if (!hasRespondentIdentityAnswer(link.questions, answers)) {
         setError('Enter a respondent name or ID before submitting.');
         return;
       }
@@ -355,11 +391,9 @@ export default function FillLinkPublicPage({ token }: FillLinkPublicPageProps) {
           <div className="fill-link-public-page__brand-row">
             <div>
               <p className="fill-link-public-page__eyebrow">DullyPDF Fill By Link</p>
-              <h1>Fill out this form</h1>
+              <h1>{link?.title || 'Fill out this form'}</h1>
             </div>
-            <span className="fill-link-public-page__hero-badge">
-              Mobile-friendly respondent form
-            </span>
+            <span className="fill-link-public-page__hero-badge">Respondent form</span>
           </div>
           <p className="fill-link-public-page__summary">
             {respondentPdfDownloadAvailable
@@ -370,6 +404,10 @@ export default function FillLinkPublicPage({ token }: FillLinkPublicPageProps) {
             <div className="fill-link-public-page__hero-meta">
               <span>A respondent name or ID is required on every submission.</span>
               {link?.requireAllFields ? <span>Every question must be answered</span> : null}
+              {!link?.requireAllFields && requiredQuestionCount > 0 ? (
+                <span>{requiredQuestionCount} required question{requiredQuestionCount === 1 ? '' : 's'}</span>
+              ) : null}
+              {questionCount ? <span>{questionCount} visible question{questionCount === 1 ? '' : 's'}</span> : null}
               {respondentPdfDownloadAvailable ? <span>PDF copy available after submit</span> : null}
             </div>
           ) : null}
@@ -417,10 +455,19 @@ export default function FillLinkPublicPage({ token }: FillLinkPublicPageProps) {
 
         {link && !loading ? (
           <>
+            {link.introText ? (
+              <div className="fill-link-public-page__intro">
+                <p>{link.introText}</p>
+              </div>
+            ) : null}
             {!linkClosed ? (
               link.requireAllFields ? (
                 <div className="fill-link-public-page__required-note">
                   Every question on this form must be answered before DullyPDF accepts the submission.
+                </div>
+              ) : requiredQuestionCount > 0 ? (
+                <div className="fill-link-public-page__required-note">
+                  Questions marked Required must be answered before submit. DullyPDF also requires a respondent name or ID.
                 </div>
               ) : (
                 <div className="fill-link-public-page__required-note">
@@ -440,17 +487,20 @@ export default function FillLinkPublicPage({ token }: FillLinkPublicPageProps) {
                   <label key={question.key} className="fill-link-public-page__field">
                     <span className="fill-link-public-page__field-label">
                       {renderQuestionLabel(question)}
-                      {isQuestionRequired(link) ? <em>Required</em> : null}
+                      {isQuestionRequired(link, question) ? <em>Required</em> : null}
                     </span>
-                    {question.type === 'date' ? (
+                    {question.helpText ? (
+                      <span className="fill-link-public-page__field-help">{question.helpText}</span>
+                    ) : null}
+                    {normalizeFillLinkQuestionType(question.type) === 'date' ? (
                       <input
                         type="date"
                         aria-label={renderQuestionLabel(question)}
-                        aria-required={isQuestionRequired(link)}
+                        aria-required={isQuestionRequired(link, question)}
                         value={toFieldValue(answers[question.key])}
                         onChange={(event) => handleAnswerChange(question, event.target.value)}
                       />
-                    ) : question.type === 'boolean' ? (
+                    ) : fillLinkQuestionIsBoolean(question.type) ? (
                       <div className="fill-link-public-page__boolean">
                         <input
                           type="checkbox"
@@ -460,14 +510,14 @@ export default function FillLinkPublicPage({ token }: FillLinkPublicPageProps) {
                         />
                         <span>Check if yes</span>
                       </div>
-                    ) : question.type === 'radio' ? (
+                    ) : normalizeFillLinkQuestionType(question.type) === 'radio' ? (
                       <div className="fill-link-public-page__options">
                         {(question.options || []).map((option) => (
                           <label key={option.key} className="fill-link-public-page__option">
                             <input
                               type="radio"
                               name={question.key}
-                              aria-required={isQuestionRequired(link)}
+                              aria-required={isQuestionRequired(link, question)}
                               checked={answers[question.key] === option.key}
                               onChange={() => handleAnswerChange(question, option.key)}
                             />
@@ -475,7 +525,7 @@ export default function FillLinkPublicPage({ token }: FillLinkPublicPageProps) {
                           </label>
                         ))}
                       </div>
-                    ) : question.type === 'multi_select' ? (
+                    ) : normalizeFillLinkQuestionType(question.type) === 'multi_select' ? (
                       <div className="fill-link-public-page__options">
                         {(question.options || []).map((option) => (
                           <label key={option.key} className="fill-link-public-page__option">
@@ -488,15 +538,46 @@ export default function FillLinkPublicPage({ token }: FillLinkPublicPageProps) {
                           </label>
                         ))}
                       </div>
-                    ) : (
-                      <input
-                        type="text"
+                    ) : normalizeFillLinkQuestionType(question.type) === 'select' ? (
+                      <select
                         aria-label={renderQuestionLabel(question)}
-                        aria-required={isQuestionRequired(link)}
+                        aria-required={isQuestionRequired(link, question)}
                         value={toFieldValue(answers[question.key])}
                         onChange={(event) => handleAnswerChange(question, event.target.value)}
+                      >
+                        <option value="">Select one</option>
+                        {(question.options || []).map((option) => (
+                          <option key={option.key} value={option.key}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    ) : normalizeFillLinkQuestionType(question.type) === 'textarea' ? (
+                      <textarea
+                        rows={4}
+                        aria-label={renderQuestionLabel(question)}
+                        aria-required={isQuestionRequired(link, question)}
+                        value={toFieldValue(answers[question.key])}
+                        onChange={(event) => handleAnswerChange(question, event.target.value)}
+                        placeholder={question.placeholder || ''}
+                        maxLength={question.maxLength ?? undefined}
+                      />
+                    ) : (
+                      <input
+                        type={resolveTextInputType(question)}
+                        aria-label={renderQuestionLabel(question)}
+                        aria-required={isQuestionRequired(link, question)}
+                        value={toFieldValue(answers[question.key])}
+                        onChange={(event) => handleAnswerChange(question, event.target.value)}
+                        placeholder={question.placeholder || ''}
+                        maxLength={question.maxLength ?? undefined}
                       />
                     )}
+                    {fillLinkQuestionSupportsTextLimit(question.type) && question.maxLength ? (
+                      <span className="fill-link-public-page__char-count">
+                        {toFieldValue(answers[question.key]).length} / {question.maxLength}
+                      </span>
+                    ) : null}
                   </label>
                 ))}
 

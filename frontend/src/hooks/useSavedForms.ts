@@ -10,6 +10,11 @@ import {
 } from '../config/appConstants';
 import { debugLog } from '../utils/debug';
 
+let sharedSavedFormsRequest: {
+  userId: string;
+  promise: Promise<Array<{ id: string; name: string; createdAt: string }>>;
+} | null = null;
+
 export function useSavedForms(deps: {
   authUserRef: React.MutableRefObject<User | null>;
   setBannerNotice: (notice: BannerNotice | null) => void;
@@ -39,19 +44,47 @@ export function useSavedForms(deps: {
     async (options?: { allowRetry?: boolean; throwOnError?: boolean }) => {
       const currentUser = deps.authUserRef.current;
       if (!currentUser) return [];
-      setSavedFormsLoading(true);
       try {
-        const forms = await ApiService.getSavedForms({
-          suppressErrors: false,
-          timeoutMs: SAVED_FORMS_TIMEOUT_MS,
-        });
-        setSavedForms(forms || []);
-        setSavedFormsLoading(false);
-        clearSavedFormsRetry();
-        return forms || [];
+        setSavedFormsLoading(true);
+        if (!sharedSavedFormsRequest || sharedSavedFormsRequest.userId !== currentUser.uid) {
+          const requestedUid = currentUser.uid;
+          const requestPromise = ApiService.getSavedForms({
+            suppressErrors: false,
+            timeoutMs: SAVED_FORMS_TIMEOUT_MS,
+          })
+            .then((forms) => {
+              const nextForms = forms || [];
+              if (deps.authUserRef.current?.uid === requestedUid) {
+                setSavedForms(nextForms);
+                clearSavedFormsRetry();
+              }
+              return nextForms;
+            })
+            .finally(() => {
+              if (sharedSavedFormsRequest?.promise === requestPromise) {
+                sharedSavedFormsRequest = null;
+              }
+              if (deps.authUserRef.current?.uid === requestedUid) {
+                setSavedFormsLoading(false);
+              }
+            });
+          sharedSavedFormsRequest = {
+            userId: requestedUid,
+            promise: requestPromise,
+          };
+        }
+        const forms = await sharedSavedFormsRequest!.promise;
+        if (deps.authUserRef.current?.uid === currentUser.uid) {
+          setSavedForms(forms);
+          clearSavedFormsRetry();
+          setSavedFormsLoading(false);
+        }
+        return forms;
       } catch (error) {
         if (!options?.allowRetry || !(error instanceof TypeError)) {
-          setSavedFormsLoading(false);
+          if (deps.authUserRef.current?.uid === currentUser.uid) {
+            setSavedFormsLoading(false);
+          }
           debugLog('Failed to load saved forms', error);
           if (options?.throwOnError) {
             throw error;
@@ -60,7 +93,9 @@ export function useSavedForms(deps: {
         }
         const attempt = savedFormsRetryRef.current + 1;
         if (attempt > SAVED_FORMS_RETRY_LIMIT) {
-          setSavedFormsLoading(false);
+          if (deps.authUserRef.current?.uid === currentUser.uid) {
+            setSavedFormsLoading(false);
+          }
           debugLog('Saved forms retry limit reached', error);
           if (options?.throwOnError) {
             throw error;
@@ -178,11 +213,13 @@ export function useSavedForms(deps: {
   }, []);
 
   const clearSavedForms = useCallback(() => {
+    sharedSavedFormsRequest = null;
     setSavedForms([]);
     setSavedFormsLoading(false);
   }, []);
 
   const reset = useCallback(() => {
+    sharedSavedFormsRequest = null;
     setActiveSavedFormId(null);
     setActiveSavedFormName(null);
     setSavedFormsLoading(false);

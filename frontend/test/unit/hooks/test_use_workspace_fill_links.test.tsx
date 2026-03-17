@@ -2,6 +2,11 @@ import { act, render } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FillLinkResponse } from '../../../src/services/api';
 import { useWorkspaceFillLinks } from '../../../src/hooks/useWorkspaceFillLinks';
+import {
+  FILL_LINK_RESPONSE_ID_KEY,
+  FILL_LINK_RESPONDENT_LABEL_KEY,
+  FILL_LINK_SUBMITTED_AT_KEY,
+} from '../../../src/utils/fillLinks';
 
 const useFillLinksMock = vi.hoisted(() => vi.fn());
 
@@ -177,6 +182,91 @@ describe('useWorkspaceFillLinks', () => {
       message: 'Response fetch failed.',
     });
     expect(harness.setShowSearchFill).not.toHaveBeenCalled();
+  });
+
+  it('loads all template respondents and seeds Search & Fill for Apply to PDF handoff', async () => {
+    const fullResponseSet: FillLinkResponse[] = [
+      {
+        id: 'resp-1',
+        linkId: 'link-1',
+        respondentLabel: 'Ada Lovelace',
+        answers: { full_name: 'Ada Lovelace' },
+        submittedAt: '2026-03-10T12:00:00.000Z',
+      },
+      {
+        id: 'resp-2',
+        linkId: 'link-1',
+        respondentLabel: 'Grace Hopper',
+        answers: { full_name: 'Grace Hopper' },
+        submittedAt: '2026-03-10T13:00:00.000Z',
+      },
+    ];
+    const templateState = createTemplateFillLinkState({
+      activeLink: {
+        id: 'link-1',
+        scopeType: 'template',
+        templateName: 'Template One',
+        status: 'active',
+        responseCount: 2,
+        maxResponses: 1000,
+        requireAllFields: false,
+      },
+      responses: [fullResponseSet[0]],
+      loadAllResponses: vi.fn().mockResolvedValue(fullResponseSet),
+    });
+    useFillLinksMock.mockImplementation(({ scopeType }: { scopeType: 'template' | 'group' }) => (
+      scopeType === 'template' ? templateState : createGroupFillLinkState()
+    ));
+
+    const harness = renderHarness();
+
+    await act(async () => {
+      await harness.hook.dialogProps.onApplyTemplateResponse(fullResponseSet[0]);
+    });
+
+    expect(templateState.loadAllResponses).toHaveBeenCalledWith(2);
+    expect(harness.clearFieldValues).toHaveBeenCalledTimes(1);
+    expect(harness.applyStructuredDataSource).toHaveBeenCalledWith({
+      kind: 'respondent',
+      label: 'Fill By Link respondents: Template One',
+      rows: [
+        {
+          full_name: 'Ada Lovelace',
+          [FILL_LINK_RESPONSE_ID_KEY]: 'resp-1',
+          [FILL_LINK_RESPONDENT_LABEL_KEY]: 'Ada Lovelace',
+          __fill_link_respondent_secondary_label: '',
+          [FILL_LINK_SUBMITTED_AT_KEY]: '2026-03-10T12:00:00.000Z',
+        },
+        {
+          full_name: 'Grace Hopper',
+          [FILL_LINK_RESPONSE_ID_KEY]: 'resp-2',
+          [FILL_LINK_RESPONDENT_LABEL_KEY]: 'Grace Hopper',
+          __fill_link_respondent_secondary_label: '',
+          [FILL_LINK_SUBMITTED_AT_KEY]: '2026-03-10T13:00:00.000Z',
+        },
+      ],
+      columns: [
+        'full_name',
+        FILL_LINK_RESPONSE_ID_KEY,
+        FILL_LINK_RESPONDENT_LABEL_KEY,
+        '__fill_link_respondent_secondary_label',
+        FILL_LINK_SUBMITTED_AT_KEY,
+      ],
+      identifierKey: FILL_LINK_RESPONDENT_LABEL_KEY,
+    });
+    expect(harness.setSearchFillPreset).toHaveBeenCalledWith(expect.objectContaining({
+      query: 'resp-1',
+      searchKey: FILL_LINK_RESPONSE_ID_KEY,
+      searchMode: 'equals',
+      autoRun: true,
+      autoFillOnSearch: true,
+    }));
+    expect(harness.setSearchFillPreset).toHaveBeenCalledWith(expect.objectContaining({
+      token: expect.any(Number),
+    }));
+    expect(harness.setManagerOpen).toHaveBeenCalledWith(false);
+    expect(harness.bumpSearchFillSession).toHaveBeenCalledTimes(1);
+    expect(harness.setShowSearchFill).toHaveBeenCalledWith(true);
   });
 
   it('does not prefetch Fill By Link data while the manager is closed', () => {

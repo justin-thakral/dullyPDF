@@ -13,12 +13,12 @@ describe('resolveProcessingCopy', () => {
       detail: 'Opening your fillable PDF in the editor.',
     });
     expect(resolveProcessingCopy('saved-form')).toMatchObject({
-      heading: 'Opening your saved form…',
-      detail: 'Grabbing your saved form from the cloud.',
+      heading: 'Loading form…',
+      detail: '',
     });
     expect(resolveProcessingCopy('saved-group')).toMatchObject({
-      heading: 'Opening your group…',
-      detail: 'Opening the first template in this group.',
+      heading: 'Loading form…',
+      detail: '',
     });
   });
 });

@@ -32,6 +32,7 @@ const entrypointMocks = vi.hoisted(() => {
       <div data-testid="usage-docs-not-found">Usage docs not found {requestedPath}</div>
     )),
     initializeGoogleAds: vi.fn(),
+    ensureBackendReady: vi.fn().mockResolvedValue(undefined),
   };
 });
 
@@ -83,6 +84,10 @@ vi.mock('../../../src/utils/googleAds', () => ({
   initializeGoogleAds: entrypointMocks.initializeGoogleAds,
 }));
 
+vi.mock('../../../src/services/apiConfig', () => ({
+  ensureBackendReady: entrypointMocks.ensureBackendReady,
+}));
+
 const importEntrypoint = async (pathname: string) => {
   window.history.replaceState({}, '', pathname);
   vi.resetModules();
@@ -111,20 +116,18 @@ describe('main entrypoint', () => {
     entrypointMocks.UsageDocsPage.mockClear();
     entrypointMocks.UsageDocsNotFoundPage.mockClear();
     entrypointMocks.initializeGoogleAds.mockClear();
+    entrypointMocks.ensureBackendReady.mockReset().mockResolvedValue(undefined);
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
   });
 
-  it('renders App on the root route and performs best-effort health warmup', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response('', { status: 200 }));
-    vi.stubGlobal('fetch', fetchMock);
-
+  it('renders App on the root route without workspace warmup', async () => {
     await importEntrypoint('/');
     await renderCapturedTree();
 
-    expect(fetchMock).toHaveBeenCalledWith('/api/health', { method: 'GET', mode: 'cors' });
+    expect(entrypointMocks.ensureBackendReady).not.toHaveBeenCalled();
     expect(entrypointMocks.initializeGoogleAds).toHaveBeenCalledTimes(1);
     expect(await screen.findByTestId('app-view')).toBeTruthy();
     expect(screen.queryByTestId('legal-privacy')).toBeNull();
@@ -133,16 +136,30 @@ describe('main entrypoint', () => {
   });
 
   it.each([
-    ['/workflows', 'workflows'],
-    ['/industries', 'industries'],
-  ])('renders intent hub route %s', async (pathname, hubKey) => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response('', { status: 200 }));
-    vi.stubGlobal('fetch', fetchMock);
-
+    ['/upload', { kind: 'upload-root' }],
+    ['/ui', { kind: 'ui-root' }],
+    ['/ui/profile', { kind: 'profile' }],
+    ['/ui/forms/saved-1', { kind: 'saved-form', formId: 'saved-1' }],
+    ['/ui/groups/group-1?template=saved-2', { kind: 'group', groupId: 'group-1', templateId: 'saved-2' }],
+  ])('routes %s through App with the parsed workspace browser route', async (pathname, expectedRoute) => {
     await importEntrypoint(pathname);
     await renderCapturedTree();
 
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(entrypointMocks.ensureBackendReady).not.toHaveBeenCalled();
+    expect(entrypointMocks.initializeGoogleAds).toHaveBeenCalledTimes(1);
+    expect(await screen.findByTestId('app-view')).toBeTruthy();
+    expect(entrypointMocks.App).toHaveBeenCalled();
+    expect(entrypointMocks.App.mock.calls.at(-1)?.[0]?.initialBrowserRoute).toEqual(expectedRoute);
+  });
+
+  it.each([
+    ['/workflows', 'workflows'],
+    ['/industries', 'industries'],
+  ])('renders intent hub route %s', async (pathname, hubKey) => {
+    await importEntrypoint(pathname);
+    await renderCapturedTree();
+
+    expect(entrypointMocks.ensureBackendReady).not.toHaveBeenCalled();
     expect(entrypointMocks.initializeGoogleAds).not.toHaveBeenCalled();
     expect(await screen.findByTestId(`intent-hub-${hubKey}`)).toBeTruthy();
     expect(screen.queryByTestId('app-view')).toBeNull();
@@ -152,52 +169,40 @@ describe('main entrypoint', () => {
     ['/free-features', 'free-features'],
     ['/premium-features', 'premium-features'],
   ])('renders feature plan route %s', async (pathname, pageKey) => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response('', { status: 200 }));
-    vi.stubGlobal('fetch', fetchMock);
-
     await importEntrypoint(pathname);
     await renderCapturedTree();
 
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(entrypointMocks.ensureBackendReady).not.toHaveBeenCalled();
     expect(entrypointMocks.initializeGoogleAds).not.toHaveBeenCalled();
     expect(await screen.findByTestId(`feature-plan-${pageKey}`)).toBeTruthy();
     expect(screen.queryByTestId('app-view')).toBeNull();
   });
 
   it('renders the branded account-action route without warmup fetch', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response('', { status: 200 }));
-    vi.stubGlobal('fetch', fetchMock);
-
     await importEntrypoint('/account-action?mode=verifyEmail&oobCode=abc123');
     await renderCapturedTree();
 
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(entrypointMocks.ensureBackendReady).not.toHaveBeenCalled();
     expect(entrypointMocks.initializeGoogleAds).not.toHaveBeenCalled();
     expect(await screen.findByTestId('account-action-page')).toBeTruthy();
     expect(screen.queryByTestId('app-view')).toBeNull();
   });
 
   it('renders the public Fill By Link route without backend warmup', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response('', { status: 200 }));
-    vi.stubGlobal('fetch', fetchMock);
-
     await importEntrypoint('/respond/token-1');
     await renderCapturedTree();
 
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(entrypointMocks.ensureBackendReady).not.toHaveBeenCalled();
     expect(entrypointMocks.initializeGoogleAds).not.toHaveBeenCalled();
     expect(await screen.findByTestId('fill-link-public')).toBeTruthy();
     expect(screen.getByText('Fill link token-1')).toBeTruthy();
   });
 
   it('normalizes legacy /verify-email links to /account-action before rendering', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response('', { status: 200 }));
-    vi.stubGlobal('fetch', fetchMock);
-
     await importEntrypoint('/verify-email?mode=verifyEmail&oobCode=abc123');
     await renderCapturedTree();
 
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(entrypointMocks.ensureBackendReady).not.toHaveBeenCalled();
     expect(await screen.findByTestId('account-action-page')).toBeTruthy();
     expect(window.location.pathname).toBe('/account-action');
   });
@@ -208,12 +213,10 @@ describe('main entrypoint', () => {
     ['/terms', 'terms'],
     ['/terms-of-service', 'terms'],
   ])('renders LegalPage kind=%s route=%s', async (pathname, kind) => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response('', { status: 200 }));
-    vi.stubGlobal('fetch', fetchMock);
-
     await importEntrypoint(pathname);
     await renderCapturedTree();
 
+    expect(entrypointMocks.ensureBackendReady).not.toHaveBeenCalled();
     expect(await screen.findByTestId(`legal-${kind}`)).toBeTruthy();
     expect(screen.queryByTestId('app-view')).toBeNull();
   });
@@ -225,12 +228,10 @@ describe('main entrypoint', () => {
     ['/usage-docs/create-group', 'create-group'],
     ['/usage-docs/search-fill/', 'search-fill'],
   ])('renders UsageDocs pageKey=%s route=%s', async (pathname, pageKey) => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response('', { status: 200 }));
-    vi.stubGlobal('fetch', fetchMock);
-
     await importEntrypoint(pathname);
     await renderCapturedTree();
 
+    expect(entrypointMocks.ensureBackendReady).not.toHaveBeenCalled();
     expect(await screen.findByTestId(`usage-docs-${pageKey}`)).toBeTruthy();
     expect(screen.queryByTestId('app-view')).toBeNull();
     expect(screen.queryByTestId('usage-docs-not-found')).toBeNull();
@@ -253,23 +254,19 @@ describe('main entrypoint', () => {
     ['/nonprofit-pdf-form-automation', 'nonprofit-pdf-form-automation'],
     ['/logistics-pdf-automation', 'logistics-pdf-automation'],
   ])('renders intent landing page for route %s', async (pathname, pageKey) => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response('', { status: 200 }));
-    vi.stubGlobal('fetch', fetchMock);
-
     await importEntrypoint(pathname);
     await renderCapturedTree();
 
+    expect(entrypointMocks.ensureBackendReady).not.toHaveBeenCalled();
     expect(await screen.findByTestId(`intent-${pageKey}`)).toBeTruthy();
     expect(screen.queryByTestId('app-view')).toBeNull();
   });
 
   it('canonicalizes /docs/* routes to /usage-docs/* before rendering', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response('', { status: 200 }));
-    vi.stubGlobal('fetch', fetchMock);
-
     await importEntrypoint('/docs/search-fill');
     await renderCapturedTree();
 
+    expect(entrypointMocks.ensureBackendReady).not.toHaveBeenCalled();
     expect(await screen.findByTestId('usage-docs-search-fill')).toBeTruthy();
     expect(window.location.pathname).toBe('/usage-docs/search-fill');
   });
@@ -279,35 +276,28 @@ describe('main entrypoint', () => {
     '/usage-docs/search-fill/extra',
     '/docs/not-a-real-page',
   ])('renders UsageDocsNotFoundPage for unknown docs routes (%s)', async (pathname) => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response('', { status: 200 }));
-    vi.stubGlobal('fetch', fetchMock);
-
     await importEntrypoint(pathname);
     await renderCapturedTree();
 
+    expect(entrypointMocks.ensureBackendReady).not.toHaveBeenCalled();
     expect(await screen.findByTestId('usage-docs-not-found')).toBeTruthy();
     expect(screen.queryByTestId('app-view')).toBeNull();
   });
 
   it('renders PublicNotFoundPage for unknown public routes', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response('', { status: 200 }));
-    vi.stubGlobal('fetch', fetchMock);
-
     await importEntrypoint('/this-path-does-not-exist');
     await renderCapturedTree();
 
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(entrypointMocks.ensureBackendReady).not.toHaveBeenCalled();
     expect(await screen.findByTestId('public-not-found')).toBeTruthy();
     expect(screen.queryByTestId('app-view')).toBeNull();
   });
 
-  it('does not crash when warmup fetch rejects', async () => {
-    const fetchMock = vi.fn().mockRejectedValue(new Error('warmup failed'));
-    vi.stubGlobal('fetch', fetchMock);
-
-    await expect(importEntrypoint('/')).resolves.toBeUndefined();
+  it('renders workspace routes without relying on entrypoint warmup', async () => {
+    await expect(importEntrypoint('/upload')).resolves.toBeUndefined();
     await renderCapturedTree();
 
+    expect(entrypointMocks.ensureBackendReady).not.toHaveBeenCalled();
     expect(await screen.findByTestId('app-view')).toBeTruthy();
   });
 });

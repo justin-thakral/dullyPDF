@@ -94,6 +94,9 @@ def _serialize_public_link(
     if expose_closed_reason and record.closed_reason:
         payload["closedReason"] = record.closed_reason
     if include_questions:
+        web_form_config = record.web_form_config if isinstance(record.web_form_config, dict) else {}
+        payload["title"] = record.title
+        payload["introText"] = web_form_config.get("introText")
         payload["requireAllFields"] = record.require_all_fields
         payload["respondentPdfDownloadEnabled"] = respondent_pdf_download_enabled(record)
         payload["questions"] = record.questions
@@ -167,13 +170,16 @@ async def submit_public_fill_link(
         raise HTTPException(status_code=400, detail="At least one response is required.")
     if not has_fill_link_respondent_identifier(answers, record.questions):
         raise HTTPException(status_code=400, detail=respondent_identifier_required_message())
-    if record.require_all_fields:
-        missing_labels = list_missing_required_fill_link_questions(answers, record.questions)
-        if missing_labels:
-            raise HTTPException(
-                status_code=400,
-                detail=format_missing_fill_link_questions_message(missing_labels),
-            )
+    missing_labels = list_missing_required_fill_link_questions(
+        answers,
+        record.questions,
+        require_all_fields=record.require_all_fields,
+    )
+    if missing_labels:
+        raise HTTPException(
+            status_code=400,
+            detail=format_missing_fill_link_questions_message(missing_labels),
+        )
     respondent_label, respondent_secondary_label = derive_fill_link_respondent_label(answers)
     search_text = build_fill_link_search_text(answers, respondent_label)
     result = submit_fill_link_response(

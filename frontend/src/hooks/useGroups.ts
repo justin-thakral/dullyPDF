@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type SetStateAction } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type SetStateAction } from 'react';
 import type { BannerNotice } from '../types';
 import { ApiService, type TemplateGroupSummary } from '../services/api';
 
@@ -9,6 +9,26 @@ type UseGroupsDeps = {
   verifiedUser: unknown;
   setBannerNotice: (notice: BannerNotice | null) => void;
 };
+
+function resolveVerifiedUserKey(verifiedUser: unknown): string | null {
+  if (!verifiedUser) {
+    return null;
+  }
+  if (
+    typeof verifiedUser === 'object' &&
+    verifiedUser !== null &&
+    'uid' in verifiedUser &&
+    typeof (verifiedUser as { uid?: unknown }).uid === 'string'
+  ) {
+    return (verifiedUser as { uid: string }).uid;
+  }
+  return 'verified';
+}
+
+let sharedGroupsRequest: {
+  userKey: string;
+  promise: Promise<TemplateGroupSummary[]>;
+} | null = null;
 
 export function useGroups(deps: UseGroupsDeps) {
   const { verifiedUser, setBannerNotice } = deps;
@@ -24,6 +44,15 @@ export function useGroups(deps: UseGroupsDeps) {
     id: ALL_SAVED_FORMS_FILTER_ID,
     label: ALL_SAVED_FORMS_FILTER_LABEL,
   });
+  const verifiedUserKey = useMemo(() => resolveVerifiedUserKey(verifiedUser), [verifiedUser]);
+  const verifiedUserKeyRef = useRef<string | null>(verifiedUserKey);
+
+  useEffect(() => {
+    verifiedUserKeyRef.current = verifiedUserKey;
+    if (!verifiedUserKey) {
+      sharedGroupsRequest = null;
+    }
+  }, [verifiedUserKey]);
 
   const selectedGroupFilterId = selectedGroupFilterState.id;
   const selectedGroupFilterLabel = selectedGroupFilterState.label;
@@ -46,27 +75,54 @@ export function useGroups(deps: UseGroupsDeps) {
   }, [groups]);
 
   const refreshGroups = useCallback(async (options?: { throwOnError?: boolean }) => {
-    if (!verifiedUser) {
+    if (!verifiedUserKey) {
+      sharedGroupsRequest = null;
       setGroups([]);
       setGroupsLoading(false);
       return [];
     }
-    setGroupsLoading(true);
     try {
-      const nextGroups = await ApiService.getGroups();
-      setGroups(nextGroups);
+      setGroupsLoading(true);
+      if (!sharedGroupsRequest || sharedGroupsRequest.userKey !== verifiedUserKey) {
+        const requestUserKey = verifiedUserKey;
+        const requestPromise = ApiService.getGroups()
+          .then((nextGroups) => {
+            if (verifiedUserKeyRef.current === requestUserKey) {
+              setGroups(nextGroups);
+            }
+            return nextGroups;
+          })
+          .finally(() => {
+            if (sharedGroupsRequest?.promise === requestPromise) {
+              sharedGroupsRequest = null;
+            }
+            if (verifiedUserKeyRef.current === requestUserKey) {
+              setGroupsLoading(false);
+            }
+          });
+        sharedGroupsRequest = {
+          userKey: requestUserKey,
+          promise: requestPromise,
+        };
+      }
+      const nextGroups = await sharedGroupsRequest!.promise;
+      if (verifiedUserKeyRef.current === verifiedUserKey) {
+        setGroups(nextGroups);
+        setGroupsLoading(false);
+      }
       return nextGroups;
     } catch (error) {
+      if (verifiedUserKeyRef.current === verifiedUserKey) {
+        setGroupsLoading(false);
+      }
       const message = error instanceof Error ? error.message : 'Failed to load groups.';
       setBannerNotice({ tone: 'error', message });
       if (options?.throwOnError) {
         throw error;
       }
       return [];
-    } finally {
-      setGroupsLoading(false);
     }
-  }, [setBannerNotice, verifiedUser]);
+  }, [setBannerNotice, verifiedUserKey]);
 
   const createGroup = useCallback(async (
     payload: { name: string; templateIds: string[] },

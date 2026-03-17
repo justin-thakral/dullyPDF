@@ -15,22 +15,36 @@ import { setAuthToken } from './services/authTokenStore';
 import { clearExpiredPendingBillingCheckout, hasFreshPendingBillingCheckout } from './utils/billingCheckoutState';
 import { debugLog } from './utils/debug';
 import { applyRouteSeo } from './utils/seo';
+import { clearWorkspaceResumeState } from './utils/workspaceResumeState';
+import {
+  areWorkspaceBrowserRoutesEqual,
+  buildWorkspaceBrowserHref,
+  getWorkspaceBrowserRouteKey,
+  type WorkspaceBrowserRoute,
+} from './utils/workspaceRoutes';
 import type { WorkspaceLaunchIntent } from './WorkspaceRuntime';
 
 const WorkspaceRuntime = lazy(() => import('./WorkspaceRuntime'));
 
-function App() {
+type AppProps = {
+  initialBrowserRoute?: WorkspaceBrowserRoute;
+};
+
+function App({
+  initialBrowserRoute = { kind: 'homepage' },
+}: AppProps) {
   const [authReady, setAuthReady] = useState(false);
   const [authUser, setAuthUser] = useState<User | null>(null);
   const [authSignInProvider, setAuthSignInProvider] = useState<string | null>(null);
+  const [browserRoute, setBrowserRoute] = useState<WorkspaceBrowserRoute>(initialBrowserRoute);
 
   const [runtimeMounted, setRuntimeMounted] = useState(false);
   const [launchIntent, setLaunchIntent] = useState<WorkspaceLaunchIntent>(null);
   const [runtimeStarting, setRuntimeStarting] = useState(false);
-  const [runtimeStartingMessage, setRuntimeStartingMessage] = useState<string | null>(null);
   const [runtimeStartError, setRuntimeStartError] = useState<string | null>(null);
   const runtimeStartAttemptRef = useRef(0);
   const runtimeStartAbortRef = useRef<AbortController | null>(null);
+  const runtimeAutoStartKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     applyRouteSeo({ kind: 'app' });
@@ -92,6 +106,47 @@ function App() {
     runtimeStartAbortRef.current = null;
   }, []);
 
+  const replaceBrowserRoute = useCallback((
+    nextRoute: WorkspaceBrowserRoute,
+    options?: { replace?: boolean },
+  ) => {
+    if (typeof window === 'undefined') return;
+    const nextHref = buildWorkspaceBrowserHref(nextRoute);
+    const [nextPathname, nextSearch = ''] = nextHref.split('?');
+    const resolvedSearch = nextSearch ? `?${nextSearch}` : '';
+    if (window.location.pathname === nextPathname && window.location.search === resolvedSearch) {
+      return;
+    }
+    const historyMethod = options?.replace ? 'replaceState' : 'pushState';
+    window.history[historyMethod]({}, '', `${nextPathname}${resolvedSearch}`);
+  }, []);
+
+  const navigateBrowserRoute = useCallback((
+    nextRoute: WorkspaceBrowserRoute,
+    options?: { replace?: boolean },
+  ) => {
+    setBrowserRoute((current) => (
+      areWorkspaceBrowserRoutesEqual(current, nextRoute) ? current : nextRoute
+    ));
+    replaceBrowserRoute(nextRoute, options);
+    if (nextRoute.kind === 'homepage') {
+      abortRuntimeStart();
+      runtimeAutoStartKeyRef.current = null;
+      setRuntimeMounted(false);
+      setLaunchIntent(null);
+      setRuntimeStarting(false);
+      setRuntimeStartError(null);
+    }
+  }, [abortRuntimeStart, replaceBrowserRoute]);
+
+  const replaceBrowserRouteWithBillingState = useCallback((billingState: 'success' | 'cancel') => {
+    if (typeof window !== 'undefined') {
+      const href = buildWorkspaceBrowserHref({ kind: 'upload-root' });
+      window.history.replaceState({}, '', `${href}?billing=${billingState}`);
+    }
+    setBrowserRoute({ kind: 'upload-root' });
+  }, []);
+
   useEffect(() => {
     return () => {
       abortRuntimeStart();
@@ -102,7 +157,6 @@ function App() {
     intent: WorkspaceLaunchIntent,
     options?: {
       waitForBackend?: boolean;
-      loadingMessage?: string;
     },
   ) => {
     abortRuntimeStart();
@@ -110,7 +164,6 @@ function App() {
     setLaunchIntent(intent);
     if (!options?.waitForBackend) {
       setRuntimeStarting(false);
-      setRuntimeStartingMessage(null);
       setRuntimeMounted(true);
       return;
     }
@@ -120,7 +173,6 @@ function App() {
     const controller = new AbortController();
     runtimeStartAbortRef.current = controller;
     setRuntimeStarting(true);
-    setRuntimeStartingMessage(options.loadingMessage ?? 'Backend is starting…');
 
     try {
       await ApiService.ensureBackendReady({
@@ -135,10 +187,8 @@ function App() {
       if (controller.signal.aborted || runtimeStartAttemptRef.current !== attemptId) {
         return;
       }
-      const message = error instanceof Error && error.message.trim()
-        ? error.message
-        : 'Backend is still starting. Please wait a moment and try again.';
-      setRuntimeStartError(message);
+      void error;
+      setRuntimeStartError('Loading workspace took longer than expected. Please try again.');
       setLaunchIntent(null);
     } finally {
       if (runtimeStartAttemptRef.current === attemptId) {
@@ -155,17 +205,36 @@ function App() {
       return;
     }
     const waitForBackend = Boolean(verifiedUser) && (intent === 'workflow' || intent === 'profile');
-    const loadingMessage = intent === 'profile'
-      ? 'Starting backend for your profile…'
-      : 'Backend is starting…';
-    void startRuntime(intent, { waitForBackend, loadingMessage });
+    void startRuntime(intent, { waitForBackend });
   }, [runtimeMounted, runtimeStarting, startRuntime, verifiedUser]);
+
+  useEffect(() => {
+    if (!authReady) return;
+    if (browserRoute.kind === 'homepage') {
+      runtimeAutoStartKeyRef.current = null;
+      return;
+    }
+    if (runtimeMounted || runtimeStarting || runtimeStartError) {
+      return;
+    }
+    const autoStartKey = `${getWorkspaceBrowserRouteKey(browserRoute)}:${verifiedUser ? 'verified' : 'guest'}`;
+    if (runtimeAutoStartKeyRef.current === autoStartKey) {
+      return;
+    }
+    runtimeAutoStartKeyRef.current = autoStartKey;
+    const intent: WorkspaceLaunchIntent = browserRoute.kind === 'profile'
+      ? 'profile'
+      : (verifiedUser ? 'workflow' : 'signin');
+    launchWorkspace(intent);
+  }, [authReady, browserRoute, launchWorkspace, runtimeMounted, runtimeStartError, runtimeStarting, verifiedUser]);
 
   const handleDismissRuntimeStartError = useCallback(() => {
     setRuntimeStartError(null);
-    setRuntimeStartingMessage(null);
     setLaunchIntent(null);
-  }, []);
+    if (browserRoute.kind !== 'homepage') {
+      navigateBrowserRoute({ kind: 'homepage' }, { replace: true });
+    }
+  }, [browserRoute.kind, navigateBrowserRoute]);
 
   useEffect(() => {
     if (!authReady || runtimeMounted || typeof window === 'undefined') return;
@@ -180,24 +249,23 @@ function App() {
     clearExpiredPendingBillingCheckout();
     if (billingState === 'cancel') {
       if (!verifiedUser) {
-        url.searchParams.delete('billing');
-        window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+        navigateBrowserRoute({ kind: 'homepage' }, { replace: true });
         return;
       }
-      launchWorkspace('workflow');
+      replaceBrowserRouteWithBillingState('cancel');
       return;
     }
     if (!verifiedUser && !hasFreshPendingBillingCheckout()) {
-      url.searchParams.delete('billing');
-      window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+      navigateBrowserRoute({ kind: 'homepage' }, { replace: true });
       return;
     }
-    launchWorkspace(verifiedUser ? 'workflow' : 'signin');
-  }, [authReady, launchWorkspace, runtimeMounted, verifiedUser]);
+    replaceBrowserRouteWithBillingState('success');
+  }, [authReady, navigateBrowserRoute, replaceBrowserRouteWithBillingState, runtimeMounted, verifiedUser]);
 
   const handleStartWorkflow = useCallback(() => {
+    navigateBrowserRoute({ kind: 'upload-root' });
     launchWorkspace(verifiedUser ? 'workflow' : 'signin');
-  }, [launchWorkspace, verifiedUser]);
+  }, [launchWorkspace, navigateBrowserRoute, verifiedUser]);
 
   const handleStartDemo = useCallback(() => {
     launchWorkspace('demo');
@@ -208,19 +276,22 @@ function App() {
   }, [launchWorkspace]);
 
   const handleOpenProfile = useCallback(() => {
-    launchWorkspace('profile');
-  }, [launchWorkspace]);
+    navigateBrowserRoute({ kind: 'profile' });
+    launchWorkspace(verifiedUser ? 'profile' : 'signin');
+  }, [launchWorkspace, navigateBrowserRoute, verifiedUser]);
 
   const handleSignOut = useCallback(async () => {
     try {
       await Auth.signOut();
+      clearWorkspaceResumeState();
       setAuthToken(null);
       setAuthUser(null);
       setAuthSignInProvider(null);
+      navigateBrowserRoute({ kind: 'homepage' }, { replace: true });
     } catch (error) {
       debugLog('Failed to sign out from lightweight shell', error);
     }
-  }, []);
+  }, [navigateBrowserRoute]);
 
   const handleRefreshVerification = useCallback(async () => {
     try {
@@ -264,12 +335,8 @@ function App() {
     return (
       <div className="auth-loading-screen">
         <div className="auth-loading-card">
-          <div>{runtimeStarting ? (runtimeStartingMessage ?? 'Backend is starting…') : 'Backend startup delayed'}</div>
-          <div>
-            {runtimeStarting
-              ? 'The first request after inactivity can take a few seconds.'
-              : runtimeStartError}
-          </div>
+          <div>{runtimeStarting ? 'Loading workspace…' : 'Unable to load workspace.'}</div>
+          {!runtimeStarting && runtimeStartError ? <div>{runtimeStartError}</div> : null}
           {!runtimeStarting ? (
             <button type="button" onClick={handleDismissRuntimeStartError}>
               Back
@@ -295,6 +362,8 @@ function App() {
           assumeAuthReady={authReady}
           bootstrapHasVerifiedUser={Boolean(verifiedUser)}
           bootstrapAuthUser={authUser}
+          browserRoute={browserRoute}
+          onBrowserRouteChange={navigateBrowserRoute}
         />
       </Suspense>
     );

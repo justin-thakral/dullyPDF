@@ -24,6 +24,7 @@ import type {
 import { buildTemplateFields, clearFieldValues } from '../utils/fields';
 import { applyRenamePayloadToFields } from '../utils/openAiFields';
 import { resolveGroupTemplates, useGroupTemplateCache } from './useGroupTemplateCache';
+import type { SavedFormSessionResume } from './useDetection';
 import { useGroupUploadModal } from './useGroupUploadModal';
 
 type SearchFillPresetState = {
@@ -103,8 +104,11 @@ type DetectionController = {
   handleSelectSavedForm: (
     formId: string,
     pdfState: PdfStateBridge,
-    options?: { source?: 'saved-form' | 'saved-group' },
-  ) => Promise<void>;
+    options?: {
+      source?: 'saved-form' | 'saved-group';
+      preferredSession?: SavedFormSessionResume | null;
+    },
+  ) => Promise<boolean>;
   handleFillableUpload: (
     file: File,
     options: { isDemo?: boolean; skipExistingFields?: boolean },
@@ -267,7 +271,11 @@ export function useWorkspaceGroupCoordinator(deps: UseWorkspaceGroupCoordinatorD
   }, []);
 
   const handleSelectSavedFormWithinGroup = useCallback(
-    async (formId: string, groupContext?: GroupContext | null) => {
+    async (
+      formId: string,
+      groupContext?: GroupContext | null,
+      options?: { preferredSession?: SavedFormSessionResume | null },
+    ) => {
       if (groupContext) {
         setActiveGroupId(groupContext.id);
         setActiveGroupName(groupContext.name);
@@ -277,8 +285,9 @@ export function useWorkspaceGroupCoordinator(deps: UseWorkspaceGroupCoordinatorD
         clearActiveGroupSelection();
       }
       try {
-        await deps.detection.handleSelectSavedForm(formId, deps.pdfState, {
+        return await deps.detection.handleSelectSavedForm(formId, deps.pdfState, {
           source: groupContext ? 'saved-group' : 'saved-form',
+          preferredSession: options?.preferredSession ?? null,
         });
       } finally {
         if (groupContext) {
@@ -393,12 +402,16 @@ export function useWorkspaceGroupCoordinator(deps: UseWorkspaceGroupCoordinatorD
   );
 
   const handleSelectSavedForm = useCallback(
-    async (formId: string) => {
+    async (
+      formId: string,
+      options?: { preferredSession?: SavedFormSessionResume | null },
+    ) => {
       const confirmed = await confirmDiscardDirtyGroupChanges('opening another saved form');
       if (!confirmed) return false;
       clearGroupTemplateCache();
-      await handleSelectSavedFormWithinGroup(formId, null);
-      return true;
+      return handleSelectSavedFormWithinGroup(formId, null, {
+        preferredSession: options?.preferredSession ?? null,
+      });
     },
     [
       clearGroupTemplateCache,
@@ -621,38 +634,65 @@ export function useWorkspaceGroupCoordinator(deps: UseWorkspaceGroupCoordinatorD
   );
 
   const handleOpenGroup = useCallback(
-    async (groupId: string) => {
+    async (
+      groupId: string,
+      options?: {
+        preferredTemplateId?: string | null;
+        preferredSession?: SavedFormSessionResume | null;
+      },
+    ) => {
       try {
         const fallbackGroup = deps.groups.groups.find((entry) => entry.id === groupId) ?? null;
-        const group = fallbackGroup ?? await ApiService.getGroup(groupId);
-        const templates = resolveGroupTemplates(group, deps.savedForms.savedForms);
+        let savedFormsList = deps.savedForms.savedForms;
+        let group = fallbackGroup;
+        let templates = resolveGroupTemplates(group, savedFormsList);
+
+        if (!group || !templates.length) {
+          const [refreshedGroups, refreshedSavedForms] = await Promise.all([
+            deps.groups.refreshGroups({ throwOnError: true }),
+            deps.savedForms.refreshSavedForms({ allowRetry: true, throwOnError: true }),
+          ]);
+          savedFormsList = refreshedSavedForms;
+          group = refreshedGroups.find((entry) => entry.id === groupId) ?? group;
+          templates = resolveGroupTemplates(group, savedFormsList);
+        }
+
+        if (!group) {
+          group = await ApiService.getGroup(groupId);
+          templates = resolveGroupTemplates(group, savedFormsList);
+        }
         if (!templates.length) {
           deps.dialog.setBannerNotice({
             tone: 'error',
             message: 'This group has no available saved forms to open.',
             autoDismissMs: 7000,
           });
-          return;
+          return false;
         }
         if (
           activeGroupId === group.id &&
           deps.savedForms.activeSavedFormId &&
           templates.some((entry) => entry.id === deps.savedForms.activeSavedFormId)
         ) {
-          return;
+          return true;
         }
         const confirmed = await confirmDiscardDirtyGroupChanges(`opening "${group.name}"`);
-        if (!confirmed) return;
-        const firstTemplate = templates[0];
+        if (!confirmed) return false;
+        const firstTemplate = options?.preferredTemplateId
+          ? (templates.find((entry) => entry.id === options.preferredTemplateId) ?? templates[0])
+          : templates[0];
         clearGroupTemplateCache();
-        await handleSelectSavedFormWithinGroup(firstTemplate.id, {
+        return handleSelectSavedFormWithinGroup(firstTemplate.id, {
           id: group.id,
           name: group.name,
           templateIds: templates.map((entry) => entry.id),
+        }, {
+          preferredSession: options?.preferredSession ?? null,
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Failed to open group.';
         deps.dialog.setBannerNotice({ tone: 'error', message, autoDismissMs: 8000 });
+        return false;
       }
     },
     [
@@ -666,16 +706,6 @@ export function useWorkspaceGroupCoordinator(deps: UseWorkspaceGroupCoordinatorD
       handleSelectSavedFormWithinGroup,
     ],
   );
-
-  const savedFormsGroupRefreshKey = useMemo(
-    () => deps.savedForms.savedForms.map((form) => `${form.id}:${form.name}:${form.createdAt}`).join('|'),
-    [deps.savedForms.savedForms],
-  );
-
-  useEffect(() => {
-    if (!deps.verifiedUser) return;
-    void deps.groups.refreshGroups();
-  }, [deps.groups.refreshGroups, deps.verifiedUser, savedFormsGroupRefreshKey]);
 
   useEffect(() => {
     if (!activeGroupId || deps.detection.isProcessing) return;

@@ -7,6 +7,11 @@ import { ApiService } from '../services/api';
 import { AUTH_READY_FALLBACK_MS, DEFAULT_PROFILE_LIMITS } from '../config/appConstants';
 import { debugLog } from '../utils/debug';
 
+let sharedProfileRequest: {
+  userId: string;
+  promise: Promise<UserProfile | null>;
+} | null = null;
+
 export function useAuth(deps: {
   clearSavedFormsRetry: () => void;
   clearSavedForms: () => void;
@@ -46,24 +51,52 @@ export function useAuth(deps: {
   }, [verifiedUser]);
 
   const loadUserProfile = useCallback(async () => {
-    if (!authUserRef.current) return null;
+    const currentUser = authUserRef.current;
+    if (!currentUser) return null;
     setProfileLoading(true);
-    try {
-      const profile = await ApiService.getProfile();
+    if (!sharedProfileRequest || sharedProfileRequest.userId !== currentUser.uid) {
+      const requestedUid = currentUser.uid;
+      const requestPromise = ApiService.getProfile()
+        .then((profile) => {
+          if (authUserRef.current?.uid === requestedUid) {
+            setUserProfile(profile);
+            setProfileLoadError(null);
+          }
+          return profile;
+        })
+        .catch((error) => {
+          debugLog('Failed to load profile', error);
+          const message =
+            error instanceof Error && error.message.trim()
+              ? error.message
+              : 'Failed to refresh profile details.';
+          if (authUserRef.current?.uid === requestedUid) {
+            setProfileLoadError(message);
+          }
+          return null;
+        })
+        .finally(() => {
+          if (sharedProfileRequest?.promise === requestPromise) {
+            sharedProfileRequest = null;
+          }
+          if (authUserRef.current?.uid === requestedUid) {
+            setProfileLoading(false);
+          }
+        });
+      sharedProfileRequest = {
+        userId: requestedUid,
+        promise: requestPromise,
+      };
+    }
+    const profile = await sharedProfileRequest!.promise;
+    if (authUserRef.current?.uid === currentUser.uid) {
       setUserProfile(profile);
-      setProfileLoadError(null);
-      return profile;
-    } catch (error) {
-      debugLog('Failed to load profile', error);
-      const message =
-        error instanceof Error && error.message.trim()
-          ? error.message
-          : 'Failed to refresh profile details.';
-      setProfileLoadError(message);
-      return null;
-    } finally {
+      if (profile !== null) {
+        setProfileLoadError(null);
+      }
       setProfileLoading(false);
     }
+    return profile;
   }, []);
 
   const mutateUserProfile = useCallback((updater: (previous: UserProfile | null) => UserProfile | null) => {
@@ -72,15 +105,18 @@ export function useAuth(deps: {
 
   const syncAuthSession = useCallback(
     async (user: User | null, options?: { forceTokenRefresh?: boolean; deferSavedForms?: boolean }) => {
+      sharedProfileRequest = null;
       authUserRef.current = null;
       setAuthUser(user);
       setAuthSignInProvider(null);
       setProfileLoadError(null);
 
       if (!user) {
+        sharedProfileRequest = null;
         depsRef.current.clearSavedFormsRetry();
         depsRef.current.clearSavedForms();
         setUserProfile(null);
+        setProfileLoading(false);
         setProfileLoadError(null);
         setShowProfile(false);
         return;
@@ -95,9 +131,11 @@ export function useAuth(deps: {
         setAuthSignInProvider(provider);
         const needsVerification = provider === 'password' && !user.emailVerified;
         if (needsVerification) {
+          sharedProfileRequest = null;
           depsRef.current.clearSavedFormsRetry();
           depsRef.current.clearSavedForms();
           setUserProfile(null);
+          setProfileLoading(false);
           setProfileLoadError(null);
           setShowProfile(false);
           return;

@@ -67,7 +67,7 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
             <li>PDF upload limit is 50MB (`UploadComponent` validation).</li>
             <li>Desktop is required for full editor usage. Mobile is walkthrough-only.</li>
             <li>Search &amp; Fill record rows can come from CSV, XLSX, JSON, or stored Fill By Link respondents. TXT is schema-only.</li>
-            <li>Fill By Link can be published from the active saved form or from an open group. Owners can optionally require every question before a respondent submission is accepted.</li>
+            <li>Fill By Link can be published from the active saved form or from an open group. Owners now use a larger builder dialog with global settings, searchable questions, and live preview before publishing.</li>
             <li>OpenAI actions require sign-in and credits. Pricing is bucketed by page count (default 5 pages per bucket).</li>
             <li>Credits formula: total = baseCost x ceil(pageCount / bucketSize). Base costs: Rename=1, Remap=1, Rename+Map=2.</li>
             <li>Billing runs through Stripe from Profile: Pro Monthly, Pro Yearly, and a Pro-only 500-credit refill pack.</li>
@@ -565,7 +565,7 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
         body: (
           <ol>
             <li>Open the saved template or saved group you want to publish.</li>
-            <li>Use Fill By Link to generate the public URL and decide whether every public question is required.</li>
+            <li>Use Fill By Link to generate the public URL, set global defaults such as requiredness and text limits, and tune each visible question before sharing.</li>
             <li>Open the generated URL yourself first to confirm question wording and mobile layout.</li>
             <li>Copy the link and send it to respondents. Their answers are stored in DullyPDF under the owner account.</li>
           </ol>
@@ -587,6 +587,10 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
             <p>
               For template links only, owners can optionally expose a post-submit button that lets respondents
               download a PDF copy of what they just submitted.
+            </p>
+            <p>
+              Template builders can also add custom questions that do not exist on the PDF itself, while group links
+              currently stay limited to the merged packet field set.
             </p>
           </>
         ),

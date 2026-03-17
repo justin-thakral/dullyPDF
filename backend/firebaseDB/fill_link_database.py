@@ -47,6 +47,7 @@ class FillLinkRecord:
     response_count: int
     questions: List[Dict[str, Any]]
     require_all_fields: bool
+    web_form_config: Optional[Dict[str, Any]]
     created_at: Optional[str]
     updated_at: Optional[str]
     published_at: Optional[str]
@@ -187,6 +188,7 @@ def _serialize_fill_link(doc) -> FillLinkRecord:
         response_count=max(0, _coerce_int(data.get("response_count"), default=0)),
         questions=_coerce_dict_list(data.get("questions")),
         require_all_fields=bool(data.get("require_all_fields")),
+        web_form_config=_coerce_optional_dict(data.get("web_form_config")),
         respondent_pdf_download_enabled=bool(data.get("respondent_pdf_download_enabled")),
         respondent_pdf_snapshot=_coerce_optional_dict(data.get("respondent_pdf_snapshot")),
         created_at=data.get("created_at"),
@@ -309,6 +311,7 @@ def create_or_update_fill_link(
     title: Optional[str],
     questions: List[Dict[str, Any]],
     require_all_fields: bool,
+    web_form_config: Optional[Dict[str, Any]] = None,
     max_responses: int,
     respondent_pdf_download_enabled: bool = False,
     respondent_pdf_snapshot: Optional[Dict[str, Any]] = None,
@@ -383,6 +386,7 @@ def create_or_update_fill_link(
             "max_responses": max(1, int(max_responses)),
             "questions": questions,
             "require_all_fields": bool(require_all_fields),
+            "web_form_config": dict(web_form_config) if isinstance(web_form_config, dict) else None,
             "respondent_pdf_download_enabled": bool(respondent_pdf_download_enabled),
             "respondent_pdf_snapshot": (
                 dict(respondent_pdf_snapshot)
@@ -451,6 +455,7 @@ def update_fill_link(
     group_name: Optional[str] = None,
     template_ids: Optional[List[str]] = None,
     require_all_fields: Optional[bool] = None,
+    web_form_config: Optional[Dict[str, Any]] = None,
     respondent_pdf_download_enabled: Optional[bool] = None,
     respondent_pdf_snapshot: Optional[Dict[str, Any]] = None,
     status: Optional[str] = None,
@@ -490,6 +495,8 @@ def update_fill_link(
             payload["template_ids"] = _coerce_string_list(template_ids)
         if require_all_fields is not None:
             payload["require_all_fields"] = bool(require_all_fields)
+        if web_form_config is not None:
+            payload["web_form_config"] = dict(web_form_config) if isinstance(web_form_config, dict) else None
         if respondent_pdf_download_enabled is not None:
             enabled = bool(respondent_pdf_download_enabled)
             payload["respondent_pdf_download_enabled"] = enabled
@@ -839,6 +846,7 @@ def submit_fill_link_response(
             response_count=next_count,
             questions=current.questions,
             require_all_fields=current.require_all_fields,
+            web_form_config=current.web_form_config,
             respondent_pdf_download_enabled=current.respondent_pdf_download_enabled,
             respondent_pdf_snapshot=current.respondent_pdf_snapshot,
             created_at=current.created_at,

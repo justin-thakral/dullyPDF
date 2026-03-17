@@ -12,6 +12,7 @@ import {
   type FillLinkResponse,
   type FillLinkSummary,
   type FillLinkTemplateFieldPayload,
+  type FillLinkWebFormConfig,
 } from '../services/api';
 import { buildFillLinkTemplateFields } from '../utils/fillLinks';
 
@@ -251,6 +252,7 @@ export function useFillLinks(deps: UseFillLinksDeps) {
     title?: string | null;
     requireAllFields?: boolean;
     allowRespondentPdfDownload?: boolean;
+    webFormConfig?: FillLinkWebFormConfig;
     fields: FillLinkTemplateFieldPayload[];
     checkboxRules?: Array<Record<string, unknown>>;
     checkboxHints?: CheckboxHint[];
@@ -269,6 +271,7 @@ export function useFillLinks(deps: UseFillLinksDeps) {
         title: payload.title || undefined,
         requireAllFields: payload.requireAllFields,
         allowRespondentPdfDownload: payload.allowRespondentPdfDownload,
+        webFormConfig: payload.webFormConfig,
         fields: payload.fields,
         checkboxRules: payload.checkboxRules,
         checkboxHints: payload.checkboxHints,
@@ -327,6 +330,7 @@ export function useFillLinks(deps: UseFillLinksDeps) {
       groupName?: string;
       requireAllFields?: boolean;
       allowRespondentPdfDownload?: boolean;
+      webFormConfig?: FillLinkWebFormConfig;
       fields?: FillLinkTemplateFieldPayload[];
       checkboxRules?: Array<Record<string, unknown>>;
       checkboxHints?: CheckboxHint[];

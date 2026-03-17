@@ -44,6 +44,12 @@ import { resolveProcessingCopy, type ProcessingVariant } from '../utils/processi
 
 const DEMO_ASSET_NAME_SET = new Set(Object.values(DEMO_ASSETS));
 
+export type SavedFormSessionResume = {
+  sessionId: string;
+  fieldCount: number | null;
+  pageCount: number | null;
+};
+
 export interface UseDetectionDeps {
   verifiedUser: User | null;
   profileLimits: { detectMaxPages: number; fillableMaxPages: number };
@@ -429,7 +435,10 @@ export function useDetection(deps: UseDetectionDeps) {
         setScale: (scale: number) => void;
         setPendingPageJump: (page: number | null) => void;
       },
-      options: { source?: 'saved-form' | 'saved-group' } = {},
+      options: {
+        source?: 'saved-form' | 'saved-group';
+        preferredSession?: SavedFormSessionResume | null;
+      } = {},
     ) => {
       cancelAllDetectionPolling();
       const loadToken = loadTokenRef.current + 1;
@@ -475,7 +484,7 @@ export function useDetection(deps: UseDetectionDeps) {
             })();
         const sizes = await sizesPromise;
         const initialFields = hydratedSnapshot ? clonePdfFields(hydratedSnapshot.fields) : [];
-        if (!commitPdfLoad(doc, sizes, initialFields, loadToken, pdfState)) return;
+        if (!commitPdfLoad(doc, sizes, initialFields, loadToken, pdfState)) return false;
         deps.setActiveSavedFormId(formId);
         deps.setActiveSavedFormName(savedMeta?.name || null);
         const {
@@ -497,7 +506,23 @@ export function useDetection(deps: UseDetectionDeps) {
         const registerSavedFormSession = async (fieldsForSession: PdfField[]) => {
           if (!fieldsForSession.length) {
             deps.setBannerNotice({ tone: 'info', message: 'No fields found in this saved form. Rename is unavailable.', autoDismissMs: 8000 });
-            return;
+            return true;
+          }
+          const preferredSession = options.preferredSession;
+          if (
+            preferredSession?.sessionId &&
+            (preferredSession.fieldCount === null || preferredSession.fieldCount === fieldsForSession.length) &&
+            (preferredSession.pageCount === null || preferredSession.pageCount === doc.numPages)
+          ) {
+            try {
+              await ApiService.touchSession(preferredSession.sessionId);
+              if (loadTokenRef.current !== loadToken) return false;
+              setDetectSessionId(preferredSession.sessionId);
+              setMappingSessionId(preferredSession.sessionId);
+              return true;
+            } catch (error) {
+              debugLog('Failed to reuse saved form session, creating a fresh session instead', preferredSession.sessionId, error);
+            }
           }
           try {
             const sessionPayload = await ApiService.createSavedFormSession(formId, {
@@ -507,10 +532,12 @@ export function useDetection(deps: UseDetectionDeps) {
             if (loadTokenRef.current !== loadToken) return;
             setDetectSessionId(sessionPayload.sessionId);
             setMappingSessionId(sessionPayload.sessionId);
+            return true;
           } catch (error) {
             if (loadTokenRef.current !== loadToken) return;
             deps.setBannerNotice({ tone: 'info', message: 'Rename is unavailable for this saved form.', autoDismissMs: 8000 });
             debugLog('Failed to register saved form session', error);
+            return false;
           }
         };
 
@@ -520,7 +547,7 @@ export function useDetection(deps: UseDetectionDeps) {
           if (deps.verifiedUser) {
             void registerSavedFormSession(initialFields);
           }
-          return;
+          return true;
         }
 
         void (async () => {
@@ -550,14 +577,16 @@ export function useDetection(deps: UseDetectionDeps) {
           if (!deps.verifiedUser) return;
           await registerSavedFormSession(existingFields);
         })();
+        return true;
       } catch (error) {
-        if (loadTokenRef.current !== loadToken) return;
+        if (loadTokenRef.current !== loadToken) return false;
         const message = error instanceof Error ? error.message : 'Unable to load saved form.';
         deps.clearWorkspace();
         setIsProcessing(false);
         setProcessingMode(null);
         deps.setLoadError(message);
         debugLog('Failed to load saved form', message);
+        return false;
       }
     },
     [commitPdfLoad, deps],
