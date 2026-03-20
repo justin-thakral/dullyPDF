@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from backend.api.middleware.security import enforce_security_guards
 from backend.api.routes import (
@@ -22,7 +23,12 @@ from backend.api.routes import (
     schemas_router,
     sessions_router,
 )
-from backend.services.app_config import docs_enabled, require_prod_env, resolve_cors_origins
+from backend.services.app_config import (
+    docs_enabled,
+    require_prod_env,
+    resolve_cors_origins,
+    resolve_trusted_hosts,
+)
 
 
 def create_app() -> FastAPI:
@@ -41,6 +47,10 @@ def create_app() -> FastAPI:
         allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
+    )
+    app.add_middleware(
+        TrustedHostMiddleware,
+        allowed_hosts=resolve_trusted_hosts(),
     )
 
     app.middleware("http")(enforce_security_guards)

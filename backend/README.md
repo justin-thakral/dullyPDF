@@ -39,14 +39,14 @@ through Hosting rewrites so the browser can call them as same-origin `/api/...` 
 primarily to remove CORS preflights (OPTIONS) from fast JSON endpoints (notably reCAPTCHA verification
 and profile fetches) so Cloud Run scale-to-zero cold starts feel less blocking.
 
-Given the current signed-in startup flow, production should keep `BACKEND_MIN_INSTANCES=1` in
-`env/backend.prod.env` so the backend stays warm for same-origin `/api/profile`, `/api/groups`, and
-`/api/saved-forms` bootstrap requests. A future warm-shell split could relax that requirement.
+Production redeploys no longer force a warm backend by default. Leave
+`BACKEND_MIN_INSTANCES` unset in `env/backend.prod.env` to preserve the current Cloud Run min
+instance count across deploys, or set it explicitly when you want the deploy script to manage warm
+capacity.
 
 Be careful with ad hoc `gcloud run services update` or `gcloud run services update-traffic`
-commands in prod: if they omit `--min` or pin traffic to an older revision, Cloud Run can fall back
-to scale-from-zero behavior or stale code even though the deploy scripts are configured to keep the
-latest revision warm.
+commands in prod: if they pin traffic to an older revision or override scaling unexpectedly, Cloud
+Run can serve stale code or revert to a different warm/cold posture than the current service config.
 
 Some endpoints are intentionally not proxied (OpenAI routes, detection routes, and large upload/stream
 routes) to avoid Firebase Hosting's Cloud Run rewrite timeout (approximately 60 seconds) and to keep
@@ -103,6 +103,7 @@ See `frontend/docs/api-routing.md` for the current rewrite list and frontend cal
 - `FILL_LINK_ALLOW_LEGACY_PUBLIC_TOKENS` (default false; temporary fallback for previously issued plaintext Fill By Link URLs only)
 - `SANDBOX_TRUST_PROXY_HEADERS` (default false; only enable when Cloud Run is reachable *only* via a trusted proxy that strips spoofed headers)
 - `SANDBOX_CORS_ORIGINS` (comma-separated list)
+- `SANDBOX_TRUSTED_HOSTS` (comma-separated host allowlist for `Host` header validation; required in prod and should include every Firebase Hosting domain that serves the API plus any temporary Cloud Run `run.app` hosts you still need during migration)
 - `SANDBOX_ENABLE_LEGACY_ENDPOINTS` (dev-only; defaults to true; ignored in prod)
 - `ADMIN_TOKEN` (dev-only override; ignored when `ENV=prod` or `SANDBOX_ALLOW_ADMIN_OVERRIDE=false`)
 - `SANDBOX_DETECT_MAX_PAGES_BASE`, `SANDBOX_DETECT_MAX_PAGES_GOD`
@@ -154,6 +155,13 @@ See `frontend/docs/api-routing.md` for the current rewrite list and frontend cal
 - `OPENAI_PREWARM_ENABLED` (default false; best-effort worker warmup during detection)
 - `OPENAI_PREWARM_REMAINING_PAGES` (default 3; trigger point for prewarm)
 - `OPENAI_PREWARM_TIMEOUT_SECONDS` (default 2; health check timeout)
+
+Local operators who start the backend with `scripts/run-backend-dev.sh` also need IAM access that matches the helper flow:
+
+- `roles/secretmanager.secretAccessor` on the Firebase credentials secret used by `scripts/_load_firebase_secret.sh`
+- `roles/storage.objectViewer` on the bucket that stores the CommonForms model referenced by `COMMONFORMS_MODEL_GCS_URI`
+
+Use `scripts/grant-dev-gcp-access.sh you@example.com` to grant the current dev defaults (`dullypdf-dev-firebase-admin` and `gs://dullypdf-dev-models`) to a specific email.
 
 Detector env examples:
 - `config/detector.dev.env.example`

@@ -141,7 +141,7 @@ Repo hygiene:
   `total_credits = operation_base_cost * ceil(page_count / OPENAI_CREDITS_PAGE_BUCKET_SIZE)`.
   Default base costs: Rename `1`, Remap `1`, Rename+Remap `2`; default bucket size is `5`.
   Credits are refunded when an OpenAI request fails before producing a response.
-- **Secret access**: restrict `roles/secretmanager.secretAccessor` to only the backend runtime SA.
+- **Secret access**: in production, restrict `roles/secretmanager.secretAccessor` to only the backend runtime SA. For local dev, grant a human operator only the minimal bootstrap access they need for `scripts/_load_firebase_secret.sh` and CommonForms model downloads; `scripts/grant-dev-gcp-access.sh <email>` grants the current dev secret accessor plus model bucket object viewer roles together.
 - **Keyless prod**: prefer ADC/Workload Identity in production to avoid JSON keys entirely
   (`FIREBASE_USE_ADC=true` on Cloud Run).
 
@@ -344,6 +344,7 @@ Operational note:
 Set these on the backend server:
 - `ADMIN_TOKEN=<secure random value>`
 - `SANDBOX_CORS_ORIGINS=https://your-domain.com`
+- `SANDBOX_TRUSTED_HOSTS=your-domain.com,your-service-xxxxx-uc.a.run.app`
 
 And keep these unset/false:
 - `SANDBOX_LOG_OPENAI_RESPONSE`

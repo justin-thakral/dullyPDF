@@ -29,7 +29,8 @@ set -a
 source "$ENV_FILE"
 set +a
 
-BACKEND_MIN_INSTANCES="${BACKEND_MIN_INSTANCES:-1}"
+# Leave unset to preserve the service's current min instance count on redeploy.
+BACKEND_MIN_INSTANCES="${BACKEND_MIN_INSTANCES:-}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/_detector_routing.sh"
@@ -108,6 +109,16 @@ require_integer_ge() {
     echo "Expected $name to be >= ${min_value} (got '${actual}')." >&2
     exit 1
   fi
+}
+
+require_optional_integer_ge() {
+  local name="$1"
+  local min_value="$2"
+  local actual="${!name:-}"
+  if [[ -z "$actual" ]]; then
+    return 0
+  fi
+  require_integer_ge "$name" "$min_value"
 }
 
 service_account_has_project_iam_permission() {
@@ -223,7 +234,7 @@ require_nonempty OPENAI_REMAP_TASKS_QUEUE_HEAVY
 require_nonempty OPENAI_REMAP_SERVICE_URL_LIGHT
 require_nonempty OPENAI_REMAP_SERVICE_URL_HEAVY
 require_nonempty OPENAI_REMAP_TASKS_SERVICE_ACCOUNT
-require_integer_ge BACKEND_MIN_INSTANCES 1
+require_optional_integer_ge BACKEND_MIN_INSTANCES 0
 
 if [[ "${SANDBOX_CORS_ORIGINS}" == "*" ]]; then
   echo "SANDBOX_CORS_ORIGINS cannot be '*'" >&2
@@ -461,12 +472,19 @@ if [[ ${#SECRETS_TO_REMOVE[@]} -gt 0 ]]; then
   SECRET_FLAGS+=("--remove-secrets" "$(IFS=,; echo "${SECRETS_TO_REMOVE[*]}")")
 fi
 
+DEPLOY_ARGS=(
+  --image "$BACKEND_IMAGE"
+  --region "$REGION"
+  --project "$PROJECT_ID"
+  --service-account "$BACKEND_RUNTIME_SERVICE_ACCOUNT"
+  --allow-unauthenticated
+  --env-vars-file "$TMP_ENV_FILE"
+)
+
+if [[ -n "$BACKEND_MIN_INSTANCES" ]]; then
+  DEPLOY_ARGS+=(--min "$BACKEND_MIN_INSTANCES")
+fi
+
 gcloud run deploy "$SERVICE_NAME" \
-  --image "$BACKEND_IMAGE" \
-  --region "$REGION" \
-  --project "$PROJECT_ID" \
-  --min "$BACKEND_MIN_INSTANCES" \
-  --service-account "$BACKEND_RUNTIME_SERVICE_ACCOUNT" \
-  --allow-unauthenticated \
-  --env-vars-file "$TMP_ENV_FILE" \
+  "${DEPLOY_ARGS[@]}" \
   "${SECRET_FLAGS[@]}"

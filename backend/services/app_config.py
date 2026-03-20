@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import os
 from typing import Dict, Optional
+from urllib.parse import urlsplit
 
 from fastapi import HTTPException
 
@@ -24,6 +25,15 @@ _DEFAULT_CORS_ORIGINS = [
 ]
 
 logger = get_logger(__name__)
+
+_DEFAULT_TRUSTED_HOSTS = [
+    "localhost",
+    "127.0.0.1",
+    "[::1]",
+    "testserver",
+]
+
+
 def is_prod() -> bool:
     return _env_value("ENV").lower() in {"prod", "production"}
 
@@ -123,6 +133,11 @@ def require_prod_env() -> None:
         missing.append("SANDBOX_CORS_ORIGINS")
     if _env_value("SANDBOX_CORS_ORIGINS") == "*":
         missing.append("SANDBOX_CORS_ORIGINS (cannot be '*')")
+    trusted_hosts_raw = _env_value("SANDBOX_TRUSTED_HOSTS")
+    if not trusted_hosts_raw:
+        missing.append("SANDBOX_TRUSTED_HOSTS")
+    elif trusted_hosts_raw.strip() == "*":
+        missing.append("SANDBOX_TRUSTED_HOSTS (cannot be '*')")
     if not _env_value("FIREBASE_PROJECT_ID"):
         missing.append("FIREBASE_PROJECT_ID")
     if not _env_truthy("FIREBASE_USE_ADC"):
@@ -267,6 +282,39 @@ def resolve_cors_origins() -> list[str]:
         return list(_DEFAULT_CORS_ORIGINS)
     seen: set[str] = set()
     return [origin for origin in origins if not (origin in seen or seen.add(origin))]
+
+
+def _normalize_trusted_host(value: str) -> Optional[str]:
+    candidate = value.strip()
+    if not candidate:
+        return None
+    if candidate == "*":
+        return candidate
+    if "://" in candidate:
+        parsed = urlsplit(candidate)
+        candidate = parsed.netloc or parsed.path or ""
+    candidate = candidate.strip().rstrip("/")
+    if not candidate:
+        return None
+    if candidate.startswith("[") and "]" in candidate:
+        closing = candidate.index("]") + 1
+        return candidate[:closing].lower()
+    if ":" in candidate and candidate.count(":") == 1:
+        candidate = candidate.split(":", 1)[0]
+    return candidate.lower()
+
+
+def resolve_trusted_hosts() -> list[str]:
+    """Resolve allowed Host header values for Starlette host validation."""
+    raw = os.getenv("SANDBOX_TRUSTED_HOSTS", "").strip()
+    hosts = [_normalize_trusted_host(value) for value in raw.split(",")] if raw else []
+    normalized = [host for host in hosts if host]
+    if not is_prod():
+        normalized.extend(_DEFAULT_TRUSTED_HOSTS)
+    if not normalized:
+        normalized = list(_DEFAULT_TRUSTED_HOSTS)
+    seen: set[str] = set()
+    return [host for host in normalized if not (host in seen or seen.add(host))]
 
 
 def resolve_stream_cors_headers(origin: Optional[str]) -> Dict[str, str]:

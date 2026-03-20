@@ -27,6 +27,12 @@ def test_health_endpoints(client) -> None:
     assert client.get("/api/health").json() == {"status": "ok"}
 
 
+def test_health_endpoint_rejects_untrusted_host(client) -> None:
+    response = client.get("/api/health", headers={"Host": "evil.example.com"})
+
+    assert response.status_code == 400
+
+
 def test_public_endpoints_allow_trailing_slashes(client, app_main, mocker) -> None:
     mocker.patch.object(app_main, "_resolve_contact_rate_limits", return_value=(60, 5, 0))
     mocker.patch.object(app_main, "_resolve_client_ip", return_value="198.51.100.5")
