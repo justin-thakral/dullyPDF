@@ -19,6 +19,12 @@ set -a
 source "$ENV_FILE"
 set +a
 
+SKIP_PREFLIGHT_RAW="${DULLYPDF_SKIP_PREFLIGHT:-}"
+SKIP_PREFLIGHT="$(printf '%s' "$SKIP_PREFLIGHT_RAW" | tr '[:upper:]' '[:lower:]')"
+if [[ "$SKIP_PREFLIGHT" != "1" && "$SKIP_PREFLIGHT" != "true" && "$SKIP_PREFLIGHT" != "yes" ]]; then
+  bash collaborators/preflight_dev.sh "$ENV_FILE"
+fi
+
 if [[ -f "mcp/.env.local" ]]; then
   set -a
   source "mcp/.env.local"

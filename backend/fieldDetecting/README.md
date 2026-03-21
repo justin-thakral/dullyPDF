@@ -52,13 +52,18 @@ You can also run `python3 clean.py --field-detect-logs` from the repo root. Add 
   `backend/.venv/bin/pip install -r backend/requirements-detector.txt` (detector service).
 - Export your API key for the optional rename + schema mapping passes: `export OPENAI_API_KEY=sk-...`
 - Configure Firebase Admin for request authentication:
-  - `export FIREBASE_CREDENTIALS='{"type":"service_account", ...}'` (JSON string), or
-  - `export FIREBASE_CREDENTIALS=/path/to/service-account.json`, or
-  - `export GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json`
-  - `export FIREBASE_CREDENTIALS_SECRET=dullypdf-prod-firebase-admin` (Secret Manager name)
-  - `export FIREBASE_CREDENTIALS_PROJECT=dullypdf` (Secret Manager project)
-  - `export FIREBASE_PROJECT_ID=dullypdf` to explicitly match the frontend Firebase project.
-  - `scripts/run-backend-*.sh` and `scripts/set-role-*.sh` fetch Secret Manager credentials via gcloud.
+  - Preferred local dev path:
+    - `export FIREBASE_CREDENTIALS_SECRET=dullypdf-dev-firebase-admin`
+    - `export FIREBASE_CREDENTIALS_PROJECT=dullypdf-dev`
+    - `export FIREBASE_PROJECT_ID=dullypdf-dev`
+    - `gcloud auth login`
+    - `gcloud auth application-default login`
+    - `scripts/run-backend-*.sh` and `scripts/set-role-*.sh` fetch Firebase Admin credentials via Secret Manager.
+    - Local dev collaborators also need the repo owner to run `scripts/grant-dev-gcp-access.sh <email>` so Secret Manager reads and CommonForms model downloads work.
+  - Optional fallback:
+    - `export FIREBASE_CREDENTIALS='{"type":"service_account", ...}'` (JSON string), or
+    - `export FIREBASE_CREDENTIALS=/path/to/service-account.json`, or
+    - `export GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json`
 - Configure Firebase Storage buckets for saved forms:
   - `export FORMS_BUCKET=dullypdf-forms`
   - `export TEMPLATES_BUCKET=dullypdf-templates`
