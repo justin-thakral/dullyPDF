@@ -17,11 +17,11 @@ flowchart LR
     WEB["Browsers + Crawlers<br/>Users request the site over HTTPS"]
 
     subgraph FRONT["Frontend Layer"]
-        BUILD["Build + SEO prerender<br/>TypeScript + React (Vite SPA)<br/>`generate-static-html.mjs` creates route-specific HTML + sitemap<br/>Public routes become crawler-readable before React hydrates"]
-        HOST["Firebase Hosting<br/>Hosts built SPA assets + prerendered public HTML<br/>Serves same-origin frontend requests<br/>Rewrites `/api/*` and `/detect-fields*` to `dullypdf-backend-east4`"]
+        BUILD["Build + SEO prerender<br/>TypeScript + React (Vite SPA)<br/>generate-static-html.mjs creates route-specific HTML + sitemap<br/>Public routes become crawler-readable before React hydrates"]
+        HOST["Firebase Hosting<br/>Hosts built SPA assets + prerendered public HTML<br/>Serves same-origin frontend requests<br/>Rewrites /api/* and /detect-fields* to dullypdf-backend-east4"]
         FE["Browser app runtime<br/>TypeScript + React<br/>Homepage, upload flow, profile, workspace, public docs"]
         AUTH["Firebase Auth<br/>Email/password, Google, GitHub login flows<br/>Returns Firebase ID token (JWT) to the browser"]
-        DETREQ["Field detection request shape<br/>Method: `POST /detect-fields`<br/>Body: `multipart/form-data`<br/>Fields: `file`, `pipeline`, `prewarmRename`, `prewarmRemap`<br/>Header: `Authorization: Bearer <Firebase ID token>`"]
+        DETREQ["Field detection request shape<br/>Method: POST /detect-fields<br/>Body: multipart/form-data<br/>Fields: file, pipeline, prewarmRename, prewarmRemap<br/>Header: Authorization: Bearer Firebase ID token"]
 
         BUILD -->|"deploy built assets + prerendered route HTML"| HOST
         WEB -->|"HTTPS"| HOST
@@ -31,13 +31,13 @@ flowchart LR
         FE -->|"compose upload + auth headers"| DETREQ
     end
 
-    API["`dullypdf-backend-east4`<br/>Public API entrypoint behind Firebase Hosting rewrites<br/>Cloud Run service<br/>Python + FastAPI<br/><br/>Top endpoints<br/>`GET /api/health`<br/>`POST /detect-fields`<br/>`GET /detect-fields/{sessionId}`<br/>`POST /api/renames/ai`<br/>`GET /api/profile`"]
+    API["dullypdf-backend-east4<br/>Public API entrypoint behind Firebase Hosting rewrites<br/>Cloud Run service<br/>Python + FastAPI<br/><br/>Top endpoints<br/>GET /api/health<br/>POST /detect-fields<br/>GET /detect-fields/{sessionId}<br/>POST /api/renames/ai<br/>GET /api/profile"]
 
-    TASKS["Google Cloud Tasks API + queues<br/>Backend enqueues async jobs here<br/>`CreateTask` via Google client SDK<br/>Typically gRPC under the library transport<br/><br/>Active detector queues<br/>`commonforms-detect-light`<br/>`commonforms-detect-heavy`<br/><br/>OpenAI queues<br/>`openai-rename-*`, `openai-remap-*`"]
+    TASKS["Google Cloud Tasks API + queues<br/>Backend enqueues async jobs here<br/>CreateTask via Google client SDK<br/>Typically gRPC under the library transport<br/><br/>Active detector queues<br/>commonforms-detect-light<br/>commonforms-detect-heavy<br/><br/>OpenAI queues<br/>openai-rename-*, openai-remap-*"]
 
     subgraph WORKERS["Async Worker Microservices (Cloud Run)"]
-        DETECTORS["Field detector microservice group<br/>Current services include CPU + GPU light/heavy variants<br/>Main task endpoint: `POST /internal/detect`<br/>Downloads PDF from GCS, runs CommonForms detection,<br/>writes fields/result artifacts, updates session state"]
-        OPENAI["Rename + Remap microservice group<br/>OpenAI worker services for async rename and schema mapping<br/>Task endpoints: `POST /internal/rename` and `POST /internal/remap`<br/>Reads session/template context, runs OpenAI work,<br/>updates job state and outputs"]
+        DETECTORS["Field detector microservice group<br/>Current services include CPU + GPU light/heavy variants<br/>Main task endpoint: POST /internal/detect<br/>Downloads PDF from GCS, runs CommonForms detection,<br/>writes fields/result artifacts, updates session state"]
+        OPENAI["Rename + Remap microservice group<br/>OpenAI worker services for async rename and schema mapping<br/>Task endpoints: POST /internal/rename and POST /internal/remap<br/>Reads session/template context, runs OpenAI work,<br/>updates job state and outputs"]
     end
 
     subgraph DATA["Persistent Data Layer"]
@@ -51,7 +51,7 @@ flowchart LR
     API -->|"verify bearer token, enforce auth, orchestrate workflows"| AUTH
     API -->|"Firebase Admin / Firestore client<br/>gRPC-backed SDK calls"| FIRESTORE
     API -->|"Cloud Storage client<br/>HTTPS / JSON API"| GCS
-    API -->|"enqueue jobs with Cloud Tasks<br/>`CreateTask` via Google client SDK"| TASKS
+    API -->|"enqueue jobs with Cloud Tasks<br/>CreateTask via Google client SDK"| TASKS
 
     TASKS -->|"HTTPS POST + OIDC token<br/>dispatch detection tasks"| DETECTORS
     TASKS -->|"HTTPS POST + OIDC token<br/>dispatch rename/remap tasks"| OPENAI
