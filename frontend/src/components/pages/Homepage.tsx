@@ -350,7 +350,7 @@ const Homepage: React.FC<HomepageProps> = ({
     </button>
   ) : authPending ? (
     <span className="homepage-auth-button homepage-auth-button--pending" aria-busy="true">
-      Signing in…
+      Sign in
     </span>
   ) : onSignIn ? (
     <button type="button" className="homepage-auth-button" onClick={onSignIn}>

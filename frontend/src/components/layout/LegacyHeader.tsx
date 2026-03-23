@@ -130,7 +130,7 @@ const LegacyHeader: React.FC<LegacyHeaderProps> = ({
             </div>
           ) : authPending ? (
             <span className="header-auth-pending" aria-busy="true">
-              Signing in…
+              Sign in
             </span>
           ) : (
             onSignIn && (

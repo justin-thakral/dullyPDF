@@ -185,6 +185,14 @@ describe('Homepage', () => {
     expect(onOpenProfile).toHaveBeenCalledTimes(1);
   });
 
+  it('shows Sign in copy while auth is still pending', () => {
+    render(<Homepage onStartWorkflow={vi.fn()} authPending onSignIn={vi.fn()} />);
+
+    const pendingControl = document.querySelector('.homepage-auth-button--pending');
+    expect(pendingControl?.textContent?.trim()).toBe('Sign in');
+    expect(pendingControl?.getAttribute('aria-busy')).toBe('true');
+  });
+
   it('opens and closes contact dialog and passes defaultEmail', async () => {
     const user = userEvent.setup();
 

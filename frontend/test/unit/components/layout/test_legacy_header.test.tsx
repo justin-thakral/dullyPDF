@@ -101,6 +101,14 @@ describe('LegacyHeader', () => {
     expect(screen.getByText('person@example.com')).toBeTruthy();
   });
 
+  it('shows Sign in copy while auth is pending', () => {
+    render(<LegacyHeader {...createProps({ authPending: true })} />);
+
+    const pendingControl = document.querySelector('.header-auth-pending');
+    expect(pendingControl?.textContent?.trim()).toBe('Sign in');
+    expect(pendingControl?.getAttribute('aria-busy')).toBe('true');
+  });
+
   it('renders branding assets and combined docs/legal navigation link', () => {
     render(<LegacyHeader {...createProps()} />);
 
