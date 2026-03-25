@@ -9,11 +9,11 @@ import {
 } from '../services/api';
 import type {
   BannerNotice,
-  CheckboxHint,
   CheckboxRule,
   DataSourceKind,
   PageSize,
   PdfField,
+  RadioGroupSuggestion,
   TextTransformRule,
 } from '../types';
 import { debugLog } from '../utils/debug';
@@ -61,7 +61,7 @@ export type GroupTemplateWorkspaceSnapshot = {
   hasRenamedFields: boolean;
   hasMappedSchema: boolean;
   checkboxRules: CheckboxRule[];
-  checkboxHints: CheckboxHint[];
+  radioGroupSuggestions: RadioGroupSuggestion[];
   textTransformRules: TextTransformRule[];
 };
 
@@ -171,14 +171,14 @@ type OpenAiRuntimeState = {
   hasRenamedFields: boolean;
   hasMappedSchema: boolean;
   checkboxRules: CheckboxRule[];
-  checkboxHints: CheckboxHint[];
   textTransformRules: TextTransformRule[];
+  radioGroupSuggestions: RadioGroupSuggestion[];
   setRenameInProgress: Dispatch<SetStateAction<boolean>>;
   setMappingInProgress: Dispatch<SetStateAction<boolean>>;
   setHasRenamedFields: Dispatch<SetStateAction<boolean>>;
   setHasMappedSchema: Dispatch<SetStateAction<boolean>>;
   setCheckboxRules: Dispatch<SetStateAction<CheckboxRule[]>>;
-  setCheckboxHints: Dispatch<SetStateAction<CheckboxHint[]>>;
+  setRadioGroupSuggestions: Dispatch<SetStateAction<RadioGroupSuggestion[]>>;
   setTextTransformRules: Dispatch<SetStateAction<TextTransformRule[]>>;
   setOpenAiError: Dispatch<SetStateAction<string | null>>;
 };
@@ -240,7 +240,6 @@ function buildGroupTemplatePersistedSignature(snapshot: GroupTemplateWorkspaceSn
     hasRenamedFields: snapshot.hasRenamedFields,
     hasMappedSchema: snapshot.hasMappedSchema,
     checkboxRules: snapshot.checkboxRules,
-    checkboxHints: snapshot.checkboxHints,
     textTransformRules: snapshot.textTransformRules,
   });
 }
@@ -259,12 +258,15 @@ function cloneCheckboxRules(rules: CheckboxRule[]): CheckboxRule[] {
   }));
 }
 
-function cloneCheckboxHints(hints: CheckboxHint[]): CheckboxHint[] {
-  return hints.map((hint) => ({ ...hint }));
-}
-
 function cloneTextTransformRules(rules: TextTransformRule[]): TextTransformRule[] {
   return rules.map((rule) => ({ ...rule, sources: Array.isArray(rule.sources) ? [...rule.sources] : [] }));
+}
+
+function cloneRadioGroupSuggestions(suggestions: RadioGroupSuggestion[] | null | undefined): RadioGroupSuggestion[] {
+  return (suggestions ?? []).map((suggestion) => ({
+    ...suggestion,
+    suggestedFields: suggestion.suggestedFields.map((field) => ({ ...field })),
+  }));
 }
 
 function releasePdfDocument(doc: PDFDocumentProxy | null | undefined): void {
@@ -394,7 +396,7 @@ export function useGroupTemplateCache(deps: UseGroupTemplateCacheDeps) {
       hasRenamedFields: openAi.hasRenamedFields,
       hasMappedSchema: openAi.hasMappedSchema,
       checkboxRules: cloneCheckboxRules(openAi.checkboxRules),
-      checkboxHints: cloneCheckboxHints(openAi.checkboxHints),
+      radioGroupSuggestions: cloneRadioGroupSuggestions(openAi.radioGroupSuggestions),
       textTransformRules: cloneTextTransformRules(openAi.textTransformRules),
     };
   }, [
@@ -411,10 +413,10 @@ export function useGroupTemplateCache(deps: UseGroupTemplateCacheDeps) {
     fieldHistory.historyRef,
     fieldSelection.selectedFieldId,
     group.activeGroupId,
-    openAi.checkboxHints,
     openAi.checkboxRules,
     openAi.hasMappedSchema,
     openAi.hasRenamedFields,
+    openAi.radioGroupSuggestions,
     openAi.textTransformRules,
     savedForms.activeSavedFormId,
     savedForms.activeSavedFormName,
@@ -546,7 +548,7 @@ export function useGroupTemplateCache(deps: UseGroupTemplateCacheDeps) {
     openAi.setHasRenamedFields(snapshot.hasRenamedFields);
     openAi.setHasMappedSchema(snapshot.hasMappedSchema);
     openAi.setCheckboxRules(cloneCheckboxRules(snapshot.checkboxRules));
-    openAi.setCheckboxHints(cloneCheckboxHints(snapshot.checkboxHints));
+    openAi.setRadioGroupSuggestions(cloneRadioGroupSuggestions(snapshot.radioGroupSuggestions));
     openAi.setTextTransformRules(cloneTextTransformRules(snapshot.textTransformRules));
     openAi.setOpenAiError(null);
     markSavedFillLinkSnapshot(snapshot.fields, snapshot.checkboxRules);
@@ -584,10 +586,9 @@ export function useGroupTemplateCache(deps: UseGroupTemplateCacheDeps) {
               }
             })(),
       ]);
-      const fillRuleState = extractSavedFormFillRuleState(savedMeta);
+      const fillRuleState = extractSavedFormFillRuleState(savedMeta, { fields: existingFields });
       const derivedHasMappedSchema = Boolean(
         fillRuleState.checkboxRules.length ||
-        fillRuleState.checkboxHints.length ||
         fillRuleState.textTransformRules.length
       );
       if (!hydratedSnapshot && verifiedUser && existingFields.length > 0) {
@@ -624,7 +625,7 @@ export function useGroupTemplateCache(deps: UseGroupTemplateCacheDeps) {
         hasRenamedFields: hydratedSnapshot?.hasRenamedFields ?? false,
         hasMappedSchema: hydratedSnapshot?.hasMappedSchema ?? derivedHasMappedSchema,
         checkboxRules: cloneCheckboxRules(fillRuleState.checkboxRules),
-        checkboxHints: cloneCheckboxHints(fillRuleState.checkboxHints),
+        radioGroupSuggestions: cloneRadioGroupSuggestions(fillRuleState.legacyRadioGroupSuggestions),
         textTransformRules: cloneTextTransformRules(fillRuleState.textTransformRules),
       };
     } catch (error) {
@@ -753,7 +754,6 @@ export function useGroupTemplateCache(deps: UseGroupTemplateCacheDeps) {
           row,
           fields: fieldHistory.fields,
           checkboxRules: openAi.checkboxRules,
-          checkboxHints: openAi.checkboxHints,
           textTransformRules: openAi.textTransformRules,
           dataSourceKind: searchFill.dataSourceKind,
         });
@@ -766,7 +766,6 @@ export function useGroupTemplateCache(deps: UseGroupTemplateCacheDeps) {
         row,
         fields: snapshot.fields,
         checkboxRules: snapshot.checkboxRules,
-        checkboxHints: snapshot.checkboxHints,
         textTransformRules: snapshot.textTransformRules,
         dataSourceKind: searchFill.dataSourceKind,
       });
@@ -800,7 +799,6 @@ export function useGroupTemplateCache(deps: UseGroupTemplateCacheDeps) {
     fieldHistory.fields,
     fieldSelection,
     group.activeGroupName,
-    openAi.checkboxHints,
     openAi.checkboxRules,
     openAi.textTransformRules,
     savedForms.activeSavedFormId,

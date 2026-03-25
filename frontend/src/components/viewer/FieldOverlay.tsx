@@ -2,10 +2,15 @@
  * Overlay layer for draggable/resizable field boxes.
  */
 import { type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from 'react';
-import type { FieldRect, FieldType, PdfField, PageSize } from '../../types';
+import type { CreateTool, FieldRect, FieldType, PdfField, PageSize, RadioGroupSuggestion } from '../../types';
 import { fieldConfidenceTierForField, nameConfidenceTierForField } from '../../utils/confidence';
 import { clamp, clampRectToPage, toViewportRect } from '../../utils/coords';
 import { getDefaultFieldRect, getMinFieldSize } from '../../utils/fields';
+import {
+  collectQuickRadioSelection,
+  type QuickRadioSelectionMode,
+  toQuickRadioSelectionRect,
+} from '../../utils/quickRadioSelection';
 
 const SMALL_FIELD_THRESHOLD_PDF = 24;
 const CREATE_CLICK_THRESHOLD = 2;
@@ -31,10 +36,12 @@ type DragState = {
 };
 
 type CreateState = {
+  tool: CreateTool;
   pointerId: number;
   pointerTarget: HTMLElement | null;
   start: { x: number; y: number };
   current: { x: number; y: number };
+  selectionMode?: QuickRadioSelectionMode;
 };
 
 type DragPreviewState = {
@@ -49,12 +56,15 @@ type FieldOverlayProps = {
   moveEnabled: boolean;
   resizeEnabled: boolean;
   createEnabled: boolean;
-  activeCreateTool: FieldType | null;
+  activeCreateTool: CreateTool | null;
   showFieldNames: boolean;
   selectedFieldId: string | null;
+  pendingQuickRadioFieldIds: string[];
+  radioSuggestionByFieldId: Map<string, RadioGroupSuggestion>;
   onSelectField: (fieldId: string) => void;
   onUpdateField: (fieldId: string, updates: Partial<PdfField>) => void;
   onCreateFieldWithRect: (type: FieldType, rect: FieldRect) => void;
+  onQuickRadioSelect: (fieldIds: string[]) => void;
   onBeginFieldChange: () => void;
   onCommitFieldChange: () => void;
 };
@@ -191,7 +201,7 @@ function toDragRect(
     );
   }
 
-  if (type === 'checkbox') {
+  if (type === 'checkbox' || type === 'radio') {
     const side = Math.max(width, height, minSize);
     return clampRectToPage(
       {
@@ -240,9 +250,12 @@ export function FieldOverlay({
   activeCreateTool,
   showFieldNames,
   selectedFieldId,
+  pendingQuickRadioFieldIds = [],
+  radioSuggestionByFieldId = new Map<string, RadioGroupSuggestion>(),
   onSelectField,
   onUpdateField,
   onCreateFieldWithRect,
+  onQuickRadioSelect,
   onBeginFieldChange,
   onCommitFieldChange,
 }: FieldOverlayProps) {
@@ -253,8 +266,9 @@ export function FieldOverlay({
   // Store latest scale and page size to avoid stale closures in the global pointer listeners.
   const scaleRef = useRef(scale);
   const pageRef = useRef(pageSize);
-  const createToolRef = useRef<FieldType | null>(activeCreateTool);
+  const createToolRef = useRef<CreateTool | null>(activeCreateTool);
   const [draftCreateRect, setDraftCreateRect] = useState<FieldRect | null>(null);
+  const [previewQuickRadioFieldIds, setPreviewQuickRadioFieldIds] = useState<string[]>([]);
   const [dragPreview, setDragPreview] = useState<DragPreviewState>(null);
   const dragPreviewRef = useRef<DragPreviewState>(null);
 
@@ -271,6 +285,7 @@ export function FieldOverlay({
     if (!activeCreateTool) {
       createStateRef.current = null;
       setDraftCreateRect(null);
+      setPreviewQuickRadioFieldIds([]);
     }
   }, [activeCreateTool]);
 
@@ -312,6 +327,16 @@ export function FieldOverlay({
         const point = clientPointToPdfPoint(event.clientX, event.clientY);
         if (!type || !point) return;
         createState.current = point;
+        if (type === 'quick-radio') {
+          const selectionMode: QuickRadioSelectionMode = event.altKey ? 'touch' : 'precise';
+          createState.selectionMode = selectionMode;
+          const nextDraft = toQuickRadioSelectionRect(createState.start, point, pageRef.current);
+          setDraftCreateRect(nextDraft);
+          setPreviewQuickRadioFieldIds(
+            collectQuickRadioSelection(fields, nextDraft, point, selectionMode),
+          );
+          return;
+        }
         const nextDraft = toDragRect(createState.start, point, type, pageRef.current);
         setDraftCreateRect(nextDraft);
         return;
@@ -376,7 +401,7 @@ export function FieldOverlay({
             : resizeCornerFreeform(base, dragState.mode, dx, dy, page, minSize);
         }
 
-        if (dragState.fieldType === 'checkbox') {
+        if (dragState.fieldType === 'checkbox' || dragState.fieldType === 'radio') {
           const side = Math.max(nextRect.width, nextRect.height, minSize);
           nextRect = clampRectToPage(
             {
@@ -406,8 +431,24 @@ export function FieldOverlay({
           }
         }
         if (type) {
-          const rect = toDragRect(createState.start, createState.current, type, pageRef.current);
-          onCreateFieldWithRect(type, rect);
+          if (type === 'quick-radio') {
+            const selectionRect = toQuickRadioSelectionRect(
+              createState.start,
+              createState.current,
+              pageRef.current,
+            );
+            const fieldIds = collectQuickRadioSelection(
+              fields,
+              selectionRect,
+              createState.current,
+              createState.selectionMode ?? 'precise',
+            );
+            onQuickRadioSelect(fieldIds);
+            setPreviewQuickRadioFieldIds([]);
+          } else {
+            const rect = toDragRect(createState.start, createState.current, type, pageRef.current);
+            onCreateFieldWithRect(type, rect);
+          }
         }
         createStateRef.current = null;
         setDraftCreateRect(null);
@@ -446,7 +487,7 @@ export function FieldOverlay({
       window.removeEventListener('pointercancel', handlePointerCancel);
       clearDragPreview();
     };
-  }, [onCommitFieldChange, onCreateFieldWithRect, onUpdateField]);
+  }, [fields, onCommitFieldChange, onCreateFieldWithRect, onQuickRadioSelect, onUpdateField]);
 
   /**
    * Capture initial drag state and signal change start.
@@ -500,13 +541,26 @@ export function FieldOverlay({
     const start = clientPointToPdfPoint(event.clientX, event.clientY);
     if (!start) return;
     createStateRef.current = {
+      tool: type,
       pointerId: event.pointerId,
       pointerTarget,
       start,
       current: start,
     };
+    if (type === 'quick-radio') {
+      setDraftCreateRect(null);
+      setPreviewQuickRadioFieldIds([]);
+      return;
+    }
     setDraftCreateRect(toDragRect(start, start, type, pageRef.current));
   };
+
+  const selectedField = selectedFieldId
+    ? fields.find((field) => field.id === selectedFieldId) || null
+    : null;
+  const selectedRadioGroupId =
+    selectedField?.type === 'radio' ? selectedField.radioGroupId || null : null;
+  const pendingQuickRadioIdSet = new Set([...pendingQuickRadioFieldIds, ...previewQuickRadioFieldIds]);
 
   return (
     <div
@@ -521,7 +575,11 @@ export function FieldOverlay({
         <div
           className="field-create-surface"
           onPointerDown={startCreateDrag}
-          aria-label={`Draw ${activeCreateTool} field`}
+          aria-label={
+            activeCreateTool === 'quick-radio'
+              ? 'Drag a selection box around checkbox fields for a radio group'
+              : `Draw ${activeCreateTool} field`
+          }
         />
       ) : null}
       {draftCreateRect ? (
@@ -539,8 +597,16 @@ export function FieldOverlay({
         const previewRect = dragPreview?.fieldId === field.id ? dragPreview.rect : field.rect;
         const rect = toViewportRect(previewRect, scale);
         const selected = field.id === selectedFieldId;
+        const radioPeer = Boolean(
+          selectedRadioGroupId &&
+          field.type === 'radio' &&
+          field.radioGroupId === selectedRadioGroupId &&
+          !selected,
+        );
+        const suggestedForRadio = radioSuggestionByFieldId.has(field.id);
         const isSmallField =
           field.type === 'checkbox' ||
+          field.type === 'radio' ||
           (previewRect.width <= SMALL_FIELD_THRESHOLD_PDF && previewRect.height <= SMALL_FIELD_THRESHOLD_PDF);
         // Keep labels inside a 75% inset box so names stay visibly subordinate to the field bounds.
         const labelMetrics = resolveFieldLabelMetrics(rect);
@@ -552,10 +618,13 @@ export function FieldOverlay({
           `field-box--conf-${confidenceTier}`,
           !moveEnabled ? 'field-box--static' : '',
           selected ? 'field-box--active' : '',
+          radioPeer ? 'field-box--radio-peer' : '',
+          pendingQuickRadioIdSet.has(field.id) ? 'field-box--quick-radio-pending' : '',
+          suggestedForRadio ? 'field-box--radio-suggestion' : '',
         ]
           .filter(Boolean)
           .join(' ');
-        const showLabel = showFieldNames && field.type !== 'checkbox';
+        const showLabel = showFieldNames && field.type !== 'checkbox' && field.type !== 'radio';
         const labelClassName = [
           'field-label',
           `field-label--${field.type}`,

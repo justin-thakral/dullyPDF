@@ -14,8 +14,15 @@ ALLOWED_TEXT_TRANSFORM_OPERATIONS = {
     "split_name_first_rest",
     "split_delimiter",
 }
+ALLOWED_RADIO_SUGGESTION_REASONS = {
+    "yes_no",
+    "enum",
+    "binary_pair",
+    "label_pattern",
+}
 MAX_TRANSFORM_REASONING_LEN = 280
 MAX_TRANSFORM_TOKEN_LEN = 32
+MAX_RADIO_GROUP_SUGGESTION_FIELDS = 12
 
 
 def sanitize_pdf_field_name_candidate(raw_name: str, fallback_base: str = "field") -> str:
@@ -245,6 +252,22 @@ def build_schema_mapping_payload(
         if normalized and normalized not in allowed_schema_map:
             allowed_schema_map[normalized] = field
     allowed_template_set = set(allowed_template)
+    template_field_id_map: Dict[str, Dict[str, Any]] = {}
+    checkbox_or_radio_tag_map: Dict[str, Dict[str, Any]] = {}
+    checkbox_or_radio_tag_name_map: Dict[str, Dict[str, Any]] = {}
+    for tag in template_tags:
+        raw_tag = str(tag.get("tag") or "").strip()
+        raw_field_id = str(tag.get("fieldId") or tag.get("id") or "").strip()
+        if raw_field_id and raw_field_id not in template_field_id_map:
+            template_field_id_map[raw_field_id] = tag
+        normalized_tag_name = normalize_data_key(raw_tag)
+        tag_type = str(tag.get("type") or "text").strip().lower()
+        if tag_type not in {"checkbox", "radio"}:
+            continue
+        if raw_tag and raw_tag not in checkbox_or_radio_tag_map:
+            checkbox_or_radio_tag_map[raw_tag] = tag
+        if normalized_tag_name and normalized_tag_name not in checkbox_or_radio_tag_name_map:
+            checkbox_or_radio_tag_name_map[normalized_tag_name] = tag
     allowed_group_key_map: Dict[str, str] = {}
     for tag in template_tags:
         raw_group_key = str(tag.get("groupKey") or "").strip()
@@ -387,47 +410,153 @@ def build_schema_mapping_payload(
             normalized_rule["groupKey"] = group_key
             checkbox_rules.append(normalized_rule)
 
-    raw_hints = ai_response.get("checkboxHints") or ai_response.get("checkbox_hints") or []
-    checkbox_hints: List[Dict[str, Any]] = []
-    if isinstance(raw_hints, list):
-        for raw in raw_hints:
+    raw_radio_group_suggestions = (
+        ai_response.get("radioGroupSuggestions")
+        or ai_response.get("radio_group_suggestions")
+        or []
+    )
+    radio_group_suggestions: List[Dict[str, Any]] = []
+    if isinstance(raw_radio_group_suggestions, list):
+        for index, raw in enumerate(raw_radio_group_suggestions, start=1):
             if not isinstance(raw, dict):
                 continue
-            schema_field_raw = str(raw.get("databaseField") or "").strip()
-            if not schema_field_raw:
+            suggested_type = str(
+                raw.get("suggestedType")
+                or raw.get("suggested_type")
+                or "radio_group"
+            ).strip().lower()
+            if suggested_type != "radio_group":
                 continue
-            schema_field = (
-                schema_field_raw
-                if schema_field_raw in allowed_schema_set
-                else allowed_schema_map.get(normalize_data_key(schema_field_raw))
+
+            group_key = normalize_data_key(
+                str(raw.get("groupKey") or raw.get("group_key") or "").strip()
             )
-            if not schema_field:
-                continue
-            raw_group_key = str(raw.get("groupKey") or "").strip()
-            normalized_group_key = normalize_data_key(raw_group_key)
-            resolved_group_key = None
-            if normalized_group_key:
-                resolved_group_key = allowed_group_key_map.get(normalized_group_key)
-            if allowed_group_key_map and not resolved_group_key:
-                continue
-            group_key = resolved_group_key or normalized_group_key
             if not group_key:
                 continue
-            direct_boolean = _coerce_optional_bool(
-                raw.get("directBooleanPossible") if "directBooleanPossible" in raw else raw.get("direct_boolean_possible")
+            group_label = str(
+                raw.get("groupLabel")
+                or raw.get("group_label")
+                or raw.get("label")
+                or group_key
+            ).strip()
+            if not group_label:
+                continue
+
+            source_field_raw = str(
+                raw.get("sourceField")
+                or raw.get("source_field")
+                or raw.get("databaseField")
+                or ""
+            ).strip()
+            source_field = (
+                source_field_raw
+                if source_field_raw in allowed_schema_set
+                else allowed_schema_map.get(normalize_data_key(source_field_raw))
             )
-            operation = str(raw.get("operation") or "").strip().lower()
-            if operation not in {"yes_no", "enum", "list", "presence"}:
-                operation = ""
-            hint: Dict[str, Any] = {
-                "databaseField": schema_field,
+
+            selection_reason = str(
+                raw.get("selectionReason")
+                or raw.get("selection_reason")
+                or ""
+            ).strip().lower()
+            if selection_reason not in ALLOWED_RADIO_SUGGESTION_REASONS:
+                selection_reason = ""
+
+            raw_suggested_fields = (
+                raw.get("suggestedFields")
+                or raw.get("suggested_fields")
+                or raw.get("fields")
+                or []
+            )
+            if not isinstance(raw_suggested_fields, list):
+                continue
+
+            sanitized_fields: List[Dict[str, Any]] = []
+            seen_field_tokens = set()
+            for raw_field in raw_suggested_fields[:MAX_RADIO_GROUP_SUGGESTION_FIELDS]:
+                if not isinstance(raw_field, dict):
+                    continue
+
+                field_id = str(raw_field.get("fieldId") or raw_field.get("field_id") or "").strip()
+                resolved_tag = template_field_id_map.get(field_id) if field_id else None
+                field_name_raw = str(
+                    raw_field.get("fieldName")
+                    or raw_field.get("field_name")
+                    or raw_field.get("templateTag")
+                    or raw_field.get("tag")
+                    or ""
+                ).strip()
+                if not resolved_tag and field_name_raw in checkbox_or_radio_tag_map:
+                    resolved_tag = checkbox_or_radio_tag_map[field_name_raw]
+                if not resolved_tag and field_name_raw:
+                    resolved_tag = checkbox_or_radio_tag_name_map.get(normalize_data_key(field_name_raw))
+                if not resolved_tag:
+                    continue
+
+                resolved_tag_name = str(resolved_tag.get("tag") or "").strip()
+                resolved_field_id = str(resolved_tag.get("fieldId") or resolved_tag.get("id") or "").strip()
+                field_token = resolved_field_id or resolved_tag_name
+                if not field_token or field_token in seen_field_tokens:
+                    continue
+                seen_field_tokens.add(field_token)
+
+                option_label = str(
+                    raw_field.get("optionLabel")
+                    or raw_field.get("option_label")
+                    or resolved_tag.get("optionLabel")
+                    or resolved_tag.get("radioOptionLabel")
+                    or resolved_tag_name
+                ).strip()
+                if not option_label:
+                    continue
+                option_key = sanitize_pdf_field_name_candidate(
+                    str(
+                        raw_field.get("optionKey")
+                        or raw_field.get("option_key")
+                        or resolved_tag.get("optionKey")
+                        or resolved_tag.get("radioOptionKey")
+                        or option_label
+                    ),
+                    option_label,
+                )
+                if not option_key:
+                    continue
+
+                sanitized_field: Dict[str, Any] = {
+                    "fieldName": resolved_tag_name,
+                    "optionKey": option_key,
+                    "optionLabel": option_label[:120],
+                }
+                if resolved_field_id:
+                    sanitized_field["fieldId"] = resolved_field_id
+                sanitized_fields.append(sanitized_field)
+
+            if len(sanitized_fields) < 2:
+                continue
+
+            confidence = _coerce_transform_confidence(raw.get("confidence", 0.6))
+            reasoning = str(raw.get("reasoning") or "").strip()
+            suggestion_id_seed = "_".join(
+                [
+                    group_key,
+                    *(entry.get("fieldId") or entry["fieldName"] for entry in sanitized_fields[:4]),
+                ]
+            )
+            suggestion: Dict[str, Any] = {
+                "id": re.sub(r"[^a-zA-Z0-9_]", "_", suggestion_id_seed)[:120] or f"radio_group_suggestion_{index}",
+                "suggestedType": "radio_group",
                 "groupKey": group_key,
+                "groupLabel": group_label[:120],
+                "suggestedFields": sanitized_fields,
+                "confidence": confidence,
             }
-            if direct_boolean is not None:
-                hint["directBooleanPossible"] = direct_boolean
-            if operation:
-                hint["operation"] = operation
-            checkbox_hints.append(hint)
+            if source_field:
+                suggestion["sourceField"] = source_field
+            if selection_reason:
+                suggestion["selectionReason"] = selection_reason
+            if reasoning:
+                suggestion["reasoning"] = reasoning[:MAX_TRANSFORM_REASONING_LEN]
+            radio_group_suggestions.append(suggestion)
 
     identifier_key = str(
         ai_response.get("identifierKey")
@@ -453,11 +582,10 @@ def build_schema_mapping_payload(
         "templateRules": template_rules,
         "textTransformRules": text_transform_rules,
         "checkboxRules": checkbox_rules,
-        "checkboxHints": checkbox_hints,
+        "radioGroupSuggestions": radio_group_suggestions,
         "fillRules": {
             "version": 1,
             "checkboxRules": checkbox_rules,
-            "checkboxHints": checkbox_hints,
             "textTransformRules": text_transform_rules,
         },
         "identifierKey": identifier_key,

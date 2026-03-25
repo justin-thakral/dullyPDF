@@ -64,6 +64,7 @@ export DETECTOR_TASKS_AUDIENCE_HEAVY="$(
 )"
 
 load_firebase_secret
+load_backend_email_secrets
 
 VENV_UVICORN="backend/.venv/bin/uvicorn"
 if [[ -x "$VENV_UVICORN" ]]; then

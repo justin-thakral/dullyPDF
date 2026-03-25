@@ -194,7 +194,6 @@ def test_get_session_entry_if_present_returns_none_when_required_data_missing(mo
         include_result=True,
         include_renames=True,
         include_checkbox_rules=True,
-        include_checkbox_hints=False,
         include_text_transform_rules=False,
     )
 

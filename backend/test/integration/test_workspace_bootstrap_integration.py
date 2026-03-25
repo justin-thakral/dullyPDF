@@ -181,7 +181,6 @@ def test_workspace_bootstrap_endpoints_return_profile_saved_forms_and_groups(
         "fillRules": {
             "version": 1,
             "checkboxRules": [],
-            "checkboxHints": [],
             "textTransformRules": [],
         },
     }

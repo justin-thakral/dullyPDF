@@ -65,7 +65,8 @@
 
 .panel__meta-secondary {
   font-size: 0.68rem;
-  opacity: 0.85;
+  color: var(--blue-800);
+  opacity: 1;
 }
 
 .panel__section {
@@ -356,6 +357,37 @@
   overflow-x: hidden;
 }
 
+.panel__list--compact {
+  flex: initial;
+  max-height: 180px;
+  overflow-y: auto;
+  gap: 0.4rem;
+}
+
+.panel-selection-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(248, 250, 252, 0.95);
+  padding: 0.4rem 0.55rem;
+  font-size: 0.78rem;
+  color: var(--ink-800);
+}
+
+.panel-selection-row__remove {
+  border: 1px solid rgba(185, 28, 28, 0.24);
+  background: rgba(254, 226, 226, 0.9);
+  color: #b91c1c;
+  border-radius: 999px;
+  padding: 0.12rem 0.48rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
 .panel-selected-outside {
   margin-bottom: 0.5rem;
   border-radius: 12px;
@@ -521,6 +553,11 @@
   color: #15803d;
 }
 
+.field-row__type--radio {
+  background: rgba(16, 185, 129, 0.16);
+  color: #047857;
+}
+
 .field-row__type--signature {
   background: rgba(15, 23, 42, 0.12);
   color: #0f172a;
@@ -533,6 +570,15 @@
 
 .field-row__page {
   font-weight: 500;
+}
+
+.field-row__group {
+  padding: 0.14rem 0.42rem;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  background: rgba(16, 185, 129, 0.12);
+  color: #047857;
 }
 
 .field-row__confidence {

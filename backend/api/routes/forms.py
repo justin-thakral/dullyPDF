@@ -20,6 +20,7 @@ from backend.time_utils import now_iso
 from backend.services.app_config import resolve_stream_cors_headers
 from backend.services.auth_service import require_user
 from backend.services.limits_service import resolve_detect_max_pages, resolve_fillable_max_pages
+from backend.services.pdf_export_service import flatten_pdf_form_widgets
 from backend.services.pdf_service import (
     cleanup_paths,
     coerce_field_payloads,
@@ -73,9 +74,10 @@ async def materialize_form(
     request: Request,
     pdf: UploadFile = File(...),
     fields: str = Form(...),
+    exportMode: str = Form("editable"),
     authorization: Optional[str] = Header(default=None),
 ):
-    """Inject fields into a PDF and return a fillable PDF download."""
+    """Inject fields into a PDF and return either an editable or flat download."""
     user = require_user(authorization)
     if not pdf:
         raise HTTPException(status_code=400, detail="No PDF file uploaded")
@@ -99,6 +101,10 @@ async def materialize_form(
     else:
         raise HTTPException(status_code=400, detail="Invalid fields payload")
 
+    export_mode = str(exportMode or "editable").strip().lower()
+    if export_mode not in {"editable", "flat"}:
+        raise HTTPException(status_code=400, detail="Invalid export mode")
+
     max_mb, max_bytes = resolve_upload_limit()
     temp_path = write_upload_to_temp(
         pdf,
@@ -119,13 +125,37 @@ async def materialize_form(
             detail=f"Fillable upload limited to {max_pages} pages for your tier (got {page_count}).",
         )
 
-    if not raw_fields:
+    output_suffix = "flat" if export_mode == "flat" else "fillable"
+
+    if not raw_fields and export_mode == "editable":
         background_tasks.add_task(cleanup_paths, [temp_path])
         output_name = safe_pdf_download_filename(filename, "form")
         response = FileResponse(
             str(temp_path),
             media_type="application/pdf",
             filename=output_name,
+            background=background_tasks,
+        )
+        response.headers.update(resolve_stream_cors_headers(request.headers.get("origin")))
+        return response
+
+    if not raw_fields:
+        cleanup_targets = [temp_path]
+        try:
+            output_fd, output_name = tempfile.mkstemp(suffix=".pdf")
+            os.close(output_fd)
+            output_path = Path(output_name)
+            cleanup_targets.append(output_path)
+            output_path.write_bytes(flatten_pdf_form_widgets(temp_path.read_bytes()))
+        except Exception as exc:
+            cleanup_paths(cleanup_targets)
+            raise HTTPException(status_code=500, detail="Failed to generate flat PDF") from exc
+        background_tasks.add_task(cleanup_paths, cleanup_targets)
+        stem = os.path.splitext(filename)[0] or "form"
+        response = FileResponse(
+            str(output_path),
+            media_type="application/pdf",
+            filename=safe_pdf_download_filename(f"{stem}-{output_suffix}", "form"),
             background=background_tasks,
         )
         response.headers.update(resolve_stream_cors_headers(request.headers.get("origin")))
@@ -146,13 +176,16 @@ async def materialize_form(
         cleanup_targets.append(output_path)
         template_path.write_text(json.dumps(template), encoding="utf-8")
         inject_fields(temp_path, template_path, output_path)
+        if export_mode == "flat":
+            output_path.write_bytes(flatten_pdf_form_widgets(output_path.read_bytes()))
     except Exception as exc:
         cleanup_paths(cleanup_targets)
-        raise HTTPException(status_code=500, detail="Failed to generate fillable PDF") from exc
+        detail = "Failed to generate flat PDF" if export_mode == "flat" else "Failed to generate fillable PDF"
+        raise HTTPException(status_code=500, detail=detail) from exc
     background_tasks.add_task(cleanup_paths, cleanup_targets)
 
     stem = os.path.splitext(filename)[0] or "form"
-    output_name = safe_pdf_download_filename(f"{stem}-fillable", "form")
+    output_name = safe_pdf_download_filename(f"{stem}-{output_suffix}", "form")
     response = FileResponse(
         str(output_path),
         media_type="application/pdf",

@@ -21,6 +21,7 @@ export type {
   FillLinkQuestion,
   FillLinkQuestionOption,
   FillLinkResponse,
+  FillLinkSigningConfig,
   FillLinkSummary,
   FillLinkTemplateFieldPayload,
   FillLinkWebFormConfig,
@@ -36,6 +37,8 @@ type AbortableRequestOptions = {
   signal?: AbortSignal;
   healthUrl?: string;
 };
+
+export type MaterializePdfExportMode = 'editable' | 'flat';
 
 class OpenAiJobTerminalError extends Error {}
 
@@ -115,6 +118,35 @@ function buildAbortOptions(signal?: AbortSignal): AbortableRequestOptions {
   return signal ? { signal } : {};
 }
 
+function parseDownloadFilename(contentDisposition: string | null): string | null {
+  if (!contentDisposition) return null;
+  const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1]);
+    } catch {
+      return utf8Match[1];
+    }
+  }
+  const quotedMatch = contentDisposition.match(/filename="([^"]+)"/i);
+  if (quotedMatch?.[1]) {
+    return quotedMatch[1];
+  }
+  const bareMatch = contentDisposition.match(/filename=([^;]+)/i);
+  return bareMatch?.[1]?.trim() || null;
+}
+
+function triggerBrowserDownload(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 function sleepWithSignal(durationMs: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     const timeoutId = globalThis.setTimeout(() => {
@@ -143,6 +175,99 @@ export type SavedFormSummary = {
   createdAt: string;
 };
 
+export type TemplateApiEndpointSummary = {
+  id: string;
+  templateId: string;
+  templateName: string | null;
+  status: 'active' | 'revoked' | string;
+  snapshotVersion: number;
+  keyPrefix: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+  publishedAt: string | null;
+  lastUsedAt: string | null;
+  usageCount: number;
+  currentUsageMonth?: string | null;
+  currentMonthUsageCount?: number;
+  authFailureCount?: number;
+  validationFailureCount?: number;
+  suspiciousFailureCount?: number;
+  lastFailureAt?: string | null;
+  lastFailureReason?: string | null;
+  auditEventCount?: number;
+  fillPath: string;
+  schemaPath: string;
+};
+
+export type TemplateApiOwnerLimitSummary = {
+  activeEndpointsMax: number;
+  activeEndpointsUsed: number;
+  requestsPerMonthMax: number;
+  requestsThisMonth: number;
+  requestUsageMonth?: string | null;
+  maxPagesPerRequest: number;
+  templatePageCount: number;
+};
+
+export type TemplateApiAuditEvent = {
+  id: string;
+  eventType: string;
+  outcome: string;
+  createdAt: string | null;
+  snapshotVersion?: number | null;
+  summary: string;
+  metadata?: Record<string, unknown>;
+};
+
+export type TemplateApiFieldSchema = {
+  key: string;
+  fieldName: string;
+  type: string;
+  page?: number | null;
+};
+
+export type TemplateApiOptionSchema = {
+  optionKey: string;
+  optionLabel?: string | null;
+  fieldName?: string | null;
+};
+
+export type TemplateApiCheckboxGroupSchema = {
+  key: string;
+  groupKey: string;
+  type: 'checkbox_rule' | string;
+  operation: 'yes_no' | 'enum' | 'list' | 'presence' | string;
+  options: TemplateApiOptionSchema[];
+  trueOption?: string | null;
+  falseOption?: string | null;
+  valueMap?: Record<string, string> | null;
+};
+
+export type TemplateApiRadioGroupSchema = {
+  groupKey: string;
+  type: 'radio' | string;
+  options: TemplateApiOptionSchema[];
+};
+
+export type TemplateApiSchema = {
+  snapshotVersion: number;
+  defaultExportMode: MaterializePdfExportMode;
+  fields: TemplateApiFieldSchema[];
+  checkboxFields: TemplateApiFieldSchema[];
+  checkboxGroups: TemplateApiCheckboxGroupSchema[];
+  radioGroups: TemplateApiRadioGroupSchema[];
+  exampleData: Record<string, unknown>;
+};
+
+export type TemplateApiPublishResult = {
+  created: boolean;
+  secret: string | null;
+  endpoint: TemplateApiEndpointSummary;
+  schema: TemplateApiSchema;
+  limits: TemplateApiOwnerLimitSummary;
+  recentEvents: TemplateApiAuditEvent[];
+};
+
 export type TemplateGroupSummary = {
   id: string;
   name: string;
@@ -159,6 +284,9 @@ export type ProfileLimits = {
   savedFormsMax: number;
   fillLinksActiveMax: number;
   fillLinkResponsesMax: number;
+  templateApiActiveMax?: number;
+  templateApiRequestsMonthlyMax?: number;
+  templateApiMaxPages?: number;
 };
 
 export type BillingCheckoutKind = 'pro_monthly' | 'pro_yearly' | 'refill_500';
@@ -257,6 +385,171 @@ export type UserProfile = {
   billing?: BillingProfileConfig;
   retention?: DowngradeRetentionSummary | null;
   limits: ProfileLimits;
+};
+
+export type SigningRequestMode = 'sign' | 'fill_and_sign';
+export type SigningRequestSignatureMode = 'business' | 'consumer';
+export type SigningRequestSourceType = 'workspace' | 'fill_link_response' | 'uploaded_pdf';
+
+export type SigningAnchorPayload = {
+  kind: 'signature' | 'signed_date' | 'initials';
+  page: number;
+  rect: { x: number; y: number; width: number; height: number };
+  fieldId?: string;
+  fieldName?: string;
+};
+
+export type SigningCategoryOption = {
+  key: string;
+  label: string;
+  blocked: boolean;
+  reason?: string | null;
+};
+
+export type SigningOptions = {
+  modes: Array<{ key: SigningRequestMode; label: string }>;
+  signatureModes: Array<{ key: SigningRequestSignatureMode; label: string }>;
+  categories: SigningCategoryOption[];
+};
+
+export type SigningArtifactDescriptor = {
+  available: boolean;
+  sha256?: string | null;
+  bucketPath?: string | null;
+  downloadPath?: string | null;
+  generatedAt?: string | null;
+  retentionUntil?: string | null;
+  signatureMethod?: string | null;
+  signatureAlgorithm?: string | null;
+  kmsKeyResourceName?: string | null;
+  kmsKeyVersionName?: string | null;
+};
+
+export type SigningArtifactCollection = {
+  sourcePdf?: SigningArtifactDescriptor;
+  signedPdf: SigningArtifactDescriptor;
+  auditManifest?: SigningArtifactDescriptor;
+  auditReceipt: SigningArtifactDescriptor;
+};
+
+export type SigningRequestSummary = {
+  id: string;
+  title?: string | null;
+  mode: SigningRequestMode;
+  signatureMode: SigningRequestSignatureMode;
+  sourceType: SigningRequestSourceType;
+  sourceId?: string | null;
+  sourceLinkId?: string | null;
+  sourceRecordLabel?: string | null;
+  sourceDocumentName: string;
+  sourceTemplateId?: string | null;
+  sourceTemplateName?: string | null;
+  sourcePdfSha256?: string | null;
+  sourcePdfPath?: string | null;
+  sourceVersion?: string | null;
+  documentCategory: string;
+  documentCategoryLabel: string;
+  manualFallbackEnabled: boolean;
+  signerName: string;
+  signerEmail: string;
+  inviteDeliveryStatus?: string | null;
+  inviteLastAttemptAt?: string | null;
+  inviteSentAt?: string | null;
+  inviteDeliveryError?: string | null;
+  status: string;
+  anchors: SigningAnchorPayload[];
+  disclosureVersion: string;
+  publicToken?: string | null;
+  publicPath?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+  ownerReviewConfirmedAt?: string | null;
+  sentAt?: string | null;
+  completedAt?: string | null;
+  retentionUntil?: string | null;
+  openedAt?: string | null;
+  reviewedAt?: string | null;
+  consentedAt?: string | null;
+  signatureAdoptedAt?: string | null;
+  signatureAdoptedName?: string | null;
+  manualFallbackRequestedAt?: string | null;
+  invalidatedAt?: string | null;
+  invalidationReason?: string | null;
+  artifacts: SigningArtifactCollection;
+};
+
+export type PublicSigningRequest = {
+  id: string;
+  title?: string | null;
+  mode: SigningRequestMode;
+  signatureMode: SigningRequestSignatureMode;
+  status: string;
+  statusMessage: string;
+  sourceDocumentName: string;
+  sourcePdfSha256?: string | null;
+  sourceVersion?: string | null;
+  documentCategory: string;
+  documentCategoryLabel: string;
+  manualFallbackEnabled: boolean;
+  signerName: string;
+  anchors: SigningAnchorPayload[];
+  disclosureVersion: string;
+  documentPath: string;
+  artifacts: Pick<SigningArtifactCollection, 'signedPdf' | 'auditReceipt'>;
+  createdAt?: string | null;
+  sentAt?: string | null;
+  completedAt?: string | null;
+  openedAt?: string | null;
+  reviewedAt?: string | null;
+  consentedAt?: string | null;
+  signatureAdoptedAt?: string | null;
+  signatureAdoptedName?: string | null;
+  manualFallbackRequestedAt?: string | null;
+  invalidatedAt?: string | null;
+  invalidationReason?: string | null;
+};
+
+export type PublicSigningSession = {
+  id: string;
+  token: string;
+  expiresAt?: string | null;
+};
+
+export type PublicSigningBootstrap = {
+  request: PublicSigningRequest;
+  session?: PublicSigningSession | null;
+};
+
+export type SigningRequestArtifactsResponse = {
+  requestId: string;
+  retentionUntil?: string | null;
+  artifacts: SigningArtifactCollection;
+};
+
+export type CreateSigningRequestPayload = {
+  title?: string;
+  mode: SigningRequestMode;
+  signatureMode: SigningRequestSignatureMode;
+  sourceType: SigningRequestSourceType;
+  sourceId?: string;
+  sourceLinkId?: string;
+  sourceRecordLabel?: string;
+  sourceDocumentName: string;
+  sourceTemplateId?: string;
+  sourceTemplateName?: string;
+  sourcePdfSha256?: string;
+  documentCategory: string;
+  manualFallbackEnabled: boolean;
+  signerName: string;
+  signerEmail: string;
+  anchors: SigningAnchorPayload[];
+};
+
+export type SendSigningRequestPayload = {
+  pdf: Blob;
+  filename?: string;
+  sourcePdfSha256?: string;
+  ownerReviewConfirmed?: boolean;
 };
 
 export type ContactPayload = {
@@ -361,7 +654,186 @@ export class ApiService {
   static getFillLinkResponse = FillLinksApiService.getFillLinkResponse;
   static getPublicFillLink = FillLinksApiService.getPublicFillLink;
   static submitPublicFillLink = FillLinksApiService.submitPublicFillLink;
+  static retryPublicFillLinkSigning = FillLinksApiService.retryPublicFillLinkSigning;
   static downloadPublicFillLinkResponsePdf = FillLinksApiService.downloadPublicFillLinkResponsePdf;
+
+  static async getSigningOptions(): Promise<SigningOptions> {
+    const response = await apiFetch('GET', '/api/signing/options');
+    return apiJsonFetch(response);
+  }
+
+  static async getSigningRequests(): Promise<SigningRequestSummary[]> {
+    const response = await apiFetch('GET', '/api/signing/requests');
+    const payload = await apiJsonFetch<{ requests?: SigningRequestSummary[] }>(response);
+    return Array.isArray(payload?.requests) ? payload.requests : [];
+  }
+
+  static async createSigningRequest(payload: CreateSigningRequestPayload): Promise<SigningRequestSummary> {
+    const response = await apiFetch('POST', '/api/signing/requests', {
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        title: payload.title,
+        mode: payload.mode,
+        signatureMode: payload.signatureMode,
+        sourceType: payload.sourceType,
+        sourceId: payload.sourceId,
+        sourceLinkId: payload.sourceLinkId,
+        sourceRecordLabel: payload.sourceRecordLabel,
+        sourceDocumentName: payload.sourceDocumentName,
+        sourceTemplateId: payload.sourceTemplateId,
+        sourceTemplateName: payload.sourceTemplateName,
+        sourcePdfSha256: payload.sourcePdfSha256,
+        documentCategory: payload.documentCategory,
+        manualFallbackEnabled: payload.manualFallbackEnabled,
+        signerName: payload.signerName,
+        signerEmail: payload.signerEmail,
+        anchors: payload.anchors,
+      }),
+    });
+    const result = await apiJsonFetch<{ request: SigningRequestSummary }>(response);
+    return result.request;
+  }
+
+  static async getSigningRequest(requestId: string): Promise<SigningRequestSummary> {
+    const response = await apiFetch('GET', `/api/signing/requests/${encodeURIComponent(requestId)}`);
+    const payload = await apiJsonFetch<{ request: SigningRequestSummary }>(response);
+    return payload.request;
+  }
+
+  static async getSigningRequestArtifacts(requestId: string): Promise<SigningRequestArtifactsResponse> {
+    const response = await apiFetch('GET', `/api/signing/requests/${encodeURIComponent(requestId)}/artifacts`);
+    return apiJsonFetch(response);
+  }
+
+  static async downloadAuthenticatedFile(
+    requestPath: string,
+    options?: {
+      filename?: string | null;
+      signal?: AbortSignal;
+      timeoutMs?: number;
+    },
+  ): Promise<void> {
+    const response = await apiFetch('GET', requestPath, {
+      signal: options?.signal,
+      timeoutMs: options?.timeoutMs,
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to download file: ${response.statusText}`);
+    }
+    const blob = await response.blob();
+    const filename = (
+      parseDownloadFilename(response.headers.get('content-disposition'))
+      || String(options?.filename || '').trim()
+      || 'download.pdf'
+    );
+    triggerBrowserDownload(blob, filename);
+  }
+
+  static async sendSigningRequest(requestId: string, payload: SendSigningRequestPayload): Promise<SigningRequestSummary> {
+    const formData = new FormData();
+    formData.append('pdf', payload.pdf, payload.filename || 'signing-source.pdf');
+    if (payload.sourcePdfSha256) {
+      formData.append('sourcePdfSha256', payload.sourcePdfSha256);
+    }
+    if (typeof payload.ownerReviewConfirmed === 'boolean') {
+      formData.append('ownerReviewConfirmed', payload.ownerReviewConfirmed ? 'true' : 'false');
+    }
+    const response = await apiFetch('POST', `/api/signing/requests/${encodeURIComponent(requestId)}/send`, {
+      body: formData,
+    });
+    const result = await apiJsonFetch<{ request: SigningRequestSummary }>(response);
+    return result.request;
+  }
+
+  static async getPublicSigningRequest(token: string): Promise<PublicSigningRequest> {
+    const response = await apiFetch('GET', `/api/signing/public/${encodeURIComponent(token)}`, {
+      authMode: 'anonymous',
+    });
+    const payload = await apiJsonFetch<{ request: PublicSigningRequest }>(response);
+    return payload.request;
+  }
+
+  static async startPublicSigningSession(token: string): Promise<PublicSigningBootstrap> {
+    const response = await apiFetch('POST', `/api/signing/public/${encodeURIComponent(token)}/bootstrap`, {
+      authMode: 'anonymous',
+    });
+    return apiJsonFetch(response);
+  }
+
+  static async reviewPublicSigningRequest(token: string, sessionToken: string): Promise<PublicSigningRequest> {
+    const response = await apiFetch('POST', `/api/signing/public/${encodeURIComponent(token)}/review`, {
+      authMode: 'anonymous',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Signing-Session': sessionToken,
+      },
+      body: JSON.stringify({ reviewConfirmed: true }),
+    });
+    const payload = await apiJsonFetch<{ request: PublicSigningRequest }>(response);
+    return payload.request;
+  }
+
+  static async consentPublicSigningRequest(token: string, sessionToken: string): Promise<PublicSigningRequest> {
+    const response = await apiFetch('POST', `/api/signing/public/${encodeURIComponent(token)}/consent`, {
+      authMode: 'anonymous',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Signing-Session': sessionToken,
+      },
+      body: JSON.stringify({ accepted: true }),
+    });
+    const payload = await apiJsonFetch<{ request: PublicSigningRequest }>(response);
+    return payload.request;
+  }
+
+  static async requestPublicSigningManualFallback(
+    token: string,
+    sessionToken: string,
+    note?: string,
+  ): Promise<PublicSigningRequest> {
+    const response = await apiFetch('POST', `/api/signing/public/${encodeURIComponent(token)}/manual-fallback`, {
+      authMode: 'anonymous',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Signing-Session': sessionToken,
+      },
+      body: JSON.stringify({ note }),
+    });
+    const payload = await apiJsonFetch<{ request: PublicSigningRequest }>(response);
+    return payload.request;
+  }
+
+  static async adoptPublicSigningSignature(
+    token: string,
+    sessionToken: string,
+    adoptedName: string,
+  ): Promise<PublicSigningRequest> {
+    const response = await apiFetch('POST', `/api/signing/public/${encodeURIComponent(token)}/adopt-signature`, {
+      authMode: 'anonymous',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Signing-Session': sessionToken,
+      },
+      body: JSON.stringify({ adoptedName }),
+    });
+    const payload = await apiJsonFetch<{ request: PublicSigningRequest }>(response);
+    return payload.request;
+  }
+
+  static async completePublicSigningRequest(token: string, sessionToken: string): Promise<PublicSigningRequest> {
+    const response = await apiFetch('POST', `/api/signing/public/${encodeURIComponent(token)}/complete`, {
+      authMode: 'anonymous',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Signing-Session': sessionToken,
+      },
+      body: JSON.stringify({ intentConfirmed: true }),
+    });
+    const payload = await apiJsonFetch<{ request: PublicSigningRequest }>(response);
+    return payload.request;
+  }
 
   /**
    * Submit the homepage contact form.
@@ -708,6 +1180,79 @@ export class ApiService {
   }
 
   /**
+   * Fetch owner-managed API Fill endpoints for the current user.
+   */
+  static async listTemplateApiEndpoints(templateId?: string | null): Promise<{
+    endpoints: TemplateApiEndpointSummary[];
+    limits?: TemplateApiOwnerLimitSummary;
+  }> {
+    const search = templateId ? `?templateId=${encodeURIComponent(templateId)}` : '';
+    const response = await apiFetch('GET', `/api/template-api-endpoints${search}`);
+    const payload = await apiJsonFetch<{ endpoints?: TemplateApiEndpointSummary[]; limits?: TemplateApiOwnerLimitSummary }>(response);
+    return {
+      endpoints: Array.isArray(payload?.endpoints) ? payload.endpoints : [],
+      limits: payload?.limits,
+    };
+  }
+
+  /**
+   * Publish or republish a saved form as an API Fill endpoint.
+   */
+  static async publishTemplateApiEndpoint(payload: {
+    templateId: string;
+    exportMode?: MaterializePdfExportMode;
+  }): Promise<TemplateApiPublishResult> {
+    const response = await apiFetch('POST', '/api/template-api-endpoints', {
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        templateId: payload.templateId,
+        exportMode: payload.exportMode || 'flat',
+      }),
+    });
+    return apiJsonFetch(response);
+  }
+
+  /**
+   * Rotate the scoped secret for an existing API Fill endpoint.
+   */
+  static async rotateTemplateApiEndpoint(endpointId: string): Promise<{
+    secret: string;
+    endpoint: TemplateApiEndpointSummary;
+    limits: TemplateApiOwnerLimitSummary;
+    recentEvents: TemplateApiAuditEvent[];
+  }> {
+    const response = await apiFetch('POST', `/api/template-api-endpoints/${encodeURIComponent(endpointId)}/rotate`);
+    return apiJsonFetch(response);
+  }
+
+  /**
+   * Revoke a published API Fill endpoint.
+   */
+  static async revokeTemplateApiEndpoint(endpointId: string): Promise<{
+    endpoint: TemplateApiEndpointSummary;
+    limits: TemplateApiOwnerLimitSummary;
+    recentEvents: TemplateApiAuditEvent[];
+  }> {
+    const response = await apiFetch('POST', `/api/template-api-endpoints/${encodeURIComponent(endpointId)}/revoke`);
+    return apiJsonFetch(response);
+  }
+
+  /**
+   * Fetch the owner schema for one API Fill endpoint.
+   */
+  static async getTemplateApiEndpointSchema(endpointId: string): Promise<{
+    endpoint: TemplateApiEndpointSummary;
+    schema: TemplateApiSchema;
+    limits: TemplateApiOwnerLimitSummary;
+    recentEvents: TemplateApiAuditEvent[];
+  }> {
+    const response = await apiFetch('GET', `/api/template-api-endpoints/${encodeURIComponent(endpointId)}/schema`);
+    return apiJsonFetch(response);
+  }
+
+  /**
    * Validate a PDF and return its page count for preflight UI checks.
    */
   static async getPdfPageCount(
@@ -744,12 +1289,10 @@ export class ApiService {
     fillRules?: {
       version?: number;
       checkboxRules?: Array<Record<string, any>>;
-      checkboxHints?: Array<Record<string, any>>;
       textTransformRules?: Array<Record<string, any>>;
       templateRules?: Array<Record<string, any>>;
     };
     checkboxRules?: Array<Record<string, any>>;
-    checkboxHints?: Array<Record<string, any>>;
     textTransformRules?: Array<Record<string, any>>;
     templateRules?: Array<Record<string, any>>;
     editorSnapshot?: SavedFormEditorSnapshot | null;
@@ -860,7 +1403,6 @@ export class ApiService {
     sessionId?: string,
     overwriteFormId?: string,
     checkboxRules?: Array<Record<string, any>>,
-    checkboxHints?: Array<Record<string, any>>,
     textTransformRules?: Array<Record<string, any>>,
     editorSnapshot?: SavedFormEditorSnapshot,
     options?: AbortableRequestOptions,
@@ -873,9 +1415,6 @@ export class ApiService {
     }
     if (checkboxRules !== undefined) {
       formData.append('checkboxRules', JSON.stringify(checkboxRules));
-    }
-    if (checkboxHints !== undefined) {
-      formData.append('checkboxHints', JSON.stringify(checkboxHints));
     }
     if (textTransformRules !== undefined) {
       formData.append('textTransformRules', JSON.stringify(textTransformRules));
@@ -901,11 +1440,14 @@ export class ApiService {
   static async materializeFormPdf(
     blob: Blob,
     fields: PdfField[],
-    options?: AbortableRequestOptions,
+    options?: AbortableRequestOptions & { exportMode?: MaterializePdfExportMode },
   ): Promise<Blob> {
     const formData = new FormData();
     formData.append('pdf', blob, 'form.pdf');
     formData.append('fields', JSON.stringify({ fields }));
+    if (options?.exportMode) {
+      formData.append('exportMode', options.exportMode);
+    }
 
     const response = await apiFetch('POST', buildApiUrl('api', 'forms', 'materialize'), {
       body: formData,

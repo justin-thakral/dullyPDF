@@ -31,7 +31,7 @@ const BLOG_POSTS: BlogPost[] = [
       'Learn how to convert any PDF into a fillable form without Acrobat. DullyPDF uses AI field detection to create reusable templates for free.',
     seoKeywords: ['pdf to fillable form without acrobat', 'convert pdf to fillable form free', 'fillable pdf without adobe'],
     publishedDate: '2026-03-04',
-    updatedDate: '2026-03-04',
+    updatedDate: '2026-03-24',
     author: 'DullyPDF Team',
     summary:
       'Adobe Acrobat is expensive and overkill for most fillable form needs. This guide shows how to convert any PDF into a fillable template using AI-powered field detection in your browser.',
@@ -73,7 +73,7 @@ const BLOG_POSTS: BlogPost[] = [
       'Fill PDF form fields automatically from CSV or Excel spreadsheet rows. Map columns to PDF fields and populate forms in seconds.',
     seoKeywords: ['fill pdf from spreadsheet', 'auto fill pdf from excel', 'fill pdf from csv', 'pdf form from spreadsheet'],
     publishedDate: '2026-03-04',
-    updatedDate: '2026-03-04',
+    updatedDate: '2026-03-24',
     author: 'DullyPDF Team',
     summary:
       'Stop copying and pasting from spreadsheets into PDF forms. This guide shows how to map spreadsheet columns to PDF fields and auto-fill forms from any row in your data.',
@@ -122,7 +122,7 @@ const BLOG_POSTS: BlogPost[] = [
       'certificate of insurance automation',
     ],
     publishedDate: '2026-03-04',
-    updatedDate: '2026-03-04',
+    updatedDate: '2026-03-24',
     author: 'DullyPDF Team',
     summary:
       'Insurance agencies process hundreds of ACORD 25 certificates monthly. This guide shows how to turn the ACORD 25 into a mapped template that fills from your management system data.',
@@ -165,7 +165,7 @@ const BLOG_POSTS: BlogPost[] = [
       'auto fill insurance forms',
     ],
     publishedDate: '2026-03-04',
-    updatedDate: '2026-03-04',
+    updatedDate: '2026-03-24',
     author: 'DullyPDF Team',
     summary:
       'If your team handles recurring ACORD packets and COI requests, this workflow shows how to map once and fill insurance PDFs from AMS exports in seconds.',
@@ -207,7 +207,7 @@ const BLOG_POSTS: BlogPost[] = [
       'Learn how AI-powered field detection identifies text fields, checkboxes, and signatures in any PDF. Understand confidence scores and optimization tips.',
     seoKeywords: ['pdf form field detection', 'detect fields in pdf', 'ai pdf field detection', 'pdf field recognition'],
     publishedDate: '2026-03-04',
-    updatedDate: '2026-03-04',
+    updatedDate: '2026-03-24',
     author: 'DullyPDF Team',
     summary:
       'How does AI find form fields in a PDF that has no embedded form data? This post explains the detection pipeline, confidence scoring, and how to get the best results.',
@@ -249,7 +249,7 @@ const BLOG_POSTS: BlogPost[] = [
       'Learn how to map PDF form fields to database or spreadsheet columns for automated filling. Step-by-step guide with best practices.',
     seoKeywords: ['pdf to database', 'map pdf fields to database', 'pdf database mapping', 'pdf schema mapping guide'],
     publishedDate: '2026-03-04',
-    updatedDate: '2026-03-04',
+    updatedDate: '2026-03-24',
     author: 'DullyPDF Team',
     summary:
       'Mapping PDF fields to database columns is the key step that turns a fillable form into an automated data-entry tool. This guide walks through the complete process.',
@@ -291,7 +291,7 @@ const BLOG_POSTS: BlogPost[] = [
       'Reduce front-desk data entry by automating patient intake PDF forms. Map intake fields to your EHR data and fill in seconds.',
     seoKeywords: ['automate patient intake forms', 'healthcare pdf automation', 'medical intake form automation', 'patient registration automation'],
     publishedDate: '2026-03-04',
-    updatedDate: '2026-03-04',
+    updatedDate: '2026-03-24',
     author: 'DullyPDF Team',
     summary:
       'Front-desk staff spend hours retyping patient data into intake PDFs. This guide shows how to create mapped templates that fill automatically from your patient records.',
@@ -333,7 +333,7 @@ const BLOG_POSTS: BlogPost[] = [
       'Understand why consistent PDF field names are critical for auto-fill and how to standardize them using AI rename.',
     seoKeywords: ['pdf field names', 'rename pdf form fields', 'pdf field naming', 'fix pdf field names'],
     publishedDate: '2026-03-04',
-    updatedDate: '2026-03-04',
+    updatedDate: '2026-03-24',
     author: 'DullyPDF Team',
     summary:
       'Bad field names are the number-one cause of mapping failures. This post explains why field naming matters and how AI rename fixes it.',
@@ -375,7 +375,7 @@ const BLOG_POSTS: BlogPost[] = [
       'Automate HR onboarding paperwork by mapping employee data to PDF form templates. Fill W-4s, I-9s, and benefits forms in seconds.',
     seoKeywords: ['hr onboarding form automation', 'automate employee paperwork', 'hr pdf automation', 'onboarding forms automation'],
     publishedDate: '2026-03-04',
-    updatedDate: '2026-03-04',
+    updatedDate: '2026-03-24',
     author: 'DullyPDF Team',
     summary:
       'HR teams retype the same employee data across W-4s, I-9s, benefits enrollments, and policy acknowledgments. This guide shows how to fill all onboarding forms from one data source.',
@@ -417,7 +417,7 @@ const BLOG_POSTS: BlogPost[] = [
       'Compare DullyPDF and Adobe Acrobat for PDF form automation. See how AI field detection and schema mapping differ from Acrobat\'s manual form tools.',
     seoKeywords: ['dullypdf vs acrobat', 'acrobat fillable form alternative', 'pdf form automation comparison', 'acrobat alternative'],
     publishedDate: '2026-03-04',
-    updatedDate: '2026-03-04',
+    updatedDate: '2026-03-24',
     author: 'DullyPDF Team',
     summary:
       'Adobe Acrobat is the industry standard for PDF editing, but its form automation features are limited. This comparison shows where DullyPDF\'s AI-driven workflow excels for repeat form-filling use cases.',
@@ -459,7 +459,7 @@ const BLOG_POSTS: BlogPost[] = [
       'Compare DullyPDF and JotForm for PDF-based data collection. Understand the differences between form-builder and template-mapping approaches.',
     seoKeywords: ['dullypdf vs jotform', 'jotform alternative for pdf', 'pdf data collection comparison', 'pdf form builder alternative'],
     publishedDate: '2026-03-04',
-    updatedDate: '2026-03-04',
+    updatedDate: '2026-03-24',
     author: 'DullyPDF Team',
     summary:
       'JotForm builds online forms from scratch. DullyPDF works with existing PDF forms. This comparison helps you choose the right approach for your data collection workflow.',

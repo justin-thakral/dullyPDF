@@ -151,6 +151,23 @@
   font-size: 1.05rem;
 }
 
+.intent-page__panel--article h2 {
+  margin-bottom: 0.8rem;
+}
+
+.intent-page__article-copy {
+  display: grid;
+  gap: 0.78rem;
+}
+
+.intent-page__article-copy p {
+  margin: 0;
+}
+
+.intent-page__article-copy ul {
+  margin-top: 0.1rem;
+}
+
 .intent-page__panel ul {
   margin: 0;
   padding-left: 1.15rem;

@@ -1,5 +1,4 @@
 import type {
-  CheckboxHint,
   CheckboxRule,
   DataSourceKind,
   PdfField,
@@ -37,6 +36,12 @@ type CheckboxOptionLookup = {
   optionKey: string;
 };
 
+type RadioGroup = {
+  id: string;
+  options: Map<string, PdfField[]>;
+  optionAliases: Map<string, Set<string>>;
+};
+
 type PreparedCheckboxLookup = {
   checkboxMetaById: Map<string, CheckboxMetaType>;
   checkboxGroups: Map<string, CheckboxGroup>;
@@ -45,11 +50,17 @@ type PreparedCheckboxLookup = {
   checkboxNameIndex: Map<string, PdfField[]>;
 };
 
+type PreparedRadioLookup = {
+  radioGroups: Map<string, RadioGroup>;
+  radioOptionIndex: Map<string, CheckboxOptionLookup>;
+  radioOptionConflicts: Set<string>;
+  radioNameIndex: Map<string, PdfField[]>;
+};
+
 export type ApplySearchFillRowOptions = {
   row: Record<string, unknown>;
   fields: PdfField[];
   checkboxRules?: CheckboxRule[];
-  checkboxHints?: CheckboxHint[];
   textTransformRules?: TextTransformRule[];
   dataSourceKind: DataSourceKind;
 };
@@ -121,9 +132,42 @@ function buildCheckboxGroups(fields: PdfField[], metaById: Map<string, CheckboxM
   return groups;
 }
 
+function buildRadioGroups(fields: PdfField[]): Map<string, RadioGroup> {
+  const groups = new Map<string, RadioGroup>();
+  for (const field of fields) {
+    if (field.type !== 'radio') continue;
+    const groupKey = normaliseDataKey(field.radioGroupKey || field.radioGroupLabel || field.radioGroupId || '');
+    const optionKey = normaliseDataKey(field.radioOptionKey || field.radioOptionLabel || field.name || '');
+    if (!groupKey || !optionKey) continue;
+    const group = groups.get(groupKey) || {
+      id: String(field.radioGroupId || groupKey),
+      options: new Map<string, PdfField[]>(),
+      optionAliases: new Map<string, Set<string>>(),
+    };
+    const existing = group.options.get(optionKey);
+    if (existing) {
+      existing.push(field);
+    } else {
+      group.options.set(optionKey, [field]);
+    }
+    const aliases = group.optionAliases.get(optionKey) || new Set<string>();
+    aliases.add(optionKey);
+    if (field.radioOptionLabel) {
+      aliases.add(normaliseDataKey(field.radioOptionLabel));
+    }
+    if (field.name) {
+      aliases.add(normaliseDataKey(field.name));
+    }
+    group.optionAliases.set(optionKey, aliases);
+    groups.set(groupKey, group);
+  }
+  return groups;
+}
+
 const checkboxNameIndexCache = new WeakMap<PdfField[], Map<string, PdfField[]>>();
 const checkboxLookupCache = new WeakMap<PdfField[], Map<string, PreparedCheckboxLookup>>();
-const checkboxHintsByFieldCache = new WeakMap<CheckboxHint[], Map<string, CheckboxHint>>();
+const radioNameIndexCache = new WeakMap<PdfField[], Map<string, PdfField[]>>();
+const radioLookupCache = new WeakMap<PdfField[], PreparedRadioLookup>();
 const textTransformRulesByTargetCache = new WeakMap<TextTransformRule[], Map<string, TextTransformRule[]>>();
 
 function getCheckboxNameIndex(fields: PdfField[]): Map<string, PdfField[]> {
@@ -187,19 +231,57 @@ function getPreparedCheckboxLookup(fields: PdfField[], normalizedRowKeys: string
   return prepared;
 }
 
-function getCheckboxHintsByField(checkboxHints?: CheckboxHint[]): Map<string, CheckboxHint> {
-  if (!checkboxHints?.length) return new Map<string, CheckboxHint>();
-  const cached = checkboxHintsByFieldCache.get(checkboxHints);
+function getRadioNameIndex(fields: PdfField[]): Map<string, PdfField[]> {
+  const cached = radioNameIndexCache.get(fields);
   if (cached) return cached;
-  const checkboxHintsByField = new Map<string, CheckboxHint>();
-  for (const hint of checkboxHints) {
-    if (!hint || !hint.databaseField) continue;
-    const key = normaliseDataKey(hint.databaseField);
-    if (!key || checkboxHintsByField.has(key)) continue;
-    checkboxHintsByField.set(key, hint);
+  const radioNameIndex = new Map<string, PdfField[]>();
+  for (const field of fields) {
+    if (field.type !== 'radio') continue;
+    const normalizedName = normaliseDataKey(field.name || '');
+    if (!normalizedName) continue;
+    const existing = radioNameIndex.get(normalizedName);
+    if (existing) {
+      existing.push(field);
+    } else {
+      radioNameIndex.set(normalizedName, [field]);
+    }
   }
-  checkboxHintsByFieldCache.set(checkboxHints, checkboxHintsByField);
-  return checkboxHintsByField;
+  radioNameIndexCache.set(fields, radioNameIndex);
+  return radioNameIndex;
+}
+
+function getPreparedRadioLookup(fields: PdfField[]): PreparedRadioLookup {
+  const cached = radioLookupCache.get(fields);
+  if (cached) return cached;
+
+  const radioGroups = buildRadioGroups(fields);
+  const radioOptionIndex = new Map<string, CheckboxOptionLookup>();
+  const radioOptionConflicts = new Set<string>();
+
+  for (const [groupKey, group] of radioGroups.entries()) {
+    for (const [optionKey, aliases] of group.optionAliases.entries()) {
+      for (const alias of aliases) {
+        const combined = normaliseDataKey(`${groupKey}_${alias}`);
+        if (!combined) continue;
+        const existing = radioOptionIndex.get(combined);
+        if (existing && existing.optionKey !== optionKey) {
+          radioOptionConflicts.add(combined);
+          radioOptionIndex.delete(combined);
+          continue;
+        }
+        radioOptionIndex.set(combined, { groupKey, optionKey });
+      }
+    }
+  }
+
+  const prepared = {
+    radioGroups,
+    radioOptionIndex,
+    radioOptionConflicts,
+    radioNameIndex: getRadioNameIndex(fields),
+  };
+  radioLookupCache.set(fields, prepared);
+  return prepared;
 }
 
 function getTextTransformRulesByTarget(
@@ -235,7 +317,6 @@ export function applySearchFillRowToFields({
   row,
   fields,
   checkboxRules,
-  checkboxHints,
   textTransformRules,
   dataSourceKind,
 }: ApplySearchFillRowOptions): PdfField[] {
@@ -251,11 +332,19 @@ export function applySearchFillRowToFields({
     checkboxOptionConflicts,
     checkboxNameIndex,
   } = getPreparedCheckboxLookup(fields, normalizedRowKeys);
+  const {
+    radioGroups,
+    radioOptionIndex,
+    radioOptionConflicts,
+    radioNameIndex,
+  } = getPreparedRadioLookup(fields);
   const checkboxOverrides = new Map<string, boolean>();
-  const checkboxHintsByField = getCheckboxHintsByField(checkboxHints);
+  const radioOverrides = new Map<string, string | null>();
   const explicitGroupKeys = new Set<string>();
   const groupValueApplied = new Set<string>();
   const clearedGroups = new Set<string>();
+  const explicitRadioGroupKeys = new Set<string>();
+  const radioGroupValueApplied = new Set<string>();
   const valueMapCache = new Map<Record<string, string>, Record<string, string>>();
 
   const markExplicitGroup = (groupKey: string) => {
@@ -303,6 +392,35 @@ export function applySearchFillRowToFields({
   const setCheckboxOverrideByField = (field: PdfField, value: boolean, markExplicit = false) => {
     checkboxOverrides.set(field.id, value);
     if (markExplicit) markExplicitField(field.id);
+  };
+
+  const markExplicitRadioGroup = (groupKey: string) => {
+    const normalizedGroup = normaliseDataKey(groupKey);
+    if (normalizedGroup) explicitRadioGroupKeys.add(normalizedGroup);
+  };
+
+  const selectRadioOption = (
+    groupKey: string,
+    optionKey: string,
+    markExplicit = false,
+  ): boolean => {
+    const normalizedGroup = normaliseDataKey(groupKey);
+    const normalizedOption = normaliseDataKey(optionKey);
+    if (!normalizedGroup || !normalizedOption) return false;
+    const group = radioGroups.get(normalizedGroup);
+    if (!group) return false;
+    const options = group.options.get(normalizedOption);
+    if (!options?.length) return false;
+    for (const groupOptions of group.options.values()) {
+      for (const optionField of groupOptions) {
+        radioOverrides.set(optionField.id, null);
+      }
+    }
+    for (const optionField of options) {
+      radioOverrides.set(optionField.id, String(optionField.radioOptionKey || normalizedOption));
+    }
+    if (markExplicit) markExplicitRadioGroup(normalizedGroup);
+    return true;
   };
 
   const normalizeValueMap = (valueMap?: Record<string, string>): Record<string, string> | undefined => {
@@ -359,6 +477,53 @@ export function applySearchFillRowToFields({
     return null;
   };
 
+  const resolveRadioOptionKey = (group: RadioGroup, rawValue: unknown): string | null => {
+    const normalized = normaliseDataKey(String(rawValue ?? ''));
+    if (!normalized) return null;
+    const compact = compactCheckboxToken(normalized);
+    if (group.options.has(normalized)) return normalized;
+    for (const [optionKey, aliases] of group.optionAliases.entries()) {
+      for (const alias of aliases) {
+        if (alias === normalized || compactCheckboxToken(alias) === compact) return optionKey;
+      }
+    }
+    return null;
+  };
+
+  const resolveRadioBooleanOptionKey = (group: RadioGroup, aliases: string[]): string | null => {
+    for (const [optionKey, optionAliases] of group.optionAliases.entries()) {
+      for (const alias of aliases) {
+        if (optionAliases.has(alias)) return optionKey;
+      }
+    }
+    return null;
+  };
+
+  const resolveRadioGroupValue = (groupKey: string, value: unknown): boolean => {
+    const normalizedGroup = normaliseDataKey(groupKey);
+    if (!normalizedGroup) return false;
+    const group = radioGroups.get(normalizedGroup);
+    if (!group) return false;
+    const mappedOption = resolveRadioOptionKey(group, value);
+    if (mappedOption) {
+      return selectRadioOption(normalizedGroup, mappedOption, true);
+    }
+    const normalizedValue = coerceCheckboxBoolean(value);
+    if (normalizedValue === null) return false;
+    const yesKey = resolveRadioBooleanOptionKey(group, CHECKBOX_TRUE_ALIASES);
+    const noKey = resolveRadioBooleanOptionKey(group, CHECKBOX_FALSE_ALIASES);
+    if (yesKey && noKey) {
+      return selectRadioOption(normalizedGroup, normalizedValue ? yesKey : noKey, true);
+    }
+    if (normalizedValue && yesKey) {
+      return selectRadioOption(normalizedGroup, yesKey, true);
+    }
+    if (!normalizedValue && noKey) {
+      return selectRadioOption(normalizedGroup, noKey, true);
+    }
+    return false;
+  };
+
   const pickCheckboxValue = (
     groupKey: string,
     value: unknown,
@@ -371,6 +536,48 @@ export function applySearchFillRowToFields({
     const resolvedKey = resolveOptionKey(group, value, valueMap);
     if (!resolvedKey) return false;
     return setCheckboxOverride(normalizedGroup, resolvedKey, true);
+  };
+
+  const applyDirectRadioMatch = (key: string, value: unknown): boolean => {
+    const matches = radioNameIndex.get(key);
+    if (!matches?.length) return false;
+    const normalizedValue = coerceCheckboxBoolean(value);
+    if (normalizedValue !== true) return false;
+    let applied = false;
+    for (const field of matches) {
+      if (!field.radioGroupKey || !field.radioOptionKey) continue;
+      applied = selectRadioOption(field.radioGroupKey, field.radioOptionKey, true) || applied;
+    }
+    return applied;
+  };
+
+  const applyRadioOptionKey = (key: string, value: unknown): boolean => {
+    if (!key || radioOptionConflicts.has(key)) return false;
+    const match = radioOptionIndex.get(key);
+    if (!match) return false;
+    const normalizedValue = coerceCheckboxBoolean(value);
+    if (normalizedValue !== true) return false;
+    return selectRadioOption(match.groupKey, match.optionKey, true);
+  };
+
+  const applyRadioGroupValue = (groupKey: string, value: unknown) => {
+    const normalizedGroup = normaliseDataKey(groupKey);
+    if (!normalizedGroup) return;
+    if (explicitRadioGroupKeys.has(normalizedGroup) || radioGroupValueApplied.has(normalizedGroup)) return;
+    if (!radioGroups.has(normalizedGroup)) return;
+    const entries = splitCheckboxListValue(value);
+    if (!entries.length) {
+      if (resolveRadioGroupValue(normalizedGroup, value)) {
+        radioGroupValueApplied.add(normalizedGroup);
+      }
+      return;
+    }
+    for (const entry of entries) {
+      if (resolveRadioGroupValue(normalizedGroup, entry)) {
+        radioGroupValueApplied.add(normalizedGroup);
+        return;
+      }
+    }
   };
 
   const resolveCheckboxGroupValue = (
@@ -482,23 +689,6 @@ export function applySearchFillRowToFields({
     if (applied) groupValueApplied.add(normalizedGroup);
   };
 
-  const applyHintedBooleanGroup = (hint: CheckboxHint, value: unknown): boolean => {
-    if (!hint?.directBooleanPossible) return false;
-    const normalizedGroup = normaliseDataKey(hint.groupKey || '');
-    if (!normalizedGroup) return false;
-    if (explicitGroupKeys.has(normalizedGroup) || groupValueApplied.has(normalizedGroup)) return false;
-    if (!checkboxGroups.has(normalizedGroup)) return false;
-    const normalizedValue = coerceCheckboxBoolean(value);
-    if (normalizedValue === null) return false;
-    clearCheckboxGroup(normalizedGroup);
-    const applied = resolveCheckboxGroupValue(normalizedGroup, normalizedValue);
-    if (applied) {
-      explicitGroupKeys.add(normalizedGroup);
-      groupValueApplied.add(normalizedGroup);
-    }
-    return applied;
-  };
-
   const getRowValueForKey = (key: string): unknown => {
     const normalizedKey = normaliseDataKey(key);
     if (!normalizedKey) return undefined;
@@ -586,6 +776,48 @@ export function applySearchFillRowToFields({
   };
 
   for (const [key, value] of normalizedRow) {
+    applyDirectRadioMatch(key, value);
+  }
+
+  for (const [key, value] of normalizedRow) {
+    const strippedKey = key.startsWith('i_')
+      ? key.slice(2)
+      : key.startsWith('checkbox_')
+        ? key.replace(/^checkbox_/, '')
+        : key.startsWith('radio_')
+          ? key.replace(/^radio_/, '')
+          : key;
+    if (!strippedKey) continue;
+    applyRadioOptionKey(strippedKey, value);
+  }
+
+  for (const [key, value] of normalizedRow) {
+    if (key.startsWith('i_')) {
+      const stripped = key.slice(2);
+      if (!stripped) continue;
+      applyRadioGroupValue(stripped, value);
+      continue;
+    }
+    if (key.startsWith('checkbox_')) {
+      const stripped = key.replace(/^checkbox_/, '');
+      if (!stripped) continue;
+      applyRadioGroupValue(stripped, value);
+      continue;
+    }
+    if (key.startsWith('radio_')) {
+      const stripped = key.replace(/^radio_/, '');
+      if (!stripped) continue;
+      applyRadioGroupValue(stripped, value);
+    }
+  }
+
+  for (const [key, value] of normalizedRow) {
+    if (key.startsWith('i_') || key.startsWith('checkbox_') || key.startsWith('radio_')) continue;
+    if (!radioGroups.has(key)) continue;
+    applyRadioGroupValue(key, value);
+  }
+
+  for (const [key, value] of normalizedRow) {
     applyDirectCheckboxMatch(key, value);
   }
 
@@ -668,12 +900,6 @@ export function applySearchFillRowToFields({
   }
   for (const key of ruleAppliedGroups) groupValueApplied.add(key);
 
-  for (const [key, hint] of checkboxHintsByField.entries()) {
-    const rowValue = getRowValueForKey(key);
-    if (rowValue === undefined) continue;
-    applyHintedBooleanGroup(hint, rowValue);
-  }
-
   for (const [groupKey, aliases] of Object.entries(CHECKBOX_ALIASES)) {
     if (explicitGroupKeys.has(normaliseDataKey(groupKey)) || groupValueApplied.has(normaliseDataKey(groupKey))) {
       continue;
@@ -691,6 +917,13 @@ export function applySearchFillRowToFields({
   }
 
   const resolveValueForField = (field: PdfField): unknown => {
+    if (field.type === 'radio') {
+      if (radioOverrides.has(field.id)) {
+        return radioOverrides.get(field.id);
+      }
+      return undefined;
+    }
+
     if (field.type === 'checkbox') {
       if (checkboxOverrides.has(field.id)) {
         return checkboxOverrides.get(field.id);

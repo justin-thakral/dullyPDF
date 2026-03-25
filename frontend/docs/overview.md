@@ -12,7 +12,7 @@ The frontend is a React + TypeScript app for loading PDFs, editing fields, organ
 6. Reopen templates from the upload screen through the saved-form browser, which supports group filtering, an `Open groups` toggle, inline group deletion, and a stable selected-group label while the group list refreshes.
 7. When a group is open, switch between member templates from the header and run batch Rename + Map across every saved form in that group.
 8. Run Search & Fill from CSV/Excel/JSON rows or stored Fill By Link respondent records.
-9. Download a filled PDF or save it to the signed-in profile.
+9. Download either a `Flat PDF` (field values baked into page content) or an `Editable PDF` (widgets preserved for later editing), or save the current state to the signed-in profile.
 10. Persist and replay deterministic fill rules (`fillRules`) including text split/join transforms.
 11. Persist a versioned saved-form editor snapshot so reopened templates and group switches can hydrate fields/page sizes without re-extracting them on every open.
 
@@ -21,7 +21,7 @@ The frontend is a React + TypeScript app for loading PDFs, editing fields, organ
 - End-user documentation is available at canonical `/usage-docs/*` URLs.
 - Legacy `/docs/*` URLs are compatibility redirects (HTTP 301) to `/usage-docs/*`.
 - Canonical style is non-trailing slash for non-root routes; `/path/` should only 301 once to `/path` (never loop).
-- The docs include dedicated pages for detection, rename/mapping, editor workflow, Search & Fill, Fill By Link, Create Group workflows, save/download/Profile behavior, and troubleshooting.
+- The docs include dedicated pages for detection, rename/mapping, editor workflow, Search & Fill, Fill By Link, signature workflow, API Fill, Create Group workflows, save/download/Profile behavior, and troubleshooting.
 - Route handling lives in `frontend/src/main.tsx` alongside legal page route handling.
 - Unknown public URLs should resolve to a noindex 404 experience instead of falling back to the app homepage.
 
@@ -79,13 +79,20 @@ The frontend is a React + TypeScript app for loading PDFs, editing fields, organ
 ## Fill By Link
 
 - Fill By Link is a native DullyPDF workflow that starts from either a saved template or an open saved-form group and publishes a public `/respond/:token` route.
+- Template links can now optionally enable `Require signature after submit`. In that mode, the public Fill By Link still collects respondent answers first, but the published form excludes signature-ceremony-managed questions and hands the respondent off to the existing public `/sign/:token` ceremony after submit. The publish flow now requires a visible signer-email question, and the public submit path rejects the response up front if that answer is missing or not a valid email address.
+- Signing adds a separate public `/sign/:token` route for owner-created signing requests. Owners can save a signing draft, review the source hash/version, and send `Sign`-mode requests after the frontend materializes the current workspace state into an immutable PDF snapshot and the backend stores that exact source. Milestone 5 extends the same immutable boundary to `Fill and Sign`: reviewed Search & Fill data and stored Fill By Link respondent records now freeze through the existing `/api/forms/materialize` path, `fill_link_response` provenance is stored on the signing request when available, and the owner must explicitly confirm that the current filled PDF is the exact record to freeze before send. The signing dialog now supports one-recipient manual entry, pasted TXT/CSV batches, and uploaded `.txt` / `.csv` recipient files, with invalid rows called out before drafts are saved.
+- The owner signing dialog also has a dedicated `Responses` tab for the active document. It summarizes waiting vs signed requests, highlights manual follow-up cases when invite delivery is unavailable, and exposes source-PDF, signed-form, and audit-receipt downloads directly from the workspace.
+- Template Fill By Link `Responses` now surface linked signing state too. When a response completes the post-submit signing path, the owner can download the signed PDF and audit receipt directly from that response row instead of relying on the respondent completion screen.
+- Milestone 3 turned the public route into a real signer ceremony: business requests go through review -> adopt signature -> explicit finish, consumer requests insert a separate e-consent step first, and every action is tied to the immutable PDF hash plus a public signing session. Milestone 4 completes the artifact loop so a finished request now stores a signed PDF, a KMS-sealed audit-manifest envelope, and a human-readable audit receipt; the public completion page exposes signer downloads for the signed PDF and audit receipt while owner APIs expose the full artifact set.
 - Group Fill By Link merges every distinct respondent-facing field across the group into one HTML form while individual template links remain available.
 - Editing the membership of a group closes its active group Fill By Link so the owner must reopen it against the updated group schema.
 - Respondents fill a DullyPDF-hosted HTML form, not the PDF itself.
 - The owner dialog is now a large web-form builder with global settings, searchable question management, live preview, and a separate responses tab.
-- Owners can set global defaults such as `Require all visible questions`, form intro text, and a default text character limit, then override requiredness and char limits per question.
+- Owners can set global defaults such as `Require all visible questions`, form intro text, a default text character limit, and template-only respondent PDF behavior. Respondent PDF downloads stay `Flat PDF` by default so submitted values are baked into page content, and template links can opt into `Editable PDF` downloads when preserving form widgets is more important than a receipt-style copy. If post-submit signing is enabled, respondent downloads are forced back to `Flat PDF` so the response snapshot used for signing never exposes an editable public artifact.
 - Template links can add custom web-form questions (`text`, `textarea`, `date`, `checkbox`, `radio`, `select`, `email`, `phone`) while group links currently work from the merged PDF-derived field set only.
-- Owners review stored respondent submissions inside the workspace and materialize the final PDF only when they select a respondent and run Search & Fill against the target template or group. Template links can also optionally expose a post-submit PDF download for the respondent's own submitted copy.
+- When post-submit signing is enabled for a template link, the owner must map a signer name question and signer email question. The backend creates the signing request from the stored response snapshot, materializes the immutable filled PDF server-side, then returns a signing handoff payload so the respondent can continue directly into `/sign/:token`.
+- If that handoff fails transiently, the respondent success screen now exposes a retry action that reuses the stored Fill By Link response instead of asking them to refill the form.
+- Owners review stored respondent submissions inside the workspace and materialize the final PDF only when they select a respondent and run Search & Fill against the target template or group. Template links can also optionally expose a post-submit PDF download for the respondent's own submitted copy, with a publish-time choice between the flat default and an editable-with-fields variant.
 - Tier messaging exposed in the marketing/docs surface is: free = 1 active link and 5 accepted responses, premium = a shareable link on every saved template and up to 10,000 responses per link.
 
 ## Auth and profile

@@ -214,7 +214,10 @@ function mapAnnotationType(annotation: PdfJsAnnotation): FieldType {
     return 'signature';
   }
   if (annotation.fieldType === 'Btn') {
-    if (annotation.checkBox || annotation.radioButton) {
+    if (annotation.radioButton) {
+      return 'radio';
+    }
+    if (annotation.checkBox) {
       return 'checkbox';
     }
     return 'text';
@@ -230,7 +233,10 @@ function mapAnnotationType(annotation: PdfJsAnnotation): FieldType {
 
 function mapFieldObjectType(fieldType?: string): FieldType {
   const normalized = (fieldType || '').toLowerCase();
-  if (normalized === 'checkbox' || normalized === 'radio') {
+  if (normalized === 'radio') {
+    return 'radio';
+  }
+  if (normalized === 'checkbox') {
     return 'checkbox';
   }
   if (normalized === 'signature') {

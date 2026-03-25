@@ -115,9 +115,20 @@ function prepareFieldRow(field: PdfField): PreparedFieldRow {
   const nameClassName =
     nameTier && nameTier !== 'high' ? `field-row__name--conf-${nameTier}` : '';
 
+  const radioSearchTokens = field.type === 'radio'
+    ? [
+        field.radioGroupLabel,
+        field.radioGroupKey,
+        field.radioOptionLabel,
+        field.radioOptionKey,
+      ]
+        .filter(Boolean)
+        .join(' ')
+    : '';
+
   return {
     field,
-    searchName: field.name.toLowerCase(),
+    searchName: `${field.name} ${radioSearchTokens}`.trim().toLowerCase(),
     typeLabel: fieldTypeLabel(field.type),
     sizeLabel: formatSize(field.rect),
     fieldConfidenceValue: fieldConfidence ?? -1,
@@ -164,6 +175,11 @@ const FieldListRow = memo(function FieldListRow({
             {row.typeLabel}
           </span>
           <span className="field-row__page">Page {row.field.page}</span>
+          {row.field.type === 'radio' && row.field.radioGroupLabel ? (
+            <span className="field-row__group">
+              {row.field.radioGroupLabel}
+            </span>
+          ) : null}
           {row.showConfidence ? (
             <span className="field-row__confidence-group">
               {row.fieldConfidenceText ? (

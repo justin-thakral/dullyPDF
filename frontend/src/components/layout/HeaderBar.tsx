@@ -2,6 +2,7 @@
  * Top navigation bar with zoom, user info, and data source actions.
  */
 import { useEffect, useRef, useState } from 'react';
+import { DEMO_DISABLED_MESSAGE } from '../../config/appConstants';
 import type { DataSourceKind } from '../../types';
 
 const HEADER_GROUP_TEMPLATE_TRIGGER_MAX_CHARS = 22;
@@ -52,7 +53,11 @@ type HeaderBarProps = {
   canSearchFill?: boolean;
   onOpenFillLink?: () => void;
   canFillLink?: boolean;
-  onDownload?: () => void;
+  onOpenSignatureRequest?: () => void;
+  canSendForSignature?: boolean;
+  onOpenTemplateApi?: () => void;
+  canOpenTemplateApi?: boolean;
+  onDownload?: (mode?: 'editable' | 'flat') => void;
   onDownloadGroup?: () => void;
   onSaveToProfile?: () => void;
   downloadInProgress?: boolean;
@@ -142,6 +147,10 @@ export function HeaderBar({
   canSearchFill = false,
   onOpenFillLink,
   canFillLink = false,
+  onOpenSignatureRequest,
+  canSendForSignature = false,
+  onOpenTemplateApi,
+  canOpenTemplateApi = false,
   onDownload,
   onDownloadGroup,
   onSaveToProfile,
@@ -168,23 +177,27 @@ export function HeaderBar({
     renameAndMapGroupButtonLabel ||
     (renameAndMapGroupInProgress ? 'Running group action…' : 'Rename + Map Group');
   const demoOverride = demoLocked && Boolean(onDemoLockedAction);
+  const demoLockedHint = demoOverride ? DEMO_DISABLED_MESSAGE : null;
   const deferSchemaPrereqHint = isSchemaPrerequisiteHint(mapSchemaDisabledReason);
   const disableMapSchema = demoOverride
-    ? false
+    ? true
     : mappingInProgress || mapSchemaInProgress || (!canMapSchema && !deferSchemaPrereqHint);
   const disableRename =
-    demoOverride ? false : !canRename || mappingInProgress || renameInProgress || mapSchemaInProgress;
+    demoOverride ? true : !canRename || mappingInProgress || renameInProgress || mapSchemaInProgress;
   const disableRenameAndMap =
-    demoOverride ? false : !canRenameAndMap || mappingInProgress || renameInProgress || mapSchemaInProgress;
+    demoOverride ? true : !canRenameAndMap || mappingInProgress || renameInProgress || mapSchemaInProgress;
   const disableRenameAndMapGroup =
-    demoOverride ? false : !canRenameAndMapGroup || mappingInProgress || renameInProgress || mapSchemaInProgress || renameAndMapGroupInProgress;
+    demoOverride ? true : !canRenameAndMapGroup || mappingInProgress || renameInProgress || mapSchemaInProgress || renameAndMapGroupInProgress;
   const disableSearch = !canSearchFill || mappingInProgress;
-  const disableFillLink = !canFillLink || mappingInProgress;
+  const disableFillLink = demoOverride ? true : !canFillLink || mappingInProgress;
+  const disableSendForSignature = !canSendForSignature || mappingInProgress;
+  const disableTemplateApi = demoOverride ? true : !canOpenTemplateApi;
   const showDemoFillLinkDocs = demoLocked && Boolean(demoFillLinkDocsHref);
   const showDemoCreateGroupDocs = demoLocked && Boolean(demoCreateGroupDocsHref);
+  const showDemoDocs = showDemoFillLinkDocs || showDemoCreateGroupDocs;
   const showSearchHint = !canSearchFill;
   const rawActionHint = demoOverride
-    ? null
+    ? (showDemoDocs ? null : demoLockedHint)
     : hasGroupContext && disableRenameAndMapGroup
       ? renameAndMapGroupDisabledReason
       : disableMapSchema
@@ -196,22 +209,23 @@ export function HeaderBar({
           : null;
   const actionHint = isSchemaPrerequisiteHint(rawActionHint) ? null : rawActionHint;
   const mapSchemaTooltip = disableMapSchema
-    ? mapSchemaDisabledReason || 'Mapping is unavailable right now.'
+    ? demoLockedHint || mapSchemaDisabledReason || 'Mapping is unavailable right now.'
     : 'Map PDF field names to schema headers';
   const renameTooltip = disableRename
-    ? renameDisabledReason || 'Rename is unavailable right now.'
+    ? demoLockedHint || renameDisabledReason || 'Rename is unavailable right now.'
     : 'Rename PDF field names using OpenAI';
   const renameAndMapTooltip = disableRenameAndMap
-    ? renameAndMapDisabledReason || 'Rename + Map is unavailable right now.'
+    ? demoLockedHint || renameAndMapDisabledReason || 'Rename + Map is unavailable right now.'
     : 'Run Rename and Map in one step';
   const renameAndMapGroupTooltip = disableRenameAndMapGroup
-    ? renameAndMapGroupDisabledReason || 'Rename + Map Group is unavailable right now.'
+    ? demoLockedHint || renameAndMapGroupDisabledReason || 'Rename + Map Group is unavailable right now.'
     : `Run Rename + Map for every saved form in ${groupName || 'this group'}`;
   const disableGroupSelect =
     groupTemplateSwitchInProgress || mappingInProgress || renameInProgress || mapSchemaInProgress || renameAndMapGroupInProgress;
   const disableDownload = demoOverride ? false : !canDownload || downloadInProgress;
   const disableDownloadGroup = demoOverride ? false : !canDownloadGroup || downloadGroupInProgress;
-  const disableSave = demoOverride ? false : !canSave || saveInProgress;
+  const disableSave = demoOverride ? true : !canSave || saveInProgress;
+  const disableDataSource = mappingInProgress || demoOverride;
   const activeGroupTemplate =
     groupTemplates.find((template) => template.id === activeGroupTemplateId) ||
     groupTemplates[0] ||
@@ -232,6 +246,7 @@ export function HeaderBar({
 
   const [showDataMenu, setShowDataMenu] = useState(false);
   const [showGroupMenu, setShowGroupMenu] = useState(false);
+  const [showDownloadMenu, setShowDownloadMenu] = useState(false);
   const [zoomPercentInput, setZoomPercentInput] = useState(String(Math.round(scale * 100)));
   const isConnected = dataSourceKind !== 'none';
   const connectedKind =
@@ -246,6 +261,7 @@ export function HeaderBar({
   const dataSourceSubtitle = isConnected ? null : 'CSV/XLS/JSON/TXT';
   const dataSourceMenuRef = useRef<HTMLDivElement | null>(null);
   const groupMenuRef = useRef<HTMLDivElement | null>(null);
+  const downloadMenuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const handleClick = (event: MouseEvent) => {
@@ -253,19 +269,24 @@ export function HeaderBar({
       if (!target) return;
       const clickedInsideDataSource = dataSourceMenuRef.current?.contains(target) ?? false;
       const clickedInsideGroupMenu = groupMenuRef.current?.contains(target) ?? false;
+      const clickedInsideDownloadMenu = downloadMenuRef.current?.contains(target) ?? false;
       if (!clickedInsideDataSource) {
         setShowDataMenu(false);
       }
       if (!clickedInsideGroupMenu) {
         setShowGroupMenu(false);
       }
+      if (!clickedInsideDownloadMenu) {
+        setShowDownloadMenu(false);
+      }
     };
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
       setShowDataMenu(false);
       setShowGroupMenu(false);
+      setShowDownloadMenu(false);
     };
-    if (showDataMenu || showGroupMenu) {
+    if (showDataMenu || showGroupMenu || showDownloadMenu) {
       window.addEventListener('mousedown', handleClick);
       window.addEventListener('keydown', handleEscape);
     }
@@ -273,11 +294,17 @@ export function HeaderBar({
       window.removeEventListener('mousedown', handleClick);
       window.removeEventListener('keydown', handleEscape);
     };
-  }, [showDataMenu, showGroupMenu]);
+  }, [showDataMenu, showGroupMenu, showDownloadMenu]);
 
   useEffect(() => {
     setShowGroupMenu(false);
   }, [activeGroupTemplateId]);
+
+  useEffect(() => {
+    if (downloadInProgress) {
+      setShowDownloadMenu(false);
+    }
+  }, [downloadInProgress]);
 
   useEffect(() => {
     setZoomPercentInput(String(Math.round(scale * 100)));
@@ -496,7 +523,7 @@ export function HeaderBar({
                     setShowGroupMenu(false);
                     setShowDataMenu((prev) => !prev);
                   }}
-                  disabled={mappingInProgress}
+                  disabled={disableDataSource}
                   aria-haspopup="menu"
                   aria-expanded={showDataMenu}
                 >
@@ -692,7 +719,7 @@ export function HeaderBar({
                   className="ui-button ui-button--ghost ui-button--compact"
                   href={demoFillLinkDocsHref}
                 >
-                  See Link Filling docs
+                  Fill By Link docs
                 </a>
               ) : null}
               {showDemoCreateGroupDocs ? (
@@ -700,7 +727,7 @@ export function HeaderBar({
                   className="ui-button ui-button--ghost ui-button--compact"
                   href={demoCreateGroupDocsHref}
                 >
-                  See Create Group docs
+                  Create Group docs
                 </a>
               ) : null}
               {!showDemoFillLinkDocs && !showDemoCreateGroupDocs && onOpenFillLink ? (
@@ -715,9 +742,26 @@ export function HeaderBar({
                     onOpenFillLink();
                   }}
                   disabled={disableFillLink}
-                  title={canFillLink ? 'Publish or manage a DullyPDF Fill By Link.' : 'Load a saved template to use Fill By Link.'}
+                  title={canFillLink ? 'Publish or manage a DullyPDF web form link.' : 'Load a saved template to use Fill By Web Form Link.'}
                 >
-                  Fill By Link
+                  Fill By Web Form Link
+                </button>
+              ) : null}
+              {onOpenSignatureRequest ? (
+                <button
+                  className="ui-button ui-button--ghost ui-button--compact"
+                  type="button"
+                  onClick={() => {
+                    if (demoOverride) {
+                      onDemoLockedAction?.();
+                      return;
+                    }
+                    onOpenSignatureRequest();
+                  }}
+                  disabled={disableSendForSignature}
+                  title={canSendForSignature ? 'Create a signing request draft and email it to recipients.' : 'Load a PDF to prepare a signing request.'}
+                >
+                  Send PDF for Signature by email
                 </button>
               ) : null}
             </div>
@@ -725,17 +769,72 @@ export function HeaderBar({
           {actionHint ? <span className="ui-header__action-hint">{actionHint}</span> : null}
           {onSaveToProfile ? (
             <div className="ui-header__save-row ui-header__save-row--inline">
-              {onDownload ? (
+              {onOpenTemplateApi ? (
                 <button
                   className="ui-button ui-button--primary ui-button--compact ui-header__save"
                   type="button"
                   onClick={() => {
-                    onDownload?.();
+                    if (demoOverride) {
+                      onDemoLockedAction?.();
+                      return;
+                    }
+                    onOpenTemplateApi();
                   }}
-                  disabled={disableDownload}
+                  disabled={disableTemplateApi}
+                  title={canOpenTemplateApi ? 'Publish or manage a template-scoped PDF Fill API endpoint.' : 'Save a template to enable API Fill.'}
                 >
-                  {downloadInProgress ? 'Downloading...' : 'Download'}
+                  API Fill
                 </button>
+              ) : null}
+              {onDownload ? (
+                <div ref={downloadMenuRef} className="ui-header__download-menu-shell">
+                  <button
+                    className="ui-button ui-button--primary ui-button--compact ui-header__save"
+                    type="button"
+                    aria-haspopup="menu"
+                    aria-expanded={showDownloadMenu}
+                    onClick={() => {
+                      if (disableDownload) {
+                        return;
+                      }
+                      setShowDataMenu(false);
+                      setShowGroupMenu(false);
+                      setShowDownloadMenu((previous) => !previous);
+                    }}
+                    disabled={disableDownload}
+                  >
+                    <span>{downloadInProgress ? 'Downloading...' : 'Download'}</span>
+                    {!downloadInProgress ? <span className="ui-header__download-caret" aria-hidden="true">▾</span> : null}
+                  </button>
+                  {showDownloadMenu && !disableDownload ? (
+                    <div className="ui-header__download-menu" role="menu" aria-label="Choose download format">
+                      <button
+                        type="button"
+                        className="ui-header__download-item"
+                        role="menuitem"
+                        onClick={() => {
+                          setShowDownloadMenu(false);
+                          onDownload?.('flat');
+                        }}
+                      >
+                        <span className="ui-header__download-item-title">Download flat PDF</span>
+                        <span className="ui-header__download-item-copy">Bake field values into a non-editable copy.</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="ui-header__download-item"
+                        role="menuitem"
+                        onClick={() => {
+                          setShowDownloadMenu(false);
+                          onDownload?.('editable');
+                        }}
+                      >
+                        <span className="ui-header__download-item-title">Download editable PDF</span>
+                        <span className="ui-header__download-item-copy">Keep the form fields intact for later editing.</span>
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
               ) : null}
               {onDownloadGroup ? (
                 <button

@@ -91,6 +91,9 @@ def test_profile_response_shape_for_base_and_god(
             "savedFormsMax": 3,
             "fillLinksActiveMax": 1,
             "fillLinkResponsesMax": 5,
+            "templateApiActiveMax": 1,
+            "templateApiRequestsMonthlyMax": 250,
+            "templateApiMaxPages": 25,
         },
     )
     response = client.get("/api/profile", headers=auth_headers)
@@ -103,6 +106,7 @@ def test_profile_response_shape_for_base_and_god(
     assert response.json()["role"] == "base"
     assert response.json()["limits"]["fillLinksActiveMax"] == 1
     assert response.json()["limits"]["fillLinkResponsesMax"] == 5
+    assert response.json()["limits"]["templateApiActiveMax"] == 1
     assert response.json()["retention"]["status"] == "grace_period"
     assert response.json()["retention"]["pendingDeleteTemplateIds"] == ["tpl-9"]
     assert response.json()["billing"] == {

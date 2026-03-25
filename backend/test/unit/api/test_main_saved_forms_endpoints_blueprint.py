@@ -52,7 +52,6 @@ def test_saved_form_get_includes_fill_rule_metadata(client, app_main, base_user,
             template_id="tpl-1",
             metadata={
                 "checkboxRules": [{"databaseField": "consent", "groupKey": "consent_group"}],
-                "checkboxHints": [{"databaseField": "consent", "groupKey": "consent_group"}],
                 "textTransformRules": [{"targetField": "full_name", "operation": "copy", "sources": ["first_name"]}],
             },
         ),
@@ -62,7 +61,6 @@ def test_saved_form_get_includes_fill_rule_metadata(client, app_main, base_user,
     assert response.status_code == 200
     payload = response.json()
     assert payload["checkboxRules"] == [{"databaseField": "consent", "groupKey": "consent_group"}]
-    assert payload["checkboxHints"] == [{"databaseField": "consent", "groupKey": "consent_group"}]
     assert payload["textTransformRules"] == [{"targetField": "full_name", "operation": "copy", "sources": ["first_name"]}]
     assert payload["fillRules"]["textTransformRules"] == payload["textTransformRules"]
 
@@ -560,7 +558,6 @@ def test_save_form_merges_fill_rule_metadata_and_cleans_up_on_db_failure(
         "_get_session_entry_if_present",
         return_value={
             "checkboxRules": [{"databaseField": "consent", "groupKey": "consent_group"}],
-            "checkboxHints": [{"databaseField": "consent", "groupKey": "consent_group"}],
             "textTransformRules": [{"targetField": "full_name", "operation": "copy", "sources": ["first_name"]}],
         },
     )
@@ -579,9 +576,9 @@ def test_save_form_merges_fill_rule_metadata_and_cleans_up_on_db_failure(
     metadata = create_mock.call_args.kwargs["metadata"]
     assert metadata["originalSessionId"] == "sess-1"
     assert metadata["checkboxRules"] == [{"databaseField": "consent", "groupKey": "consent_group"}]
-    assert metadata["checkboxHints"] == [{"databaseField": "consent", "groupKey": "consent_group"}]
     assert metadata["textTransformRules"] == [{"targetField": "full_name", "operation": "copy", "sources": ["first_name"]}]
     assert metadata["fillRules"]["textTransformRules"] == metadata["textTransformRules"]
+    assert "checkboxHints" not in metadata
     assert delete_mock.call_count == 2
 
 
@@ -612,7 +609,6 @@ def test_save_form_uses_explicit_empty_fill_rule_payloads_instead_of_session_fal
         "_get_session_entry_if_present",
         return_value={
             "checkboxRules": [{"databaseField": "legacy", "groupKey": "legacy_group"}],
-            "checkboxHints": [{"databaseField": "legacy", "groupKey": "legacy_group"}],
             "textTransformRules": [{"targetField": "legacy", "operation": "copy", "sources": ["legacy"]}],
         },
     )
@@ -625,7 +621,6 @@ def test_save_form_uses_explicit_empty_fill_rule_payloads_instead_of_session_fal
             "name": "Name",
             "sessionId": "sess-1",
             "checkboxRules": "[]",
-            "checkboxHints": "[]",
             "textTransformRules": "[]",
         },
         headers=auth_headers,
@@ -633,8 +628,8 @@ def test_save_form_uses_explicit_empty_fill_rule_payloads_instead_of_session_fal
     assert response.status_code == 200
     metadata = create_mock.call_args.kwargs["metadata"]
     assert metadata["checkboxRules"] == []
-    assert metadata["checkboxHints"] == []
     assert metadata["textTransformRules"] == []
+    assert "checkboxHints" not in metadata
 
 
 def test_save_form_cleans_uploaded_form_blob_when_template_upload_fails(

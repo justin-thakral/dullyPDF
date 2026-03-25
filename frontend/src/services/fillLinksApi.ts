@@ -1,7 +1,7 @@
 /**
  * Dedicated API service for Fill By Link endpoints.
  */
-import type { CheckboxHint, TextTransformRule } from '../types';
+import type { TextTransformRule } from '../types';
 import { apiFetch, apiJsonFetch } from './apiConfig';
 
 type AbortableRequestOptions = {
@@ -77,6 +77,16 @@ export type FillLinkWebFormConfig = {
   questions?: FillLinkQuestion[];
 };
 
+export type FillLinkSigningConfig = {
+  enabled?: boolean;
+  signatureMode?: 'business' | 'consumer';
+  documentCategory?: string | null;
+  documentCategoryLabel?: string | null;
+  manualFallbackEnabled?: boolean;
+  signerNameQuestionKey?: string | null;
+  signerEmailQuestionKey?: string | null;
+};
+
 export type FillLinkSummary = {
   id?: string;
   scopeType?: 'template' | 'group' | string;
@@ -101,8 +111,11 @@ export type FillLinkSummary = {
   requireAllFields?: boolean;
   allowRespondentPdfDownload?: boolean;
   respondentPdfDownloadEnabled?: boolean;
+  respondentPdfEditableEnabled?: boolean;
   introText?: string | null;
   webFormConfig?: FillLinkWebFormConfig | null;
+  signingConfig?: FillLinkSigningConfig | null;
+  postSubmitSigningEnabled?: boolean;
   questions?: FillLinkQuestion[];
 };
 
@@ -116,6 +129,22 @@ export type FillLinkResponse = {
   respondentSecondaryLabel?: string | null;
   submittedAt?: string | null;
   answers: Record<string, unknown>;
+  signingRequestId?: string | null;
+  signingStatus?: string | null;
+  signingPublicPath?: string | null;
+  signingCompletedAt?: string | null;
+  linkedSigning?: {
+    requestId: string;
+    status?: string | null;
+    completedAt?: string | null;
+    manualFallbackRequestedAt?: string | null;
+    publicPath?: string | null;
+    artifacts?: {
+      sourcePdf?: { available?: boolean; downloadPath?: string | null } | null;
+      signedPdf?: { available?: boolean; downloadPath?: string | null } | null;
+      auditReceipt?: { available?: boolean; downloadPath?: string | null } | null;
+    } | null;
+  } | null;
 };
 
 export type FillLinkTemplateFieldPayload = {
@@ -134,7 +163,6 @@ export type FillLinkGroupTemplatePayload = {
   templateName?: string;
   fields: FillLinkTemplateFieldPayload[];
   checkboxRules?: Array<Record<string, unknown>>;
-  checkboxHints?: Array<Record<string, unknown>>;
   textTransformRules?: Array<Record<string, unknown>>;
 };
 
@@ -145,6 +173,22 @@ export type PublicFillLinkSubmitResult = {
   link: FillLinkSummary;
   responseDownloadPath?: string | null;
   responseDownloadAvailable?: boolean;
+  responseDownloadMode?: 'flat' | 'editable' | string | null;
+  signing?: {
+    enabled?: boolean;
+    available?: boolean;
+    requestId?: string | null;
+    status?: string | null;
+    publicPath?: string | null;
+    errorMessage?: string | null;
+  } | null;
+};
+
+export type PublicFillLinkRetrySigningResult = {
+  success: boolean;
+  responseId?: string | null;
+  link: FillLinkSummary;
+  signing?: PublicFillLinkSubmitResult['signing'];
 };
 
 // ---------------------------------------------------------------------------
@@ -158,10 +202,18 @@ export function normalizeFillLinkSummary(link: FillLinkSummary | null | undefine
   const respondentPdfDownloadEnabled = typeof link.respondentPdfDownloadEnabled === 'boolean'
     ? link.respondentPdfDownloadEnabled
     : Boolean(link.allowRespondentPdfDownload);
+  const respondentPdfEditableEnabled = respondentPdfDownloadEnabled && typeof link.respondentPdfEditableEnabled === 'boolean'
+    ? link.respondentPdfEditableEnabled
+    : false;
   return {
     ...link,
     allowRespondentPdfDownload: respondentPdfDownloadEnabled,
     respondentPdfDownloadEnabled,
+    respondentPdfEditableEnabled,
+    postSubmitSigningEnabled:
+      typeof link.postSubmitSigningEnabled === 'boolean'
+        ? link.postSubmitSigningEnabled
+        : Boolean(link.signingConfig?.enabled),
     webFormConfig:
       link.webFormConfig && typeof link.webFormConfig === 'object'
         ? {
@@ -169,12 +221,16 @@ export function normalizeFillLinkSummary(link: FillLinkSummary | null | undefine
           questions: Array.isArray(link.webFormConfig.questions) ? link.webFormConfig.questions : [],
         }
         : null,
+    signingConfig:
+      link.signingConfig && typeof link.signingConfig === 'object'
+        ? { ...link.signingConfig }
+        : null,
   };
 }
 
 function normalizePublicFillLinkSubmitResult(payload: any): PublicFillLinkSubmitResult {
   const download = payload?.download && typeof payload.download === 'object'
-    ? payload.download as { enabled?: unknown; downloadPath?: unknown }
+    ? payload.download as { enabled?: unknown; downloadPath?: unknown; mode?: unknown }
     : null;
   const responseDownloadAvailable = typeof payload?.responseDownloadAvailable === 'boolean'
     ? payload.responseDownloadAvailable
@@ -184,11 +240,28 @@ function normalizePublicFillLinkSubmitResult(payload: any): PublicFillLinkSubmit
     : typeof download?.downloadPath === 'string'
       ? download.downloadPath
       : null;
+  const responseDownloadMode = typeof payload?.responseDownloadMode === 'string'
+    ? payload.responseDownloadMode
+    : typeof download?.mode === 'string'
+      ? download.mode
+      : null;
   return {
     ...payload,
     link: normalizeFillLinkSummary(payload?.link) || { status: 'closed' },
     responseDownloadAvailable,
     responseDownloadPath,
+    responseDownloadMode,
+    signing:
+      payload?.signing && typeof payload.signing === 'object'
+        ? {
+          enabled: Boolean(payload.signing.enabled),
+          available: Boolean(payload.signing.available),
+          requestId: typeof payload.signing.requestId === 'string' ? payload.signing.requestId : null,
+          status: typeof payload.signing.status === 'string' ? payload.signing.status : null,
+          publicPath: typeof payload.signing.publicPath === 'string' ? payload.signing.publicPath : null,
+          errorMessage: typeof payload.signing.errorMessage === 'string' ? payload.signing.errorMessage : null,
+        }
+        : null,
   };
 }
 
@@ -229,14 +302,15 @@ export class FillLinksApiService {
     title?: string;
     requireAllFields?: boolean;
     allowRespondentPdfDownload?: boolean;
+    allowRespondentEditablePdfDownload?: boolean;
     webFormConfig?: FillLinkWebFormConfig;
+    signingConfig?: FillLinkSigningConfig;
     fields: FillLinkTemplateFieldPayload[];
     checkboxRules?: Array<Record<string, unknown>>;
-    checkboxHints?: CheckboxHint[];
     textTransformRules?: TextTransformRule[];
     groupTemplates?: FillLinkGroupTemplatePayload[];
   }): Promise<FillLinkSummary> {
-    const { allowRespondentPdfDownload, ...rest } = payload;
+    const { allowRespondentPdfDownload, allowRespondentEditablePdfDownload, ...rest } = payload;
     const response = await apiFetch('POST', '/api/fill-links', {
       headers: {
         'Content-Type': 'application/json',
@@ -245,6 +319,9 @@ export class FillLinksApiService {
         ...rest,
         ...(typeof allowRespondentPdfDownload === 'boolean'
           ? { respondentPdfDownloadEnabled: allowRespondentPdfDownload }
+          : {}),
+        ...(typeof allowRespondentEditablePdfDownload === 'boolean'
+          ? { respondentPdfEditableEnabled: allowRespondentEditablePdfDownload }
           : {}),
       }),
     });
@@ -262,16 +339,17 @@ export class FillLinksApiService {
       groupName?: string;
       requireAllFields?: boolean;
       allowRespondentPdfDownload?: boolean;
+      allowRespondentEditablePdfDownload?: boolean;
       webFormConfig?: FillLinkWebFormConfig;
+      signingConfig?: FillLinkSigningConfig;
       status?: 'active' | 'closed';
       fields?: FillLinkTemplateFieldPayload[];
       checkboxRules?: Array<Record<string, unknown>>;
-      checkboxHints?: CheckboxHint[];
       textTransformRules?: TextTransformRule[];
       groupTemplates?: FillLinkGroupTemplatePayload[];
     },
   ): Promise<FillLinkSummary> {
-    const { allowRespondentPdfDownload, ...rest } = payload;
+    const { allowRespondentPdfDownload, allowRespondentEditablePdfDownload, ...rest } = payload;
     const response = await apiFetch('PATCH', `/api/fill-links/${encodeURIComponent(linkId)}`, {
       headers: {
         'Content-Type': 'application/json',
@@ -280,6 +358,9 @@ export class FillLinksApiService {
         ...rest,
         ...(typeof allowRespondentPdfDownload === 'boolean'
           ? { respondentPdfDownloadEnabled: allowRespondentPdfDownload }
+          : {}),
+        ...(typeof allowRespondentEditablePdfDownload === 'boolean'
+          ? { respondentPdfEditableEnabled: allowRespondentEditablePdfDownload }
           : {}),
       }),
     });
@@ -367,6 +448,39 @@ export class FillLinksApiService {
     });
     const result = await apiJsonFetch<any>(response);
     return normalizePublicFillLinkSubmitResult(result);
+  }
+
+  /**
+   * Retry a post-submit signing handoff for an already stored public response.
+   */
+  static async retryPublicFillLinkSigning(
+    token: string,
+    payload: { responseId: string },
+  ): Promise<PublicFillLinkRetrySigningResult> {
+    const response = await apiFetch('POST', `/api/fill-links/public/${encodeURIComponent(token)}/retry-signing`, {
+      authMode: 'anonymous',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+    const result = await apiJsonFetch<any>(response);
+    return {
+      success: Boolean(result?.success),
+      responseId: typeof result?.responseId === 'string' ? result.responseId : null,
+      link: normalizeFillLinkSummary(result?.link) || { status: 'closed' },
+      signing:
+        result?.signing && typeof result.signing === 'object'
+          ? {
+            enabled: Boolean(result.signing.enabled),
+            available: Boolean(result.signing.available),
+            requestId: typeof result.signing.requestId === 'string' ? result.signing.requestId : null,
+            status: typeof result.signing.status === 'string' ? result.signing.status : null,
+            publicPath: typeof result.signing.publicPath === 'string' ? result.signing.publicPath : null,
+            errorMessage: typeof result.signing.errorMessage === 'string' ? result.signing.errorMessage : null,
+          }
+          : null,
+    };
   }
 
   /**

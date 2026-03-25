@@ -3,7 +3,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ComponentProps } from 'react';
 
-import type { CheckboxHint, CheckboxRule, PdfField, TextTransformRule } from '../../../../src/types';
+import type { CheckboxRule, PdfField, TextTransformRule } from '../../../../src/types';
 import SearchFillModal from '../../../../src/components/features/SearchFillModal';
 
 function makeField(overrides: Partial<PdfField> & Pick<PdfField, 'id' | 'name' | 'type' | 'page'>): PdfField {
@@ -29,7 +29,6 @@ function buildProps(overrides: Partial<ComponentProps<typeof SearchFillModal>> =
     rows: [{ mrn: '001', full_name: 'Ada Lovelace' }],
     fields: [] as PdfField[],
     checkboxRules: [] as CheckboxRule[],
-    checkboxHints: [] as CheckboxHint[],
     onFieldsChange: vi.fn(),
     onClearFields: vi.fn(),
     onAfterFill: vi.fn(),
@@ -157,7 +156,16 @@ describe('SearchFillModal', () => {
 
     await waitFor(() => {
       expect(onFieldsChange).toHaveBeenCalledTimes(1);
-      expect(onAfterFill).toHaveBeenCalledTimes(1);
+      expect(onAfterFill).toHaveBeenCalledWith({
+        row: {
+          mrn: '12345',
+          full_name: 'Grace Hopper',
+          dob: '1906-12-09',
+          phone: '+1-555-1000',
+          email: 'grace@example.com',
+        },
+        dataSourceKind: 'csv',
+      });
       expect(onClose).toHaveBeenCalledTimes(1);
     });
   });
@@ -198,7 +206,10 @@ describe('SearchFillModal', () => {
         { mrn: '100', full_name: 'Ada Lovelace' },
         ['tpl-a', 'tpl-b'],
       );
-      expect(onAfterFill).toHaveBeenCalledTimes(1);
+      expect(onAfterFill).toHaveBeenCalledWith({
+        row: { mrn: '100', full_name: 'Ada Lovelace' },
+        dataSourceKind: 'csv',
+      });
       expect(onClose).toHaveBeenCalledTimes(1);
     });
   });
@@ -425,7 +436,7 @@ describe('SearchFillModal', () => {
     expect(nextFields[0]?.value).toBe('2025-01-02');
   });
 
-  it('applies checkbox values from direct keys, aliases, hints, and rules with deterministic conflict resolution', async () => {
+  it('applies checkbox values from direct keys, aliases, and rules with deterministic conflict resolution', async () => {
     const user = userEvent.setup();
     const onFieldsChange = vi.fn();
     const fields = [
@@ -436,13 +447,6 @@ describe('SearchFillModal', () => {
       makeField({ id: 'drug_use_yes', name: 'drug_use_yes', type: 'checkbox', page: 1 }),
       makeField({ id: 'drug_use_no', name: 'drug_use_no', type: 'checkbox', page: 1 }),
       makeField({ id: 'marketing', name: 'i_marketing_opt_in', type: 'checkbox', page: 1 }),
-    ];
-    const checkboxHints: CheckboxHint[] = [
-      {
-        databaseField: 'pregnancy_status',
-        groupKey: 'pregnant',
-        directBooleanPossible: true,
-      },
     ];
     const checkboxRules: CheckboxRule[] = [
       {
@@ -476,7 +480,6 @@ describe('SearchFillModal', () => {
         },
       ],
       fields,
-      checkboxHints,
       checkboxRules,
       onFieldsChange,
     });
@@ -534,20 +537,6 @@ describe('SearchFillModal', () => {
     expect(document.body.querySelector('.searchfill-modal__card')).toBeTruthy();
   });
 
-  it('renders demo instruction copy inside the modal when provided', () => {
-    render(
-      <SearchFillModal
-        {...buildProps({
-          demoInstruction: 'Click Search to end the demo and fill Justin Thakral\'s information.',
-        })}
-      />,
-    );
-
-    expect(screen.getByRole('note', { name: 'Demo instruction' })).toBeTruthy();
-    expect(screen.getByText('Demo')).toBeTruthy();
-    expect(screen.getByText('Click Search to end the demo and fill Justin Thakral\'s information.')).toBeTruthy();
-  });
-
   it('applies multiple checkbox rules targeting different options in the same group', async () => {
     const user = userEvent.setup();
     const onFieldsChange = vi.fn();
@@ -597,54 +586,6 @@ describe('SearchFillModal', () => {
     expect(valueById.get('allergy_penicillin')).toBe(true);
     expect(valueById.get('allergy_shellfish')).toBe(true);
     expect(valueById.get('allergy_latex')).toBe(false);
-  });
-
-  it('applies checkbox rules before hints when both target the same group', async () => {
-    const user = userEvent.setup();
-    const onFieldsChange = vi.fn();
-    const fields = [
-      makeField({ id: 'consent_yes', name: 'consent_yes', type: 'checkbox', page: 1 }),
-      makeField({ id: 'consent_no', name: 'consent_no', type: 'checkbox', page: 1 }),
-    ];
-    const checkboxHints: CheckboxHint[] = [
-      {
-        databaseField: 'consent_status',
-        groupKey: 'consent',
-        directBooleanPossible: true,
-      },
-    ];
-    const checkboxRules: CheckboxRule[] = [
-      {
-        databaseField: 'consent_status',
-        groupKey: 'consent',
-        operation: 'enum',
-        valueMap: {
-          '0': 'yes',
-        },
-      },
-    ];
-
-    const props = buildProps({
-      columns: ['mrn', 'consent_status'],
-      rows: [{ mrn: '600', consent_status: '0' }],
-      fields,
-      checkboxHints,
-      checkboxRules,
-      onFieldsChange,
-    });
-    render(<SearchFillModal {...props} />);
-
-    await runSearch('600');
-    await user.click(screen.getByRole('button', { name: 'Fill PDF' }));
-
-    await waitFor(() => {
-      expect(onFieldsChange).toHaveBeenCalledTimes(1);
-    });
-    const nextFields = onFieldsChange.mock.calls[0][0] as PdfField[];
-    const valueById = new Map(nextFields.map((field) => [field.id, field.value]));
-
-    expect(valueById.get('consent_yes')).toBe(true);
-    expect(valueById.get('consent_no')).toBe(false);
   });
 
   it('applies checkbox rules when row values only exist under patient_ prefixed keys', async () => {

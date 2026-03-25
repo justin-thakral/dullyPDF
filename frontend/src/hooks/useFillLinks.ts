@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   BannerNotice,
-  CheckboxHint,
   CheckboxRule,
   PdfField,
   TextTransformRule,
@@ -10,6 +9,7 @@ import {
   ApiService,
   type FillLinkGroupTemplatePayload,
   type FillLinkResponse,
+  type FillLinkSigningConfig,
   type FillLinkSummary,
   type FillLinkTemplateFieldPayload,
   type FillLinkWebFormConfig,
@@ -252,10 +252,11 @@ export function useFillLinks(deps: UseFillLinksDeps) {
     title?: string | null;
     requireAllFields?: boolean;
     allowRespondentPdfDownload?: boolean;
+    allowRespondentEditablePdfDownload?: boolean;
     webFormConfig?: FillLinkWebFormConfig;
+    signingConfig?: FillLinkSigningConfig;
     fields: FillLinkTemplateFieldPayload[];
     checkboxRules?: Array<Record<string, unknown>>;
-    checkboxHints?: CheckboxHint[];
     textTransformRules?: TextTransformRule[];
     groupTemplates?: FillLinkGroupTemplatePayload[];
   }) => {
@@ -271,10 +272,11 @@ export function useFillLinks(deps: UseFillLinksDeps) {
         title: payload.title || undefined,
         requireAllFields: payload.requireAllFields,
         allowRespondentPdfDownload: payload.allowRespondentPdfDownload,
+        allowRespondentEditablePdfDownload: payload.allowRespondentEditablePdfDownload,
         webFormConfig: payload.webFormConfig,
+        signingConfig: payload.signingConfig,
         fields: payload.fields,
         checkboxRules: payload.checkboxRules,
-        checkboxHints: payload.checkboxHints,
         textTransformRules: payload.textTransformRules,
         groupTemplates: payload.groupTemplates,
       });
@@ -330,10 +332,11 @@ export function useFillLinks(deps: UseFillLinksDeps) {
       groupName?: string;
       requireAllFields?: boolean;
       allowRespondentPdfDownload?: boolean;
+      allowRespondentEditablePdfDownload?: boolean;
       webFormConfig?: FillLinkWebFormConfig;
+      signingConfig?: FillLinkSigningConfig;
       fields?: FillLinkTemplateFieldPayload[];
       checkboxRules?: Array<Record<string, unknown>>;
-      checkboxHints?: CheckboxHint[];
       textTransformRules?: TextTransformRule[];
       groupTemplates?: FillLinkGroupTemplatePayload[];
     },

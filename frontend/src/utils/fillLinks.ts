@@ -2,6 +2,7 @@ import type { CheckboxRule, PdfField } from '../types';
 import type { FillLinkResponse, FillLinkSummary, PublicFillLinkSubmitResult } from '../services/api';
 
 export const FILL_LINK_RESPONSE_ID_KEY = '__fill_link_response_id';
+export const FILL_LINK_LINK_ID_KEY = '__fill_link_link_id';
 export const FILL_LINK_RESPONDENT_LABEL_KEY = '__fill_link_respondent_label';
 export const FILL_LINK_RESPONDENT_SECONDARY_LABEL_KEY = '__fill_link_respondent_secondary_label';
 export const FILL_LINK_SUBMITTED_AT_KEY = '__fill_link_submitted_at';
@@ -23,6 +24,7 @@ export function buildFillLinkResponseRows(responses: FillLinkResponse[]) {
   return responses.map((entry) => ({
     ...(entry.answers || {}),
     [FILL_LINK_RESPONSE_ID_KEY]: entry.id,
+    [FILL_LINK_LINK_ID_KEY]: entry.linkId,
     [FILL_LINK_RESPONDENT_LABEL_KEY]: entry.respondentLabel,
     [FILL_LINK_RESPONDENT_SECONDARY_LABEL_KEY]: entry.respondentSecondaryLabel ?? '',
     [FILL_LINK_SUBMITTED_AT_KEY]: entry.submittedAt ?? '',
@@ -36,6 +38,12 @@ export function fillLinkRespondentPdfDownloadEnabled(
     return link.respondentPdfDownloadEnabled;
   }
   return Boolean(link?.allowRespondentPdfDownload);
+}
+
+export function fillLinkRespondentPdfEditableEnabled(
+  link: Pick<FillLinkSummary, 'respondentPdfEditableEnabled'> | null | undefined,
+): boolean {
+  return Boolean(link?.respondentPdfEditableEnabled);
 }
 
 export function fillLinkResponseDownloadEnabled(

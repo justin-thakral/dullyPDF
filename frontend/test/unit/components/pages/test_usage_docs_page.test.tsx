@@ -35,6 +35,22 @@ describe('UsageDocsPage', () => {
     expect(screen.getByRole('link', { name: 'Fill PDF By Link' }).getAttribute('href')).toBe('/fill-pdf-by-link');
   });
 
+  it('renders dedicated signature workflow docs content', () => {
+    render(<UsageDocsPage pageKey="signature-workflow" />);
+
+    expect(screen.getByRole('heading', { name: 'Signature Workflow' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Two entry paths, one signing engine' })).toBeTruthy();
+    expect(screen.getByText(/E-SIGN and UETA/i)).toBeTruthy();
+  });
+
+  it('renders dedicated API Fill docs content', () => {
+    render(<UsageDocsPage pageKey="api-fill" />);
+
+    expect(screen.getByRole('heading', { name: 'API Fill' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Owner manager flow' })).toBeTruthy();
+    expect(screen.getByText(/hosted backend endpoint that accepts JSON and returns a PDF/i)).toBeTruthy();
+  });
+
   it('updates document title based on page key', () => {
     const { rerender } = render(<UsageDocsPage pageKey="index" />);
     expect(document.title).toBe('PDF Form Automation Docs and Workflow Guide | DullyPDF');

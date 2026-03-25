@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FillLinkResponse } from '../../../src/services/api';
 import { useWorkspaceFillLinks } from '../../../src/hooks/useWorkspaceFillLinks';
 import {
+  FILL_LINK_LINK_ID_KEY,
   FILL_LINK_RESPONSE_ID_KEY,
   FILL_LINK_RESPONDENT_LABEL_KEY,
   FILL_LINK_SUBMITTED_AT_KEY,
@@ -112,7 +113,6 @@ function renderHarness(overrides: Record<string, unknown> = {}) {
     activeGroupTemplates: [],
     fields: [createField('full_name')],
     checkboxRules: [],
-    checkboxHints: [{ databaseField: 'consent', groupKey: 'consent' }],
     textTransformRules: [{ targetField: 'full_name', operation: 'copy', sources: ['full_name'] }],
     savedFillLinkPublishFingerprint: null,
     resolveGroupTemplateDirtyNames: () => [],
@@ -232,6 +232,7 @@ describe('useWorkspaceFillLinks', () => {
       rows: [
         {
           full_name: 'Ada Lovelace',
+          [FILL_LINK_LINK_ID_KEY]: 'link-1',
           [FILL_LINK_RESPONSE_ID_KEY]: 'resp-1',
           [FILL_LINK_RESPONDENT_LABEL_KEY]: 'Ada Lovelace',
           __fill_link_respondent_secondary_label: '',
@@ -239,6 +240,7 @@ describe('useWorkspaceFillLinks', () => {
         },
         {
           full_name: 'Grace Hopper',
+          [FILL_LINK_LINK_ID_KEY]: 'link-1',
           [FILL_LINK_RESPONSE_ID_KEY]: 'resp-2',
           [FILL_LINK_RESPONDENT_LABEL_KEY]: 'Grace Hopper',
           __fill_link_respondent_secondary_label: '',
@@ -248,6 +250,7 @@ describe('useWorkspaceFillLinks', () => {
       columns: [
         'full_name',
         FILL_LINK_RESPONSE_ID_KEY,
+        FILL_LINK_LINK_ID_KEY,
         FILL_LINK_RESPONDENT_LABEL_KEY,
         '__fill_link_respondent_secondary_label',
         FILL_LINK_SUBMITTED_AT_KEY,
@@ -354,6 +357,7 @@ describe('useWorkspaceFillLinks', () => {
       title: 'Template One',
       requireAllFields: true,
       allowRespondentPdfDownload: true,
+      allowRespondentEditablePdfDownload: false,
       fields: [
         expect.objectContaining({
           name: 'full_name',
@@ -362,8 +366,9 @@ describe('useWorkspaceFillLinks', () => {
         }),
       ],
       checkboxRules: [],
-      checkboxHints: [{ databaseField: 'consent', groupKey: 'consent' }],
       textTransformRules: [{ targetField: 'full_name', operation: 'copy', sources: ['full_name'] }],
+      webFormConfig: undefined,
+      signingConfig: undefined,
     });
   });
 
@@ -396,6 +401,7 @@ describe('useWorkspaceFillLinks', () => {
       title: 'Template One',
       requireAllFields: true,
       allowRespondentPdfDownload: true,
+      allowRespondentEditablePdfDownload: false,
       fields: [
         expect.objectContaining({
           name: 'full_name',
@@ -404,8 +410,9 @@ describe('useWorkspaceFillLinks', () => {
         }),
       ],
       checkboxRules: [],
-      checkboxHints: [{ databaseField: 'consent', groupKey: 'consent' }],
       textTransformRules: [{ targetField: 'full_name', operation: 'copy', sources: ['full_name'] }],
+      webFormConfig: undefined,
+      signingConfig: undefined,
     });
   });
 });

@@ -351,6 +351,52 @@ def _normalize_question_type(question_type: Optional[str]) -> str:
     return "text"
 
 
+def _question_candidate_keys(question: Dict[str, Any]) -> List[str]:
+    return [
+        _normalize_question_type(question.get("type")),
+        normalize_fill_link_key(question.get("key")),
+        normalize_fill_link_key(question.get("sourceField")),
+        normalize_fill_link_key(question.get("label")),
+    ]
+
+
+def _question_looks_like_email(question: Dict[str, Any]) -> bool:
+    for candidate in _question_candidate_keys(question):
+        if not candidate:
+            continue
+        if candidate == "email" or candidate.endswith("_email") or "email_address" in candidate:
+            return True
+    return False
+
+
+def _question_looks_like_phone(question: Dict[str, Any]) -> bool:
+    for candidate in _question_candidate_keys(question):
+        if not candidate:
+            continue
+        if candidate in {"phone", "mobile_phone", "telephone"}:
+            return True
+        if candidate.endswith("_phone") or candidate.endswith("_telephone"):
+            return True
+    return False
+
+
+def _infer_text_question_type(field_type: Optional[str], source_field: Optional[str]) -> str:
+    normalized_field_type = normalize_fill_link_key(field_type) or "text"
+    if normalized_field_type == "date":
+        return "date"
+    probe = {
+        "type": normalized_field_type,
+        "key": source_field,
+        "sourceField": source_field,
+        "label": source_field,
+    }
+    if _question_looks_like_email(probe):
+        return "email"
+    if _question_looks_like_phone(probe):
+        return "phone"
+    return "text"
+
+
 def _normalize_positive_int(value: Any, *, maximum: Optional[int] = None) -> Optional[int]:
     if value is None or value == "":
         return None
@@ -398,17 +444,69 @@ def build_fill_link_questions(
     rule_map = _normalize_rule_map(checkbox_rules)
     questions: list[dict[str, Any]] = []
     seen_text_keys: set[str] = set()
+    radio_groups: dict[str, dict[str, Any]] = {}
     checkbox_groups: dict[str, dict[str, Any]] = {}
 
     for field in ordered_fields:
         field_type = normalize_fill_link_key(field.get("type")) or "text"
+        if field_type == "radio":
+            raw_group_key = (
+                _coerce_text_answer(field.get("radioGroupKey"))
+                or _coerce_text_answer(field.get("radioGroupLabel"))
+                or _coerce_text_answer(field.get("group"))
+                or _coerce_text_answer(field.get("name"))
+            )
+            normalized_group_key = normalize_fill_link_key(raw_group_key)
+            if not raw_group_key or not normalized_group_key:
+                continue
+            group = radio_groups.get(normalized_group_key)
+            if group is None:
+                group = {
+                    "id": _default_fill_link_question_id(raw_group_key, "radio_group"),
+                    "key": raw_group_key,
+                    "label": humanize_fill_link_label(field.get("radioGroupLabel") or raw_group_key, fallback="Choice"),
+                    "type": "radio",
+                    "sourceType": "radio_group",
+                    "sourceField": raw_group_key,
+                    "groupKey": raw_group_key,
+                    "options": [],
+                    "visible": True,
+                    "required": False,
+                    "order": len(questions),
+                }
+                radio_groups[normalized_group_key] = group
+                questions.append(group)
+
+            option_key = (
+                _coerce_text_answer(field.get("radioOptionKey"))
+                or _coerce_text_answer(field.get("exportValue"))
+                or _coerce_text_answer(field.get("name"))
+            )
+            option_label = (
+                _coerce_text_answer(field.get("radioOptionLabel"))
+                or _coerce_text_answer(field.get("optionLabel"))
+                or option_key
+            )
+            normalized_option_key = normalize_fill_link_key(option_key or option_label)
+            if not normalized_option_key:
+                continue
+            if any(normalize_fill_link_key(option.get("key")) == normalized_option_key for option in group["options"]):
+                continue
+            group["options"].append(
+                {
+                    "key": option_key or normalized_option_key,
+                    "label": humanize_fill_link_label(option_label, fallback="Option"),
+                }
+            )
+            continue
+
         if field_type != "checkbox":
             source_field = (field.get("name") or "").strip()
             normalized_key = normalize_fill_link_key(source_field)
             if not source_field or not normalized_key or normalized_key in seen_text_keys:
                 continue
             seen_text_keys.add(normalized_key)
-            question_type = "date" if field_type == "date" else "text"
+            question_type = _infer_text_question_type(field_type, source_field)
             questions.append(
                 {
                     "id": _default_fill_link_question_id(source_field, "pdf_field"),
@@ -680,12 +778,33 @@ def _sort_fill_link_builder_questions(questions: List[Dict[str, Any]]) -> List[D
     return normalized
 
 
+def _question_is_signing_ceremony_managed(question: Dict[str, Any]) -> bool:
+    candidates = [
+        normalize_fill_link_key(question.get("type")),
+        normalize_fill_link_key(question.get("key")),
+        normalize_fill_link_key(question.get("sourceField")),
+        normalize_fill_link_key(question.get("label")),
+    ]
+    for candidate in candidates:
+        if not candidate:
+            continue
+        if (
+            candidate == "signature"
+            or candidate.endswith("_signature")
+            or candidate.startswith("signature_")
+            or "_signature_" in candidate
+        ):
+            return True
+    return False
+
+
 def build_fill_link_web_form_schema(
     default_questions: List[Dict[str, Any]],
     *,
     require_all_fields: bool = False,
     web_form_config: Optional[Dict[str, Any]] = None,
     allow_custom_questions: bool = True,
+    exclude_signing_questions: bool = False,
 ) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
     normalized_default_questions: List[Dict[str, Any]] = []
     for index, default_question in enumerate(_ensure_fill_link_identifier_question(default_questions)):
@@ -755,6 +874,8 @@ def build_fill_link_web_form_schema(
     published_questions: List[Dict[str, Any]] = []
     for question in stored_questions:
         if question.get("visible") is False:
+            continue
+        if exclude_signing_questions and _question_is_signing_ceremony_managed(question):
             continue
         question_type = _normalize_question_type(question.get("type"))
         next_question = dict(question)

@@ -14,4 +14,15 @@ describe('IntentLandingPage', () => {
       '/pdf-to-database-template',
     );
   });
+
+  it('renders long-form article sections for expanded landing pages', () => {
+    render(<IntentLandingPage pageKey="fill-pdf-from-csv" />);
+
+    expect(
+      screen.getByRole('heading', { level: 2, name: 'How Search and Fill works once the template is mapped' }),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(/DullyPDF treats the PDF template and the row data as two separate layers/i),
+    ).toBeTruthy();
+  });
 });

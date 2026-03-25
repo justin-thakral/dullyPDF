@@ -272,10 +272,12 @@ vi.mock('../../../src/components/features/SearchFillModal', () => ({
 }));
 
 vi.mock('../../../src/components/demo/DemoTour', () => ({
+  default: () => null,
   DemoTour: () => null,
 }));
 
 vi.mock('../../../src/components/features/FillLinkManagerDialog', () => ({
+  default: () => null,
   FillLinkManagerDialog: () => null,
 }));
 
@@ -371,7 +373,6 @@ const makeSavedFormMeta = (overrides: Record<string, unknown> = {}) => ({
   fillRules: {
     version: 1,
     checkboxRules: [],
-    checkboxHints: [],
     textTransformRules: [],
   },
   editorSnapshot: {

@@ -8,6 +8,7 @@ import {
 import { ApiError } from '../../services/apiConfig';
 import {
   fillLinkRespondentPdfDownloadEnabled,
+  fillLinkRespondentPdfEditableEnabled,
   fillLinkResponseDownloadEnabled,
 } from '../../utils/fillLinks';
 import {
@@ -197,6 +198,9 @@ export default function FillLinkPublicPage({ token }: FillLinkPublicPageProps) {
   const [submittedResponseId, setSubmittedResponseId] = useState<string | null>(null);
   const [submittedDownloadPath, setSubmittedDownloadPath] = useState<string | null>(null);
   const [submittedDownloadAvailable, setSubmittedDownloadAvailable] = useState(false);
+  const [signingPath, setSigningPath] = useState<string | null>(null);
+  const [signingErrorMessage, setSigningErrorMessage] = useState<string | null>(null);
+  const [retryingSigning, setRetryingSigning] = useState(false);
   const alertRef = useRef<HTMLDivElement | null>(null);
   const submitAttemptIdRef = useRef<string | null>(null);
 
@@ -204,6 +208,7 @@ export default function FillLinkPublicPage({ token }: FillLinkPublicPageProps) {
   const recaptchaRequired = useMemo(isRecaptchaRequired, []);
   const linkClosed = isLinkClosed(link);
   const respondentPdfDownloadAvailable = fillLinkRespondentPdfDownloadEnabled(link);
+  const respondentPdfEditableDownload = fillLinkRespondentPdfEditableEnabled(link);
   const questionCount = link?.questions?.length ?? 0;
   const requiredQuestionCount = useMemo(
     () => (link?.questions || []).filter((question) => isQuestionRequired(link, question)).length,
@@ -211,6 +216,7 @@ export default function FillLinkPublicPage({ token }: FillLinkPublicPageProps) {
   );
   const canDownloadSubmittedPdf = Boolean(
     submittedDownloadAvailable
+    && !signingPath
     && (submittedResponseId || submittedDownloadPath),
   );
 
@@ -222,6 +228,9 @@ export default function FillLinkPublicPage({ token }: FillLinkPublicPageProps) {
     setSubmittedResponseId(null);
     setSubmittedDownloadPath(null);
     setSubmittedDownloadAvailable(false);
+    setSigningPath(null);
+    setSigningErrorMessage(null);
+    setRetryingSigning(false);
     ApiService.getPublicFillLink(token)
       .then((payload) => {
         if (!isMounted) return;
@@ -259,11 +268,22 @@ export default function FillLinkPublicPage({ token }: FillLinkPublicPageProps) {
     scrollToAlert();
   }, [error, success]);
 
+  useEffect(() => {
+    if (!signingPath || typeof window === 'undefined') return;
+    const timeoutId = window.setTimeout(() => {
+      window.location.assign(signingPath);
+    }, 1500);
+    return () => window.clearTimeout(timeoutId);
+  }, [signingPath]);
+
   const clearSubmitFeedback = useCallback(() => {
     setSuccess(null);
     setSubmittedResponseId(null);
     setSubmittedDownloadPath(null);
     setSubmittedDownloadAvailable(false);
+    setSigningPath(null);
+    setSigningErrorMessage(null);
+    setRetryingSigning(false);
   }, []);
 
   const handleAnswerChange = (question: FillLinkQuestion, value: unknown) => {
@@ -338,7 +358,24 @@ export default function FillLinkPublicPage({ token }: FillLinkPublicPageProps) {
       setSubmittedResponseId(payload.responseId ?? null);
       setSubmittedDownloadPath(submitResult.responseDownloadPath?.trim() || null);
       setSubmittedDownloadAvailable(fillLinkResponseDownloadEnabled(submitResult));
-      setSuccess(payload.respondentLabel ? `Thanks, ${payload.respondentLabel}. Your response was submitted.` : 'Your response was submitted.');
+      const nextSigningPath = submitResult.signing?.available && submitResult.signing.publicPath
+        ? submitResult.signing.publicPath.trim()
+        : null;
+      setSigningPath(nextSigningPath || null);
+      setSigningErrorMessage(
+        submitResult.signing?.enabled && !submitResult.signing?.available
+          ? (submitResult.signing.errorMessage || 'Your form was submitted, but signing is unavailable right now.')
+          : null,
+      );
+      setSuccess(
+        nextSigningPath
+          ? (payload.respondentLabel
+            ? `Thanks, ${payload.respondentLabel}. Your form is ready for signature.`
+            : 'Your form is ready for signature.')
+          : (payload.respondentLabel
+            ? `Thanks, ${payload.respondentLabel}. Your response was submitted.`
+            : 'Your response was submitted.'),
+      );
     } catch (submitError) {
       if (submitError instanceof ApiError && submitError.status === 409) {
         try {
@@ -384,6 +421,41 @@ export default function FillLinkPublicPage({ token }: FillLinkPublicPageProps) {
     }
   }, [canDownloadSubmittedPdf, submittedDownloadPath, submittedResponseId, token]);
 
+  const handleContinueToSigning = useCallback(() => {
+    if (!signingPath || typeof window === 'undefined') {
+      return;
+    }
+    window.location.assign(signingPath);
+  }, [signingPath]);
+
+  const handleRetrySigning = useCallback(async () => {
+    if (!submittedResponseId) {
+      return;
+    }
+    setRetryingSigning(true);
+    setError(null);
+    try {
+      const payload = await ApiService.retryPublicFillLinkSigning(token, { responseId: submittedResponseId });
+      setLink(payload.link);
+      const nextSigningPath = payload.signing?.available && payload.signing.publicPath
+        ? payload.signing.publicPath.trim()
+        : null;
+      setSigningPath(nextSigningPath || null);
+      setSigningErrorMessage(
+        payload.signing?.enabled && !payload.signing?.available
+          ? (payload.signing.errorMessage || 'Your form was submitted, but signing is unavailable right now.')
+          : null,
+      );
+      if (nextSigningPath) {
+        setSuccess('Your form is ready for signature.');
+      }
+    } catch (retryError) {
+      setError(retryError instanceof Error ? retryError.message : 'Unable to retry the signing handoff.');
+    } finally {
+      setRetryingSigning(false);
+    }
+  }, [submittedResponseId, token]);
+
   return (
     <div className="fill-link-public-page">
       <div className="fill-link-public-page__shell">
@@ -396,9 +468,13 @@ export default function FillLinkPublicPage({ token }: FillLinkPublicPageProps) {
             <span className="fill-link-public-page__hero-badge">Respondent form</span>
           </div>
           <p className="fill-link-public-page__summary">
-            {respondentPdfDownloadAvailable
-              ? 'Complete this DullyPDF-hosted form. If the owner enabled it, you can download a PDF copy after you submit.'
-              : 'Complete this DullyPDF-hosted form. The owner will review your answers in the workspace and generate the final PDF later.'}
+            {link?.postSubmitSigningEnabled
+              ? 'Complete this DullyPDF-hosted form, then review the exact filled PDF and sign it on the next step.'
+              : respondentPdfDownloadAvailable
+                ? respondentPdfEditableDownload
+                  ? 'Complete this DullyPDF-hosted form. If the owner enabled it, you can download an editable PDF copy after you submit.'
+                  : 'Complete this DullyPDF-hosted form. If the owner enabled it, you can download a flat PDF copy after you submit.'
+                : 'Complete this DullyPDF-hosted form. The owner will review your answers in the workspace and generate the final PDF later.'}
           </p>
           {!linkClosed ? (
             <div className="fill-link-public-page__hero-meta">
@@ -408,7 +484,10 @@ export default function FillLinkPublicPage({ token }: FillLinkPublicPageProps) {
                 <span>{requiredQuestionCount} required question{requiredQuestionCount === 1 ? '' : 's'}</span>
               ) : null}
               {questionCount ? <span>{questionCount} visible question{questionCount === 1 ? '' : 's'}</span> : null}
-              {respondentPdfDownloadAvailable ? <span>PDF copy available after submit</span> : null}
+              {link?.postSubmitSigningEnabled ? <span>Review and sign after submit</span> : null}
+              {respondentPdfDownloadAvailable ? (
+                <span>{respondentPdfEditableDownload ? 'Editable PDF copy available after submit' : 'Flat PDF copy available after submit'}</span>
+              ) : null}
             </div>
           ) : null}
         </div>
@@ -436,11 +515,51 @@ export default function FillLinkPublicPage({ token }: FillLinkPublicPageProps) {
             ) : null}
           </div>
 
+        {signingPath ? (
+          <section className="fill-link-public-page__post-submit" aria-label="Continue to signing">
+            <div className="fill-link-public-page__post-submit-copy">
+              <h2>Continue to review and sign</h2>
+              <p>DullyPDF prepared your exact filled PDF. You&apos;ll be redirected to the signing review screen automatically.</p>
+            </div>
+            <button
+              type="button"
+              className="ui-button ui-button--primary fill-link-public-page__download"
+              onClick={handleContinueToSigning}
+            >
+              Continue to review and sign
+            </button>
+          </section>
+        ) : null}
+
+        {!signingPath && signingErrorMessage ? (
+          <section className="fill-link-public-page__post-submit fill-link-public-page__post-submit--warning" aria-label="Signing unavailable">
+            <div className="fill-link-public-page__post-submit-copy">
+              <h2>Signing is temporarily unavailable</h2>
+              <p>{signingErrorMessage}</p>
+            </div>
+            {submittedResponseId ? (
+              <button
+                type="button"
+                className="ui-button ui-button--primary fill-link-public-page__download"
+                onClick={handleRetrySigning}
+                disabled={retryingSigning}
+              >
+                {retryingSigning ? 'Retrying signing…' : 'Retry signing handoff'}
+              </button>
+            ) : null}
+          </section>
+        ) : null}
+
         {canDownloadSubmittedPdf ? (
           <section className="fill-link-public-page__post-submit" aria-label="Submitted PDF download">
             <div className="fill-link-public-page__post-submit-copy">
               <h2>Download your submitted PDF</h2>
-              <p>Keep a copy of the template you just submitted. The owner still keeps the stored response in DullyPDF.</p>
+              <p>
+                Keep a copy of the template you just submitted.
+                {respondentPdfEditableDownload
+                  ? ' This link is configured to preserve the fillable fields.'
+                  : ' This link is configured to download a flat, non-editable PDF by default.'}
+              </p>
             </div>
             <button
               type="button"

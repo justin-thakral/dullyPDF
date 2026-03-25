@@ -51,6 +51,7 @@ def test_build_template_fill_link_download_snapshot_uses_saved_form_fill_rules()
     assert snapshot["version"] == 1
     assert snapshot["sourcePdfPath"] == "gs://forms/template.pdf"
     assert snapshot["filename"] == "Admissions_Form-response.pdf"
+    assert snapshot["downloadMode"] == "flat"
     assert snapshot["checkboxRules"][0]["groupKey"] == "consent_group"
     assert snapshot["textTransformRules"][0]["targetField"] == "full_name"
 
@@ -112,6 +113,54 @@ def test_apply_fill_link_answers_to_fields_sets_text_transform_and_checkbox_valu
     assert by_name["i_consent_group_no"]["value"] is False
 
 
+def test_apply_fill_link_answers_to_fields_sets_direct_checkbox_and_radio_group_values() -> None:
+    fields = apply_fill_link_answers_to_fields(
+        {
+            "fields": [
+                {"id": "field-1", "name": "agree_to_terms", "type": "checkbox", "page": 1, "rect": [1, 2, 4, 6]},
+                {
+                    "id": "field-2",
+                    "name": "marital_single",
+                    "type": "checkbox",
+                    "page": 1,
+                    "rect": [1, 2, 4, 6],
+                    "groupKey": "marital_status",
+                    "optionKey": "single",
+                    "optionLabel": "Single",
+                },
+                {
+                    "id": "field-3",
+                    "name": "marital_married",
+                    "type": "checkbox",
+                    "page": 1,
+                    "rect": [1, 2, 4, 6],
+                    "groupKey": "marital_status",
+                    "optionKey": "married",
+                    "optionLabel": "Married",
+                },
+            ],
+            "radioGroups": [
+                {
+                    "groupKey": "marital_status",
+                    "options": [
+                        {"optionKey": "single", "optionLabel": "Single"},
+                        {"optionKey": "married", "optionLabel": "Married"},
+                    ],
+                }
+            ],
+        },
+        {
+            "agree_to_terms": True,
+            "marital_status": "married",
+        },
+    )
+
+    by_name = {str(field.get("name")): field for field in fields}
+    assert by_name["agree_to_terms"]["value"] is True
+    assert by_name["marital_single"]["value"] is False
+    assert by_name["marital_married"]["value"] is True
+
+
 def test_build_fill_link_download_payload_returns_public_download_path() -> None:
     payload = build_fill_link_download_payload(
         type(
@@ -133,4 +182,5 @@ def test_build_fill_link_download_payload_returns_public_download_path() -> None
         "responseId": "resp-1",
         "downloadPath": "/api/fill-links/public/token-1/responses/resp-1/download",
         "filename": "admissions-response.pdf",
+        "mode": "flat",
     }

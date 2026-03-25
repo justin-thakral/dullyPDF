@@ -22,6 +22,10 @@ from backend.api.routes import (
     saved_forms_router,
     schemas_router,
     sessions_router,
+    signing_public_router,
+    signing_router,
+    template_api_router,
+    template_api_public_router,
 )
 from backend.services.app_config import (
     docs_enabled,
@@ -58,6 +62,8 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
     app.include_router(public_router)
     app.include_router(fill_links_public_router)
+    app.include_router(signing_public_router)
+    app.include_router(template_api_public_router)
     app.include_router(billing_router)
     app.include_router(profile_router)
     app.include_router(legacy_detection_router)
@@ -69,6 +75,8 @@ def create_app() -> FastAPI:
     app.include_router(groups_router)
     app.include_router(saved_forms_router)
     app.include_router(sessions_router)
+    app.include_router(signing_router)
+    app.include_router(template_api_router)
     return app
 
 

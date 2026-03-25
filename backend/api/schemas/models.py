@@ -65,6 +65,7 @@ class SchemaCreateRequest(BaseModel):
 class TemplateOverlayField(BaseModel):
     """Template overlay field payload with no row data or values."""
 
+    id: Optional[str] = None
     name: str = Field(..., min_length=1)
     type: Optional[str] = "text"
     page: Optional[int] = None
@@ -73,6 +74,11 @@ class TemplateOverlayField(BaseModel):
     optionKey: Optional[str] = None
     optionLabel: Optional[str] = None
     groupLabel: Optional[str] = None
+    radioGroupId: Optional[str] = None
+    radioGroupKey: Optional[str] = None
+    radioGroupLabel: Optional[str] = None
+    radioOptionKey: Optional[str] = None
+    radioOptionLabel: Optional[str] = None
 
     model_config = {"extra": "ignore"}
 
@@ -128,6 +134,36 @@ class SavedFormEditorSnapshotUpdateRequest(BaseModel):
     snapshot: Dict[str, Any] = Field(default_factory=dict)
 
 
+class TemplateApiEndpointPublishRequest(BaseModel):
+    """Publish or republish a saved form as a scoped API Fill endpoint."""
+
+    templateId: str = Field(..., min_length=1)
+    exportMode: Literal["flat", "editable"] = "flat"
+
+    model_config = {"extra": "ignore"}
+
+
+class TemplateApiFillRequest(BaseModel):
+    """Public JSON payload for a published API Fill endpoint."""
+
+    data: Dict[str, Any] = Field(default_factory=dict)
+    filename: Optional[str] = Field(default=None, max_length=180)
+    exportMode: Optional[Literal["flat", "editable"]] = None
+    strict: bool = False
+
+    model_config = {"extra": "ignore"}
+
+    @field_validator("filename", mode="before")
+    @classmethod
+    def _trim_template_api_filename(cls, value: Any) -> Any:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            trimmed = " ".join(value.strip().split())
+            return trimmed if trimmed else None
+        return value
+
+
 class TemplateGroupCreateRequest(BaseModel):
     """Create a named group from existing saved templates."""
 
@@ -170,6 +206,140 @@ class TemplateGroupCreateRequest(BaseModel):
 
 class TemplateGroupUpdateRequest(TemplateGroupCreateRequest):
     """Update a named group with a new name and template membership."""
+
+
+class SigningAnchorInput(BaseModel):
+    """Owner-selected signer anchor positioned on a PDF page."""
+
+    kind: Literal["signature", "signed_date", "initials"]
+    page: int = Field(..., ge=1)
+    rect: Dict[str, float]
+    fieldId: Optional[str] = Field(default=None, max_length=200)
+    fieldName: Optional[str] = Field(default=None, max_length=200)
+
+    model_config = {"extra": "ignore"}
+
+    @field_validator("rect", mode="before")
+    @classmethod
+    def _normalize_anchor_rect(cls, value: Any) -> Dict[str, float]:
+        normalized = TemplateOverlayField._normalize_rect(value)
+        if normalized is None:
+            raise ValueError("Anchor rect is required")
+        return normalized
+
+    @field_validator("fieldId", "fieldName", mode="before")
+    @classmethod
+    def _trim_anchor_text(cls, value: Any) -> Optional[str]:
+        if value is None:
+            return None
+        trimmed = " ".join(str(value).strip().split())
+        return trimmed if trimmed else None
+
+
+class SigningRequestCreateRequest(BaseModel):
+    """Create a draft signing request for an immutable-signature workflow."""
+
+    title: Optional[str] = Field(default=None, max_length=200)
+    mode: Literal["sign", "fill_and_sign"] = "sign"
+    signatureMode: Optional[Literal["business", "consumer"]] = "business"
+    sourceType: Literal["workspace", "fill_link_response", "uploaded_pdf"] = "workspace"
+    sourceId: Optional[str] = Field(default=None, max_length=160)
+    sourceLinkId: Optional[str] = Field(default=None, max_length=160)
+    sourceRecordLabel: Optional[str] = Field(default=None, max_length=200)
+    sourceDocumentName: str = Field(..., min_length=1, max_length=200)
+    sourceTemplateId: Optional[str] = Field(default=None, max_length=160)
+    sourceTemplateName: Optional[str] = Field(default=None, max_length=200)
+    sourcePdfSha256: Optional[str] = Field(default=None, max_length=64)
+    documentCategory: str = Field(..., min_length=1, max_length=160)
+    manualFallbackEnabled: bool = True
+    signerName: str = Field(..., min_length=1, max_length=200)
+    signerEmail: str = Field(..., min_length=3, max_length=200)
+    anchors: List[SigningAnchorInput] = Field(default_factory=list)
+
+    model_config = {"extra": "ignore"}
+
+    @field_validator(
+        "title",
+        "sourceId",
+        "sourceLinkId",
+        "sourceRecordLabel",
+        "sourceDocumentName",
+        "sourceTemplateId",
+        "sourceTemplateName",
+        "sourcePdfSha256",
+        "documentCategory",
+        "signerName",
+        "signerEmail",
+        mode="before",
+    )
+    @classmethod
+    def _trim_signing_text(cls, value: Any) -> Any:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            trimmed = " ".join(value.strip().split())
+            return trimmed if trimmed else None
+        return value
+
+
+class PublicSigningReviewRequest(BaseModel):
+    """Explicit signer acknowledgment that the immutable record was reviewed."""
+
+    reviewConfirmed: bool = True
+
+    model_config = {"extra": "ignore"}
+
+
+class PublicSigningConsentRequest(BaseModel):
+    """Consumer-only electronic records consent."""
+
+    accepted: bool = Field(..., description="Signer affirmatively consented to electronic records.")
+
+    model_config = {"extra": "ignore"}
+
+
+class PublicSigningAdoptSignatureRequest(BaseModel):
+    """Capture the signer-adopted signature name before final completion."""
+
+    adoptedName: str = Field(..., min_length=1, max_length=200)
+
+    model_config = {"extra": "ignore"}
+
+    @field_validator("adoptedName", mode="before")
+    @classmethod
+    def _trim_adopted_name(cls, value: Any) -> Any:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            trimmed = " ".join(value.strip().split())
+            return trimmed if trimmed else None
+        return value
+
+
+class PublicSigningCompleteRequest(BaseModel):
+    """Final signer attestation used to complete the ceremony."""
+
+    intentConfirmed: bool = Field(..., description="Signer explicitly confirmed the final sign action.")
+
+    model_config = {"extra": "ignore"}
+
+
+class PublicSigningManualFallbackRequest(BaseModel):
+    """Optional note when the signer requests paper or manual fallback."""
+
+    note: Optional[str] = Field(default=None, max_length=500)
+
+    model_config = {"extra": "ignore"}
+
+    @field_validator("note", mode="before")
+    @classmethod
+    def _trim_manual_fallback_note(cls, value: Any) -> Any:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            trimmed = " ".join(value.strip().split())
+            return trimmed if trimmed else None
+        return value
 
 
 class FillLinkWebFormOption(BaseModel):
@@ -250,6 +420,27 @@ class FillLinkWebFormConfig(BaseModel):
         return value
 
 
+class FillLinkSigningConfig(BaseModel):
+    enabled: bool = False
+    signatureMode: Optional[Literal["business", "consumer"]] = "business"
+    documentCategory: Optional[str] = Field(default=None, min_length=1, max_length=160)
+    manualFallbackEnabled: bool = True
+    signerNameQuestionKey: Optional[str] = Field(default=None, max_length=160)
+    signerEmailQuestionKey: Optional[str] = Field(default=None, max_length=160)
+
+    model_config = {"extra": "ignore"}
+
+    @field_validator("documentCategory", "signerNameQuestionKey", "signerEmailQuestionKey", mode="before")
+    @classmethod
+    def _trim_fill_link_signing_strings(cls, value: Any) -> Any:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            trimmed = value.strip()
+            return trimmed if trimmed else None
+        return value
+
+
 class FillLinkCreateRequest(BaseModel):
     """Publish or refresh a Fill By Link endpoint for a saved template."""
 
@@ -261,7 +452,9 @@ class FillLinkCreateRequest(BaseModel):
     groupName: Optional[str] = Field(default=None, max_length=200)
     requireAllFields: bool = False
     respondentPdfDownloadEnabled: bool = False
+    respondentPdfEditableEnabled: bool = False
     webFormConfig: Optional[FillLinkWebFormConfig] = None
+    signingConfig: Optional[FillLinkSigningConfig] = None
     fields: List[TemplateOverlayField] = Field(default_factory=list)
     checkboxRules: List[Dict[str, Any]] = Field(default_factory=list)
     groupTemplates: List["FillLinkGroupTemplateSource"] = Field(default_factory=list)
@@ -320,7 +513,9 @@ class FillLinkUpdateRequest(BaseModel):
     title: Optional[str] = Field(default=None, max_length=200)
     requireAllFields: Optional[bool] = None
     respondentPdfDownloadEnabled: Optional[bool] = None
+    respondentPdfEditableEnabled: Optional[bool] = None
     webFormConfig: Optional[FillLinkWebFormConfig] = None
+    signingConfig: Optional[FillLinkSigningConfig] = None
     fields: Optional[List[TemplateOverlayField]] = None
     checkboxRules: Optional[List[Dict[str, Any]]] = None
     groupName: Optional[str] = Field(default=None, max_length=200)
@@ -359,6 +554,24 @@ class FillLinkPublicSubmitRequest(BaseModel):
             trimmed = value.strip()
             return trimmed if trimmed else None
         return value
+
+
+class FillLinkPublicRetrySigningRequest(BaseModel):
+    """Retry post-submit signing for an already stored respondent response."""
+
+    responseId: str = Field(..., min_length=1, max_length=200)
+
+    model_config = {"extra": "ignore"}
+
+    @field_validator("responseId", mode="before")
+    @classmethod
+    def _trim_response_id(cls, value: Any) -> str:
+        if value is None:
+            raise ValueError("responseId is required")
+        trimmed = " ".join(str(value).strip().split())
+        if not trimmed:
+            raise ValueError("responseId is required")
+        return trimmed
 
 
 FillLinkCreateRequest.model_rebuild()

@@ -3,7 +3,6 @@ import type { PDFDocumentProxy } from 'pdfjs-dist/types/src/display/api';
 import type { User } from 'firebase/auth';
 import type {
   BannerNotice,
-  CheckboxHint,
   CheckboxRule,
   ConfirmDialogOptions,
   PdfField,
@@ -14,6 +13,7 @@ import { normaliseFormName, prepareFieldsForMaterialize } from '../utils/fields'
 import { debugLog } from '../utils/debug';
 import { buildSavedFormEditorSnapshot } from '../utils/savedFormHydration';
 import { ApiError } from '../services/apiConfig';
+import type { MaterializePdfExportMode } from '../services/api';
 import { ApiService } from '../services/api';
 
 export interface UseSaveDownloadDeps {
@@ -24,7 +24,6 @@ export interface UseSaveDownloadDeps {
   pageSizes: Record<number, { width: number; height: number }>;
   pageCount: number;
   checkboxRules: CheckboxRule[];
-  checkboxHints: CheckboxHint[];
   textTransformRules: TextTransformRule[];
   hasRenamedFields: boolean;
   hasMappedSchema: boolean;
@@ -83,7 +82,7 @@ export function useSaveDownload(deps: UseSaveDownloadDeps) {
         const generatedBlob = await ApiService.materializeFormPdf(blob, fieldsForSave);
         const payload = await ApiService.saveFormToProfile(
           generatedBlob, saveName, deps.mappingSessionId || undefined,
-          overwriteFormId || undefined, deps.checkboxRules, deps.checkboxHints, deps.textTransformRules,
+          overwriteFormId || undefined, deps.checkboxRules, deps.textTransformRules,
           editorSnapshot,
         );
         deps.setActiveSavedFormId(payload?.id || null);
@@ -181,7 +180,7 @@ export function useSaveDownload(deps: UseSaveDownloadDeps) {
     }
   }, [deps, saveFormToProfile]);
 
-  const handleDownload = useCallback(async () => {
+  const handleDownload = useCallback(async (exportMode: MaterializePdfExportMode = 'editable') => {
     if (!deps.pdfDoc) { deps.setLoadError('No PDF is loaded to download.'); return; }
     if (!deps.verifiedUser && !deps.allowAnonymousDownload) {
       deps.setLoadError('Sign in to download this form.');
@@ -197,9 +196,11 @@ export function useSaveDownload(deps: UseSaveDownloadDeps) {
         blob = new Blob([new Uint8Array(data)], { type: 'application/pdf' });
       }
       const fieldsForDownload = prepareFieldsForMaterialize(deps.fields);
-      const generatedBlob = await ApiService.materializeFormPdf(blob, fieldsForDownload);
+      const generatedBlob = await ApiService.materializeFormPdf(blob, fieldsForDownload, { exportMode });
       const baseName = normaliseFormName(deps.activeSavedFormName || deps.sourceFileName || deps.sourceFile?.name);
-      const filename = `${baseName}-fillable.pdf`;
+      const filename = exportMode === 'flat'
+        ? `${baseName}-flat.pdf`
+        : `${baseName}-editable.pdf`;
       const url = URL.createObjectURL(generatedBlob);
       const link = document.createElement('a');
       link.href = url; link.download = filename;

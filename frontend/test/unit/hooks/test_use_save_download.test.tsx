@@ -1,5 +1,5 @@
 import { act, render } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useSaveDownload, type UseSaveDownloadDeps } from '../../../src/hooks/useSaveDownload';
 
@@ -33,7 +33,6 @@ function createDeps(overrides: Partial<UseSaveDownloadDeps> = {}): UseSaveDownlo
     },
     pageCount: 1,
     checkboxRules: [],
-    checkboxHints: [],
     textTransformRules: [],
     hasRenamedFields: false,
     hasMappedSchema: false,
@@ -88,6 +87,10 @@ describe('useSaveDownload', () => {
     saveFormToProfileMock.mockReset();
   });
 
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('blocks save-new-copy when a group template is open and only allows overwrite', async () => {
     const deps = createDeps({
       requestConfirm: vi.fn().mockResolvedValue(false),
@@ -127,14 +130,40 @@ describe('useSaveDownload', () => {
       'saved-form-1',
       [],
       [],
-      [],
       expect.objectContaining({
-        version: 1,
+        version: 2,
         pageCount: 1,
         hasRenamedFields: false,
         hasMappedSchema: false,
+        radioGroups: [],
       }),
     );
     expect(deps.markGroupTemplatesPersisted).toHaveBeenCalledWith(['saved-form-1']);
+  });
+
+  it('downloads a flat PDF when requested and names the file accordingly', async () => {
+    materializeFormPdfMock.mockResolvedValue(new Blob(['flat-pdf']));
+    const createObjectUrlSpy = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:flat-download');
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+    let clickedDownloadName: string | null = null;
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function recordDownloadName(this: HTMLAnchorElement) {
+      clickedDownloadName = this.download;
+    });
+    const deps = createDeps();
+    const hook = renderHookHarness(deps);
+
+    await act(async () => {
+      await hook.current.handleDownload('flat');
+    });
+
+    expect(materializeFormPdfMock).toHaveBeenCalledWith(
+      deps.sourceFile,
+      expect.any(Array),
+      { exportMode: 'flat' },
+    );
+    expect(createObjectUrlSpy).toHaveBeenCalledWith(expect.any(Blob));
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+    expect(clickedDownloadName).toBe('Template A-flat.pdf');
+    expect(deps.setLoadError).toHaveBeenCalledWith(null);
   });
 });

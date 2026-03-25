@@ -75,6 +75,7 @@ def test_build_allowlist_payload_normalizes_truncates_and_coerces(mocker) -> Non
     ]
     assert payload["templateTags"] == [
         {
+            "fieldId": None,
             "tag": "Candid",
             "type": "checkbox",
             "page": 2,
@@ -83,8 +84,13 @@ def test_build_allowlist_payload_normalizes_truncates_and_coerces(mocker) -> Non
             "optionKey": "opt",
             "optionLabel": "Option",
             "groupLabel": "Group ",
+            "radioGroupKey": None,
+            "radioGroupLabel": None,
+            "radioOptionKey": None,
+            "radioOptionLabel": None,
         },
         {
+            "fieldId": None,
             "tag": "Fallba",
             "type": "text",
             "page": 1,
@@ -93,6 +99,10 @@ def test_build_allowlist_payload_normalizes_truncates_and_coerces(mocker) -> Non
             "optionKey": None,
             "optionLabel": None,
             "groupLabel": None,
+            "radioGroupKey": None,
+            "radioGroupLabel": None,
+            "radioOptionKey": None,
+            "radioOptionLabel": None,
         },
     ]
     assert payload["totalSchemaFields"] == 2
@@ -163,7 +173,7 @@ def test_merge_schema_mapping_response_merges_lists_filters_invalid_and_preserve
         "templateRules": [],
         "textTransformRules": [],
         "checkboxRules": [],
-        "checkboxHints": [],
+        "radioGroupSuggestions": [],
         "notes": [],
         "identifierKey": "existing_id",
     }
@@ -175,7 +185,7 @@ def test_merge_schema_mapping_response_merges_lists_filters_invalid_and_preserve
             "template_rules": [{"rule": 1}, None],
             "text_transform_rules": [{"targetField": "A1", "operation": "copy", "sources": ["first_name"]}, None],
             "checkbox_rules": [{"groupKey": "g"}, 123],
-            "checkbox_hints": [{"databaseField": "d"}, "skip"],
+            "radio_group_suggestions": [{"groupKey": "d"}, "skip"],
             "patientIdentifierField": "new_id",
             "notes": "note-1",
         },
@@ -189,7 +199,7 @@ def test_merge_schema_mapping_response_merges_lists_filters_invalid_and_preserve
     assert aggregate["templateRules"] == [{"rule": 1}]
     assert aggregate["textTransformRules"] == [{"targetField": "A1", "operation": "copy", "sources": ["first_name"]}]
     assert aggregate["checkboxRules"] == [{"groupKey": "g"}]
-    assert aggregate["checkboxHints"] == [{"databaseField": "d"}]
+    assert aggregate["radioGroupSuggestions"] == [{"groupKey": "d"}]
     assert aggregate["identifierKey"] == "existing_id"
     assert aggregate["notes"] == ["note-1", "note-2"]
 
@@ -200,7 +210,7 @@ def test_merge_schema_mapping_response_ignores_non_dict_input() -> None:
         "templateRules": [],
         "textTransformRules": [],
         "checkboxRules": [],
-        "checkboxHints": [],
+        "radioGroupSuggestions": [],
         "notes": [],
     }
     schema_mapping._merge_schema_mapping_response(aggregate, "not-a-dict")  # type: ignore[arg-type]
@@ -209,7 +219,7 @@ def test_merge_schema_mapping_response_ignores_non_dict_input() -> None:
         "templateRules": [],
         "textTransformRules": [],
         "checkboxRules": [],
-        "checkboxHints": [],
+        "radioGroupSuggestions": [],
         "notes": [],
     }
 
@@ -330,7 +340,7 @@ def test_call_openai_schema_mapping_chunked_merges_chunk_responses(mocker) -> No
                 "templateRules": [{"templateTag": "B"}],
                 "textTransformRules": [{"targetField": "B", "operation": "copy", "sources": ["first_name"]}],
                 "checkboxRules": [{"groupKey": "group"}],
-                "checkboxHints": [{"databaseField": "first"}],
+                "radioGroupSuggestions": [{"groupKey": "first"}],
                 "notes": "chunk-2",
             },
         ],
@@ -344,7 +354,7 @@ def test_call_openai_schema_mapping_chunked_merges_chunk_responses(mocker) -> No
     assert result["templateRules"] == [{"templateTag": "B"}]
     assert result["textTransformRules"] == [{"targetField": "B", "operation": "copy", "sources": ["first_name"]}]
     assert result["checkboxRules"] == [{"groupKey": "group"}]
-    assert result["checkboxHints"] == [{"databaseField": "first"}]
+    assert result["radioGroupSuggestions"] == [{"groupKey": "first"}]
     assert result["notes"] == "chunk-1; chunk-2"
 
 
@@ -418,7 +428,7 @@ def test_merge_schema_mapping_response_identifier_from_patientIdentifierField() 
         "mappings": [],
         "templateRules": [],
         "checkboxRules": [],
-        "checkboxHints": [],
+        "radioGroupSuggestions": [],
         "notes": [],
     }
 

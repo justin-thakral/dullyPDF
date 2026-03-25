@@ -11,13 +11,13 @@ import {
 } from '../services/api';
 import type {
   BannerNotice,
-  CheckboxHint,
   CheckboxRule,
   ConfirmDialogOptions,
   DataSourceKind,
   PageSize,
   PdfField,
   ProcessingMode,
+  RadioGroupSuggestion,
   SchemaPayload,
   TextTransformRule,
 } from '../types';
@@ -135,14 +135,14 @@ type OpenAiController = {
   hasRenamedFields: boolean;
   hasMappedSchema: boolean;
   checkboxRules: CheckboxRule[];
-  checkboxHints: CheckboxHint[];
+  radioGroupSuggestions: RadioGroupSuggestion[];
   textTransformRules: TextTransformRule[];
   setRenameInProgress: Dispatch<SetStateAction<boolean>>;
   setMappingInProgress: Dispatch<SetStateAction<boolean>>;
   setHasRenamedFields: Dispatch<SetStateAction<boolean>>;
   setHasMappedSchema: Dispatch<SetStateAction<boolean>>;
   setCheckboxRules: Dispatch<SetStateAction<CheckboxRule[]>>;
-  setCheckboxHints: Dispatch<SetStateAction<CheckboxHint[]>>;
+  setRadioGroupSuggestions: Dispatch<SetStateAction<RadioGroupSuggestion[]>>;
   setTextTransformRules: Dispatch<SetStateAction<TextTransformRule[]>>;
   setOpenAiError: Dispatch<SetStateAction<string | null>>;
 };
@@ -862,11 +862,6 @@ export function useWorkspaceGroupCoordinator(deps: UseWorkspaceGroupCoordinatorD
             throw new Error(renameResult?.error || 'Rename + Map did not return updated fields.');
           }
           const checkboxRules = Array.isArray(renameResult?.checkboxRules) ? renameResult.checkboxRules : [];
-          const checkboxHints = Array.isArray(
-            (renameResult as { checkboxHints?: CheckboxHint[] } | null)?.checkboxHints,
-          )
-            ? ((renameResult as { checkboxHints?: CheckboxHint[] }).checkboxHints ?? [])
-            : [];
           const textTransformRules = Array.isArray(
             (renameResult as { textTransformRules?: TextTransformRule[] } | null)?.textTransformRules,
           )
@@ -882,7 +877,6 @@ export function useWorkspaceGroupCoordinator(deps: UseWorkspaceGroupCoordinatorD
             sessionPayload.sessionId,
             template.id,
             checkboxRules,
-            checkboxHints,
             textTransformRules,
           );
           successIds.push(template.id);

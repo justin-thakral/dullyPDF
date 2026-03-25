@@ -160,9 +160,7 @@ def test_rename_endpoint_persists_renames_and_checkbox_rules(client, app_main, b
     assert update_mock.call_args.kwargs["persist_fields"] is True
     assert update_mock.call_args.kwargs["persist_renames"] is True
     assert update_mock.call_args.kwargs["persist_checkbox_rules"] is True
-    assert update_mock.call_args.kwargs["persist_checkbox_hints"] is True
     assert update_mock.call_args.kwargs["persist_text_transform_rules"] is True
-    assert entry["checkboxHints"] == []
     assert entry["textTransformRules"] == []
 
 
@@ -512,7 +510,6 @@ def test_mapping_endpoint_persists_checkbox_and_text_rules_and_passes_response_e
     mapping_payload = {
         "mappings": [],
         "checkboxRules": [{"databaseField": "consent", "groupKey": "consent_group"}],
-        "checkboxHints": [{"databaseField": "consent", "groupKey": "consent_group"}],
         "textTransformRules": [{"targetField": "A1", "operation": "copy", "sources": ["first_name"]}],
     }
     mocker.patch.object(app_main, "_build_schema_mapping_payload", return_value=mapping_payload)
@@ -528,7 +525,6 @@ def test_mapping_endpoint_persists_checkbox_and_text_rules_and_passes_response_e
     assert body["mappingResults"] == mapping_payload
     assert "requestId" in body
     assert update_mock.call_args.kwargs["persist_checkbox_rules"] is True
-    assert update_mock.call_args.kwargs["persist_checkbox_hints"] is True
     assert update_mock.call_args.kwargs["persist_text_transform_rules"] is True
 
 
@@ -560,7 +556,7 @@ def test_mapping_endpoint_persists_empty_checkbox_and_text_rules_to_clear_stale_
     mocker.patch.object(
         app_main,
         "_build_schema_mapping_payload",
-        return_value={"mappings": [], "checkboxRules": [], "checkboxHints": [], "textTransformRules": []},
+        return_value={"mappings": [], "checkboxRules": [], "textTransformRules": []},
     )
     update_mock = mocker.patch.object(app_main, "_update_session_entry", return_value=None)
 
@@ -571,10 +567,9 @@ def test_mapping_endpoint_persists_empty_checkbox_and_text_rules_to_clear_stale_
     )
     assert response.status_code == 200
     assert session_entry["checkboxRules"] == []
-    assert session_entry["checkboxHints"] == []
+    assert "checkboxHints" not in session_entry
     assert session_entry["textTransformRules"] == []
     assert update_mock.call_args.kwargs["persist_checkbox_rules"] is True
-    assert update_mock.call_args.kwargs["persist_checkbox_hints"] is True
     assert update_mock.call_args.kwargs["persist_text_transform_rules"] is True
 
 
@@ -657,7 +652,7 @@ def test_mapping_endpoint_skips_update_when_no_session_id(
     mocker.patch.object(app_main, "consume_openai_credits", return_value=(9, True))
     mocker.patch.object(app_main, "record_openai_request", return_value=None)
     mocker.patch.object(app_main, "call_openai_schema_mapping_chunked", return_value={"raw": True})
-    mapping_payload = {"mappings": [], "checkboxRules": [], "checkboxHints": []}
+    mapping_payload = {"mappings": [], "checkboxRules": []}
     mocker.patch.object(app_main, "_build_schema_mapping_payload", return_value=mapping_payload)
     update_mock = mocker.patch.object(app_main, "_update_session_entry", return_value=None)
 
@@ -711,7 +706,7 @@ def test_ai_endpoints_rate_limit_env_negative_values_fallback_to_safe_defaults(
     mocker.patch.object(
         app_main,
         "_build_schema_mapping_payload",
-        return_value={"mappings": [], "checkboxRules": [], "checkboxHints": []},
+        return_value={"mappings": [], "checkboxRules": []},
     )
 
     monkeypatch.setenv("OPENAI_RENAME_RATE_LIMIT_WINDOW_SECONDS", "-1")

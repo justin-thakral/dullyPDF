@@ -144,6 +144,7 @@ describe('ApiService', () => {
       .mockResolvedValueOnce({ id: 'fill-link-response-detail' })
       .mockResolvedValueOnce({ id: 'fill-link-public-response' })
       .mockResolvedValueOnce({ id: 'fill-link-public-submit' })
+      .mockResolvedValueOnce({ id: 'fill-link-public-retry' })
       .mockResolvedValueOnce({
         ok: true,
         statusText: 'OK',
@@ -173,6 +174,18 @@ describe('ApiService', () => {
           downloadPath: '/api/fill-links/public/token-1/responses/resp-1/download',
         },
       });
+    apiConfigMocks.apiJsonFetch.mockResolvedValueOnce({
+      success: true,
+      responseId: 'resp-1',
+      link: { id: 'link-1', respondentPdfDownloadEnabled: true },
+      signing: {
+        enabled: true,
+        available: true,
+        requestId: 'sign-1',
+        status: 'sent',
+        publicPath: '/sign/sign-1',
+      },
+    });
 
     const links = await ApiService.getFillLinks('tpl-1');
     const created = await ApiService.createFillLink({
@@ -196,6 +209,9 @@ describe('ApiService', () => {
       recaptchaToken: 'token',
       recaptchaAction: 'fill_link_submit',
     });
+    const retriedSigning = await ApiService.retryPublicFillLinkSigning('token-1', {
+      responseId: 'resp-1',
+    });
     const downloaded = await ApiService.downloadPublicFillLinkResponsePdf('token-1', 'resp-1', {
       downloadPath: '/api/fill-links/public/token-1/responses/resp-1/download',
     });
@@ -213,6 +229,7 @@ describe('ApiService', () => {
     expect(submitted.success).toBe(true);
     expect(submitted.responseDownloadAvailable).toBe(true);
     expect(submitted.responseDownloadPath).toBe('/api/fill-links/public/token-1/responses/resp-1/download');
+    expect(retriedSigning.signing?.publicPath).toBe('/sign/sign-1');
     expect(downloaded.filename).toBe('submitted-link-1.pdf');
 
     expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(1, 'GET', '/api/fill-links?templateId=tpl-1');
@@ -247,7 +264,12 @@ describe('ApiService', () => {
       headers: { 'Content-Type': 'application/json' },
       body: expect.any(String),
     });
-    expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(9, 'GET', '/api/fill-links/public/token-1/responses/resp-1/download', {
+    expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(9, 'POST', '/api/fill-links/public/token-1/retry-signing', {
+      authMode: 'anonymous',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ responseId: 'resp-1' }),
+    });
+    expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(10, 'GET', '/api/fill-links/public/token-1/responses/resp-1/download', {
       authMode: 'anonymous',
     });
     const publicSubmitBody = JSON.parse(String(apiConfigMocks.apiFetch.mock.calls[7][2]?.body));
@@ -257,6 +279,385 @@ describe('ApiService', () => {
       recaptchaAction: 'fill_link_submit',
     });
     expect(publicSubmitBody.attemptId).toEqual(expect.any(String));
+  });
+
+  it('wires signing draft, detail, send, and public ceremony endpoints', async () => {
+    apiConfigMocks.apiFetch
+      .mockResolvedValueOnce({ id: 'signing-options-response' })
+      .mockResolvedValueOnce({ id: 'signing-list-response' })
+      .mockResolvedValueOnce({ id: 'signing-create-response' })
+      .mockResolvedValueOnce({ id: 'signing-detail-response' })
+      .mockResolvedValueOnce({ id: 'signing-artifacts-response' })
+      .mockResolvedValueOnce({ id: 'signing-send-response' })
+      .mockResolvedValueOnce({ id: 'signing-public-response' })
+      .mockResolvedValueOnce({ id: 'signing-bootstrap-response' })
+      .mockResolvedValueOnce({ id: 'signing-review-response' })
+      .mockResolvedValueOnce({ id: 'signing-consent-response' })
+      .mockResolvedValueOnce({ id: 'signing-fallback-response' })
+      .mockResolvedValueOnce({ id: 'signing-adopt-response' })
+      .mockResolvedValueOnce({ id: 'signing-complete-response' });
+
+    apiConfigMocks.apiJsonFetch
+      .mockResolvedValueOnce({
+        modes: [{ key: 'sign', label: 'Sign' }],
+        signatureModes: [{ key: 'business', label: 'Business' }],
+        categories: [{ key: 'ordinary_business_form', label: 'Ordinary business form', blocked: false }],
+      })
+      .mockResolvedValueOnce({
+        requests: [{ id: 'req-1', status: 'draft', publicPath: null, publicToken: null }],
+      })
+      .mockResolvedValueOnce({
+        request: {
+          id: 'req-1',
+          status: 'draft',
+          sourceDocumentName: 'Bravo Packet',
+          publicPath: null,
+          publicToken: null,
+          anchors: [],
+          documentCategory: 'ordinary_business_form',
+          documentCategoryLabel: 'Ordinary business form',
+          disclosureVersion: 'us-esign-business-v1',
+          manualFallbackEnabled: true,
+          mode: 'sign',
+          signatureMode: 'business',
+          signerEmail: 'alex@example.com',
+          signerName: 'Alex Signer',
+          sourceType: 'workspace',
+          sourceLinkId: null,
+          sourceRecordLabel: null,
+          sourcePdfSha256: 'abc',
+          sourceVersion: 'workspace:abc',
+        },
+      })
+      .mockResolvedValueOnce({
+        request: {
+          id: 'req-1',
+          status: 'draft',
+          sourceDocumentName: 'Bravo Packet',
+          publicPath: null,
+          publicToken: null,
+          anchors: [],
+          documentCategory: 'ordinary_business_form',
+          documentCategoryLabel: 'Ordinary business form',
+          disclosureVersion: 'us-esign-business-v1',
+          manualFallbackEnabled: true,
+          mode: 'sign',
+          signatureMode: 'business',
+          signerEmail: 'alex@example.com',
+          signerName: 'Alex Signer',
+          sourceType: 'workspace',
+          sourceLinkId: null,
+          sourceRecordLabel: null,
+        },
+      })
+      .mockResolvedValueOnce({
+        requestId: 'req-1',
+        retentionUntil: '2033-03-24T12:09:00Z',
+        artifacts: {
+          signedPdf: {
+            available: true,
+            downloadPath: '/api/signing/requests/req-1/artifacts/signed_pdf',
+          },
+          auditManifest: {
+            available: true,
+            downloadPath: '/api/signing/requests/req-1/artifacts/audit_manifest',
+          },
+          auditReceipt: {
+            available: true,
+            downloadPath: '/api/signing/requests/req-1/artifacts/audit_receipt',
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        request: {
+          id: 'req-1',
+          status: 'sent',
+          sourceDocumentName: 'Bravo Packet',
+          publicPath: '/sign/token-1',
+          publicToken: 'token-1',
+          anchors: [],
+          documentCategory: 'ordinary_business_form',
+          documentCategoryLabel: 'Ordinary business form',
+          disclosureVersion: 'us-esign-business-v1',
+          manualFallbackEnabled: true,
+          mode: 'sign',
+          signatureMode: 'business',
+          signerEmail: 'alex@example.com',
+          signerName: 'Alex Signer',
+          sourceType: 'workspace',
+          sourceLinkId: null,
+          sourceRecordLabel: null,
+          sourcePdfSha256: 'def',
+          sourceVersion: 'workspace:def',
+          sourcePdfPath: 'gs://signing/path.pdf',
+        },
+      })
+      .mockResolvedValueOnce({
+        request: {
+          id: 'req-1',
+          status: 'sent',
+          statusMessage: 'This signing request is ready for review and signature.',
+          sourceDocumentName: 'Bravo Packet',
+          signerName: 'Alex Signer',
+          anchors: [],
+          documentCategory: 'ordinary_business_form',
+          documentCategoryLabel: 'Ordinary business form',
+          disclosureVersion: 'us-esign-business-v1',
+          manualFallbackEnabled: true,
+          mode: 'sign',
+          signatureMode: 'business',
+          sourcePdfSha256: 'def',
+          sourceVersion: 'workspace:def',
+          documentPath: '/api/signing/public/token-1/document',
+        },
+      })
+      .mockResolvedValueOnce({
+        request: {
+          id: 'req-1',
+          status: 'sent',
+          statusMessage: 'This signing request is ready for review and signature.',
+          sourceDocumentName: 'Bravo Packet',
+          signerName: 'Alex Signer',
+          anchors: [],
+          documentCategory: 'ordinary_business_form',
+          documentCategoryLabel: 'Ordinary business form',
+          disclosureVersion: 'us-esign-business-v1',
+          manualFallbackEnabled: true,
+          mode: 'sign',
+          signatureMode: 'business',
+          sourcePdfSha256: 'def',
+          sourceVersion: 'workspace:def',
+          documentPath: '/api/signing/public/token-1/document',
+        },
+        session: {
+          id: 'session-1',
+          token: 'session-token-1',
+          expiresAt: '2026-03-24T12:30:00Z',
+        },
+      })
+      .mockResolvedValueOnce({
+        request: {
+          id: 'req-1',
+          status: 'sent',
+          statusMessage: 'This signing request is ready for review and signature.',
+          sourceDocumentName: 'Bravo Packet',
+          signerName: 'Alex Signer',
+          anchors: [],
+          documentCategory: 'ordinary_business_form',
+          documentCategoryLabel: 'Ordinary business form',
+          disclosureVersion: 'us-esign-business-v1',
+          manualFallbackEnabled: true,
+          mode: 'sign',
+          signatureMode: 'business',
+          reviewedAt: '2026-03-24T12:05:00Z',
+          documentPath: '/api/signing/public/token-1/document',
+        },
+      })
+      .mockResolvedValueOnce({
+        request: {
+          id: 'req-2',
+          status: 'sent',
+          statusMessage: 'This signing request is ready for review and signature.',
+          sourceDocumentName: 'Consumer Packet',
+          signerName: 'Pat Consumer',
+          anchors: [],
+          documentCategory: 'authorization_consent_form',
+          documentCategoryLabel: 'Authorization or consent form',
+          disclosureVersion: 'us-esign-consumer-v1',
+          manualFallbackEnabled: true,
+          mode: 'sign',
+          signatureMode: 'consumer',
+          consentedAt: '2026-03-24T12:06:00Z',
+          documentPath: '/api/signing/public/token-2/document',
+        },
+      })
+      .mockResolvedValueOnce({
+        request: {
+          id: 'req-1',
+          status: 'sent',
+          statusMessage: 'This signing request is ready for review and signature.',
+          sourceDocumentName: 'Bravo Packet',
+          signerName: 'Alex Signer',
+          anchors: [],
+          documentCategory: 'ordinary_business_form',
+          documentCategoryLabel: 'Ordinary business form',
+          disclosureVersion: 'us-esign-business-v1',
+          manualFallbackEnabled: true,
+          mode: 'sign',
+          signatureMode: 'business',
+          manualFallbackRequestedAt: '2026-03-24T12:07:00Z',
+          documentPath: '/api/signing/public/token-1/document',
+        },
+      })
+      .mockResolvedValueOnce({
+        request: {
+          id: 'req-1',
+          status: 'sent',
+          statusMessage: 'This signing request is ready for review and signature.',
+          sourceDocumentName: 'Bravo Packet',
+          signerName: 'Alex Signer',
+          anchors: [],
+          documentCategory: 'ordinary_business_form',
+          documentCategoryLabel: 'Ordinary business form',
+          disclosureVersion: 'us-esign-business-v1',
+          manualFallbackEnabled: true,
+          mode: 'sign',
+          signatureMode: 'business',
+          signatureAdoptedAt: '2026-03-24T12:08:00Z',
+          signatureAdoptedName: 'Alex Signer',
+          documentPath: '/api/signing/public/token-1/document',
+        },
+      })
+      .mockResolvedValueOnce({
+        request: {
+          id: 'req-1',
+          status: 'completed',
+          statusMessage: 'This signing request has already been completed.',
+          sourceDocumentName: 'Bravo Packet',
+          signerName: 'Alex Signer',
+          anchors: [],
+          documentCategory: 'ordinary_business_form',
+          documentCategoryLabel: 'Ordinary business form',
+          disclosureVersion: 'us-esign-business-v1',
+          manualFallbackEnabled: true,
+          mode: 'sign',
+          signatureMode: 'business',
+          completedAt: '2026-03-24T12:09:00Z',
+          documentPath: '/api/signing/public/token-1/document',
+        },
+      });
+
+    const options = await ApiService.getSigningOptions();
+    const requests = await ApiService.getSigningRequests();
+    const created = await ApiService.createSigningRequest({
+      title: 'Bravo Packet Signature Request',
+      mode: 'sign',
+      signatureMode: 'business',
+      sourceType: 'workspace',
+      sourceId: 'form-1',
+      sourceLinkId: 'link-1',
+      sourceRecordLabel: 'Ada Lovelace',
+      sourceDocumentName: 'Bravo Packet',
+      sourceTemplateId: 'form-1',
+      sourceTemplateName: 'Bravo Packet',
+      sourcePdfSha256: 'abc',
+      documentCategory: 'ordinary_business_form',
+      manualFallbackEnabled: true,
+      signerName: 'Alex Signer',
+      signerEmail: 'alex@example.com',
+      anchors: [],
+    });
+    const detail = await ApiService.getSigningRequest('req-1');
+    const artifactSummary = await ApiService.getSigningRequestArtifacts('req-1');
+    const sent = await ApiService.sendSigningRequest('req-1', {
+      pdf: new Blob(['pdf'], { type: 'application/pdf' }),
+      filename: 'bravo.pdf',
+      sourcePdfSha256: 'def',
+      ownerReviewConfirmed: true,
+    });
+    const publicRequest = await ApiService.getPublicSigningRequest('token-1');
+    const bootstrap = await ApiService.startPublicSigningSession('token-1');
+    const reviewed = await ApiService.reviewPublicSigningRequest('token-1', 'session-token-1');
+    const consented = await ApiService.consentPublicSigningRequest('token-2', 'session-token-2');
+    const fallback = await ApiService.requestPublicSigningManualFallback('token-1', 'session-token-1', 'Need paper');
+    const adopted = await ApiService.adoptPublicSigningSignature('token-1', 'session-token-1', 'Alex Signer');
+    const completed = await ApiService.completePublicSigningRequest('token-1', 'session-token-1');
+
+    expect(options.modes[0].key).toBe('sign');
+    expect(requests[0].id).toBe('req-1');
+    expect(created.sourceVersion).toBe('workspace:abc');
+    expect(detail.id).toBe('req-1');
+    expect(artifactSummary.artifacts.auditManifest?.available).toBe(true);
+    expect(sent.status).toBe('sent');
+    expect(sent.sourcePdfPath).toBe('gs://signing/path.pdf');
+    expect(publicRequest.sourceVersion).toBe('workspace:def');
+    expect(bootstrap.session?.token).toBe('session-token-1');
+    expect(reviewed.reviewedAt).toBe('2026-03-24T12:05:00Z');
+    expect(consented.consentedAt).toBe('2026-03-24T12:06:00Z');
+    expect(fallback.manualFallbackRequestedAt).toBe('2026-03-24T12:07:00Z');
+    expect(adopted.signatureAdoptedName).toBe('Alex Signer');
+    expect(completed.status).toBe('completed');
+
+    expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(1, 'GET', '/api/signing/options');
+    expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(2, 'GET', '/api/signing/requests');
+    expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(3, 'POST', '/api/signing/requests', expect.objectContaining({
+      headers: { 'Content-Type': 'application/json' },
+      body: expect.any(String),
+    }));
+    expect(JSON.parse(String(apiConfigMocks.apiFetch.mock.calls[2][2]?.body))).toEqual({
+      title: 'Bravo Packet Signature Request',
+      mode: 'sign',
+      signatureMode: 'business',
+      sourceType: 'workspace',
+      sourceId: 'form-1',
+      sourceLinkId: 'link-1',
+      sourceRecordLabel: 'Ada Lovelace',
+      sourceDocumentName: 'Bravo Packet',
+      sourceTemplateId: 'form-1',
+      sourceTemplateName: 'Bravo Packet',
+      sourcePdfSha256: 'abc',
+      documentCategory: 'ordinary_business_form',
+      manualFallbackEnabled: true,
+      signerName: 'Alex Signer',
+      signerEmail: 'alex@example.com',
+      anchors: [],
+    });
+    expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(4, 'GET', '/api/signing/requests/req-1');
+    expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(5, 'GET', '/api/signing/requests/req-1/artifacts');
+    expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(6, 'POST', '/api/signing/requests/req-1/send', expect.objectContaining({
+      body: expect.any(FormData),
+    }));
+    expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(7, 'GET', '/api/signing/public/token-1', {
+      authMode: 'anonymous',
+    });
+    expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(8, 'POST', '/api/signing/public/token-1/bootstrap', {
+      authMode: 'anonymous',
+    });
+    expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(9, 'POST', '/api/signing/public/token-1/review', {
+      authMode: 'anonymous',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Signing-Session': 'session-token-1',
+      },
+      body: JSON.stringify({ reviewConfirmed: true }),
+    });
+    expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(10, 'POST', '/api/signing/public/token-2/consent', {
+      authMode: 'anonymous',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Signing-Session': 'session-token-2',
+      },
+      body: JSON.stringify({ accepted: true }),
+    });
+    expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(11, 'POST', '/api/signing/public/token-1/manual-fallback', {
+      authMode: 'anonymous',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Signing-Session': 'session-token-1',
+      },
+      body: JSON.stringify({ note: 'Need paper' }),
+    });
+    expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(12, 'POST', '/api/signing/public/token-1/adopt-signature', {
+      authMode: 'anonymous',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Signing-Session': 'session-token-1',
+      },
+      body: JSON.stringify({ adoptedName: 'Alex Signer' }),
+    });
+    expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(13, 'POST', '/api/signing/public/token-1/complete', {
+      authMode: 'anonymous',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Signing-Session': 'session-token-1',
+      },
+      body: JSON.stringify({ intentConfirmed: true }),
+    });
+    const sendForm = apiConfigMocks.apiFetch.mock.calls[5][2]?.body as FormData;
+    expect(sendForm.get('sourcePdfSha256')).toBe('def');
+    expect(sendForm.get('ownerReviewConfirmed')).toBe('true');
+    const sendFile = sendForm.get('pdf');
+    expect(sendFile).toBeTruthy();
   });
 
   it('wires group-scoped Fill By Link owner endpoints', async () => {
@@ -796,8 +1197,7 @@ describe('ApiService', () => {
       'sess-99',
       'overwrite-1',
       [{ fieldName: 'insurance_opt_in' }],
-      [{ groupKey: 'insurance' }],
-      undefined,
+      [{ targetField: 'insurance_name', operation: 'copy', sources: ['insurance_name'] }],
       {
         version: 1,
         pageCount: 1,
@@ -839,7 +1239,10 @@ describe('ApiService', () => {
     expect(saveBody.get('sessionId')).toBe('sess-99');
     expect(saveBody.get('overwriteFormId')).toBe('overwrite-1');
     expect(saveBody.get('checkboxRules')).toBe(JSON.stringify([{ fieldName: 'insurance_opt_in' }]));
-    expect(saveBody.get('checkboxHints')).toBe(JSON.stringify([{ groupKey: 'insurance' }]));
+    expect(saveBody.get('checkboxHints')).toBeNull();
+    expect(saveBody.get('textTransformRules')).toBe(JSON.stringify([
+      { targetField: 'insurance_name', operation: 'copy', sources: ['insurance_name'] },
+    ]));
     expect(saveBody.get('editorSnapshot')).toBe(JSON.stringify({
       version: 1,
       pageCount: 1,

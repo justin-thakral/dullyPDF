@@ -108,7 +108,7 @@ function renderHarness(
     const [hasRenamedFields, setHasRenamedFields] = useState(false);
     const [hasMappedSchema, setHasMappedSchema] = useState(false);
     const [checkboxRules, setCheckboxRules] = useState<any[]>([]);
-    const [checkboxHints, setCheckboxHints] = useState<any[]>([]);
+    const [radioGroupSuggestions, setRadioGroupSuggestions] = useState<any[]>([]);
     const [textTransformRules, setTextTransformRules] = useState<any[]>([]);
 
     useEffect(() => {
@@ -205,14 +205,14 @@ function renderHarness(
         hasRenamedFields,
         hasMappedSchema,
         checkboxRules,
-        checkboxHints,
+        radioGroupSuggestions,
         textTransformRules,
         setRenameInProgress: vi.fn(),
         setMappingInProgress: vi.fn(),
         setHasRenamedFields,
         setHasMappedSchema,
         setCheckboxRules,
-        setCheckboxHints,
+        setRadioGroupSuggestions,
         setTextTransformRules,
         setOpenAiError: vi.fn(),
       },
@@ -398,8 +398,9 @@ describe('useGroupTemplateCache', () => {
     expect(updateSavedFormEditorSnapshotMock).toHaveBeenCalledWith(
       'tpl-b',
       expect.objectContaining({
-        version: 1,
+        version: 2,
         pageCount: 2,
+        radioGroups: [],
         fields: [expect.objectContaining({ id: 'field-b', name: 'Bravo Field' })],
       }),
     );

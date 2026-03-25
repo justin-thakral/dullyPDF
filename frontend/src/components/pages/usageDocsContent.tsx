@@ -8,6 +8,8 @@ export type UsageDocsPageKey =
   | 'editor-workflow'
   | 'search-fill'
   | 'fill-by-link'
+  | 'signature-workflow'
+  | 'api-fill'
   | 'create-group'
   | 'save-download-profile'
   | 'troubleshooting';
@@ -39,7 +41,7 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
     navLabel: 'Overview',
     title: 'DullyPDF Usage Docs',
     summary:
-      'Implementation-level guide for the full DullyPDF workflow, including concrete limits, matching rules, and checkbox behavior.',
+      'Implementation-level guide for the full DullyPDF workflow, including concrete limits, matching rules, radio groups, API Fill, and signing behavior.',
     sections: [
       {
         id: 'pipeline-overview',
@@ -84,7 +86,7 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
               Use <a href="/usage-docs/detection">Detection</a> for confidence tiers, geometry shape, and coordinate behavior.
             </li>
             <li>
-              Use <a href="/usage-docs/rename-mapping">Rename + Mapping</a> for OpenAI payload boundaries and checkbox rule precedence.
+              Use <a href="/usage-docs/rename-mapping">Rename + Mapping</a> for OpenAI payload boundaries and checkbox/radio rule precedence.
             </li>
             <li>
               Use <a href="/usage-docs/editor-workflow">Editor Workflow</a> for drag/resize constraints and edit-history behavior.
@@ -94,6 +96,12 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
             </li>
             <li>
               Use <a href="/usage-docs/fill-by-link">Fill By Link</a> for published link creation, respondent expectations, and response review.
+            </li>
+            <li>
+              Use <a href="/usage-docs/signature-workflow">Signature Workflow</a> for email-based signing, web-form-to-sign handoff, immutable record freeze, and owner artifact retrieval.
+            </li>
+            <li>
+              Use <a href="/usage-docs/api-fill">API Fill</a> for template-scoped JSON-to-PDF endpoints, key rotation, hosted schema downloads, and server-side fill guardrails.
             </li>
             <li>
               Use <a href="/usage-docs/create-group">Create Group</a> for packet workflows, group Search &amp; Fill, and batch Rename + Map behavior.
@@ -213,7 +221,7 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
               in the editor.
             </p>
             <p>
-              Field types supported in the UI are <code>text</code>, <code>date</code>, <code>signature</code>, and <code>checkbox</code>.
+              Field types supported in the UI are <code>text</code>, <code>date</code>, <code>signature</code>, <code>checkbox</code>, and <code>radio</code>.
             </p>
           </>
         ),
@@ -307,6 +315,10 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
               likely a true field; <code>mappingConfidence</code> measures schema alignment confidence.
             </li>
             <li>Review checkbox metadata (`groupKey`, `optionKey`, `optionLabel`) after rename/map runs.</li>
+            <li>
+              Review <code>radioGroupSuggestions</code> after mapping runs so single-select groups stay separate from
+              true multi-select checkbox groups.
+            </li>
             <li>Treat AI output as recommendations and validate before production usage.</li>
           </ul>
         ),
@@ -326,13 +338,12 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
               <li><code>enum</code>: select the first valid option from a categorical value.</li>
               <li><code>list</code>: split multi-value strings on <code>, ; | /</code> for multi-select groups.</li>
             </ul>
-            <p>Search &amp; Fill applies checkbox logic in this order:</p>
+            <p>Search &amp; Fill applies checkbox/radio logic in this order:</p>
             <ol>
               <li>Direct field-name boolean match.</li>
               <li>Direct option-key match.</li>
               <li>Direct group-value match (`i_...`, `checkbox_...`, or raw group key).</li>
               <li><code>checkboxRules</code>.</li>
-              <li><code>checkboxHints</code> (`directBooleanPossible=true`).</li>
               <li>Built-in alias fallback groups.</li>
             </ol>
           </>
@@ -403,7 +414,10 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
             <li>Hold <code>Shift</code> while dragging a corner to preserve aspect ratio for that drag.</li>
             <li>Standard fields expose four corners plus middle edge handles; small fields (for example tiny checkboxes) use a single bottom-right handle.</li>
             <li>Small fields also include a larger move hit area to reduce missed drag attempts.</li>
-            <li>Use inspector create tools to draw text, date, signature, and checkbox fields directly on-canvas.</li>
+            <li>
+              Use inspector create tools to draw text, date, signature, checkbox, and radio fields directly on-canvas,
+              including quick-radio helpers for common single-select groups.
+            </li>
             <li>Use inspector inputs for exact x/y/width/height updates.</li>
             <li>Delete invalid candidates to keep templates clean.</li>
             <li>Geometry is clamped to page bounds and type-based minimum sizes.</li>
@@ -443,7 +457,7 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
             <li><code>Ctrl/Cmd+Z</code>: undo</li>
             <li><code>Ctrl/Cmd+Shift+Z</code> or <code>Ctrl/Cmd+Y</code>: redo</li>
             <li><code>Delete</code>, <code>Backspace</code>, or <code>Ctrl/Cmd+X</code>: delete selected field</li>
-            <li><code>T</code> / <code>D</code> / <code>S</code> / <code>C</code>: activate Text/Date/Signature/Checkbox create tools</li>
+            <li><code>T</code> / <code>D</code> / <code>S</code> / <code>C</code> / <code>R</code>: activate Text/Date/Signature/Checkbox/Radio create tools</li>
             <li><code>Esc</code>: clear active create tool</li>
             <li><code>Ctrl/Cmd+F</code> or <code>/</code>: focus field search</li>
             <li><code>[</code> and <code>]</code>: previous/next page</li>
@@ -592,6 +606,11 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
               Template builders can also add custom questions that do not exist on the PDF itself, while group links
               currently stay limited to the merged packet field set.
             </p>
+            <p>
+              Template links can also require signature after submit. In that mode the public web form collects the
+              respondent data first, then hands the same stored response into the signing ceremony so the signer reviews
+              the exact filled record before adopting a signature.
+            </p>
           </>
         ),
       },
@@ -604,6 +623,10 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
             <li>Select one submission and hand it to Search &amp; Fill just like a local CSV/XLSX/JSON row.</li>
             <li>Generate the PDF only when you are ready to materialize that response into the active template or group.</li>
             <li>Download the output immediately or keep working with the stored respondent record later.</li>
+            <li>
+              If post-submit signing was enabled and the respondent completed it, download the signed PDF and audit
+              receipt directly from that response row.
+            </li>
           </ol>
         ),
       },
@@ -616,6 +639,132 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
             <li>Premium accounts can publish a shareable link for every saved template and accept up to 10,000 responses per link.</li>
             <li>Preview the public form before you share it so required fields and labels match what respondents should submit.</li>
           </ul>
+        ),
+      },
+    ],
+  },
+  {
+    key: 'signature-workflow',
+    slug: 'signature-workflow',
+    navLabel: 'Signature Workflow',
+    title: 'Signature Workflow',
+    summary:
+      'How DullyPDF freezes immutable PDFs for signature, supports both email-based and web-form-to-sign flows, and keeps signed artifacts available to owners later.',
+    sections: [
+      {
+        id: 'two-entry-paths',
+        title: 'Two entry paths, one signing engine',
+        body: (
+          <ul>
+            <li><code>Send PDF for Signature by email</code> starts from the current PDF and freezes that exact record before send.</li>
+            <li><code>Require signature after submit</code> starts from a template Fill By Web Form Link, stores the respondent answers, materializes the filled PDF, then hands the signer into the same ceremony.</li>
+            <li>Both paths converge on the same immutable PDF boundary before the signer sees the document.</li>
+            <li>The owner workflow remains one request per signer, even when the UI saves recipient batches from pasted or uploaded TXT/CSV data.</li>
+          </ul>
+        ),
+      },
+      {
+        id: 'signer-ceremony',
+        title: 'Public signer ceremony',
+        body: (
+          <ol>
+            <li>The signer opens the public <code>/sign/:token</code> route.</li>
+            <li>Business requests go through review -&gt; adopt signature -&gt; explicit finish-sign.</li>
+            <li>Consumer requests add a separate electronic-record consent step before review can continue.</li>
+            <li>Manual fallback can pause the electronic ceremony and switch the request into owner follow-up instead of forcing e-signing.</li>
+          </ol>
+        ),
+      },
+      {
+        id: 'artifacts-and-owner-visibility',
+        title: 'Artifacts and owner visibility',
+        body: (
+          <ul>
+            <li>Completed requests store the immutable source PDF, final signed PDF, audit-manifest envelope, and human-readable audit receipt.</li>
+            <li>The owner `Responses` tab in the signing dialog surfaces waiting vs signed requests plus signed-form and audit-receipt downloads.</li>
+            <li>Template Fill By Web Form Link responses also surface linked signing status so the owner can download the finished signed copy from the response row later.</li>
+            <li>Signed PDFs are flattened before delivery so normal PDF viewers do not keep the underlying form widgets editable.</li>
+          </ul>
+        ),
+      },
+      {
+        id: 'us-esign-scope',
+        title: 'U.S. e-sign scope and guardrails',
+        body: (
+          <>
+            <p>
+              DullyPDF targets ordinary U.S. business e-sign workflows and is designed around core E-SIGN and UETA
+              principles: explicit signer action, logical association with the exact record, retention-ready final
+              artifacts, and paper/manual fallback when needed.
+            </p>
+            <p>
+              Excluded or higher-assurance categories still need separate legal review. The product should not be
+              marketed as a notary, qualified-signature, or regulated-signature system unless that scope is added
+              deliberately later.
+            </p>
+          </>
+        ),
+      },
+    ],
+  },
+  {
+    key: 'api-fill',
+    slug: 'api-fill',
+    navLabel: 'API Fill',
+    title: 'API Fill',
+    summary:
+      'How DullyPDF publishes frozen JSON-to-PDF endpoints from saved templates, enforces hosted limits, and keeps API Fill distinct from browser-local Search & Fill.',
+    sections: [
+      {
+        id: 'what-api-fill-is',
+        title: 'What API Fill is',
+        body: (
+          <ul>
+            <li>API Fill publishes one saved-template snapshot as a hosted backend endpoint that accepts JSON and returns a PDF.</li>
+            <li>Each endpoint has its own generated key, schema view, rate limits, monthly request limits, and audit activity.</li>
+            <li>API Fill is a server-side runtime. It is different from Search &amp; Fill, which keeps selected record data local in the browser.</li>
+          </ul>
+        ),
+      },
+      {
+        id: 'owner-manager-flow',
+        title: 'Owner manager flow',
+        body: (
+          <ol>
+            <li>Open a saved template in the workspace.</li>
+            <li>Click <code>API Fill</code> to open the endpoint manager.</li>
+            <li>Create the endpoint from the current saved-template snapshot, then copy the schema URL, POST example, and active key.</li>
+            <li>Rotate or revoke keys from the same manager when credentials need to change.</li>
+          </ol>
+        ),
+      },
+      {
+        id: 'payload-behavior',
+        title: 'Payload and fill behavior',
+        body: (
+          <ul>
+            <li>The public schema exposes field names, types, transforms, checkbox rules, and radio group expectations for the frozen template snapshot.</li>
+            <li>Radio groups are resolved deterministically as one selected option key, not as a legacy checkbox-hint side channel.</li>
+            <li>API Fill does not reuse the generic workspace materialize endpoint. It is its own hosted path with explicit auth, limits, and audit activity.</li>
+            <li>The backend is designed not to store raw submitted record values by default unless a separate operational need is added later.</li>
+          </ul>
+        ),
+      },
+      {
+        id: 'when-to-use-api-fill',
+        title: 'When to use API Fill instead of Search and Fill',
+        body: (
+          <>
+            <p>
+              Use Search &amp; Fill when an operator is choosing a row interactively inside the workspace. Use API Fill
+              when another system already has the record data and needs a hosted JSON-to-PDF endpoint for the same saved
+              template.
+            </p>
+            <p>
+              The template still needs the same review discipline either way: stable naming, correct checkbox and radio
+              behavior, and one real end-to-end validation before the endpoint is treated as production-ready.
+            </p>
+          </>
         ),
       },
     ],
@@ -699,9 +848,9 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
         title: 'Download vs save',
         body: (
           <ul>
-            <li>Download when you need a one-off generated output immediately.</li>
+            <li>Download when you need a one-off generated output immediately. The workspace download menu now offers both a flat PDF and an editable PDF with fields preserved.</li>
             <li>Save to profile when the template will be reused or shared within your account context.</li>
-            <li>Saved forms persist template metadata including checkbox rules and hints.</li>
+            <li>Saved forms persist template metadata including checkbox rules, radio groups, and text transform rules.</li>
             <li>Fill By Link starts from a saved form or an open group because the public respondent link is tied to the owner account and saved template set.</li>
           </ul>
         ),
@@ -759,6 +908,12 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
               Fill By Link tier limits are separate from credits: free includes 1 active published link with 5 accepted
               responses, while premium supports a shareable link on every saved template with up to 10,000 accepted
               responses per link.
+            </p>
+            <p>
+              API Fill is a hosted backend runtime, not a browser-local tool. Published API endpoints are scoped to one
+              saved template snapshot, use template-specific keys, and are governed by server-side page limits, monthly
+              request caps, rate limits, and endpoint audit logs. Search &amp; Fill stays local in the browser; API Fill
+              sends the submitted record data to DullyPDF backend services.
             </p>
             <p>
               For the marketing-facing summary of those tiers, use the public <a href="/free-features">Free Features</a> and{' '}

@@ -4,7 +4,7 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AnnotationMode } from 'pdfjs-dist';
 import type { PDFDocumentProxy, RenderTask } from 'pdfjs-dist/types/src/display/api';
-import type { FieldRect, FieldType, PageSize, PdfField } from '../../types';
+import type { CreateTool, FieldRect, FieldType, PageSize, PdfField, RadioGroupSuggestion } from '../../types';
 import { FieldOverlay } from './FieldOverlay';
 import { FieldInputOverlay } from './FieldInputOverlay';
 import { Alert } from '../ui/Alert';
@@ -26,12 +26,16 @@ type PdfViewerProps = {
   moveEnabled: boolean;
   resizeEnabled: boolean;
   createEnabled: boolean;
-  activeCreateTool: FieldType | null;
+  activeCreateTool: CreateTool | null;
   selectedFieldId: string | null;
+  pendingQuickRadioFieldIds: string[];
+  radioSuggestionByFieldId: Map<string, RadioGroupSuggestion>;
   onSelectField: (fieldId: string) => void;
   onUpdateField: (fieldId: string, updates: Partial<PdfField>) => void;
   onUpdateFieldGeometry: (fieldId: string, updates: Partial<PdfField>) => void;
   onCreateFieldWithRect: (pageNumber: number, type: FieldType, rect: FieldRect) => void;
+  onQuickRadioSelect: (fieldIds: string[], pageNumber: number) => void;
+  onSelectRadioField: (fieldId: string) => void;
   onBeginFieldChange: () => void;
   onCommitFieldChange: () => void;
   onPageChange: (page: number) => void;
@@ -52,12 +56,16 @@ type PdfPageProps = {
   moveEnabled: boolean;
   resizeEnabled: boolean;
   createEnabled: boolean;
-  activeCreateTool: FieldType | null;
+  activeCreateTool: CreateTool | null;
   selectedFieldId: string | null;
+  pendingQuickRadioFieldIds: string[];
+  radioSuggestionByFieldId: Map<string, RadioGroupSuggestion>;
   onSelectField: (fieldId: string) => void;
   onUpdateField: (fieldId: string, updates: Partial<PdfField>) => void;
   onUpdateFieldGeometry: (fieldId: string, updates: Partial<PdfField>) => void;
   onCreateFieldWithRect: (pageNumber: number, type: FieldType, rect: FieldRect) => void;
+  onQuickRadioSelect: (fieldIds: string[], pageNumber: number) => void;
+  onSelectRadioField: (fieldId: string) => void;
   onBeginFieldChange: () => void;
   onCommitFieldChange: () => void;
   registerRef: (node: HTMLDivElement | null) => void;
@@ -82,10 +90,14 @@ function PdfPageComponent({
   createEnabled,
   activeCreateTool,
   selectedFieldId,
+  pendingQuickRadioFieldIds,
+  radioSuggestionByFieldId,
   onSelectField,
   onUpdateField,
   onUpdateFieldGeometry,
   onCreateFieldWithRect,
+  onQuickRadioSelect,
+  onSelectRadioField,
   onBeginFieldChange,
   onCommitFieldChange,
   registerRef,
@@ -189,9 +201,12 @@ function PdfPageComponent({
               activeCreateTool={activeCreateTool}
               showFieldNames={showFieldNames}
               selectedFieldId={selectedFieldId}
+              pendingQuickRadioFieldIds={pendingQuickRadioFieldIds}
+              radioSuggestionByFieldId={radioSuggestionByFieldId}
               onSelectField={onSelectField}
               onUpdateField={onUpdateFieldGeometry}
               onCreateFieldWithRect={(type, rect) => onCreateFieldWithRect(pageNumber, type, rect)}
+              onQuickRadioSelect={(fieldIds) => onQuickRadioSelect(fieldIds, pageNumber)}
               onBeginFieldChange={onBeginFieldChange}
               onCommitFieldChange={onCommitFieldChange}
             />
@@ -204,6 +219,7 @@ function PdfPageComponent({
               selectedFieldId={selectedFieldId}
               onSelectField={onSelectField}
               onUpdateField={onUpdateField}
+              onSelectRadioField={onSelectRadioField}
             />
           ) : null}
           {isRendering ? <div className="viewer__status">Rendering page...</div> : null}
@@ -248,6 +264,7 @@ const PdfPage = memo(PdfPageComponent, (prev, next) => {
     prev.createEnabled === next.createEnabled &&
     prev.activeCreateTool === next.activeCreateTool &&
     prev.selectedFieldId === next.selectedFieldId &&
+    prev.pendingQuickRadioFieldIds === next.pendingQuickRadioFieldIds &&
     prev.isActive === next.isActive
   );
 });
@@ -269,10 +286,14 @@ export function PdfViewer({
   createEnabled,
   activeCreateTool,
   selectedFieldId,
+  pendingQuickRadioFieldIds,
+  radioSuggestionByFieldId,
   onSelectField,
   onUpdateField,
   onUpdateFieldGeometry,
   onCreateFieldWithRect,
+  onQuickRadioSelect,
+  onSelectRadioField,
   onBeginFieldChange,
   onCommitFieldChange,
   onPageChange,
@@ -481,12 +502,16 @@ export function PdfViewer({
             moveEnabled={moveEnabled}
             resizeEnabled={resizeEnabled}
             createEnabled={createEnabled}
-            activeCreateTool={activeCreateTool}
-            selectedFieldId={selectedFieldId}
-            onSelectField={onSelectField}
+                activeCreateTool={activeCreateTool}
+                selectedFieldId={selectedFieldId}
+                pendingQuickRadioFieldIds={pendingQuickRadioFieldIds}
+                radioSuggestionByFieldId={radioSuggestionByFieldId}
+                onSelectField={onSelectField}
             onUpdateField={onUpdateField}
             onUpdateFieldGeometry={onUpdateFieldGeometry}
             onCreateFieldWithRect={onCreateFieldWithRect}
+            onQuickRadioSelect={onQuickRadioSelect}
+            onSelectRadioField={onSelectRadioField}
             onBeginFieldChange={onBeginFieldChange}
             onCommitFieldChange={onCommitFieldChange}
             registerRef={registerPageRef(page)}

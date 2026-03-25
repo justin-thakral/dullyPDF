@@ -360,7 +360,7 @@ describe('useGroupUploadModal', () => {
       mappingResults: {
         mappings: [{ originalPdfField: 'Original Field', pdfField: 'first_name', confidence: 0.92 }],
         checkboxRules: [],
-        checkboxHints: [],
+        radioGroupSuggestions: [],
         textTransformRules: [],
       },
     });
@@ -441,6 +441,7 @@ describe('useGroupUploadModal', () => {
 
     void hook.current.confirm();
     await waitFor(() => expect(deps.loadUserProfile).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(hook.current.processing).toBe(true));
 
     act(() => {
       hook.current.closeDialog();
@@ -498,13 +499,13 @@ describe('useGroupUploadModal', () => {
         success: true,
         fields: [{ originalName: 'Alpha Field', name: 'first_name' }],
         checkboxRules: [],
-        checkboxHints: [],
+        radioGroupSuggestions: [],
       })
       .mockResolvedValueOnce({
         success: true,
         fields: [{ originalName: 'Beta Field', name: 'first_name' }],
         checkboxRules: [],
-        checkboxHints: [],
+        radioGroupSuggestions: [],
       });
     materializeFormPdfMock
       .mockResolvedValueOnce(new Blob(['alpha']))
@@ -634,7 +635,7 @@ describe('useGroupUploadModal', () => {
       success: true,
       fields: [{ originalName: 'Alpha Field', name: 'first_name' }],
       checkboxRules: [],
-      checkboxHints: [],
+      radioGroupSuggestions: [],
     });
     await waitFor(() => expect(materializeFormPdfMock).toHaveBeenCalledTimes(1));
     materialize1.resolve(new Blob(['one']));
@@ -646,7 +647,7 @@ describe('useGroupUploadModal', () => {
       success: true,
       fields: [{ originalName: 'Beta Field', name: 'first_name' }],
       checkboxRules: [],
-      checkboxHints: [],
+      radioGroupSuggestions: [],
     });
     await waitFor(() => expect(materializeFormPdfMock).toHaveBeenCalledTimes(2));
     materialize2.resolve(new Blob(['two']));
@@ -659,7 +660,7 @@ describe('useGroupUploadModal', () => {
       success: true,
       fields: [{ originalName: 'Gamma Field', name: 'first_name' }],
       checkboxRules: [],
-      checkboxHints: [],
+      radioGroupSuggestions: [],
     });
     await waitFor(() => expect(materializeFormPdfMock).toHaveBeenCalledTimes(3));
     materialize3.resolve(new Blob(['three']));
@@ -884,7 +885,6 @@ describe('useGroupUploadModal', () => {
       _sessionId?: string,
       _overwriteFormId?: string,
       _checkboxRules?: Array<Record<string, unknown>>,
-      _checkboxHints?: Array<Record<string, unknown>>,
       _textTransformRules?: Array<Record<string, unknown>>,
       _editorSnapshot?: Record<string, unknown>,
       options?: { signal?: AbortSignal },
@@ -904,6 +904,7 @@ describe('useGroupUploadModal', () => {
 
     void hook.current.confirm();
     await waitFor(() => expect(saveFormToProfileMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(hook.current.processing).toBe(true));
 
     act(() => {
       hook.current.closeDialog();
@@ -917,7 +918,6 @@ describe('useGroupUploadModal', () => {
       'one',
       'session-1',
       undefined,
-      [],
       [],
       [],
       undefined,

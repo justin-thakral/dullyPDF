@@ -27,6 +27,7 @@ frontend/
 
 - `frontend/src/App.tsx`: Top-level shell that keeps `/` on the marketing homepage, auto-starts the runtime for `/upload` and `/ui*` workspace routes, and owns browser history synchronization between the lightweight shell and the runtime.
 - `frontend/src/WorkspaceRuntime.tsx`: Main signed-in runtime that renders upload/processing/editor/profile/auth states and now coordinates direct route restore for saved forms/groups.
+- `frontend/src/workspaceLazyComponents.tsx`: Lazy import registry for large runtime-only screens/dialogs so `WorkspaceRuntime` stays orchestration-focused and does not pull every rarely used UI island into one chunk.
 - `frontend/src/utils/workspaceRoutes.ts`: Parser/builder helpers for workspace browser routes (`/upload`, `/ui`, `/ui/profile`, `/ui/forms/:id`, `/ui/groups/:id?template=:id`).
 - `frontend/src/utils/workspaceResumeState.ts`: Session-scoped resume manifest helpers for restoring saved-form/group routes after refresh without persisting full document state locally.
 - `frontend/src/hooks/`: App feature hooks extracted from `App.tsx` (`useAuth`, `useSavedForms`, `useDetection`, `useOpenAiPipeline`, `useDataSource`, `usePipelineModal`, `useSaveDownload`, `useDemo`, `useFieldHistory`, `useFieldState`, `useDialog`, `useGroupTemplateCache`).

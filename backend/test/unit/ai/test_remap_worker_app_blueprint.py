@@ -100,7 +100,7 @@ def test_remap_worker_completes_job_and_persists_checkbox_outputs(mocker) -> Non
         return_value={
             "mappings": [{"databaseField": "first_name", "pdfField": "first_name"}],
             "checkboxRules": [{"groupKey": "consent"}],
-            "checkboxHints": [{"groupKey": "consent"}],
+            "radioGroupSuggestions": [],
         },
     )
     update_session_mock = mocker.patch.object(remap_worker, "_update_session_entry", return_value=None)

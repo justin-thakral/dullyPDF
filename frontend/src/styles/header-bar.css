@@ -430,6 +430,68 @@
   white-space: nowrap;
 }
 
+.ui-header__download-menu-shell {
+  position: relative;
+}
+
+.ui-header__download-caret {
+  margin-left: 0.38rem;
+  font-size: 0.75rem;
+  opacity: 0.82;
+}
+
+.ui-header__download-menu {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  min-width: 250px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.42rem;
+  background: rgba(15, 23, 42, 0.98);
+  border: 1px solid rgba(148, 163, 184, 0.42);
+  border-radius: 14px;
+  box-shadow: 0 18px 34px rgba(2, 6, 23, 0.45);
+  z-index: 9999;
+}
+
+.ui-header__download-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  width: 100%;
+  padding: 0.7rem 0.78rem;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  color: #f8fafc;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.16s ease, border-color 0.16s ease, transform 0.16s ease;
+}
+
+.ui-header__download-item:hover,
+.ui-header__download-item:focus-visible {
+  background: rgba(37, 99, 235, 0.18);
+  border-color: rgba(96, 165, 250, 0.34);
+  transform: translateY(-1px);
+  outline: none;
+}
+
+.ui-header__download-item-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.ui-header__download-item-copy {
+  font-size: 0.69rem;
+  line-height: 1.35;
+  color: rgba(226, 232, 240, 0.82);
+}
+
 .ui-chip {
   display: flex;
   flex-direction: row;

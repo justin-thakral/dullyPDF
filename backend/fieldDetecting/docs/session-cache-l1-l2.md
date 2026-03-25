@@ -119,7 +119,7 @@ Common fields:
 - `detection_status`, `detection_error`, detector timing/task fields
 - `created_at`, `last_access_at`, `expires_at`, `updated_at`
 - `pdf_path`, `fields_path`, `result_path`, `renames_path`,
-  `checkbox_rules_path`, `checkbox_hints_path`, `text_transform_rules_path`
+  `checkbox_rules_path`, `text_transform_rules_path`
 
 ### L2 artifact structure (GCS)
 
@@ -129,7 +129,6 @@ Object prefixes:
 - `sessions/<session_id>/result.json`
 - `sessions/<session_id>/renames.json`
 - `sessions/<session_id>/checkbox-rules.json`
-- `sessions/<session_id>/checkbox-hints.json`
 - `sessions/<session_id>/text-transform-rules.json`
 
 Bucket resolution for session artifacts:
@@ -152,7 +151,7 @@ L1 fields:
 - `source_pdf`: original filename (safe for download headers).
 - `user_id`: owner of the session (from Firebase auth).
 - `renames`: OpenAI rename report.
-- `checkboxRules`: rename checkbox hints.
+- `checkboxRules`: deterministic checkbox-group fill rules.
 - `page_count`: page count derived from the source PDF (routing/limits; used for OpenAI credit pricing buckets).
 - `created_at`, `last_access`: for TTL sweeps and LRU.
 - `detection_status`, `detection_error`: detector job status metadata (when present).

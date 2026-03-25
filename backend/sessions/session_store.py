@@ -40,7 +40,6 @@ def store_session_entry(
     persist_pdf: bool = True,
     persist_fields: bool = True,
     persist_result: bool = True,
-    persist_checkbox_hints: bool = False,
     persist_text_transform_rules: bool = False,
     persist_l1: bool = True,
 ) -> None:
@@ -51,7 +50,6 @@ def store_session_entry(
         persist_pdf=persist_pdf,
         persist_fields=persist_fields,
         persist_result=persist_result,
-        persist_checkbox_hints=persist_checkbox_hints,
         persist_text_transform_rules=persist_text_transform_rules,
         include_created_at=True,
     )
@@ -68,7 +66,6 @@ def update_session_entry(
     persist_result: bool = False,
     persist_renames: bool = False,
     persist_checkbox_rules: bool = False,
-    persist_checkbox_hints: bool = False,
     persist_text_transform_rules: bool = False,
 ) -> None:
     """Persist session updates to L2.
@@ -81,7 +78,6 @@ def update_session_entry(
         persist_result=persist_result,
         persist_renames=persist_renames,
         persist_checkbox_rules=persist_checkbox_rules,
-        persist_checkbox_hints=persist_checkbox_hints,
         persist_text_transform_rules=persist_text_transform_rules,
         include_created_at=False,
     )
@@ -96,7 +92,6 @@ def get_session_entry(
     include_result: bool = True,
     include_renames: bool = True,
     include_checkbox_rules: bool = True,
-    include_checkbox_hints: bool = False,
     include_text_transform_rules: bool = False,
     force_l2: bool = False,
 ) -> SessionEntry:
@@ -110,7 +105,6 @@ def get_session_entry(
             include_result=include_result,
             include_renames=include_renames,
             include_checkbox_rules=include_checkbox_rules,
-            include_checkbox_hints=include_checkbox_hints,
             include_text_transform_rules=include_text_transform_rules,
         )
         if not entry:
@@ -138,7 +132,6 @@ def get_session_entry(
             include_result=include_result,
             include_renames=include_renames,
             include_checkbox_rules=include_checkbox_rules,
-            include_checkbox_hints=include_checkbox_hints,
             include_text_transform_rules=include_text_transform_rules,
         )
         _require_owner(entry, user)
@@ -149,7 +142,6 @@ def get_session_entry(
             include_result=include_result,
             include_renames=include_renames,
             include_checkbox_rules=include_checkbox_rules,
-            include_checkbox_hints=include_checkbox_hints,
             include_text_transform_rules=include_text_transform_rules,
         ):
             raise HTTPException(status_code=404, detail="Session data not found")
@@ -163,7 +155,6 @@ def get_session_entry(
         include_result=include_result,
         include_renames=include_renames,
         include_checkbox_rules=include_checkbox_rules,
-        include_checkbox_hints=include_checkbox_hints,
         include_text_transform_rules=include_text_transform_rules,
     )
     if not entry:
@@ -183,7 +174,6 @@ def get_session_entry_if_present(
     include_result: bool = True,
     include_renames: bool = True,
     include_checkbox_rules: bool = True,
-    include_checkbox_hints: bool = False,
     include_text_transform_rules: bool = False,
     force_l2: bool = False,
 ) -> Optional[SessionEntry]:
@@ -199,7 +189,6 @@ def get_session_entry_if_present(
             include_result=include_result,
             include_renames=include_renames,
             include_checkbox_rules=include_checkbox_rules,
-            include_checkbox_hints=include_checkbox_hints,
             include_text_transform_rules=include_text_transform_rules,
         )
         if not entry:
@@ -227,7 +216,6 @@ def get_session_entry_if_present(
             include_result=include_result,
             include_renames=include_renames,
             include_checkbox_rules=include_checkbox_rules,
-            include_checkbox_hints=include_checkbox_hints,
             include_text_transform_rules=include_text_transform_rules,
         )
         _require_owner(entry, user)
@@ -238,7 +226,6 @@ def get_session_entry_if_present(
             include_result=include_result,
             include_renames=include_renames,
             include_checkbox_rules=include_checkbox_rules,
-            include_checkbox_hints=include_checkbox_hints,
             include_text_transform_rules=include_text_transform_rules,
         ):
             return None
@@ -252,7 +239,6 @@ def get_session_entry_if_present(
         include_result=include_result,
         include_renames=include_renames,
         include_checkbox_rules=include_checkbox_rules,
-        include_checkbox_hints=include_checkbox_hints,
         include_text_transform_rules=include_text_transform_rules,
     )
     if not entry:

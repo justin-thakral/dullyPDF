@@ -1,131 +1,64 @@
 # Google Search Console API Access (GSC)
 
-This doc shows how to fetch Google Search Console data with `curl` when authentication is already configured.
+Preferred local Search Console credentials now live in `search_console/`, following
+the same local-only pattern as `google_ads/` and `porkbun/`.
 
-## 1) Set shared variables
+Use the local bundle when it exists:
+- `search_console/.env`
+- `search_console/search-console-api-service-account.json`
+- `search_console/README.md`
 
-```bash
-PROJECT_ID="dullypdf"
-TOKEN="$(gcloud auth application-default print-access-token)"
-```
+## Current supported access path
 
-Notes:
-- Keep using the `x-goog-user-project` header in requests.
-- In this repo environment, that header is required for ADC user credentials.
+The working DullyPDF setup uses a dedicated service account:
+- Service account: `search-console-api@dullypdf.iam.gserviceaccount.com`
+- Quota project: `dullypdf`
+- Domain property: `sc-domain:dullypdf.com`
+- Encoded property: `sc-domain%3Adullypdf.com`
 
-## 2) List accessible properties
+Important details:
+- Search Console ownership alone is not enough. The owner also needs the property added with `sites.add`.
+- Requests should send `x-goog-user-project: dullypdf`.
+- The service account needs `roles/serviceusage.serviceUsageConsumer` on project `dullypdf`.
+- `sites.get` and `searchAnalytics.query` are the reliable smoke tests. `sites.list` can lag after a fresh bootstrap.
 
-```bash
-curl -s \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "x-goog-user-project: $PROJECT_ID" \
-  "https://www.googleapis.com/webmasters/v3/sites" | jq
-```
-
-Expected result includes entries like:
-- `siteUrl`: property identifier (for example `sc-domain:dullypdf.com`)
-- `permissionLevel`: your access level
-
-## 3) Query Search Analytics
-
-Use URL-encoded property value in the endpoint path.
-
-Example property:
-- Raw: `sc-domain:dullypdf.com`
-- Encoded: `sc-domain%3Adullypdf.com`
+## Minimal smoke test
 
 ```bash
-SITE_ENC="sc-domain%3Adullypdf.com"
-START_DATE="2026-02-24"
-END_DATE="2026-03-03"
+cd /home/dully/projects/dullyPDF
+set -a
+source search_console/.env
+set +a
 
-curl -s -X POST \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "x-goog-user-project: $PROJECT_ID" \
+TMP_GCLOUD_CONFIG="$(mktemp -d)"
+CLOUDSDK_CONFIG="$TMP_GCLOUD_CONFIG" gcloud auth login \
+  --cred-file="$SEARCH_CONSOLE_SERVICE_ACCOUNT_KEY_PATH" \
+  --quiet
+
+ACCESS_TOKEN="$(CLOUDSDK_CONFIG="$TMP_GCLOUD_CONFIG" gcloud auth print-access-token \
+  --scopes='https://www.googleapis.com/auth/webmasters.readonly')"
+
+curl -sS \
+  -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+  -H "x-goog-user-project: ${SEARCH_CONSOLE_QUOTA_PROJECT}" \
+  "${SEARCH_CONSOLE_WEBMASTERS_API_BASE}/sites/${SEARCH_CONSOLE_SITE_PROPERTY_ENCODED}" | jq
+
+curl -sS -X POST \
+  -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+  -H "x-goog-user-project: ${SEARCH_CONSOLE_QUOTA_PROJECT}" \
   -H "Content-Type: application/json" \
-  "https://www.googleapis.com/webmasters/v3/sites/${SITE_ENC}/searchAnalytics/query" \
-  --data-binary "{\"startDate\":\"$START_DATE\",\"endDate\":\"$END_DATE\",\"dimensions\":[\"query\"],\"rowLimit\":25,\"type\":\"web\"}" | jq
+  "${SEARCH_CONSOLE_WEBMASTERS_API_BASE}/sites/${SEARCH_CONSOLE_SITE_PROPERTY_ENCODED}/searchAnalytics/query" \
+  --data-binary '{"startDate":"2026-02-23","endDate":"2026-03-22","dimensions":["query"],"rowLimit":25,"type":"web"}' | jq
+
+rm -rf "$TMP_GCLOUD_CONFIG"
 ```
 
-## 4) Useful query templates
+## Ownership bootstrap summary
 
-Top pages:
+If the service account is recreated or replaced:
+1. Get a DNS TXT token with the Site Verification API.
+2. Add the TXT token at the root of `dullypdf.com`.
+3. Call Site Verification `insert` with `verificationMethod=DNS_TXT`.
+4. Call Search Console `sites.add` for `sc-domain:dullypdf.com`.
 
-```bash
-curl -s -X POST \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "x-goog-user-project: $PROJECT_ID" \
-  -H "Content-Type: application/json" \
-  "https://www.googleapis.com/webmasters/v3/sites/${SITE_ENC}/searchAnalytics/query" \
-  --data-binary "{\"startDate\":\"$START_DATE\",\"endDate\":\"$END_DATE\",\"dimensions\":[\"page\"],\"rowLimit\":25,\"type\":\"web\"}" | jq
-```
-
-By country + device:
-
-```bash
-curl -s -X POST \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "x-goog-user-project: $PROJECT_ID" \
-  -H "Content-Type: application/json" \
-  "https://www.googleapis.com/webmasters/v3/sites/${SITE_ENC}/searchAnalytics/query" \
-  --data-binary "{\"startDate\":\"$START_DATE\",\"endDate\":\"$END_DATE\",\"dimensions\":[\"country\",\"device\"],\"rowLimit\":100,\"type\":\"web\"}" | jq
-```
-
-Date trend:
-
-```bash
-curl -s -X POST \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "x-goog-user-project: $PROJECT_ID" \
-  -H "Content-Type: application/json" \
-  "https://www.googleapis.com/webmasters/v3/sites/${SITE_ENC}/searchAnalytics/query" \
-  --data-binary "{\"startDate\":\"$START_DATE\",\"endDate\":\"$END_DATE\",\"dimensions\":[\"date\"],\"rowLimit\":1000,\"type\":\"web\"}" | jq
-```
-
-## 5) Save output for local analysis
-
-```bash
-curl -s -X POST \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "x-goog-user-project: $PROJECT_ID" \
-  -H "Content-Type: application/json" \
-  "https://www.googleapis.com/webmasters/v3/sites/${SITE_ENC}/searchAnalytics/query" \
-  --data-binary "{\"startDate\":\"$START_DATE\",\"endDate\":\"$END_DATE\",\"dimensions\":[\"query\"],\"rowLimit\":25000,\"type\":\"web\"}" \
-  > tmp/gsc-query-report.json
-```
-
-## 6) Common errors
-
-- `403 ACCESS_TOKEN_SCOPE_INSUFFICIENT`
-  - Token does not include Search Console scope.
-- `403 SERVICE_DISABLED` or quota project error
-  - Request missing `x-goog-user-project` header or wrong project.
-- `200` with no `rows`
-  - Valid response, but no data for that date range/filter.
-
-## 7) Response fields
-
-Search Analytics row metrics:
-- `clicks`
-- `impressions`
-- `ctr`
-- `position`
-- `keys` (dimension values in dimension order)
-
-## 8) Minimal smoke-test sequence
-
-```bash
-PROJECT_ID="dullypdf"
-TOKEN="$(gcloud auth application-default print-access-token)"
-
-curl -s -H "Authorization: Bearer $TOKEN" -H "x-goog-user-project: $PROJECT_ID" \
-  "https://www.googleapis.com/webmasters/v3/sites" | jq
-
-SITE_ENC="sc-domain%3Adullypdf.com"
-START_DATE="2026-02-24"
-END_DATE="2026-03-03"
-
-curl -s -X POST -H "Authorization: Bearer $TOKEN" -H "x-goog-user-project: $PROJECT_ID" -H "Content-Type: application/json" \
-  "https://www.googleapis.com/webmasters/v3/sites/${SITE_ENC}/searchAnalytics/query" \
-  --data-binary "{\"startDate\":\"$START_DATE\",\"endDate\":\"$END_DATE\",\"dimensions\":[\"query\"],\"rowLimit\":10,\"type\":\"web\"}" | jq
-```
+The local `search_console/README.md` contains the exact commands.

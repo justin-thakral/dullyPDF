@@ -169,7 +169,7 @@ def test_schema_mapping_charges_one_credit(
     mocker.patch("backend.api.routes.ai.record_openai_request", return_value=None)
     mocker.patch(
         "backend.api.routes.ai.call_openai_schema_mapping_chunked",
-        return_value={"mappings": [], "checkboxRules": [], "checkboxHints": [], "notes": ""},
+        return_value={"mappings": [], "checkboxRules": [], "radioGroupSuggestions": [], "notes": ""},
     )
     mocker.patch("backend.api.routes.ai._update_session_entry", return_value=None)
 
@@ -253,7 +253,7 @@ def test_schema_mapping_charges_two_credits_for_ten_pages(
     mocker.patch("backend.api.routes.ai.record_openai_request", return_value=None)
     mocker.patch(
         "backend.api.routes.ai.call_openai_schema_mapping_chunked",
-        return_value={"mappings": [], "checkboxRules": [], "checkboxHints": [], "notes": ""},
+        return_value={"mappings": [], "checkboxRules": [], "radioGroupSuggestions": [], "notes": ""},
     )
     mocker.patch("backend.api.routes.ai._update_session_entry", return_value=None)
 

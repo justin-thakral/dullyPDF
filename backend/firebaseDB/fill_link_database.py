@@ -48,6 +48,7 @@ class FillLinkRecord:
     questions: List[Dict[str, Any]]
     require_all_fields: bool
     web_form_config: Optional[Dict[str, Any]]
+    signing_config: Optional[Dict[str, Any]]
     created_at: Optional[str]
     updated_at: Optional[str]
     published_at: Optional[str]
@@ -71,6 +72,8 @@ class FillLinkResponseRecord:
     search_text: str
     submitted_at: Optional[str]
     respondent_pdf_snapshot: Optional[Dict[str, Any]] = None
+    signing_request_id: Optional[str] = None
+    signing_linked_at: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -189,6 +192,7 @@ def _serialize_fill_link(doc) -> FillLinkRecord:
         questions=_coerce_dict_list(data.get("questions")),
         require_all_fields=bool(data.get("require_all_fields")),
         web_form_config=_coerce_optional_dict(data.get("web_form_config")),
+        signing_config=_coerce_optional_dict(data.get("signing_config")),
         respondent_pdf_download_enabled=bool(data.get("respondent_pdf_download_enabled")),
         respondent_pdf_snapshot=_coerce_optional_dict(data.get("respondent_pdf_snapshot")),
         created_at=data.get("created_at"),
@@ -215,6 +219,8 @@ def _serialize_fill_link_response(doc) -> FillLinkResponseRecord:
         search_text=str(data.get("search_text") or "").strip().lower(),
         submitted_at=data.get("submitted_at"),
         respondent_pdf_snapshot=_coerce_optional_dict(data.get("respondent_pdf_snapshot")),
+        signing_request_id=(str(data.get("signing_request_id") or "").strip() or None),
+        signing_linked_at=(str(data.get("signing_linked_at") or "").strip() or None),
     )
 
 
@@ -312,6 +318,7 @@ def create_or_update_fill_link(
     questions: List[Dict[str, Any]],
     require_all_fields: bool,
     web_form_config: Optional[Dict[str, Any]] = None,
+    signing_config: Optional[Dict[str, Any]] = None,
     max_responses: int,
     respondent_pdf_download_enabled: bool = False,
     respondent_pdf_snapshot: Optional[Dict[str, Any]] = None,
@@ -387,10 +394,11 @@ def create_or_update_fill_link(
             "questions": questions,
             "require_all_fields": bool(require_all_fields),
             "web_form_config": dict(web_form_config) if isinstance(web_form_config, dict) else None,
+            "signing_config": dict(signing_config) if isinstance(signing_config, dict) else None,
             "respondent_pdf_download_enabled": bool(respondent_pdf_download_enabled),
             "respondent_pdf_snapshot": (
                 dict(respondent_pdf_snapshot)
-                if bool(respondent_pdf_download_enabled) and isinstance(respondent_pdf_snapshot, dict)
+                if isinstance(respondent_pdf_snapshot, dict)
                 else None
             ),
             "updated_at": timestamp,
@@ -456,6 +464,7 @@ def update_fill_link(
     template_ids: Optional[List[str]] = None,
     require_all_fields: Optional[bool] = None,
     web_form_config: Optional[Dict[str, Any]] = None,
+    signing_config: Optional[Dict[str, Any]] = None,
     respondent_pdf_download_enabled: Optional[bool] = None,
     respondent_pdf_snapshot: Optional[Dict[str, Any]] = None,
     status: Optional[str] = None,
@@ -497,12 +506,14 @@ def update_fill_link(
             payload["require_all_fields"] = bool(require_all_fields)
         if web_form_config is not None:
             payload["web_form_config"] = dict(web_form_config) if isinstance(web_form_config, dict) else None
+        if signing_config is not None:
+            payload["signing_config"] = dict(signing_config) if isinstance(signing_config, dict) else None
         if respondent_pdf_download_enabled is not None:
             enabled = bool(respondent_pdf_download_enabled)
             payload["respondent_pdf_download_enabled"] = enabled
             payload["respondent_pdf_snapshot"] = (
                 dict(respondent_pdf_snapshot)
-                if enabled and isinstance(respondent_pdf_snapshot, dict)
+                if isinstance(respondent_pdf_snapshot, dict)
                 else None
             )
         if max_responses is not None:
@@ -742,6 +753,40 @@ def get_fill_link_response(response_id: str, link_id: str, user_id: str) -> Opti
     return record
 
 
+def attach_fill_link_response_signing_request(
+    response_id: str,
+    link_id: str,
+    user_id: str,
+    *,
+    signing_request_id: str,
+) -> Optional[FillLinkResponseRecord]:
+    """Attach a signing request to an existing Fill By Link response.
+
+    The helper is intentionally O(1) in Firestore operations: one ownership
+    check via ``get_fill_link_response`` and one merge update for the response
+    document. That keeps public submit retries cheap while giving later owner
+    views a stable foreign key instead of inferring signing status from labels.
+    """
+
+    normalized_request_id = str(signing_request_id or "").strip()
+    if not normalized_request_id:
+        return None
+    response_record = get_fill_link_response(response_id, link_id, user_id)
+    if response_record is None:
+        return None
+    firestore_client = get_firestore_client()
+    doc_ref = firestore_client.collection(FILL_LINK_RESPONSES_COLLECTION).document(response_id)
+    linked_at = now_iso()
+    doc_ref.set(
+        {
+            "signing_request_id": normalized_request_id,
+            "signing_linked_at": linked_at,
+        },
+        merge=True,
+    )
+    return _serialize_fill_link_response(doc_ref.get())
+
+
 def submit_fill_link_response(
     public_token: str,
     *,
@@ -812,9 +857,11 @@ def submit_fill_link_response(
             "submitted_at": timestamp,
             "respondent_pdf_snapshot": (
                 dict(current.respondent_pdf_snapshot)
-                if current.respondent_pdf_download_enabled and isinstance(current.respondent_pdf_snapshot, dict)
+                if isinstance(current.respondent_pdf_snapshot, dict)
                 else None
             ),
+            "signing_request_id": None,
+            "signing_linked_at": None,
         }
         txn.set(response_doc_ref, response_payload)
 
@@ -847,6 +894,7 @@ def submit_fill_link_response(
             questions=current.questions,
             require_all_fields=current.require_all_fields,
             web_form_config=current.web_form_config,
+            signing_config=current.signing_config,
             respondent_pdf_download_enabled=current.respondent_pdf_download_enabled,
             respondent_pdf_snapshot=current.respondent_pdf_snapshot,
             created_at=current.created_at,
@@ -868,6 +916,8 @@ def submit_fill_link_response(
             search_text=search_text,
             submitted_at=timestamp,
             respondent_pdf_snapshot=_coerce_optional_dict(response_payload.get("respondent_pdf_snapshot")),
+            signing_request_id=None,
+            signing_linked_at=None,
         )
         return FillLinkSubmissionResult(status="accepted", link=next_link, response=response)
 

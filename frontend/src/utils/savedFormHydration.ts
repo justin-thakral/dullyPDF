@@ -1,11 +1,13 @@
 import type {
-  CheckboxHint,
   CheckboxRule,
   PageSize,
   PdfField,
+  RadioGroup,
+  RadioGroupSuggestion,
   SavedFormEditorSnapshot,
   TextTransformRule,
 } from '../types';
+import { buildRadioGroups, normalizeRadioKey } from './radioGroups';
 
 type FillRulesSource = {
   fillRules?: {
@@ -22,7 +24,7 @@ type FillRulesSource = {
 
 export type SavedFormFillRuleState = {
   checkboxRules: CheckboxRule[];
-  checkboxHints: CheckboxHint[];
+  legacyRadioGroupSuggestions: RadioGroupSuggestion[];
   textTransformRules: TextTransformRule[];
 };
 
@@ -74,7 +76,7 @@ function normalizeField(value: unknown): PdfField | null {
   if (!id || !name || !rect || !Number.isInteger(page) || page < 1) {
     return null;
   }
-  if (!['text', 'checkbox', 'signature', 'date'].includes(type)) {
+  if (!['text', 'checkbox', 'radio', 'signature', 'date'].includes(type)) {
     return null;
   }
   const field: PdfField = {
@@ -85,24 +87,98 @@ function normalizeField(value: unknown): PdfField | null {
     rect,
     value: normalizeFieldValue(record.value),
   };
-  for (const key of ['groupKey', 'optionKey', 'optionLabel', 'groupLabel'] as const) {
+  for (const key of [
+    'groupKey',
+    'optionKey',
+    'optionLabel',
+    'groupLabel',
+    'radioGroupId',
+    'radioGroupKey',
+    'radioGroupLabel',
+    'radioOptionKey',
+    'radioOptionLabel',
+  ] as const) {
     const raw = record[key];
     if (raw === undefined || raw === null) {
       continue;
     }
     field[key] = String(raw);
   }
-  for (const key of ['fieldConfidence', 'mappingConfidence', 'renameConfidence'] as const) {
+  if (record.radioGroupSource !== undefined && record.radioGroupSource !== null) {
+    const source = String(record.radioGroupSource).trim();
+    if (source === 'manual' || source === 'ai_suggestion' || source === 'migrated_legacy') {
+      field.radioGroupSource = source;
+    }
+  }
+  for (const key of ['fieldConfidence', 'mappingConfidence', 'renameConfidence', 'radioOptionOrder'] as const) {
     const raw = record[key];
     if (raw === undefined || raw === null) {
       continue;
     }
     const numeric = Number(raw);
     if (Number.isFinite(numeric)) {
-      field[key] = numeric;
+      if (key === 'radioOptionOrder') {
+        field.radioOptionOrder = numeric;
+      } else {
+        field[key] = numeric;
+      }
     }
   }
   return field;
+}
+
+function normalizeRadioGroups(value: unknown): RadioGroup[] | null {
+  if (value === undefined || value === null) {
+    return [];
+  }
+  if (!Array.isArray(value)) {
+    return null;
+  }
+  const normalized: RadioGroup[] = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== 'object') return null;
+    const record = entry as Record<string, unknown>;
+    const id = String(record.id || '').trim();
+    const key = String(record.key || '').trim();
+    const label = String(record.label || '').trim();
+    const source = String(record.source || 'manual').trim() as RadioGroup['source'];
+    if (!id || !key || !label) return null;
+    const options = Array.isArray(record.options)
+      ? record.options
+          .map((option) => {
+            if (!option || typeof option !== 'object') return null;
+            const optionRecord = option as Record<string, unknown>;
+            const fieldId = String(optionRecord.fieldId || '').trim();
+            const optionKey = String(optionRecord.optionKey || '').trim();
+            const optionLabel = String(optionRecord.optionLabel || '').trim();
+            if (!fieldId || !optionKey || !optionLabel) return null;
+            return { fieldId, optionKey, optionLabel };
+          })
+          .filter((option): option is RadioGroup['options'][number] => Boolean(option))
+      : null;
+    if (!options) return null;
+    if (options.length === 0) return null;
+    const optionOrder = Array.isArray(record.optionOrder)
+      ? record.optionOrder.map((item) => String(item || '').trim()).filter(Boolean)
+      : options.map((option) => option.optionKey);
+    const rawPage = record.page;
+    const page =
+      rawPage === undefined || rawPage === null
+        ? undefined
+        : Number.isInteger(Number(rawPage)) && Number(rawPage) > 0
+          ? Number(rawPage)
+          : undefined;
+    normalized.push({
+      id,
+      key,
+      label,
+      page,
+      optionOrder,
+      options,
+      source: source === 'ai_suggestion' || source === 'migrated_legacy' ? source : 'manual',
+    });
+  }
+  return normalized;
 }
 
 function normalizePageSizes(
@@ -130,6 +206,117 @@ function normalizePageSizes(
   return normalized;
 }
 
+function compareFields(left: PdfField, right: PdfField) {
+  if (left.page !== right.page) return left.page - right.page;
+  if (left.rect.y !== right.rect.y) return left.rect.y - right.rect.y;
+  if (left.rect.x !== right.rect.x) return left.rect.x - right.rect.x;
+  return left.name.localeCompare(right.name, undefined, { sensitivity: 'base' });
+}
+
+function humanizeLegacyLabel(raw: string, fallback: string): string {
+  const candidate = String(raw || '').trim();
+  const base = candidate || fallback;
+  return base
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function deriveLegacyOptionLabel(field: PdfField, groupKey: string, index: number): string {
+  const explicit = String(field.optionLabel || field.radioOptionLabel || '').trim();
+  if (explicit) {
+    return explicit;
+  }
+  const rawOptionKey = String(field.optionKey || field.radioOptionKey || '').trim();
+  if (rawOptionKey) {
+    return humanizeLegacyLabel(rawOptionKey, `Option ${index}`);
+  }
+  const groupPrefix = `${normalizeRadioKey(groupKey, groupKey)}_`;
+  const normalizedFieldName = normalizeRadioKey(field.name, field.name);
+  if (normalizedFieldName.startsWith(groupPrefix)) {
+    return humanizeLegacyLabel(normalizedFieldName.slice(groupPrefix.length), `Option ${index}`);
+  }
+  return humanizeLegacyLabel(field.name, `Option ${index}`);
+}
+
+export function deriveLegacyRadioGroupSuggestions(
+  fields: PdfField[],
+  checkboxRules: CheckboxRule[],
+): RadioGroupSuggestion[] {
+  if (!fields.length || !checkboxRules.length) {
+    return [];
+  }
+
+  const checkboxGroups = new Map<string, PdfField[]>();
+  for (const field of fields) {
+    if (field.type !== 'checkbox') {
+      continue;
+    }
+    const rawGroupKey = String(field.groupKey || '').trim();
+    const groupKey = normalizeRadioKey(rawGroupKey, '');
+    if (!groupKey) {
+      continue;
+    }
+    const group = checkboxGroups.get(groupKey);
+    if (group) {
+      group.push(field);
+    } else {
+      checkboxGroups.set(groupKey, [field]);
+    }
+  }
+
+  const suggestionsByGroup = new Map<string, RadioGroupSuggestion>();
+  for (const rule of checkboxRules) {
+    if (rule.operation !== 'yes_no' && rule.operation !== 'enum') {
+      continue;
+    }
+    const groupKey = normalizeRadioKey(String(rule.groupKey || '').trim(), '');
+    if (!groupKey || suggestionsByGroup.has(groupKey)) {
+      continue;
+    }
+    const groupFields = [...(checkboxGroups.get(groupKey) || [])].sort(compareFields);
+    if (groupFields.length < 2) {
+      continue;
+    }
+    if (groupFields.some((field) => field.type === 'radio' || field.radioGroupId)) {
+      continue;
+    }
+    const groupLabel = humanizeLegacyLabel(
+      String(groupFields[0]?.groupLabel || '').trim(),
+      groupKey,
+    );
+    const suggestion: RadioGroupSuggestion = {
+      id: `legacy_${groupKey}`,
+      suggestedType: 'radio_group',
+      groupKey,
+      groupLabel,
+      suggestedFields: groupFields.map((field, index) => {
+        const optionLabel = deriveLegacyOptionLabel(field, groupKey, index + 1);
+        const optionKey = normalizeRadioKey(
+          String(field.optionKey || field.radioOptionKey || '').trim() || optionLabel,
+          `option_${index + 1}`,
+        );
+        return {
+          fieldId: field.id,
+          fieldName: field.name,
+          optionKey,
+          optionLabel,
+        };
+      }),
+      sourceField: String(rule.databaseField || '').trim() || undefined,
+      selectionReason: rule.operation === 'yes_no' ? 'yes_no' : 'enum',
+      confidence: typeof rule.confidence === 'number' ? rule.confidence : undefined,
+      reasoning: String(rule.reasoning || '').trim() || `Legacy checkbox rule "${rule.operation}" targeted "${groupLabel}". Review and convert this cluster into an explicit radio group if it is single-choice.`,
+    };
+    suggestionsByGroup.set(groupKey, suggestion);
+  }
+
+  return [...suggestionsByGroup.values()].sort((left, right) => (
+    left.groupLabel.localeCompare(right.groupLabel, undefined, { sensitivity: 'base' })
+  ));
+}
+
 export function buildSavedFormEditorSnapshot(params: {
   pageCount: number;
   pageSizes: Record<number, PageSize>;
@@ -138,7 +325,7 @@ export function buildSavedFormEditorSnapshot(params: {
   hasMappedSchema: boolean;
 }): SavedFormEditorSnapshot {
   return {
-    version: 1,
+    version: 2,
     pageCount: params.pageCount,
     pageSizes: Object.fromEntries(
       Object.entries(params.pageSizes).map(([page, size]) => [
@@ -150,6 +337,7 @@ export function buildSavedFormEditorSnapshot(params: {
       ...field,
       rect: { ...field.rect },
     })),
+    radioGroups: buildRadioGroups(params.fields),
     hasRenamedFields: params.hasRenamedFields,
     hasMappedSchema: params.hasMappedSchema,
   };
@@ -165,7 +353,7 @@ export function normalizeSavedFormEditorSnapshot(
   const record = value as Record<string, unknown>;
   const version = Number(record.version || 0);
   const pageCount = Number(record.pageCount);
-  if (version !== 1 || !Number.isInteger(pageCount) || pageCount < 1) {
+  if (![1, 2].includes(version) || !Number.isInteger(pageCount) || pageCount < 1) {
     return null;
   }
   if (options?.expectedPageCount && pageCount !== options.expectedPageCount) {
@@ -184,11 +372,16 @@ export function normalizeSavedFormEditorSnapshot(
   if (fields.length !== record.fields.length) {
     return null;
   }
+  const radioGroups = normalizeRadioGroups(record.radioGroups);
+  if (radioGroups === null) {
+    return null;
+  }
   return {
-    version: 1,
+    version: 2,
     pageCount,
     pageSizes,
     fields,
+    radioGroups: radioGroups.length ? radioGroups : buildRadioGroups(fields),
     hasRenamedFields: Boolean(record.hasRenamedFields),
     hasMappedSchema: Boolean(record.hasMappedSchema),
   };
@@ -196,6 +389,7 @@ export function normalizeSavedFormEditorSnapshot(
 
 export function extractSavedFormFillRuleState(
   savedMeta: FillRulesSource | null | undefined,
+  options?: { fields?: PdfField[] },
 ): SavedFormFillRuleState {
   const savedFillRules = savedMeta?.fillRules && typeof savedMeta.fillRules === 'object'
     ? savedMeta.fillRules
@@ -204,11 +398,6 @@ export function extractSavedFormFillRuleState(
     ? (savedFillRules.checkboxRules as CheckboxRule[])
     : Array.isArray(savedMeta?.checkboxRules)
       ? (savedMeta.checkboxRules as CheckboxRule[])
-      : [];
-  const checkboxHints = Array.isArray(savedFillRules?.checkboxHints)
-    ? (savedFillRules.checkboxHints as CheckboxHint[])
-    : Array.isArray(savedMeta?.checkboxHints)
-      ? (savedMeta.checkboxHints as CheckboxHint[])
       : [];
   const textTransformRules = Array.isArray(savedFillRules?.textTransformRules)
     ? (savedFillRules.textTransformRules as TextTransformRule[])
@@ -221,7 +410,7 @@ export function extractSavedFormFillRuleState(
           : [];
   return {
     checkboxRules,
-    checkboxHints,
+    legacyRadioGroupSuggestions: deriveLegacyRadioGroupSuggestions(options?.fields || [], checkboxRules),
     textTransformRules,
   };
 }

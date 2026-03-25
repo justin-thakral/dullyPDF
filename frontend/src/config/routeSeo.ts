@@ -3,6 +3,13 @@ import { getIntentPages, type IntentFaq, type IntentPageKey } from './intentPage
 import { getFeaturePlanPages, type FeaturePlanPageKey } from './featurePlanPages';
 import { BLOG_INDEX_SEO, resolveBlogSeo } from './blogSeo';
 import { getBlogSlugs } from './blogPosts';
+import {
+  appendStructuredData,
+  buildBreadcrumbSchema,
+  buildIntentSeoDescription,
+  buildIntentSeoTitle,
+  type SeoBreadcrumbItem,
+} from './seoHelpers';
 
 export type LegalRouteKey = 'privacy' | 'terms';
 export type IntentHubRouteKey = 'workflows' | 'industries';
@@ -33,16 +40,33 @@ export const SITE_ORIGIN = 'https://dullypdf.com';
 export const DEFAULT_SOCIAL_IMAGE_PATH = '/DullyPDFLogoImproved.png';
 export const DEFAULT_SOCIAL_IMAGE_ALT = 'DullyPDF logo';
 
+const withBreadcrumbStructuredData = (
+  metadata: RouteSeoMetadata,
+  breadcrumbItems: SeoBreadcrumbItem[],
+): RouteSeoMetadata => ({
+  ...metadata,
+  structuredData: appendStructuredData(metadata.structuredData, buildBreadcrumbSchema(breadcrumbItems)),
+});
+
 const HOME_ROUTE_SEO: RouteSeoMetadata = {
-  title: 'DullyPDF | Convert PDFs to Fillable Forms, Share Fill Links, and Map Data',
+  title: 'DullyPDF | Automatic Free PDF to Fillable Form with Search & Fill',
   description:
-    'DullyPDF is a PDF form builder for existing documents. Convert PDFs into fillable templates with AI field detection, publish native Fill By Link forms, map fields to database columns, and auto-fill from CSV, Excel, JSON, or respondent records. Free to start.',
+    'DullyPDF turns existing PDFs into fillable forms with AI field detection. Map fields to database headers, fill row data automatically, publish JSON-to-PDF API endpoints, send web forms to collect answers, or route immutable PDFs into email-based signature workflows.',
   canonicalPath: '/',
   keywords: [
     'pdf to fillable form',
+    'free pdf to fillable form',
+    'automatic pdf to fillable form',
     'pdf form builder',
     'fillable pdf builder',
     'fill by link pdf',
+    'pdf fill api',
+    'json to pdf api',
+    'pdf radio button editor',
+    'send pdf for signature by email',
+    'electronic signature workflow',
+    'web form to signed pdf',
+    'pdf search and fill',
     'shareable pdf form link',
     'pdf to database template',
     'fillable pdf template generator',
@@ -58,17 +82,21 @@ const HOME_ROUTE_SEO: RouteSeoMetadata = {
       operatingSystem: 'Web',
       url: 'https://dullypdf.com/',
       description:
-        'DullyPDF is a PDF form builder for existing documents. It converts PDFs into fillable templates, publishes native Fill By Link forms, maps fields to schema headers, and fills mapped fields from structured data rows or respondent records.',
+        'DullyPDF turns existing PDFs into fillable forms with AI field detection. It maps fields to database headers, fills row data automatically, publishes template-scoped JSON-to-PDF endpoints, and lets teams send web forms to collect answers or route immutable PDFs into signing workflows.',
       offers: {
         '@type': 'Offer',
         price: '0',
         priceCurrency: 'USD',
       },
       featureList: [
-        'PDF form builder for existing PDFs',
-        'PDF field detection',
+        'Free PDF form builder for existing PDFs',
+        'Automatic AI field detection',
         'Fillable form template editing',
+        'Radio group editing and deterministic radio fill behavior',
+        'Template-scoped JSON-to-PDF API Fill endpoints',
         'Native Fill By Link forms for saved templates',
+        'Email-based PDF signature requests with immutable record freeze',
+        'Web-form-to-sign handoff for collected respondent data',
         'Free includes 1 shareable link and 5 responses',
         'Premium supports every template and up to 10,000 responses per link',
         'Schema mapping for CSV/XLSX/JSON',
@@ -304,6 +332,77 @@ const USAGE_DOCS_ROUTE_SEO: Record<UsageDocsPageKey, RouteSeoMetadata> = {
       },
     ],
   },
+  'signature-workflow': {
+    title: 'PDF Signature Workflow by Email or Web Form | DullyPDF Docs',
+    description:
+      'Learn how DullyPDF freezes immutable PDFs for signature, supports both email and post-submit web-form signing, and keeps signed artifacts available to owners later.',
+    canonicalPath: '/usage-docs/signature-workflow',
+    keywords: [
+      'pdf signature workflow',
+      'send pdf for signature by email',
+      'web form to signed pdf',
+      'us electronic signature workflow',
+    ],
+    structuredData: [
+      {
+        '@context': 'https://schema.org',
+        '@type': 'FAQPage',
+        mainEntity: [
+          {
+            '@type': 'Question',
+            name: 'Can DullyPDF send a PDF for signature by email?',
+            acceptedAnswer: {
+              '@type': 'Answer',
+              text:
+                'Yes. The owner can freeze the current PDF into an immutable snapshot, email the signer, and keep the signed artifacts in the workspace afterward.',
+            },
+          },
+          {
+            '@type': 'Question',
+            name: 'Can Fill By Web Form Link route respondents into signing after submit?',
+            acceptedAnswer: {
+              '@type': 'Answer',
+              text:
+                'Yes. Template links can require signature after submit, which stores the response, materializes the filled PDF, and continues into the public signing ceremony.',
+            },
+          },
+        ],
+      },
+    ],
+  },
+  'api-fill': {
+    title: 'JSON to PDF API Fill Workflow | DullyPDF Docs',
+    description:
+      'Learn how DullyPDF publishes template-scoped JSON-to-PDF API endpoints with schema downloads, key rotation, audit activity, and hosted guardrails.',
+    canonicalPath: '/usage-docs/api-fill',
+    keywords: ['pdf fill api', 'json to pdf api', 'template api pdf', 'pdf form api'],
+    structuredData: [
+      {
+        '@context': 'https://schema.org',
+        '@type': 'FAQPage',
+        mainEntity: [
+          {
+            '@type': 'Question',
+            name: 'What is DullyPDF API Fill?',
+            acceptedAnswer: {
+              '@type': 'Answer',
+              text:
+                'API Fill publishes one saved-template snapshot as a hosted JSON-to-PDF endpoint with its own schema, auth key, limits, and audit activity.',
+            },
+          },
+          {
+            '@type': 'Question',
+            name: 'How is API Fill different from Search and Fill?',
+            acceptedAnswer: {
+              '@type': 'Answer',
+              text:
+                'Search and Fill keeps chosen row data local in the browser, while API Fill is a hosted backend runtime for other systems that need a template-scoped JSON-to-PDF endpoint.',
+            },
+          },
+        ],
+      },
+    ],
+  },
   'create-group': {
     title: 'Create Group Workflows for Full PDF Packets | DullyPDF Docs',
     description:
@@ -372,7 +471,14 @@ const FEATURE_PLAN_ROUTE_SEO: Record<FeaturePlanPageKey, RouteSeoMetadata> = get
       description: page.seoDescription,
       canonicalPath: page.path,
       keywords: page.seoKeywords,
-      structuredData: toFaqSchema(page.faqs),
+      structuredData: appendStructuredData(
+        toFaqSchema(page.faqs),
+        buildBreadcrumbSchema([
+          { label: 'Home', href: '/' },
+          { label: 'Plans' },
+          { label: page.navLabel },
+        ]),
+      ),
     };
     return acc;
   },
@@ -382,11 +488,18 @@ const FEATURE_PLAN_ROUTE_SEO: Record<FeaturePlanPageKey, RouteSeoMetadata> = get
 const INTENT_ROUTE_SEO: Record<IntentPageKey, RouteSeoMetadata> = getIntentPages().reduce(
   (acc, page) => {
     acc[page.key] = {
-      title: page.seoTitle,
-      description: page.seoDescription,
+      title: buildIntentSeoTitle(page.heroTitle),
+      description: buildIntentSeoDescription(page.heroSummary),
       canonicalPath: page.path,
       keywords: page.seoKeywords,
-      structuredData: toFaqSchema(page.faqs),
+      structuredData: appendStructuredData(
+        toFaqSchema(page.faqs),
+        buildBreadcrumbSchema([
+          { label: 'Home', href: '/' },
+          { label: page.category === 'industry' ? 'Industries' : 'Workflows' },
+          { label: page.navLabel },
+        ]),
+      ),
     };
     return acc;
   },
@@ -401,10 +514,26 @@ const USAGE_DOCS_ROUTE_ORDER: UsageDocsPageKey[] = [
   'editor-workflow',
   'search-fill',
   'fill-by-link',
+  'signature-workflow',
+  'api-fill',
   'create-group',
   'save-download-profile',
   'troubleshooting',
 ];
+
+USAGE_DOCS_ROUTE_SEO.index = withBreadcrumbStructuredData(USAGE_DOCS_ROUTE_SEO.index, [
+  { label: 'Home', href: '/' },
+  { label: 'Usage Docs' },
+]);
+
+for (const pageKey of USAGE_DOCS_ROUTE_ORDER.filter((entry) => entry !== 'index')) {
+  const page = USAGE_DOCS_ROUTE_SEO[pageKey];
+  USAGE_DOCS_ROUTE_SEO[pageKey] = withBreadcrumbStructuredData(page, [
+    { label: 'Home', href: '/' },
+    { label: 'Usage Docs', href: '/usage-docs' },
+    { label: page.title.replace(/ \| DullyPDF Docs$/, '').replace(/ \| DullyPDF$/, '') },
+  ]);
+}
 
 export const INDEXABLE_PUBLIC_ROUTE_PATHS: string[] = [
   HOME_ROUTE_SEO.canonicalPath,

@@ -76,6 +76,24 @@
         ]
       },
       {
+        "source": "/respond/**",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-store,max-age=0"
+          }
+        ]
+      },
+      {
+        "source": "/sign/**",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-store,max-age=0"
+          }
+        ]
+      },
+      {
         "source": "/demo/**",
         "headers": [
           {
@@ -149,6 +167,34 @@
         "destination": "/index.html"
       },
       {
+        "source": "/upload",
+        "destination": "/index.html"
+      },
+      {
+        "source": "/ui",
+        "destination": "/index.html"
+      },
+      {
+        "source": "/ui/profile",
+        "destination": "/index.html"
+      },
+      {
+        "source": "/ui/forms/:formId",
+        "destination": "/index.html"
+      },
+      {
+        "source": "/ui/groups/:groupId",
+        "destination": "/index.html"
+      },
+      {
+        "source": "/respond/:token",
+        "destination": "/index.html"
+      },
+      {
+        "source": "/sign/:token",
+        "destination": "/index.html"
+      },
+      {
         "source": "/api/**",
         "run": {
           "serviceId": "dullypdf-backend-east4",
@@ -175,10 +221,6 @@
           "serviceId": "dullypdf-backend-east4",
           "region": "us-east4"
         }
-      },
-      {
-        "source": "**",
-        "destination": "/index.html"
       }
     ]
   }

@@ -7,7 +7,7 @@ import json
 import pytest
 
 
-_ENV_KEYS = ["FORMS_BUCKET", "TEMPLATES_BUCKET", "SANDBOX_SESSION_BUCKET", "SESSION_BUCKET"]
+_ENV_KEYS = ["FORMS_BUCKET", "TEMPLATES_BUCKET", "SANDBOX_SESSION_BUCKET", "SESSION_BUCKET", "SIGNING_BUCKET"]
 
 
 def _reload_storage_service(monkeypatch, **env):
@@ -176,6 +176,35 @@ def test_upload_session_json_serializes_payload(monkeypatch, mocker) -> None:
     assert kwargs == {"content_type": "application/json"}
 
 
+def test_build_signing_bucket_uri_uses_signing_bucket(monkeypatch) -> None:
+    ss = _reload_storage_service(
+        monkeypatch,
+        FORMS_BUCKET="forms",
+        TEMPLATES_BUCKET="templates",
+        SIGNING_BUCKET="signing",
+    )
+
+    assert ss.build_signing_bucket_uri("artifacts/final.pdf") == "gs://signing/artifacts/final.pdf"
+
+
+def test_upload_signing_json_serializes_payload(monkeypatch, mocker) -> None:
+    ss = _reload_storage_service(
+        monkeypatch,
+        FORMS_BUCKET="forms",
+        TEMPLATES_BUCKET="templates",
+        SIGNING_BUCKET="signing",
+    )
+    bucket, blob = _mock_bucket_and_blob(mocker)
+    mocker.patch("backend.firebaseDB.storage_service.get_storage_bucket", return_value=bucket)
+
+    uri = ss.upload_signing_json({"ok": True}, "artifacts/audit.json")
+
+    assert uri == "gs://signing/artifacts/audit.json"
+    args, kwargs = blob.upload_from_string.call_args
+    assert json.loads(args[0].decode("utf-8")) == {"ok": True}
+    assert kwargs == {"content_type": "application/json"}
+
+
 def test_delete_pdf_deletes_blob_from_allowlisted_bucket(monkeypatch, mocker) -> None:
     ss = _reload_storage_service(monkeypatch, FORMS_BUCKET="forms", TEMPLATES_BUCKET="templates")
     bucket, blob = _mock_bucket_and_blob(mocker)
@@ -226,6 +255,22 @@ def test_download_pdf_bytes_reads_blob_bytes(monkeypatch, mocker) -> None:
     result = ss.download_pdf_bytes("gs://sessions/path/file.pdf")
 
     assert result == b"pdf-bytes"
+
+
+def test_download_storage_bytes_reads_allowlisted_blob_bytes(monkeypatch, mocker) -> None:
+    ss = _reload_storage_service(
+        monkeypatch,
+        FORMS_BUCKET="forms",
+        TEMPLATES_BUCKET="templates",
+        SIGNING_BUCKET="signing",
+    )
+    bucket, blob = _mock_bucket_and_blob(mocker)
+    blob.download_as_bytes.return_value = b"payload"
+    mocker.patch("backend.firebaseDB.storage_service.get_storage_bucket", return_value=bucket)
+
+    result = ss.download_storage_bytes("gs://signing/path/file.json")
+
+    assert result == b"payload"
 
 
 def test_download_session_json_decodes_payload(monkeypatch, mocker) -> None:

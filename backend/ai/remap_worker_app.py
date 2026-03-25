@@ -396,7 +396,6 @@ async def run_remap_job(
                 include_result=False,
                 include_renames=False,
                 include_checkbox_rules=False,
-                include_checkbox_hints=False,
             )
 
         attempt_usage_events: List[Dict[str, Any]] = []
@@ -419,15 +418,12 @@ async def run_remap_job(
 
         if session_entry and payload.sessionId:
             persist_rules = False
-            persist_hints = False
             persist_text_rules = False
             if isinstance(mapping_results, dict):
                 checkbox_rules = list(mapping_results.get("checkboxRules") or [])
                 session_entry["checkboxRules"] = checkbox_rules
                 persist_rules = True
-                checkbox_hints = list(mapping_results.get("checkboxHints") or [])
-                session_entry["checkboxHints"] = checkbox_hints
-                persist_hints = True
+                session_entry.pop("checkboxHints", None)
                 text_transform_rules = list(mapping_results.get("textTransformRules") or [])
                 session_entry["textTransformRules"] = text_transform_rules
                 persist_text_rules = True
@@ -435,7 +431,6 @@ async def run_remap_job(
                 payload.sessionId,
                 session_entry,
                 persist_checkbox_rules=persist_rules,
-                persist_checkbox_hints=persist_hints,
                 persist_text_transform_rules=persist_text_rules,
             )
 

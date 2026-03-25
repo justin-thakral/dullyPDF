@@ -128,7 +128,7 @@ Repo hygiene:
 - Revocation checks are enabled in prod by default (`FIREBASE_CHECK_REVOKED` or `ENV=prod`).
 - Password-based logins are blocked until the email is verified; OAuth providers are treated as verified.
 - Schema metadata is stored without CSV/Excel/JSON rows or field values.
-- Template Fill By Link can store a publish-time respondent-download snapshot containing the saved-form PDF storage path, normalized field payload, and deterministic fill rules (`checkboxRules`, `checkboxHints`, `textTransformRules`). Public respondent downloads materialize from that frozen snapshot plus the stored respondent answer record; group links do not expose public PDF downloads.
+- Template Fill By Link can store a publish-time respondent-download snapshot containing the saved-form PDF storage path, normalized field payload, and deterministic fill rules (`checkboxRules`, `radioGroups`, `textTransformRules`). Public respondent downloads materialize from that frozen snapshot plus the stored respondent answer record; group links do not expose public PDF downloads.
 - Storage paths are allowlisted and validated in `backend/firebaseDB/storage_service.py`.
 
 ### Things to review or tighten further

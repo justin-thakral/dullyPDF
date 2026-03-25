@@ -15,6 +15,9 @@ describe('intentPages config', () => {
   it('resolves canonical intent routes', () => {
     expect(resolveIntentPath('/pdf-to-fillable-form')).toBe('pdf-to-fillable-form');
     expect(resolveIntentPath('/fillable-form-field-name/')).toBe('fillable-form-field-name');
+    expect(resolveIntentPath('/pdf-signature-workflow')).toBe('pdf-signature-workflow');
+    expect(resolveIntentPath('/pdf-fill-api')).toBe('pdf-fill-api');
+    expect(resolveIntentPath('/pdf-radio-button-editor')).toBe('pdf-radio-button-editor');
     expect(resolveIntentPath('/healthcare-pdf-automation')).toBe('healthcare-pdf-automation');
     expect(resolveIntentPath('/acord-form-automation')).toBe('acord-form-automation');
     expect(resolveIntentPath('/not-an-intent')).toBeNull();

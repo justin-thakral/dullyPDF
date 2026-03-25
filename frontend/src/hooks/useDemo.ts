@@ -5,6 +5,7 @@ import { ensureUniqueFieldName } from '../utils/fields';
 import { extractFieldsFromPdf, loadPdfFromFile } from '../utils/pdf';
 import { parseCsv } from '../utils/csv';
 import { debugLog } from '../utils/debug';
+import { parseDemoFieldFixture, validateDemoAssetBlob } from '../utils/demoAssets';
 import { DEMO_ASSETS, DEMO_STEPS } from '../config/appConstants';
 
 export interface UseDemoDeps {
@@ -68,6 +69,7 @@ export function useDemo(deps: UseDemoDeps) {
       const response = await fetch(`${baseUrl}demo/${filename}`);
       if (!response.ok) throw new Error(`Failed to load demo asset: ${filename}`);
       const blob = await response.blob();
+      await validateDemoAssetBlob(filename, blob);
       const file = new File([blob], filename, { type: mimeType });
       demoAssetCacheRef.current.set(filename, file);
       return file;
@@ -129,40 +131,37 @@ export function useDemo(deps: UseDemoDeps) {
       };
 
       const promise = (async () => {
-        const extractFromPdf = async (): Promise<PdfField[]> => {
-          const file = await loadDemoAsset(filename, 'application/pdf');
+        const extractFromPdf = async (assetFilename: string): Promise<PdfField[]> => {
+          const file = await loadDemoAsset(assetFilename, 'application/pdf');
           const doc = await loadPdfFromFile(file);
           try { return await extractFieldsFromPdf(doc); }
           finally { try { await doc.destroy(); } catch { /* best effort */ } }
         };
 
+        if (filename === DEMO_ASSETS.baseDetectionsFields) {
+          const file = await loadDemoAsset(filename, 'application/json');
+          const text = await file.text();
+          const parsed = JSON.parse(text) as unknown;
+          return parseDemoFieldFixture(parsed, filename);
+        }
+
         if (filename === DEMO_ASSETS.openAiRenamePdf) {
-          try {
-            const [baseFields, nameMap] = await Promise.all([
-              loadDemoPdfFields(DEMO_ASSETS.baseDetectionsPdf),
-              loadDemoNameMap(DEMO_ASSETS.openAiRenameNameMap),
-            ]);
-            return applyNameMap(baseFields, nameMap);
-          } catch (error) {
-            debugLog('Failed to apply demo rename map; falling back to PDF extraction.', error);
-            return await extractFromPdf();
-          }
+          const [baseFields, nameMap] = await Promise.all([
+            loadDemoPdfFields(DEMO_ASSETS.baseDetectionsFields),
+            loadDemoNameMap(DEMO_ASSETS.openAiRenameNameMap),
+          ]);
+          return applyNameMap(baseFields, nameMap);
         }
 
         if (filename === DEMO_ASSETS.openAiRemapPdf) {
-          try {
-            const [baseFields, nameMap] = await Promise.all([
-              loadDemoPdfFields(DEMO_ASSETS.baseDetectionsPdf),
-              loadDemoNameMap(DEMO_ASSETS.openAiRemapNameMap),
-            ]);
-            return applyNameMap(baseFields, nameMap);
-          } catch (error) {
-            debugLog('Failed to apply demo remap map; falling back to PDF extraction.', error);
-            return await extractFromPdf();
-          }
+          const [baseFields, nameMap] = await Promise.all([
+            loadDemoPdfFields(DEMO_ASSETS.baseDetectionsFields),
+            loadDemoNameMap(DEMO_ASSETS.openAiRemapNameMap),
+          ]);
+          return applyNameMap(baseFields, nameMap);
         }
 
-        return await extractFromPdf();
+        return await extractFromPdf(filename);
       })();
 
       demoPdfFieldPromiseCacheRef.current.set(filename, promise);
@@ -221,9 +220,15 @@ export function useDemo(deps: UseDemoDeps) {
     setDemoStepIndex(0);
     setDemoCompletionOpen(false);
     setDemoSearchPreset(null);
-    void loadDemoPdfFields(DEMO_ASSETS.baseDetectionsPdf);
-    void loadDemoPdfFields(DEMO_ASSETS.openAiRenamePdf);
-    void loadDemoPdfFields(DEMO_ASSETS.openAiRemapPdf);
+    for (const asset of [
+      DEMO_ASSETS.baseDetectionsFields,
+      DEMO_ASSETS.openAiRenamePdf,
+      DEMO_ASSETS.openAiRemapPdf,
+    ]) {
+      void loadDemoPdfFields(asset).catch((error) => {
+        debugLog(`Failed to preload demo overlay asset: ${asset}`, error);
+      });
+    }
     lastDemoStepRef.current = null;
   }, [deps, loadDemoPdfFields]);
 
@@ -311,7 +316,7 @@ export function useDemo(deps: UseDemoDeps) {
           return;
         }
         if (stepId === 'commonforms') {
-          await applyDemoOverlayFromPdf(DEMO_ASSETS.baseDetectionsPdf, { guardToken: token });
+          await applyDemoOverlayFromPdf(DEMO_ASSETS.baseDetectionsFields, { guardToken: token });
           if (demoStepTokenRef.current !== token) return;
           deps.setHasRenamedFields(false);
           deps.setHasMappedSchema(false);

@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import type {
   BannerNotice,
-  CheckboxHint,
   CheckboxRule,
   PdfField,
   TextTransformRule,
@@ -11,6 +10,7 @@ import type {
   FillLinkGroupTemplatePayload,
   FillLinkQuestion,
   FillLinkResponse,
+  FillLinkSigningConfig,
   FillLinkSummary,
   FillLinkTemplateFieldPayload,
   FillLinkWebFormConfig,
@@ -68,7 +68,6 @@ type UseWorkspaceFillLinksDeps = {
   activeGroupTemplates: SavedFormSummary[];
   fields: PdfField[];
   checkboxRules: CheckboxRule[];
-  checkboxHints: CheckboxHint[];
   textTransformRules: TextTransformRule[];
   savedFillLinkPublishFingerprint: string | null;
   resolveGroupTemplateDirtyNames: () => string[];
@@ -96,7 +95,6 @@ export function useWorkspaceFillLinks(deps: UseWorkspaceFillLinksDeps) {
     activeGroupTemplates,
     fields,
     checkboxRules,
-    checkboxHints,
     textTransformRules,
     savedFillLinkPublishFingerprint,
     resolveGroupTemplateDirtyNames,
@@ -378,7 +376,9 @@ export function useWorkspaceFillLinks(deps: UseWorkspaceFillLinksDeps) {
     title?: string;
     requireAllFields?: boolean;
     allowRespondentPdfDownload?: boolean;
+    allowRespondentEditablePdfDownload?: boolean;
     webFormConfig?: FillLinkWebFormConfig;
+    signingConfig?: FillLinkSigningConfig;
   }) => {
     if (!activeTemplateId) return;
     if (guardDirtyTemplateSchema()) return;
@@ -390,10 +390,11 @@ export function useWorkspaceFillLinks(deps: UseWorkspaceFillLinksDeps) {
         title: options?.title || activeTemplateName || 'Fill By Link',
         requireAllFields: Boolean(options?.requireAllFields),
         allowRespondentPdfDownload: Boolean(options?.allowRespondentPdfDownload),
+        allowRespondentEditablePdfDownload: Boolean(options?.allowRespondentEditablePdfDownload),
         webFormConfig: options?.webFormConfig,
+        signingConfig: options?.signingConfig,
         fields: serializeCurrentFillLinkFields(),
         checkboxRules: checkboxRules as Array<Record<string, unknown>>,
-        checkboxHints: checkboxHints as CheckboxHint[],
         textTransformRules: textTransformRules as TextTransformRule[],
       });
       setBannerNotice({
@@ -408,7 +409,6 @@ export function useWorkspaceFillLinks(deps: UseWorkspaceFillLinksDeps) {
   }, [
     activeTemplateId,
     activeTemplateName,
-    checkboxHints,
     checkboxRules,
     guardDirtyTemplateSchema,
     publishTemplateLink,
@@ -421,6 +421,7 @@ export function useWorkspaceFillLinks(deps: UseWorkspaceFillLinksDeps) {
     title?: string;
     requireAllFields?: boolean;
     webFormConfig?: FillLinkWebFormConfig;
+    signingConfig?: FillLinkSigningConfig;
   }) => {
     if (!activeGroupId) return;
     if (guardDirtyGroupSchema()) return;
@@ -433,6 +434,7 @@ export function useWorkspaceFillLinks(deps: UseWorkspaceFillLinksDeps) {
         title: options?.title || activeGroupName || 'Group Fill By Link',
         requireAllFields: Boolean(options?.requireAllFields),
         webFormConfig: options?.webFormConfig,
+        signingConfig: options?.signingConfig,
         fields: [],
         groupTemplates,
       });
@@ -470,7 +472,9 @@ export function useWorkspaceFillLinks(deps: UseWorkspaceFillLinksDeps) {
     title?: string;
     requireAllFields?: boolean;
     allowRespondentPdfDownload?: boolean;
+    allowRespondentEditablePdfDownload?: boolean;
     webFormConfig?: FillLinkWebFormConfig;
+    signingConfig?: FillLinkSigningConfig;
   }) => {
     const activeLink = activeTemplateLink;
     const linkId = activeLink?.id;
@@ -483,10 +487,13 @@ export function useWorkspaceFillLinks(deps: UseWorkspaceFillLinksDeps) {
         allowRespondentPdfDownload:
           options?.allowRespondentPdfDownload
           ?? fillLinkRespondentPdfDownloadEnabled(activeLink),
+        allowRespondentEditablePdfDownload:
+          options?.allowRespondentEditablePdfDownload
+          ?? Boolean(activeLink?.respondentPdfEditableEnabled),
         webFormConfig: options?.webFormConfig,
+        signingConfig: options?.signingConfig,
         fields: serializeCurrentFillLinkFields(),
         checkboxRules: checkboxRules as Array<Record<string, unknown>>,
-        checkboxHints: checkboxHints as CheckboxHint[],
         textTransformRules: textTransformRules as TextTransformRule[],
       });
       setBannerNotice({ tone: 'success', message: 'Fill By Link reopened.' });
@@ -497,7 +504,6 @@ export function useWorkspaceFillLinks(deps: UseWorkspaceFillLinksDeps) {
   }, [
     activeTemplateLink,
     activeTemplateName,
-    checkboxHints,
     checkboxRules,
     guardDirtyTemplateSchema,
     reopenTemplateLink,
@@ -522,6 +528,7 @@ export function useWorkspaceFillLinks(deps: UseWorkspaceFillLinksDeps) {
     title?: string;
     requireAllFields?: boolean;
     webFormConfig?: FillLinkWebFormConfig;
+    signingConfig?: FillLinkSigningConfig;
   }) => {
     const activeLink = activeGroupLink;
     const linkId = activeLink?.id;
@@ -534,6 +541,7 @@ export function useWorkspaceFillLinks(deps: UseWorkspaceFillLinksDeps) {
         groupName: activeGroupName || undefined,
         requireAllFields: options?.requireAllFields ?? activeLink.requireAllFields,
         webFormConfig: options?.webFormConfig,
+        signingConfig: options?.signingConfig,
         groupTemplates,
       });
       setBannerNotice({ tone: 'success', message: 'Group Fill By Link reopened.' });

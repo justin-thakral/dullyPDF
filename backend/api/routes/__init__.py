@@ -26,6 +26,10 @@ _ROUTER_MODULES = {
     "saved_forms_router": ".saved_forms",
     "schemas_router": ".schemas",
     "sessions_router": ".sessions",
+    "signing_public_router": ".signing_public",
+    "signing_router": ".signing",
+    "template_api_router": ".template_api",
+    "template_api_public_router": ".template_api_public",
 }
 
 __all__ = list(_ROUTER_MODULES.keys())

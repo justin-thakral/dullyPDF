@@ -417,7 +417,7 @@ async def run_rename_job(
         entry["fields"] = renamed_fields
         entry["renames"] = rename_report
         entry["checkboxRules"] = checkbox_rules
-        entry["checkboxHints"] = []
+        entry.pop("checkboxHints", None)
         entry["textTransformRules"] = []
         entry["page_count"] = page_count
         _update_session_entry(
@@ -426,7 +426,6 @@ async def run_rename_job(
             persist_fields=True,
             persist_renames=True,
             persist_checkbox_rules=True,
-            persist_checkbox_hints=True,
             persist_text_transform_rules=True,
         )
 

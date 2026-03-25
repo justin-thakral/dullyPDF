@@ -6,6 +6,7 @@ import { ApiError } from '../../../../src/services/apiConfig';
 const apiMocks = vi.hoisted(() => ({
   getPublicFillLink: vi.fn(),
   submitPublicFillLink: vi.fn(),
+  retryPublicFillLinkSigning: vi.fn(),
   downloadPublicFillLinkResponsePdf: vi.fn(),
 }));
 
@@ -19,6 +20,7 @@ vi.mock('../../../../src/services/api', async () => {
     ApiService: {
       getPublicFillLink: apiMocks.getPublicFillLink,
       submitPublicFillLink: apiMocks.submitPublicFillLink,
+      retryPublicFillLinkSigning: apiMocks.retryPublicFillLinkSigning,
       downloadPublicFillLinkResponsePdf: apiMocks.downloadPublicFillLinkResponsePdf,
     },
   };
@@ -35,6 +37,7 @@ describe('FillLinkPublicPage', () => {
   beforeEach(() => {
     apiMocks.getPublicFillLink.mockReset();
     apiMocks.submitPublicFillLink.mockReset();
+    apiMocks.retryPublicFillLinkSigning.mockReset();
     apiMocks.downloadPublicFillLinkResponsePdf.mockReset();
     recaptchaMocks.loadRecaptcha.mockClear();
     recaptchaMocks.getRecaptchaToken.mockClear();
@@ -102,12 +105,55 @@ describe('FillLinkPublicPage', () => {
     expect(await screen.findByText('Thanks, Ada Lovelace. Your response was submitted.')).toBeTruthy();
   });
 
+  it('continues into signing when the public submit returns a signing handoff', async () => {
+    const user = userEvent.setup();
+    apiMocks.getPublicFillLink.mockResolvedValue({
+      status: 'active',
+      requireAllFields: false,
+      postSubmitSigningEnabled: true,
+      questions: [
+        { key: 'full_name', label: 'Full Name', type: 'text', requiredForRespondentIdentity: true },
+      ],
+    });
+    apiMocks.submitPublicFillLink.mockResolvedValue({
+      success: true,
+      responseId: 'resp-50',
+      respondentLabel: 'Ada Lovelace',
+      signing: {
+        enabled: true,
+        available: true,
+        requestId: 'sign-1',
+        status: 'sent',
+        publicPath: '/sign/sign-1',
+      },
+      link: {
+        status: 'active',
+        requireAllFields: false,
+        postSubmitSigningEnabled: true,
+        questions: [
+          { key: 'full_name', label: 'Full Name', type: 'text', requiredForRespondentIdentity: true },
+        ],
+      },
+    });
+
+    render(<FillLinkPublicPage token="token-1" />);
+
+    expect(await screen.findByText('Review and sign after submit')).toBeTruthy();
+    await user.type(screen.getByLabelText('Full Name'), 'Ada Lovelace');
+    await user.click(screen.getByRole('button', { name: 'Submit response' }));
+
+    expect(await screen.findByText('Thanks, Ada Lovelace. Your form is ready for signature.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Continue to review and sign' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Download submitted PDF' })).toBeNull();
+  });
+
   it('shows a download button only after submit when the template enables respondent PDF copies', async () => {
     const user = userEvent.setup();
     apiMocks.getPublicFillLink.mockResolvedValue({
       status: 'active',
       requireAllFields: false,
       allowRespondentPdfDownload: true,
+      respondentPdfEditableEnabled: false,
       questions: [
         { key: 'full_name', label: 'Full Name', type: 'text', requiredForRespondentIdentity: true },
       ],
@@ -122,6 +168,7 @@ describe('FillLinkPublicPage', () => {
         status: 'active',
         requireAllFields: false,
         allowRespondentPdfDownload: true,
+        respondentPdfEditableEnabled: false,
         questions: [
           { key: 'full_name', label: 'Full Name', type: 'text', requiredForRespondentIdentity: true },
         ],
@@ -135,7 +182,7 @@ describe('FillLinkPublicPage', () => {
     render(<FillLinkPublicPage token="token-1" />);
 
     expect(await screen.findByRole('heading', { name: 'Fill out this form' })).toBeTruthy();
-    expect(screen.getByText('PDF copy available after submit')).toBeTruthy();
+    expect(screen.getByText('Flat PDF copy available after submit')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Download submitted PDF' })).toBeNull();
 
     await user.type(screen.getByLabelText('Full Name'), 'Ada Lovelace');
@@ -153,6 +200,70 @@ describe('FillLinkPublicPage', () => {
         { downloadPath: '/api/fill-links/public/token-1/responses/resp-10/download' },
       );
     });
+  });
+
+  it('lets the respondent retry the signing handoff after a temporary failure', async () => {
+    const user = userEvent.setup();
+    apiMocks.getPublicFillLink.mockResolvedValue({
+      status: 'active',
+      requireAllFields: false,
+      postSubmitSigningEnabled: true,
+      questions: [
+        { key: 'full_name', label: 'Full Name', type: 'text', requiredForRespondentIdentity: true },
+      ],
+    });
+    apiMocks.submitPublicFillLink.mockResolvedValue({
+      success: true,
+      responseId: 'resp-88',
+      respondentLabel: 'Ada Lovelace',
+      signing: {
+        enabled: true,
+        available: false,
+        errorMessage: 'Your form was submitted, but the signing handoff is unavailable right now. Contact the sender.',
+      },
+      link: {
+        status: 'active',
+        requireAllFields: false,
+        postSubmitSigningEnabled: true,
+        questions: [
+          { key: 'full_name', label: 'Full Name', type: 'text', requiredForRespondentIdentity: true },
+        ],
+      },
+    });
+    apiMocks.retryPublicFillLinkSigning.mockResolvedValue({
+      success: true,
+      responseId: 'resp-88',
+      link: {
+        status: 'active',
+        requireAllFields: false,
+        postSubmitSigningEnabled: true,
+        questions: [
+          { key: 'full_name', label: 'Full Name', type: 'text', requiredForRespondentIdentity: true },
+        ],
+      },
+      signing: {
+        enabled: true,
+        available: true,
+        requestId: 'sign-88',
+        status: 'sent',
+        publicPath: '/sign/sign-88',
+      },
+    });
+
+    render(<FillLinkPublicPage token="token-1" />);
+
+    expect(await screen.findByRole('heading', { name: 'Fill out this form' })).toBeTruthy();
+    await user.type(screen.getByLabelText('Full Name'), 'Ada Lovelace');
+    await user.click(screen.getByRole('button', { name: 'Submit response' }));
+
+    expect(await screen.findByText('Signing is temporarily unavailable')).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Retry signing handoff' }));
+
+    await waitFor(() => {
+      expect(apiMocks.retryPublicFillLinkSigning).toHaveBeenCalledWith('token-1', { responseId: 'resp-88' });
+    });
+    expect(await screen.findByText('Your form is ready for signature.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Continue to review and sign' })).toBeTruthy();
   });
 
   it('blocks submission client-side when all fields are required and a question is blank', async () => {

@@ -1,30 +1,24 @@
 /**
  * Workspace runtime shell that orchestrates detection, mapping, and editor state.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { User } from 'firebase/auth';
 import type { PDFDocumentProxy } from 'pdfjs-dist/types/src/display/api';
 import './App.css';
 import type {
   BannerNotice,
   CheckboxRule,
+  CreateTool,
+  DataSourceKind,
   FieldType,
   PageSize,
   PdfField,
+  RadioGroup,
+  RadioGroupSuggestion,
+  RadioToolDraft,
 } from './types';
-import Homepage from './components/pages/Homepage';
-import LoginPage from './components/pages/LoginPage';
-import ProfilePage from './components/pages/ProfilePage';
-import VerifyEmailPage from './components/pages/VerifyEmailPage';
 import { HeaderBar } from './components/layout/HeaderBar';
 import LegacyHeader from './components/layout/LegacyHeader';
-import SearchFillModal from './components/features/SearchFillModal';
-import { FillLinkManagerDialog } from './components/features/FillLinkManagerDialog';
-import DowngradeRetentionDialog from './components/features/DowngradeRetentionDialog';
-import { GroupUploadDialog } from './components/features/GroupUploadDialog';
-import UploadView from './components/features/UploadView';
-import ProcessingView from './components/features/ProcessingView';
-import { DemoTour } from './components/demo/DemoTour';
 import { FieldInspectorPanel } from './components/panels/FieldInspectorPanel';
 import { FieldListPanel, type FieldListDisplayPreset } from './components/panels/FieldListPanel';
 import { PdfViewer } from './components/viewer/PdfViewer';
@@ -47,6 +41,7 @@ import { useSavedForms } from './hooks/useSavedForms';
 import { useGroups } from './hooks/useGroups';
 import { useWorkspaceGroupCoordinator } from './hooks/useWorkspaceGroupCoordinator';
 import { useWorkspaceFillLinks } from './hooks/useWorkspaceFillLinks';
+import { useWorkspaceTemplateApi } from './hooks/useWorkspaceTemplateApi';
 import { useDataSource } from './hooks/useDataSource';
 import { useOpenAiPipeline } from './hooks/useOpenAiPipeline';
 import { useDetection, type SavedFormSessionResume } from './hooks/useDetection';
@@ -56,20 +51,62 @@ import { useDowngradeRetentionRuntime } from './hooks/useDowngradeRetentionRunti
 import { useSaveDownload } from './hooks/useSaveDownload';
 import { useDemo } from './hooks/useDemo';
 import { useUploadBrowserViewModel } from './hooks/useUploadBrowserViewModel';
+import { useWorkspaceSigning } from './hooks/useWorkspaceSigning';
 import { ApiService } from './services/api';
 import { applyRouteSeo } from './utils/seo';
+import {
+  LazyDemoTour,
+  LazyDowngradeRetentionDialog,
+  LazyFillLinkManagerDialog,
+  LazyApiFillManagerDialog,
+  LazyGroupUploadDialog,
+  LazyHomepage,
+  LazyLoginPage,
+  LazyProcessingView,
+  LazyProfilePage,
+  LazySearchFillModal,
+  LazySignatureRequestDialog,
+  LazyUploadView,
+  LazyVerifyEmailPage,
+} from './workspaceLazyComponents';
 import { clampRectToPage } from './utils/coords';
 import {
   createFieldWithRect,
   getMinFieldSize,
   normalizeRectForFieldType,
+  prepareFieldsForMaterialize,
 } from './utils/fields';
+import {
+  advanceRadioToolDraft,
+  buildNextRadioToolDraft,
+  buildRadioGroups,
+  convertFieldsToRadioGroup,
+  convertRadioFieldToType,
+  createRadioFieldFromRect,
+  dissolveRadioGroup,
+  moveRadioFieldToGroup,
+  renameRadioGroup,
+  reorderRadioField,
+  setRadioGroupSelectedValue,
+  updateRadioFieldOption,
+} from './utils/radioGroups';
+import {
+  applyRadioGroupSuggestion,
+  buildRadioSuggestionFieldMap,
+  isRadioGroupSuggestionApplied,
+} from './utils/radioGroupSuggestions';
 import {
   DEFAULT_ARROW_KEY_MOVE_STEP,
   getFieldNudgeCommandFromKey,
   sanitizeArrowKeyMoveStep,
 } from './utils/fieldMovement';
-import { buildFillLinkPublishFingerprint } from './utils/fillLinks';
+import {
+  buildFillLinkPublishFingerprint,
+  FILL_LINK_LINK_ID_KEY,
+  FILL_LINK_RESPONSE_ID_KEY,
+  FILL_LINK_RESPONDENT_LABEL_KEY,
+} from './utils/fillLinks';
+import type { ReviewedFillContext } from './utils/signing';
 import {
   clearWorkspaceResumeState,
   findMatchingWorkspaceResumeState,
@@ -106,6 +143,11 @@ type SearchFillPresetState = {
   token: number;
 } | null;
 
+type PendingQuickRadioSelection = {
+  fieldIds: string[];
+  page: number;
+} | null;
+
 /**
  * Main workspace runtime component that coordinates auth, detection, and editing.
  */
@@ -135,7 +177,7 @@ function WorkspaceRuntime({
     setHasRenamedFields: (_v: boolean) => {},
     setHasMappedSchema: (_v: boolean) => {},
     setCheckboxRules: (_v: any[]) => {},
-    setCheckboxHints: (_v: any[]) => {},
+    setRadioGroupSuggestions: (_v: any[]) => {},
     setTextTransformRules: (_v: any[]) => {},
     setOpenAiError: (_v: string | null) => {},
   });
@@ -193,8 +235,14 @@ function WorkspaceRuntime({
   const [isMobileView, setIsMobileView] = useState(false);
   const [showSearchFill, setShowSearchFill] = useState(false);
   const [showFillLinkManager, setShowFillLinkManager] = useState(false);
+  const [showTemplateApiManager, setShowTemplateApiManager] = useState(false);
   const [transformMode, setTransformMode] = useState(false);
-  const [activeCreateTool, setActiveCreateTool] = useState<FieldType | null>(null);
+  const [activeCreateTool, setActiveCreateTool] = useState<CreateTool | null>(null);
+  const [manualRadioToolDraft, setManualRadioToolDraft] = useState<RadioToolDraft | null>(null);
+  const [quickRadioToolDraft, setQuickRadioToolDraft] = useState<RadioToolDraft | null>(null);
+  const [pendingQuickRadioSelection, setPendingQuickRadioSelection] =
+    useState<PendingQuickRadioSelection>(null);
+  const [dismissedRadioSuggestionIds, setDismissedRadioSuggestionIds] = useState<string[]>([]);
   const [arrowKeyMoveEnabled, setArrowKeyMoveEnabled] = useState(false);
   const [arrowKeyMoveStep, setArrowKeyMoveStep] = useState(DEFAULT_ARROW_KEY_MOVE_STEP);
   const [searchFillSessionId, setSearchFillSessionId] = useState(0);
@@ -272,7 +320,7 @@ function WorkspaceRuntime({
     setHasRenamedFields: (v) => openAiBridge.current.setHasRenamedFields(v),
     setHasMappedSchema: (v) => openAiBridge.current.setHasMappedSchema(v),
     setCheckboxRules: (v) => openAiBridge.current.setCheckboxRules(v),
-    setCheckboxHints: (v) => openAiBridge.current.setCheckboxHints(v),
+    setRadioGroupSuggestions: (v) => openAiBridge.current.setRadioGroupSuggestions(v),
     setTextTransformRules: (v) => openAiBridge.current.setTextTransformRules(v),
     setOpenAiError: (v) => openAiBridge.current.setOpenAiError(v),
     // Session keep-alive deps
@@ -316,7 +364,7 @@ function WorkspaceRuntime({
     setHasRenamedFields: openAi.setHasRenamedFields,
     setHasMappedSchema: openAi.setHasMappedSchema,
     setCheckboxRules: openAi.setCheckboxRules,
-    setCheckboxHints: openAi.setCheckboxHints,
+    setRadioGroupSuggestions: openAi.setRadioGroupSuggestions,
     setTextTransformRules: openAi.setTextTransformRules,
     setOpenAiError: openAi.setOpenAiError,
   };
@@ -535,6 +583,33 @@ function WorkspaceRuntime({
   }, [groupSwitchingTemplateId, groupTemplateStatusById, pendingGroupTemplateId]);
 
   const activeTemplateName = savedForms.activeSavedFormName || sourceFileName || null;
+  const [reviewedFillContext, setReviewedFillContext] = useState<ReviewedFillContext | null>(null);
+  const resolveWorkspaceSourcePdfBytes = useCallback(async (): Promise<Uint8Array> => {
+    if (sourceFile) {
+      return new Uint8Array(await sourceFile.arrayBuffer());
+    }
+    if (pdfDoc) {
+      return pdfDoc.getData();
+    }
+    throw new Error('Load a PDF before preparing a signing request.');
+  }, [pdfDoc, sourceFile]);
+  const resolveWorkspaceImmutableSourcePdfBytes = useCallback(async (): Promise<Uint8Array> => {
+    const sourcePdfBytes = await resolveWorkspaceSourcePdfBytes();
+    const sourceBlob = new Blob([Uint8Array.from(sourcePdfBytes)], { type: 'application/pdf' });
+    const materializedFields = prepareFieldsForMaterialize(fieldHistory.fields);
+    const materializedBlob = await ApiService.materializeFormPdf(sourceBlob, materializedFields);
+    return new Uint8Array(await materializedBlob.arrayBuffer());
+  }, [fieldHistory.fields, resolveWorkspaceSourcePdfBytes]);
+  const signing = useWorkspaceSigning({
+    verifiedUser: auth.verifiedUser,
+    hasDocument: Boolean(pdfDoc),
+    sourceDocumentName: activeTemplateName,
+    sourceTemplateId: savedForms.activeSavedFormId,
+    sourceTemplateName: activeTemplateName,
+    fields: fieldHistory.fields,
+    resolveSourcePdfBytes: async (_mode) => resolveWorkspaceImmutableSourcePdfBytes(),
+    reviewedFillContext,
+  });
   const {
     canTriggerFillLink,
     handleOpenFillLinkManager,
@@ -553,7 +628,6 @@ function WorkspaceRuntime({
     activeGroupTemplates,
     fields: fieldHistory.fields,
     checkboxRules: openAi.checkboxRules,
-    checkboxHints: openAi.checkboxHints,
     textTransformRules: openAi.textTransformRules,
     savedFillLinkPublishFingerprint,
     resolveGroupTemplateDirtyNames,
@@ -570,6 +644,27 @@ function WorkspaceRuntime({
     clearAllFillLinks();
     setShowFillLinkManager(false);
   }, [auth.verifiedUser, clearAllFillLinks]);
+
+  const {
+    canOpenTemplateApi,
+    handleOpenTemplateApiManager,
+    clearTemplateApiManager,
+    dialogProps: templateApiManagerDialogProps,
+  } = useWorkspaceTemplateApi({
+    verifiedUser: auth.verifiedUser,
+    managerOpen: showTemplateApiManager,
+    setManagerOpen: setShowTemplateApiManager,
+    setBannerNotice: dialog.setBannerNotice,
+    activeTemplateId: savedForms.activeSavedFormId,
+    activeTemplateName,
+    activeGroupId,
+  });
+
+  useEffect(() => {
+    if (auth.verifiedUser) return;
+    clearTemplateApiManager();
+    setShowTemplateApiManager(false);
+  }, [auth.verifiedUser, clearTemplateApiManager]);
 
   // ── Pipeline modal (uses runDetectUpload, dataSource, auth) ────────
   const pipeline = usePipelineModal({
@@ -599,14 +694,18 @@ function WorkspaceRuntime({
     dataSource.reset();
     savedForms.reset();
     clearAllFillLinks();
+    clearTemplateApiManager();
     dialog.reset();
     pipeline.reset();
     // App-level UI state
     setShowSearchFill(false); setSearchFillSessionId((prev) => prev + 1);
-    setSearchFillPreset(null); setShowFillLinkManager(false);
+    setSearchFillPreset(null); setShowFillLinkManager(false); setShowTemplateApiManager(false);
     setTransformMode(false); setActiveCreateTool(null);
+    setManualRadioToolDraft(null); setQuickRadioToolDraft(null);
+    setPendingQuickRadioSelection(null); setDismissedRadioSuggestionIds([]);
     setSourceFile(null); setSourceFileName(null); setSourceFileIsDemo(false);
-  }, [clearAllFillLinks, dataSource, detection, dialog, fieldHistory, fieldState, openAi, pipeline, resetGroupRuntime, savedForms]);
+    setReviewedFillContext(null);
+  }, [clearAllFillLinks, clearTemplateApiManager, dataSource, detection, dialog, fieldHistory, fieldState, openAi, pipeline, resetGroupRuntime, savedForms]);
   clearWorkspaceRef.current = clearWorkspace;
 
   // ── Demo (uses wrapped handlers) ───────────────────────────────────
@@ -671,7 +770,6 @@ function WorkspaceRuntime({
     pageSizes,
     pageCount,
     checkboxRules: openAi.checkboxRules,
-    checkboxHints: openAi.checkboxHints,
     textTransformRules: openAi.textTransformRules,
     hasRenamedFields: openAi.hasRenamedFields,
     hasMappedSchema: openAi.hasMappedSchema,
@@ -765,45 +863,276 @@ function WorkspaceRuntime({
   );
 
   const handleSetCreateTool = useCallback(
-    (type: FieldType | null) => {
+    (type: CreateTool | null) => {
       setActiveCreateTool(type);
+      setPendingQuickRadioSelection(null);
+      if (type === 'radio') {
+        setManualRadioToolDraft((prev) => prev ?? buildNextRadioToolDraft(fieldHistory.fieldsRef.current));
+      } else if (type === 'quick-radio') {
+        setQuickRadioToolDraft((prev) => prev ?? buildNextRadioToolDraft(fieldHistory.fieldsRef.current));
+      }
       if (type) {
         fieldState.setShowFields(true);
         fieldState.setShowFieldInfo(false);
       }
     },
-    [fieldState],
+    [fieldHistory.fieldsRef, fieldState],
   );
+
+  const handleAfterSearchFill = useCallback((payload: { row: Record<string, unknown>; dataSourceKind: DataSourceKind }) => {
+    setSearchFillPreset(null);
+    handleSetTransformMode(false);
+    setActiveCreateTool(null);
+    fieldState.setShowFieldInfo(true);
+    fieldState.setShowFieldNames(false);
+    fieldState.setShowFields(true);
+
+    const responseId = typeof payload.row[FILL_LINK_RESPONSE_ID_KEY] === 'string'
+      ? payload.row[FILL_LINK_RESPONSE_ID_KEY] as string
+      : null;
+    const linkId = typeof payload.row[FILL_LINK_LINK_ID_KEY] === 'string'
+      ? payload.row[FILL_LINK_LINK_ID_KEY] as string
+      : null;
+    const respondentLabel = typeof payload.row[FILL_LINK_RESPONDENT_LABEL_KEY] === 'string'
+      ? payload.row[FILL_LINK_RESPONDENT_LABEL_KEY] as string
+      : null;
+
+    if (payload.dataSourceKind === 'respondent' && responseId) {
+      setReviewedFillContext({
+        sourceType: 'fill_link_response',
+        sourceId: responseId,
+        sourceLinkId: linkId,
+        sourceRecordLabel: respondentLabel,
+        sourceLabel: dataSource.dataSourceLabel,
+        reviewedAt: new Date().toISOString(),
+      });
+    } else {
+      setReviewedFillContext({
+        sourceType: 'workspace',
+        sourceId: savedForms.activeSavedFormId,
+        sourceLabel: dataSource.dataSourceLabel,
+        reviewedAt: new Date().toISOString(),
+      });
+    }
+
+    if (demo.demoActive && DEMO_STEPS[demo.demoStepIndex ?? -1]?.id === 'search-fill') {
+      demo.handleDemoCompletion();
+    }
+  }, [
+    dataSource.dataSourceLabel,
+    demo,
+    fieldState,
+    handleSetTransformMode,
+    savedForms.activeSavedFormId,
+  ]);
 
   const handleCreateFieldWithRect = useCallback(
     (page: number, type: FieldType, rect: { x: number; y: number; width: number; height: number }) => {
       const pageSize = pageSizes[page];
       if (!pageSize) return;
       let createdFieldId: string | null = null;
+      let nextRadioDraft: RadioToolDraft | null = null;
       fieldHistory.updateFieldsWith((prev) => {
-        const created = createFieldWithRect(type, page, pageSize, prev, rect);
+        const created =
+          type === 'radio' && manualRadioToolDraft
+            ? createRadioFieldFromRect(prev, page, pageSize, rect, manualRadioToolDraft)
+            : createFieldWithRect(type, page, pageSize, prev, rect);
         createdFieldId = created.id;
-        return [...prev, created];
+        const nextFields = [...prev, created];
+        if (type === 'radio' && manualRadioToolDraft) {
+          nextRadioDraft = advanceRadioToolDraft(nextFields, manualRadioToolDraft);
+        }
+        return nextFields;
       });
       if (createdFieldId) {
         fieldState.setSelectedFieldId(createdFieldId);
       }
+      if (type === 'radio' && nextRadioDraft) {
+        setManualRadioToolDraft(nextRadioDraft);
+      }
     },
-    [fieldHistory, fieldState, pageSizes],
+    [fieldHistory, fieldState, manualRadioToolDraft, pageSizes],
   );
 
   const handleSetFieldType = useCallback(
     (fieldId: string, type: FieldType) => {
       const current = fieldHistory.fieldsRef.current.find((field) => field.id === fieldId);
       if (!current) return;
+      if (current.type === type) {
+        return;
+      }
       const pageSize = pageSizes[current.page];
       const nextRect = pageSize
         ? normalizeRectForFieldType(current.rect, type, pageSize)
         : current.rect;
+      if (type === 'radio') {
+        const baseDraft = buildNextRadioToolDraft(fieldHistory.fieldsRef.current, current.groupLabel || current.name);
+        let nextDraft: RadioToolDraft | null = null;
+        fieldHistory.updateFieldsWith((prev) => {
+          const nextFields = convertFieldsToRadioGroup(
+            prev.map((field) => (
+              field.id === fieldId
+                ? { ...field, rect: nextRect }
+                : field
+            )),
+            [fieldId],
+            baseDraft,
+          );
+          nextDraft = advanceRadioToolDraft(nextFields, baseDraft);
+          return nextFields;
+        });
+        setManualRadioToolDraft(nextDraft ?? baseDraft);
+        fieldState.setSelectedFieldId(fieldId);
+        return;
+      }
+      if (current.type === 'radio') {
+        fieldHistory.updateFieldsWith((prev) => prev.map((field) => {
+          if (field.id !== fieldId) return field;
+          return {
+            ...convertRadioFieldToType(field, type),
+            rect: nextRect,
+          };
+        }));
+        return;
+      }
       fieldState.handleUpdateField(fieldId, { type, rect: nextRect });
     },
-    [fieldHistory.fieldsRef, fieldState, pageSizes],
+    [fieldHistory.fieldsRef, fieldHistory, fieldState, pageSizes],
   );
+
+  const handleUpdateRadioToolDraft = useCallback(
+    (updates: Partial<RadioToolDraft>) => {
+      if (activeCreateTool === 'radio') {
+        setManualRadioToolDraft((prev) => (prev ? { ...prev, ...updates } : prev));
+        return;
+      }
+      if (activeCreateTool === 'quick-radio') {
+        setQuickRadioToolDraft((prev) => (prev ? { ...prev, ...updates } : prev));
+      }
+    },
+    [activeCreateTool],
+  );
+
+  const handleQuickRadioSelection = useCallback(
+    (fieldIds: string[], page: number) => {
+      setPendingQuickRadioSelection(fieldIds.length ? { fieldIds, page } : null);
+      if (fieldIds[0]) {
+        fieldState.setSelectedFieldId(fieldIds[0]);
+      }
+    },
+    [fieldState],
+  );
+
+  const handleRemovePendingQuickRadioField = useCallback((fieldId: string) => {
+    setPendingQuickRadioSelection((prev) => {
+      if (!prev) return prev;
+      const nextFieldIds = prev.fieldIds.filter((id) => id !== fieldId);
+      if (!nextFieldIds.length) {
+        return null;
+      }
+      return { ...prev, fieldIds: nextFieldIds };
+    });
+  }, []);
+
+  const handleCancelPendingQuickRadioSelection = useCallback(() => {
+    setPendingQuickRadioSelection(null);
+  }, []);
+
+  const handleApplyPendingQuickRadioSelection = useCallback(() => {
+    if (!quickRadioToolDraft || !pendingQuickRadioSelection?.fieldIds.length) {
+      return;
+    }
+    const selectedIds = pendingQuickRadioSelection.fieldIds;
+    let nextFieldsSnapshot = fieldHistory.fieldsRef.current;
+    fieldHistory.updateFieldsWith((prev) => {
+      const nextFields = convertFieldsToRadioGroup(prev, selectedIds, quickRadioToolDraft);
+      nextFieldsSnapshot = nextFields;
+      return nextFields;
+    });
+    fieldState.setSelectedFieldId(selectedIds[0] || null);
+    setPendingQuickRadioSelection(null);
+    setQuickRadioToolDraft(buildNextRadioToolDraft(nextFieldsSnapshot));
+  }, [fieldHistory, fieldState, pendingQuickRadioSelection, quickRadioToolDraft]);
+
+  const handleRenameSelectedRadioGroup = useCallback(
+    (groupId: string, updates: { label?: string; key?: string }) => {
+      fieldHistory.updateFieldsWith((prev) => renameRadioGroup(prev, groupId, updates));
+      setManualRadioToolDraft((prev) => (
+        prev && prev.groupId === groupId
+          ? {
+              ...prev,
+              groupKey: updates.key ?? prev.groupKey,
+              groupLabel: updates.label ?? prev.groupLabel,
+            }
+          : prev
+      ));
+    },
+    [fieldHistory],
+  );
+
+  const handleUpdateSelectedRadioOption = useCallback(
+    (fieldId: string, updates: { label?: string; key?: string }) => {
+      fieldHistory.updateFieldsWith((prev) => updateRadioFieldOption(prev, fieldId, updates));
+    },
+    [fieldHistory],
+  );
+
+  const handleMoveSelectedRadioField = useCallback(
+    (fieldId: string, targetGroup: RadioGroup) => {
+      fieldHistory.updateFieldsWith((prev) => moveRadioFieldToGroup(prev, fieldId, targetGroup));
+    },
+    [fieldHistory],
+  );
+
+  const handleReorderSelectedRadioField = useCallback(
+    (fieldId: string, direction: 'up' | 'down') => {
+      fieldHistory.updateFieldsWith((prev) => reorderRadioField(prev, fieldId, direction));
+    },
+    [fieldHistory],
+  );
+
+  const handleDissolveSelectedRadioGroup = useCallback(
+    (groupId: string) => {
+      fieldHistory.updateFieldsWith((prev) => dissolveRadioGroup(prev, groupId));
+      setPendingQuickRadioSelection(null);
+    },
+    [fieldHistory],
+  );
+
+  const handleSelectRadioFieldValue = useCallback(
+    (fieldId: string) => {
+      fieldHistory.updateFieldsWith((prev) => setRadioGroupSelectedValue(prev, fieldId));
+      fieldState.setSelectedFieldId(fieldId);
+    },
+    [fieldHistory, fieldState],
+  );
+
+  const handleDismissRadioSuggestion = useCallback((suggestionId: string) => {
+    setDismissedRadioSuggestionIds((prev) => (
+      prev.includes(suggestionId) ? prev : [...prev, suggestionId]
+    ));
+  }, []);
+
+  const handleApplyRadioSuggestion = useCallback((suggestion: RadioGroupSuggestion) => {
+    const nextFields = applyRadioGroupSuggestion(fieldHistory.fieldsRef.current, suggestion);
+    if (nextFields === fieldHistory.fieldsRef.current) {
+      return;
+    }
+    fieldHistory.beginFieldHistory();
+    fieldHistory.updateFields(nextFields, { trackHistory: false });
+    fieldHistory.commitFieldHistory();
+    const firstTargetId = buildRadioSuggestionFieldMap(nextFields, [suggestion]).keys().next().value ?? null;
+    if (firstTargetId) {
+      fieldState.setSelectedFieldId(firstTargetId);
+    }
+    setDismissedRadioSuggestionIds((prev) => (
+      prev.includes(suggestion.id) ? prev : [...prev, suggestion.id]
+    ));
+    setActiveCreateTool(null);
+    setPendingQuickRadioSelection(null);
+    setManualRadioToolDraft(null);
+    setQuickRadioToolDraft(null);
+  }, [fieldHistory, fieldState]);
 
   const handleApplyDisplayPreset = useCallback(
     (preset: Exclude<FieldListDisplayPreset, 'custom'>) => {
@@ -1019,6 +1348,16 @@ function WorkspaceRuntime({
           handleSetCreateTool('checkbox');
           return;
         }
+        if (key === 'r') {
+          event.preventDefault();
+          handleSetCreateTool('radio');
+          return;
+        }
+        if (key === 'q') {
+          event.preventDefault();
+          handleSetCreateTool('quick-radio');
+          return;
+        }
         if (key === 'delete' || key === 'backspace') {
           if (!fieldState.selectedFieldId) return;
           event.preventDefault();
@@ -1118,7 +1457,7 @@ function WorkspaceRuntime({
     mapSchemaInProgress,
     hasMappedSchema,
     checkboxRules,
-    checkboxHints,
+    radioGroupSuggestions,
     textTransformRules,
     canRename,
     canMapSchema,
@@ -1130,6 +1469,7 @@ function WorkspaceRuntime({
   const { schemaError, dataSourceKind, dataSourceLabel, schemaUploadInProgress, dataColumns, dataRows, identifierKey, canSearchFill } = dataSource;
   const { savedForms: savedFormsList, savedFormsLoading, deletingFormId, showSavedFormsLimitDialog } = savedForms;
   const { fields } = fieldHistory;
+  const radioGroups = useMemo(() => buildRadioGroups(fields), [fields]);
   const { showFields, showFieldNames, showFieldInfo, confidenceFilter, selectedFieldId, visibleFields, hasFieldValues } = fieldState;
   const {
     billingCheckoutInProgressKind,
@@ -1165,6 +1505,121 @@ function WorkspaceRuntime({
     () => fields.find((field) => field.id === selectedFieldId) || null,
     [fields, selectedFieldId],
   );
+  const pendingQuickRadioFields = useMemo(() => {
+    if (!pendingQuickRadioSelection?.fieldIds.length) {
+      return [] as PdfField[];
+    }
+    const idSet = new Set(pendingQuickRadioSelection.fieldIds);
+    return fields.filter((field) => idSet.has(field.id));
+  }, [fields, pendingQuickRadioSelection]);
+  const activeRadioToolDraft = activeCreateTool === 'radio'
+    ? manualRadioToolDraft
+    : activeCreateTool === 'quick-radio'
+      ? quickRadioToolDraft
+      : null;
+  const radioSuggestionFieldFingerprint = useMemo(
+    () => JSON.stringify(fields.map((field) => ({
+      id: field.id,
+      name: field.name,
+      type: field.type,
+      page: field.page,
+      x: field.rect.x,
+      y: field.rect.y,
+      width: field.rect.width,
+      height: field.rect.height,
+      radioGroupId: field.radioGroupId ?? null,
+      radioGroupKey: field.radioGroupKey ?? null,
+      radioOptionKey: field.radioOptionKey ?? null,
+    }))),
+    [fields],
+  );
+  const visibleRadioGroupSuggestions = useMemo(() => {
+    const dismissed = new Set(dismissedRadioSuggestionIds);
+    return radioGroupSuggestions.filter((suggestion) => (
+      !dismissed.has(suggestion.id) &&
+      !isRadioGroupSuggestionApplied(fields, suggestion)
+    ));
+  }, [dismissedRadioSuggestionIds, fields, radioGroupSuggestions]);
+  const radioSuggestionByFieldId = useMemo(
+    () => buildRadioSuggestionFieldMap(fields, visibleRadioGroupSuggestions),
+    [fields, visibleRadioGroupSuggestions],
+  );
+  const selectedRadioSuggestion = selectedFieldId
+    ? radioSuggestionByFieldId.get(selectedFieldId) ?? null
+    : null;
+
+  useEffect(() => {
+    if (activeCreateTool !== 'radio') {
+      return;
+    }
+    setManualRadioToolDraft((prev) => prev ?? buildNextRadioToolDraft(fieldHistory.fieldsRef.current));
+  }, [activeCreateTool, fieldHistory.fieldsRef]);
+
+  useEffect(() => {
+    if (activeCreateTool !== 'quick-radio') {
+      return;
+    }
+    setQuickRadioToolDraft((prev) => prev ?? buildNextRadioToolDraft(fieldHistory.fieldsRef.current));
+  }, [activeCreateTool, fieldHistory.fieldsRef]);
+
+  useEffect(() => {
+    setPendingQuickRadioSelection((prev) => {
+      if (!prev?.fieldIds.length) {
+        return prev;
+      }
+      const allowedIds = new Set(
+        fields
+          .filter((field) => field.type === 'checkbox' || field.type === 'radio')
+          .map((field) => field.id),
+      );
+      const nextFieldIds = prev.fieldIds.filter((fieldId) => allowedIds.has(fieldId));
+      if (nextFieldIds.length === prev.fieldIds.length) {
+        return prev;
+      }
+      if (!nextFieldIds.length) {
+        return null;
+      }
+      return { ...prev, fieldIds: nextFieldIds };
+    });
+  }, [fields]);
+
+  useEffect(() => {
+    if (!manualRadioToolDraft) {
+      return;
+    }
+    const matchingGroup = radioGroups.find((group) => group.id === manualRadioToolDraft.groupId);
+    if (!matchingGroup) {
+      return;
+    }
+    if (
+      matchingGroup.key === manualRadioToolDraft.groupKey &&
+      matchingGroup.label === manualRadioToolDraft.groupLabel
+    ) {
+      return;
+    }
+    setManualRadioToolDraft((prev) => (
+      prev && prev.groupId === matchingGroup.id
+        ? {
+            ...prev,
+            groupKey: matchingGroup.key,
+            groupLabel: matchingGroup.label,
+          }
+        : prev
+    ));
+  }, [manualRadioToolDraft, radioGroups]);
+
+  const dismissedRadioSuggestionFingerprintRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (dismissedRadioSuggestionFingerprintRef.current === null) {
+      dismissedRadioSuggestionFingerprintRef.current = radioSuggestionFieldFingerprint;
+      return;
+    }
+    if (dismissedRadioSuggestionFingerprintRef.current !== radioSuggestionFieldFingerprint) {
+      dismissedRadioSuggestionFingerprintRef.current = radioSuggestionFieldFingerprint;
+      setDismissedRadioSuggestionIds([]);
+    }
+  }, [radioSuggestionFieldFingerprint]);
   const displayPreset = useMemo<FieldListDisplayPreset>(() => {
     if (showFields && showFieldNames && !showFieldInfo && !transformMode) return 'review';
     if (showFields && !showFieldNames && !showFieldInfo && transformMode) return 'edit';
@@ -1463,9 +1918,7 @@ function WorkspaceRuntime({
     browserRoute.kind !== 'group'
   );
   const activeDemoStep = demoStepIndex !== null ? DEMO_STEPS[demoStepIndex] : null;
-  const suppressDemoTourForSearchFillStep =
-    showSearchFill && activeDemoStep?.id === 'search-fill';
-  const showDemoTour = demoActive && currentView === 'editor' && !suppressDemoTourForSearchFillStep;
+  const showDemoTour = demoActive && currentView === 'editor' && activeDemoStep?.id !== 'search-fill';
   const shouldShowProcessingAd = processingMode === 'detect' && Boolean(PROCESSING_AD_VIDEO_URL);
   const handleOpenSearchFill = useCallback(() => {
     setSearchFillPreset(null);
@@ -1483,6 +1936,12 @@ function WorkspaceRuntime({
       onBrowserRouteChange?.({ kind: 'homepage' }, { replace: true });
     }
   }, [auth, onBrowserRouteChange, verifiedUser]);
+
+  const runtimeLoadingFallback = (
+    <div className="auth-loading-screen">
+      <div className="auth-loading-card">Loading workspace…</div>
+    </div>
+  );
 
   useEffect(() => {
     if (currentView === 'editor') return;
@@ -1514,47 +1973,63 @@ function WorkspaceRuntime({
       onClose={savedForms.closeSavedFormsLimitDialog} />
   );
   const fillLinkManagerDialog = (
-    <FillLinkManagerDialog {...fillLinkManagerDialogProps} />
+    <Suspense fallback={null}>
+      <LazyFillLinkManagerDialog {...fillLinkManagerDialogProps} />
+    </Suspense>
+  );
+  const templateApiManagerDialog = (
+    <Suspense fallback={null}>
+      <LazyApiFillManagerDialog {...templateApiManagerDialogProps} />
+    </Suspense>
+  );
+  const signatureRequestDialog = (
+    <Suspense fallback={null}>
+      <LazySignatureRequestDialog {...signing.dialogProps} />
+    </Suspense>
   );
   const downgradeRetentionDialog = (
-    <DowngradeRetentionDialog
-      open={showDowngradeRetentionDialog}
-      retention={currentDowngradeRetention}
-      billingEnabled={userProfile?.billing?.enabled === true}
-      savingSelection={downgradeRetentionSaveInProgress}
-      deletingNow={downgradeRetentionDeleteInProgress}
-      checkoutInProgress={billingCheckoutInProgressKind !== null}
-      reactivateLabel={downgradeRetentionReactivateLabel}
-      onClose={closeDowngradeRetentionDialog}
-      onSaveSelection={handleSaveDowngradeRetentionSelection}
-      onDeleteNow={handleDeleteDowngradeRetentionNow}
-      onReactivatePremium={handleReactivateDowngradedAccount}
-    />
+    <Suspense fallback={null}>
+      <LazyDowngradeRetentionDialog
+        open={showDowngradeRetentionDialog}
+        retention={currentDowngradeRetention}
+        billingEnabled={userProfile?.billing?.enabled === true}
+        savingSelection={downgradeRetentionSaveInProgress}
+        deletingNow={downgradeRetentionDeleteInProgress}
+        checkoutInProgress={billingCheckoutInProgressKind !== null}
+        reactivateLabel={downgradeRetentionReactivateLabel}
+        onClose={closeDowngradeRetentionDialog}
+        onSaveSelection={handleSaveDowngradeRetentionSelection}
+        onDeleteNow={handleDeleteDowngradeRetentionNow}
+        onReactivatePremium={handleReactivateDowngradedAccount}
+      />
+    </Suspense>
   );
   const groupUploadDialog = (
-    <GroupUploadDialog
-      open={groupUpload.open}
-      groupName={groupUpload.groupName}
-      onGroupNameChange={groupUpload.setGroupName}
-      items={groupUpload.items}
-      wantsRename={groupUpload.wantsRename}
-      onWantsRenameChange={groupUpload.setWantsRename}
-      wantsMap={groupUpload.wantsMap}
-      onWantsMapChange={groupUpload.setWantsMap}
-      processing={groupUpload.processing}
-      localError={groupUpload.localError}
-      progressLabel={groupUpload.progressLabel}
-      pageSummary={groupUpload.pageSummary}
-      creditEstimate={groupUpload.creditEstimate}
-      creditsRemaining={groupUpload.creditsRemaining}
-      schemaUploadInProgress={dataSource.schemaUploadInProgress}
-      dataSourceLabel={dataSourceLabel}
-      onChooseDataSource={dataSource.handleChooseDataSource}
-      onClose={groupUpload.closeDialog}
-      onAddFiles={groupUpload.addFiles}
-      onRemoveFile={groupUpload.removeFile}
-      onConfirm={groupUpload.confirm}
-    />
+    <Suspense fallback={null}>
+      <LazyGroupUploadDialog
+        open={groupUpload.open}
+        groupName={groupUpload.groupName}
+        onGroupNameChange={groupUpload.setGroupName}
+        items={groupUpload.items}
+        wantsRename={groupUpload.wantsRename}
+        onWantsRenameChange={groupUpload.setWantsRename}
+        wantsMap={groupUpload.wantsMap}
+        onWantsMapChange={groupUpload.setWantsMap}
+        processing={groupUpload.processing}
+        localError={groupUpload.localError}
+        progressLabel={groupUpload.progressLabel}
+        pageSummary={groupUpload.pageSummary}
+        creditEstimate={groupUpload.creditEstimate}
+        creditsRemaining={groupUpload.creditsRemaining}
+        schemaUploadInProgress={dataSource.schemaUploadInProgress}
+        dataSourceLabel={dataSourceLabel}
+        onChooseDataSource={dataSource.handleChooseDataSource}
+        onClose={groupUpload.closeDialog}
+        onAddFiles={groupUpload.addFiles}
+        onRemoveFile={groupUpload.removeFile}
+        onConfirm={groupUpload.confirm}
+      />
+    </Suspense>
   );
   const demoCompletionDialog = (
     <ConfirmDialog open={demoCompletionOpen} title="Demo complete"
@@ -1631,43 +2106,60 @@ function WorkspaceRuntime({
     return (<div className="auth-loading-screen"><div className="auth-loading-card">Loading workspace…</div></div>);
   }
   if (requiresEmailVerification) {
-    return (<VerifyEmailPage email={authUser?.email ?? null} onRefresh={auth.handleRefreshVerification} onSignOut={handleSignOut} />);
+    return (
+      <Suspense fallback={runtimeLoadingFallback}>
+        <LazyVerifyEmailPage
+          email={authUser?.email ?? null}
+          onRefresh={auth.handleRefreshVerification}
+          onSignOut={handleSignOut}
+        />
+      </Suspense>
+    );
   }
   if (showLogin) {
-    return (<LoginPage onAuthenticated={() => auth.setShowLogin(false)} onCancel={handleCancelLogin} />);
+    return (
+      <Suspense fallback={runtimeLoadingFallback}>
+        <LazyLoginPage
+          onAuthenticated={() => auth.setShowLogin(false)}
+          onCancel={handleCancelLogin}
+        />
+      </Suspense>
+    );
   }
   if (showProfile && verifiedUser) {
     return (
       <>
         {shouldShowBannerAlert && bannerAlert ? <Alert tone={bannerAlert.tone} variant="banner" message={bannerAlert.message} onDismiss={handleDismissBanner} /> : null}
-        {savedFormsLimitDialog}{fillLinkManagerDialog}{downgradeRetentionDialog}{dialogContent}
-        <ProfilePage email={userProfile?.email ?? verifiedUser.email} role={userProfile?.role ?? 'base'}
-          creditsRemaining={userProfile?.creditsRemaining ?? 0}
-          monthlyCreditsRemaining={userProfile?.monthlyCreditsRemaining ?? 0}
-          refillCreditsRemaining={userProfile?.refillCreditsRemaining ?? 0}
-          availableCredits={userProfile?.availableCredits ?? userProfile?.creditsRemaining ?? 0}
-          refillCreditsLocked={Boolean(userProfile?.refillCreditsLocked)}
-          billingEnabled={typeof userProfile?.billing?.enabled === 'boolean' ? userProfile.billing.enabled : null}
-          billingHasSubscription={userProfile?.billing?.hasSubscription === true}
-          billingSubscriptionStatus={userProfile?.billing?.subscriptionStatus ?? null}
-          billingCancelAtPeriodEnd={userProfile?.billing?.cancelAtPeriodEnd ?? null}
-          billingCancelAt={userProfile?.billing?.cancelAt ?? null}
-          billingCurrentPeriodEnd={userProfile?.billing?.currentPeriodEnd ?? null}
-          billingPlans={userProfile?.billing?.plans}
-          retention={currentDowngradeRetention}
-          profileError={auth.profileLoadError}
-          creditPricing={userProfile?.creditPricing}
-          isLoading={profileLoading}
-          limits={profileLimits} savedForms={savedFormsList} savedFormsLoading={savedFormsLoading}
-          allowSavedFormOpen={!isMobileView}
-          onSelectSavedForm={handleSelectSavedFormFromProfile} onDeleteSavedForm={handleDeleteSavedForm}
-          deletingFormId={deletingFormId}
-          billingCheckoutInProgressKind={billingCheckoutInProgressKind}
-          billingCancelInProgress={billingCancelInProgress}
-          onStartBillingCheckout={userProfile?.billing?.enabled === true ? handleStartBillingCheckout : undefined}
-          onCancelBillingSubscription={userProfile?.billing?.enabled === true ? handleCancelBillingSubscription : undefined}
-          onOpenDowngradeRetention={currentDowngradeRetention ? handleOpenDowngradeRetentionDialog : undefined}
-          onClose={auth.handleCloseProfile} onSignOut={handleSignOut} />
+        {savedFormsLimitDialog}{fillLinkManagerDialog}{templateApiManagerDialog}{signatureRequestDialog}{downgradeRetentionDialog}{dialogContent}
+        <Suspense fallback={runtimeLoadingFallback}>
+          <LazyProfilePage email={userProfile?.email ?? verifiedUser.email} role={userProfile?.role ?? 'base'}
+            creditsRemaining={userProfile?.creditsRemaining ?? 0}
+            monthlyCreditsRemaining={userProfile?.monthlyCreditsRemaining ?? 0}
+            refillCreditsRemaining={userProfile?.refillCreditsRemaining ?? 0}
+            availableCredits={userProfile?.availableCredits ?? userProfile?.creditsRemaining ?? 0}
+            refillCreditsLocked={Boolean(userProfile?.refillCreditsLocked)}
+            billingEnabled={typeof userProfile?.billing?.enabled === 'boolean' ? userProfile.billing.enabled : null}
+            billingHasSubscription={userProfile?.billing?.hasSubscription === true}
+            billingSubscriptionStatus={userProfile?.billing?.subscriptionStatus ?? null}
+            billingCancelAtPeriodEnd={userProfile?.billing?.cancelAtPeriodEnd ?? null}
+            billingCancelAt={userProfile?.billing?.cancelAt ?? null}
+            billingCurrentPeriodEnd={userProfile?.billing?.currentPeriodEnd ?? null}
+            billingPlans={userProfile?.billing?.plans}
+            retention={currentDowngradeRetention}
+            profileError={auth.profileLoadError}
+            creditPricing={userProfile?.creditPricing}
+            isLoading={profileLoading}
+            limits={profileLimits} savedForms={savedFormsList} savedFormsLoading={savedFormsLoading}
+            allowSavedFormOpen={!isMobileView}
+            onSelectSavedForm={handleSelectSavedFormFromProfile} onDeleteSavedForm={handleDeleteSavedForm}
+            deletingFormId={deletingFormId}
+            billingCheckoutInProgressKind={billingCheckoutInProgressKind}
+            billingCancelInProgress={billingCancelInProgress}
+            onStartBillingCheckout={userProfile?.billing?.enabled === true ? handleStartBillingCheckout : undefined}
+            onCancelBillingSubscription={userProfile?.billing?.enabled === true ? handleCancelBillingSubscription : undefined}
+            onOpenDowngradeRetention={currentDowngradeRetention ? handleOpenDowngradeRetentionDialog : undefined}
+            onClose={auth.handleCloseProfile} onSignOut={handleSignOut} />
+        </Suspense>
       </>
     );
   }
@@ -1676,7 +2168,7 @@ function WorkspaceRuntime({
     return (
       <div className="homepage-shell">
         {shouldShowBannerAlert && bannerAlert ? <Alert tone={bannerAlert.tone} variant="banner" message={bannerAlert.message} onDismiss={handleDismissBanner} /> : null}
-        {savedFormsLimitDialog}{fillLinkManagerDialog}{downgradeRetentionDialog}{demoCompletionDialog}{dialogContent}
+        {savedFormsLimitDialog}{fillLinkManagerDialog}{templateApiManagerDialog}{signatureRequestDialog}{downgradeRetentionDialog}{demoCompletionDialog}{dialogContent}
         <LegacyHeader currentView={currentView} onNavigateHome={handleNavigateHome}
           showBackButton={!showHomepage} userEmail={userEmail ?? null}
           onOpenProfile={verifiedUser ? auth.handleOpenProfile : undefined}
@@ -1684,24 +2176,30 @@ function WorkspaceRuntime({
           onSignIn={!verifiedUser ? () => auth.setShowLogin(true) : undefined} />
         <main className="landing-main">
           {currentView === 'homepage' && (
-            <Homepage
-              onStartWorkflow={() => {
-                if (verifiedUser) {
-                  setShowHomepage(false);
-                  return;
-                }
-                auth.setShowLogin(true);
-              }}
-              onStartDemo={demo.startDemo}
-              userEmail={userEmail ?? null} onSignIn={!verifiedUser ? () => auth.setShowLogin(true) : undefined}
-              onOpenProfile={verifiedUser ? auth.handleOpenProfile : undefined} />
+            <Suspense fallback={runtimeLoadingFallback}>
+              <LazyHomepage
+                onStartWorkflow={() => {
+                  if (verifiedUser) {
+                    setShowHomepage(false);
+                    return;
+                  }
+                  auth.setShowLogin(true);
+                }}
+                onStartDemo={demo.startDemo}
+                userEmail={userEmail ?? null} onSignIn={!verifiedUser ? () => auth.setShowLogin(true) : undefined}
+                onOpenProfile={verifiedUser ? auth.handleOpenProfile : undefined} />
+            </Suspense>
           )}
           {currentView === 'upload' && (
-            <UploadView {...uploadBrowserViewModel} />
+            <Suspense fallback={runtimeLoadingFallback}>
+              <LazyUploadView {...uploadBrowserViewModel} />
+            </Suspense>
           )}
           {currentView === 'processing' && (
-            <ProcessingView heading={processingHeading} detail={processingDetail} showAd={shouldShowProcessingAd}
-              adVideoUrl={PROCESSING_AD_VIDEO_URL} adPosterUrl={PROCESSING_AD_POSTER_URL} />
+            <Suspense fallback={runtimeLoadingFallback}>
+              <LazyProcessingView heading={processingHeading} detail={processingDetail} showAd={shouldShowProcessingAd}
+                adVideoUrl={PROCESSING_AD_VIDEO_URL} adPosterUrl={PROCESSING_AD_POSTER_URL} />
+            </Suspense>
           )}
         </main>
         {dataSourceInputs}
@@ -1713,7 +2211,7 @@ function WorkspaceRuntime({
   return (
     <div className={appShellClassName}>
       {shouldShowBannerAlert && bannerAlert ? <Alert tone={bannerAlert.tone} variant="banner" message={bannerAlert.message} onDismiss={handleDismissBanner} /> : null}
-      {savedFormsLimitDialog}{fillLinkManagerDialog}{downgradeRetentionDialog}{demoCompletionDialog}{dialogContent}
+      {savedFormsLimitDialog}{fillLinkManagerDialog}{templateApiManagerDialog}{signatureRequestDialog}{downgradeRetentionDialog}{demoCompletionDialog}{dialogContent}
       <HeaderBar
         pageCount={pageCount} currentPage={currentPage} scale={scale} onScaleChange={setScale}
         onNavigateHome={handleNavigateHome} mappingInProgress={mappingInProgress}
@@ -1762,6 +2260,10 @@ function WorkspaceRuntime({
         userEmail={userEmail}
         onOpenFillLink={verifiedUser ? handleOpenFillLinkManager : undefined}
         canFillLink={canTriggerFillLink}
+        onOpenTemplateApi={verifiedUser && !activeGroupId ? handleOpenTemplateApiManager : undefined}
+        canOpenTemplateApi={canOpenTemplateApi}
+        onOpenSignatureRequest={signing.canShowAction ? signing.openDialog : undefined}
+        canSendForSignature={signing.canSendForSignature}
         onOpenProfile={verifiedUser ? auth.handleOpenProfile : undefined}
         onSignIn={!verifiedUser ? () => auth.setShowLogin(true) : undefined}
         onSignOut={verifiedUser ? handleSignOut : undefined}
@@ -1802,9 +2304,13 @@ function WorkspaceRuntime({
               createEnabled={Boolean(activeCreateTool) && !showFieldInfo}
               activeCreateTool={activeCreateTool}
               selectedFieldId={selectedFieldId}
+              pendingQuickRadioFieldIds={pendingQuickRadioSelection?.fieldIds || []}
+              radioSuggestionByFieldId={radioSuggestionByFieldId}
               onSelectField={handleSelectField} onUpdateField={fieldState.handleUpdateField}
               onUpdateFieldGeometry={fieldState.handleUpdateFieldGeometry}
               onCreateFieldWithRect={handleCreateFieldWithRect}
+              onQuickRadioSelect={handleQuickRadioSelection}
+              onSelectRadioField={handleSelectRadioFieldValue}
               onBeginFieldChange={fieldHistory.beginFieldHistory}
               onCommitFieldChange={fieldHistory.commitFieldHistory}
               onPageChange={handlePageScroll} pendingPageJump={pendingPageJump}
@@ -1813,7 +2319,11 @@ function WorkspaceRuntime({
         </main>
         <FieldInspectorPanel fields={fields} selectedFieldId={selectedFieldId}
           selectedField={selectedField}
+          radioGroups={radioGroups}
+          selectedRadioSuggestion={selectedRadioSuggestion}
           activeCreateTool={activeCreateTool}
+          radioToolDraft={activeRadioToolDraft}
+          pendingQuickRadioFields={pendingQuickRadioFields}
           arrowKeyMoveEnabled={arrowKeyMoveEnabled}
           arrowKeyMoveStep={arrowKeyMoveStep}
           onUpdateField={fieldState.handleUpdateField}
@@ -1821,6 +2331,17 @@ function WorkspaceRuntime({
           onUpdateFieldDraft={fieldState.handleUpdateFieldDraft}
           onDeleteField={fieldState.handleDeleteField}
           onCreateToolChange={handleSetCreateTool}
+          onUpdateRadioToolDraft={handleUpdateRadioToolDraft}
+          onApplyPendingQuickRadioSelection={handleApplyPendingQuickRadioSelection}
+          onCancelPendingQuickRadioSelection={handleCancelPendingQuickRadioSelection}
+          onRemovePendingQuickRadioField={handleRemovePendingQuickRadioField}
+          onRenameRadioGroup={handleRenameSelectedRadioGroup}
+          onUpdateRadioFieldOption={handleUpdateSelectedRadioOption}
+          onMoveRadioFieldToGroup={handleMoveSelectedRadioField}
+          onReorderRadioField={handleReorderSelectedRadioField}
+          onDissolveRadioGroup={handleDissolveSelectedRadioGroup}
+          onApplyRadioSuggestion={handleApplyRadioSuggestion}
+          onDismissRadioSuggestion={handleDismissRadioSuggestion}
           onArrowKeyMoveEnabledChange={setArrowKeyMoveEnabled}
           onArrowKeyMoveStepChange={(value) => setArrowKeyMoveStep(sanitizeArrowKeyMoveStep(value))}
           onUndo={handleUndo}
@@ -1831,35 +2352,31 @@ function WorkspaceRuntime({
           onCommitFieldChange={fieldHistory.commitFieldHistory} />
       </div>
       {showSearchFill ? (
-        <SearchFillModal open={showSearchFill} onClose={handleCloseSearchFill}
-          sessionId={searchFillSessionId} dataSourceKind={dataSourceKind}
-          dataSourceLabel={dataSourceLabel} columns={dataColumns}
-          identifierKey={identifierKey} rows={dataRows} fields={fields}
-          checkboxRules={checkboxRules} checkboxHints={checkboxHints}
-          textTransformRules={textTransformRules}
-          searchPreset={!demoActive ? searchFillPreset : null}
-          fillTargets={activeGroupId ? activeGroupTemplates.map((template) => ({ id: template.id, name: template.name })) : []}
-          activeFillTargetId={savedForms.activeSavedFormId}
-          onFillTargets={activeGroupId ? handleFillSearchTargets : undefined}
-          onFieldsChange={fieldState.handleFieldsChange} onClearFields={fieldState.handleClearFieldValues}
-          onAfterFill={() => {
-            setSearchFillPreset(null);
-            handleSetTransformMode(false);
-            setActiveCreateTool(null);
-            fieldState.setShowFieldInfo(true); fieldState.setShowFieldNames(false);
-            fieldState.setShowFields(true);
-            if (demoActive && DEMO_STEPS[demoStepIndex ?? -1]?.id === 'search-fill') demo.handleDemoCompletion();
-          }}
-          onError={(message) => dataSource.setSchemaError(message)}
-          onRequestDataSource={(kind) => dataSource.handleChooseDataSource(kind)}
-          demoSearch={demoActive ? demoSearchPreset : null}
-          demoInstruction={demoActive && activeDemoStep?.id === 'search-fill' ? activeDemoStep.body : null} />
+        <Suspense fallback={null}>
+          <LazySearchFillModal open={showSearchFill} onClose={handleCloseSearchFill}
+            sessionId={searchFillSessionId} dataSourceKind={dataSourceKind}
+            dataSourceLabel={dataSourceLabel} columns={dataColumns}
+            identifierKey={identifierKey} rows={dataRows} fields={fields}
+            checkboxRules={checkboxRules}
+            textTransformRules={textTransformRules}
+            searchPreset={!demoActive ? searchFillPreset : null}
+            fillTargets={activeGroupId ? activeGroupTemplates.map((template) => ({ id: template.id, name: template.name })) : []}
+            activeFillTargetId={savedForms.activeSavedFormId}
+            onFillTargets={activeGroupId ? handleFillSearchTargets : undefined}
+            onFieldsChange={fieldState.handleFieldsChange} onClearFields={fieldState.handleClearFieldValues}
+            onAfterFill={handleAfterSearchFill}
+            onError={(message) => dataSource.setSchemaError(message)}
+            onRequestDataSource={(kind) => dataSource.handleChooseDataSource(kind)}
+            demoSearch={demoActive ? demoSearchPreset : null} />
+        </Suspense>
       ) : null}
       {dataSourceInputs}
       {showDemoTour ? (
-        <DemoTour open={showDemoTour} step={activeDemoStep} stepIndex={demoStepIndex ?? 0}
-          stepCount={DEMO_STEPS.length} onNext={demo.handleDemoNext}
-          onBack={demo.handleDemoBack} onClose={demo.exitDemo} />
+        <Suspense fallback={null}>
+          <LazyDemoTour open={showDemoTour} step={activeDemoStep} stepIndex={demoStepIndex ?? 0}
+            stepCount={DEMO_STEPS.length} onNext={demo.handleDemoNext}
+            onBack={demo.handleDemoBack} onClose={demo.exitDemo} />
+        </Suspense>
       ) : null}
     </div>
   );

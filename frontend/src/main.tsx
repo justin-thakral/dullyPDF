@@ -23,6 +23,7 @@ const App = lazy(() => import('./App'));
 const LegalPage = lazy(() => import('./components/pages/LegalPage'));
 const PublicNotFoundPage = lazy(() => import('./components/pages/PublicNotFoundPage'));
 const FillLinkPublicPage = lazy(() => import('./components/pages/FillLinkPublicPage'));
+const PublicSigningPage = lazy(() => import('./components/pages/PublicSigningPage'));
 const AccountActionPage = lazy(() => import('./components/pages/AccountActionPage'));
 const UsageDocsPage = lazy(() => import('./components/pages/UsageDocsPage'));
 const UsageDocsNotFoundPage = lazy(() => import('./components/pages/UsageDocsNotFoundPage'));
@@ -36,6 +37,7 @@ type AppRoute =
   | { kind: 'app'; browserRoute: WorkspaceBrowserRoute }
   | { kind: 'legal'; legalKind: LegalPageKind }
   | { kind: 'fill-link-public'; token: string }
+  | { kind: 'signing-public'; token: string }
   | { kind: 'intent'; intentKey: IntentPageKey }
   | { kind: 'intent-hub'; hubKey: 'workflows' | 'industries' }
   | { kind: 'feature-plan'; planKey: FeaturePlanPageKey }
@@ -87,6 +89,13 @@ const resolveRoute = (): AppRoute => {
     if (token && !token.includes('/')) {
       if (path !== normalizedPath) replaceBrowserPath(normalizedPath);
       return { kind: 'fill-link-public', token };
+    }
+  }
+  if (normalizedPath.startsWith('/sign/')) {
+    const token = normalizedPath.slice('/sign/'.length);
+    if (token && !token.includes('/')) {
+      if (path !== normalizedPath) replaceBrowserPath(normalizedPath);
+      return { kind: 'signing-public', token };
     }
   }
 
@@ -162,6 +171,8 @@ const renderRoute = (route: AppRoute) => {
       return <LegalPage kind={route.legalKind} />;
     case 'fill-link-public':
       return <FillLinkPublicPage token={route.token} />;
+    case 'signing-public':
+      return <PublicSigningPage token={route.token} />;
     case 'account-action':
       return <AccountActionPage />;
     case 'intent-hub':

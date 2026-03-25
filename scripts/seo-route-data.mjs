@@ -4,7 +4,7 @@
  *
  * Sources:
  *  - routeSeo.ts (titles, descriptions, keywords, canonical paths, structured data)
- *  - intentPages.ts (heroTitle, heroSummary, valuePoints, proofPoints, faqs)
+ *  - intentPages.ts (heroTitle, heroSummary, valuePoints, proofPoints, faqs, articleSections)
  *  - usageDocsContent.tsx (section titles and summaries)
  */
 
@@ -24,10 +24,19 @@ const INTENT_PAGES = [
     heroTitle: 'Convert PDF to Fillable Form Templates in Minutes',
     heroSummary:
       'Upload a raw PDF, detect candidate fields, clean geometry in the editor, and save a reusable fillable template for repeat workflows.',
-    seoTitle: 'PDF to Fillable Form Workflow for Reusable Templates | DullyPDF',
+    seoTitle: 'Free Automatic PDF to Fillable Form Workflow | DullyPDF',
     seoDescription:
-      'Convert PDF files into fillable form templates with a PDF form builder workflow built for existing documents, validate field geometry, and reuse saved forms for repeat workflows in DullyPDF.',
-    seoKeywords: ['pdf to fillable form', 'pdf form builder', 'build fillable form from pdf', 'fillable pdf builder', 'convert pdf to fillable template', 'fillable form template workflow'],
+      'Create free automatic PDF-to-fillable-form templates for existing documents with AI field detection, visual cleanup, and reusable saved workflows in DullyPDF.',
+    seoKeywords: [
+      'pdf to fillable form',
+      'free pdf to fillable form',
+      'automatic pdf to fillable form',
+      'pdf form builder',
+      'build fillable form from pdf',
+      'fillable pdf builder',
+      'convert pdf to fillable template',
+      'fillable form template workflow',
+    ],
     valuePoints: [
       'Convert scanned or native PDFs into editable fillable templates.',
       'Review field candidates with confidence scoring before finalizing.',
@@ -38,10 +47,62 @@ const INTENT_PAGES = [
       'Search & Fill uses local CSV/XLSX/JSON rows in-browser.',
       'Templates can be saved and reopened for repeat intake cycles.',
     ],
+    articleSections: [
+      {
+        title: 'Why teams search for a PDF to fillable form workflow',
+        paragraphs: [
+          'Most teams looking for a PDF to fillable form tool are not trying to design a brand-new form from scratch. They already have an intake packet, insurance form, permit, onboarding document, or client worksheet that exists as a PDF and needs to become reusable. The real problem is turning that fixed layout into something you can review, map, save, and fill again later without rebuilding it every time.',
+          'That is where DullyPDF is narrower than a general PDF editor and more useful for repeat operations. It is built for existing PDFs that need field detection, cleanup, naming, mapping, and repeat filling. If you need full document authoring or page redesign, use a general editor. If you need to convert the same document type into a reusable workflow, the template approach is the better fit.',
+        ],
+        bullets: [
+          'Best fit: recurring PDFs with a stable visual layout and changing underlying record data.',
+          'Less ideal: one-off editing, page redesign, or general-purpose annotation work.',
+        ],
+      },
+      {
+        title: 'How DullyPDF converts an existing PDF into a reusable template',
+        paragraphs: [
+          'The workflow starts with upload and detection. DullyPDF renders each page, runs the CommonForms detector, and proposes candidate text, checkbox, date, and signature fields. Instead of blindly trusting the model output, you review the results in the editor with confidence cues and geometry controls so the field set becomes clean before anyone relies on it downstream.',
+          'Once the field geometry is stable, you can rename fields, map them to schema headers, and save the result as a reusable template. That matters because the real value is not simply making a PDF fillable once. The value is creating a versioned, reopenable template that can support repeat Search & Fill runs, QA loops, saved-form reuse, and later updates when the source form changes.',
+        ],
+        bullets: [
+          'Upload the source PDF.',
+          'Review AI-detected field candidates and clean the layout.',
+          'Rename and map fields when the document will be filled from structured data.',
+          'Save the template so future fills do not require full setup again.',
+        ],
+      },
+      {
+        title: 'What makes a converted fillable PDF reliable in production',
+        paragraphs: [
+          'A usable template is more than a set of boxes on a page. Reliable production output depends on stable field names, predictable field types, and enough QA that teams trust the result. Text fields need names that make sense to humans and to mapping logic. Checkboxes need correct grouping and option keys. Date fields need consistent normalization. If those details are weak, the document may technically be fillable while still failing as an operational workflow.',
+          'The practical standard is simple: test one real record end to end before rolling the template out to a team. Open the saved template, fill it from representative data, inspect the output, clear the fields, and run the fill again. That loop catches most issues early and keeps the template from becoming a fragile one-time conversion that nobody wants to reuse.',
+        ],
+      },
+      {
+        title: 'Where AI field detection still needs human review',
+        paragraphs: [
+          'Detection is fastest when the PDF is clean, high contrast, and visually consistent. Native PDFs with obvious form lines usually need less cleanup. Scanned forms, dense table layouts, decorative borders, and tightly packed checkbox groups usually need more review. That is normal. The goal is not zero manual input. The goal is moving the operator from full manual field creation to targeted cleanup of a mostly-correct draft.',
+          'A strong review order is to start with low-confidence items, then scan for duplicated labels, misclassified checkboxes, and fields that are slightly shifted relative to the printed form line. If a detector misses something important, the editor still lets you add or correct fields manually. The combination of detection plus human cleanup is what makes the template dependable.',
+        ],
+      },
+    ],
     faqs: [
-      { question: 'Can DullyPDF convert non-fillable PDFs into fillable forms?', answer: 'Yes. DullyPDF detects likely field regions, then lets you refine and save them as a fillable template.' },
-      { question: 'Do I need to edit the PDF file directly?', answer: 'No. You edit overlay field metadata and geometry in the app, without changing the source PDF layout.' },
-      { question: 'Can I reuse a converted fillable template later?', answer: 'Yes. Saved forms preserve PDF bytes and field metadata so you can reopen and refill without rerunning full setup.' },
+      {
+        question: 'Can DullyPDF convert non-fillable PDFs into fillable forms?',
+        answer:
+          'Yes. DullyPDF detects likely field regions, then lets you refine and save them as a fillable template.',
+      },
+      {
+        question: 'Do I need to edit the PDF file directly?',
+        answer:
+          'No. You edit overlay field metadata and geometry in the app, without changing the source PDF layout.',
+      },
+      {
+        question: 'Can I reuse a converted fillable template later?',
+        answer:
+          'Yes. Saved forms preserve PDF bytes and field metadata so you can reopen and refill without rerunning full setup.',
+      },
     ],
   },
   {
@@ -52,10 +113,16 @@ const INTENT_PAGES = [
     heroTitle: 'Map PDF Fields to Database Template Columns',
     heroSummary:
       'Standardize field names, align them to schema headers, and build repeatable PDF-to-database templates for intake operations.',
-    seoTitle: 'PDF to Database Template Mapping Guide | DullyPDF',
+    seoTitle: 'Free Automatic PDF to Database Template Mapping | DullyPDF',
     seoDescription:
-      'Map PDF field names to database template columns and maintain repeatable PDF fill workflows with schema-aligned templates.',
-    seoKeywords: ['pdf to database template', 'map pdf fields to database columns', 'pdf schema mapping workflow'],
+      'Use free automatic PDF mapping to connect detected fields to database headers and build repeatable templates for row-based fill workflows.',
+    seoKeywords: [
+      'pdf to database template',
+      'free pdf to database template',
+      'automatic pdf to database mapping',
+      'map pdf fields to database columns',
+      'pdf schema mapping workflow',
+    ],
     valuePoints: [
       'Map detected fields to CSV/XLSX/JSON schema headers.',
       'Use OpenAI rename + mapping for faster standardization.',
@@ -66,10 +133,57 @@ const INTENT_PAGES = [
       'Mapping and rename confidence outputs are visible for review.',
       'Works for recurring packets where naming is inconsistent.',
     ],
+    articleSections: [
+      {
+        title: 'What a PDF to database template actually means',
+        paragraphs: [
+          'A normal fillable PDF can still be a dead end if the field names do not line up with your real data. A PDF to database template is different because it explicitly connects the PDF field set to the column structure you already use in CSV exports, spreadsheets, JSON records, or application data. That mapping step is what turns a PDF from a visual form into a repeatable data-entry workflow.',
+          'This matters most when teams are handling the same document type over and over again. If the PDF fields are mapped to a stable schema, one record can fill predictably today and another record can fill predictably next month even after staff changes. The template becomes an operational asset instead of a fragile manual process that depends on whoever happens to know the form best.',
+        ],
+      },
+      {
+        title: 'Why rename usually comes before map',
+        paragraphs: [
+          'Many PDFs start with weak field identifiers such as generic labels, repeated names, or values inherited from older authoring tools. Mapping directly from those names to a database schema can work on simple forms, but it tends to break down on longer packets and checkbox-heavy documents. Rename improves the odds by turning vague field names into clearer template metadata before the mapping pass runs.',
+          'DullyPDF supports rename-only, map-only, and combined Rename + Map workflows. In practice, combined workflows are useful when the source document is visually clear but the field names are weak. You get more meaningful names, better schema alignment, and less manual cleanup in the editor afterward.',
+        ],
+        bullets: [
+          'Run map-only when the field names are already clean and descriptive.',
+          'Run rename first when the PDF contains generic, duplicated, or inconsistent field names.',
+          'Use combined Rename + Map when you want the fastest first-pass setup on recurring forms.',
+        ],
+      },
+      {
+        title: 'How to handle checkboxes and structured values',
+        paragraphs: [
+          'Database mapping gets harder when the source form uses checkbox groups, yes-no pairs, list-style selections, or option-driven logic. Those cases cannot be treated like plain text boxes. They need group keys, option keys, and clear rule types so the fill step knows whether the incoming value should behave like a boolean, enum, presence signal, or multi-select list.',
+          'That is why DullyPDF treats checkbox handling as part of the template definition rather than an afterthought. When the checkbox metadata is configured well, mapped fills become much more stable. When it is not, teams end up with half-working templates where the text is right but the selected options drift or fail silently.',
+        ],
+      },
+      {
+        title: 'How to maintain a mapped template as your schema changes',
+        paragraphs: [
+          'A good PDF to database template should survive routine operational changes. New columns appear, naming conventions tighten, and forms get revised. The safest maintenance pattern is to keep the template as the canonical document setup, then reopen it when your schema changes, adjust the field map, test with a representative row, and save the updated version. That keeps history anchored to one known template instead of proliferating near-duplicates.',
+          'If a team is supporting multiple recurring forms, the discipline is the same: decide which form is canonical, keep the schema naming conventions tight, and make the smallest possible correction when the business process changes. Consolidation is usually better than cloning lightly different versions for every minor variation.',
+        ],
+      },
+    ],
     faqs: [
-      { question: 'How is a PDF database template different from a normal fillable PDF?', answer: 'A database template is explicitly mapped to data headers so rows can be filled predictably instead of manually.' },
-      { question: 'Can I map checkboxes to database values?', answer: 'Yes. DullyPDF supports checkbox grouping metadata and rule-based mapping for boolean, enum, and list-style values.' },
-      { question: 'Can I update mappings later?', answer: 'Yes. Saved templates can be reopened, remapped, and retested as your schema evolves.' },
+      {
+        question: 'How is a PDF database template different from a normal fillable PDF?',
+        answer:
+          'A database template is explicitly mapped to data headers so rows can be filled predictably instead of manually.',
+      },
+      {
+        question: 'Can I map checkboxes to database values?',
+        answer:
+          'Yes. DullyPDF supports checkbox grouping metadata and rule-based mapping for boolean, enum, and list-style values.',
+      },
+      {
+        question: 'Can I update mappings later?',
+        answer:
+          'Yes. Saved templates can be reopened, remapped, and retested as your schema evolves.',
+      },
     ],
   },
   {
@@ -80,10 +194,16 @@ const INTENT_PAGES = [
     heroTitle: 'Fill PDF From CSV, Excel, or JSON Data',
     heroSummary:
       'Search your records, pick a row, and fill mapped PDF templates in seconds for repeat data-entry workflows.',
-    seoTitle: 'Fill PDF From CSV, Excel, and JSON Records | DullyPDF',
+    seoTitle: 'Free Automatic PDF Fill From CSV, Excel, and JSON | DullyPDF',
     seoDescription:
-      'Fill mapped PDF templates from CSV, Excel, and JSON records with search-based row selection and controlled validation loops.',
-    seoKeywords: ['fill pdf from csv', 'fill pdf from excel', 'fill pdf from json'],
+      'Use free automatic Search & Fill to map PDF fields to database headers, choose CSV, Excel, or JSON rows, and fill mapped templates in seconds.',
+    seoKeywords: [
+      'fill pdf from csv',
+      'free pdf fill from csv',
+      'automatic pdf fill from csv',
+      'fill pdf from excel',
+      'fill pdf from json',
+    ],
     valuePoints: [
       'Load CSV, XLSX, or JSON rows and search records quickly.',
       'Choose contains/equals matching and fill by selected row.',
@@ -92,12 +212,65 @@ const INTENT_PAGES = [
     proofPoints: [
       'Search result sets are capped for controlled review workflows.',
       'Parser guardrails handle duplicate headers and schema normalization.',
-      'Filled output can be downloaded immediately or saved to profile.',
+      'Filled output can be downloaded immediately, saved to profile, or driven from stored Fill By Link respondents.',
+    ],
+    articleSections: [
+      {
+        title: 'Why filling PDFs from CSV usually breaks down in manual workflows',
+        paragraphs: [
+          'The promise sounds simple: take spreadsheet rows and put them into a PDF. In practice, teams usually hit the same problems immediately. Column headers do not match field names, dates are formatted inconsistently, duplicate headers cause ambiguity, checkbox values need interpretation, and operators waste time searching for the right record before they even test the fill.',
+          'That is why the spreadsheet itself is only part of the workflow. Reliable PDF fill from CSV depends on a mapped template, predictable field naming, and a controlled record-selection step. Without those pieces, the process turns into another copy-paste task with slightly better tooling around it.',
+        ],
+      },
+      {
+        title: 'How Search and Fill works once the template is mapped',
+        paragraphs: [
+          'DullyPDF treats the PDF template and the row data as two separate layers. First you create or reopen a saved template with a stable field map. Then you load CSV, XLSX, or JSON data and use Search & Fill to locate the right record. The operator chooses a record, fills the document, reviews the result, and can clear and refill again without rebuilding the template.',
+          'That structure is important because it gives teams a QA loop instead of a blind batch export. Search is case-insensitive, result sets are capped for controlled review, and the operator can validate the chosen row before the document is downloaded or saved. For many business workflows, that deliberate review step is more useful than a high-volume black-box batch generator.',
+        ],
+        bullets: [
+          'Upload or reopen the mapped PDF template.',
+          'Load CSV, XLSX, or JSON row data.',
+          'Search for the correct record using contains or equals matching.',
+          'Fill the PDF, inspect the result, then clear and refill if needed.',
+        ],
+      },
+      {
+        title: 'How to prepare your spreadsheet for better fill accuracy',
+        paragraphs: [
+          'The fastest wins come from cleaning the schema, not from forcing more keywords into the page. Header names should be stable and descriptive, duplicate columns should be resolved intentionally, and dates or checkbox columns should follow a consistent pattern. DullyPDF normalizes headers and handles duplicate names, but the cleaner the source data is, the less template cleanup you need later.',
+          'A practical rule is to test with the row that is most likely to expose edge cases. Pick a record with long names, populated dates, and checkbox values that actually exercise the form. If that record fills cleanly, simpler rows usually follow without surprise.',
+        ],
+      },
+      {
+        title: 'Where Fill By Link fits into the same row-based workflow',
+        paragraphs: [
+          'Not every workflow starts from a local spreadsheet. Some teams need to collect the row data first. DullyPDF Fill By Link supports that by storing respondent submissions as structured records that can be selected later from the same Search & Fill flow. That lets teams mix operational sources: spreadsheet rows for internal exports and stored respondents for externally collected form data.',
+          'The important distinction is that the PDF still fills from structured records, not from ad hoc manual typing into the document. Whether the row came from CSV, XLSX, JSON, or a saved respondent submission, the template logic stays the same.',
+        ],
+      },
     ],
     faqs: [
-      { question: 'Can I fill a PDF directly from CSV rows?', answer: 'Yes. After mapping, select a row in Search & Fill and DullyPDF writes matching values into PDF fields.' },
-      { question: 'Does DullyPDF support Excel files too?', answer: 'Yes. XLSX is supported alongside CSV and JSON for row-based Search & Fill workflows.' },
-      { question: 'What if some fields do not fill correctly?', answer: 'Review mappings and checkbox rules, then run a clear-and-refill verification pass before production output.' },
+      {
+        question: 'Can I fill a PDF directly from CSV rows?',
+        answer:
+          'Yes. After mapping, select a row in Search & Fill and DullyPDF writes matching values into PDF fields.',
+      },
+      {
+        question: 'Does DullyPDF support Excel files too?',
+        answer:
+          'Yes. XLSX is supported alongside CSV and JSON for row-based Search & Fill workflows.',
+      },
+      {
+        question: 'What if some fields do not fill correctly?',
+        answer:
+          'Review mappings and checkbox rules, then run a clear-and-refill verification pass before production output.',
+      },
+      {
+        question: 'Can I use stored Fill By Link submissions in the same workflow?',
+        answer:
+          'Yes. Owners can publish a Fill By Link from a saved template and then select respondent records from the same Search & Fill flow used for local rows.',
+      },
     ],
   },
   {
@@ -107,14 +280,23 @@ const INTENT_PAGES = [
     navLabel: 'Fill PDF By Link',
     heroTitle: 'Collect PDF Answers With Native Fill By Link',
     heroSummary:
-      'Start from a saved DullyPDF template, publish a mobile-friendly form link, collect respondent answers, and generate the filled PDF only when you need it.',
-    seoTitle: 'Fill PDF By Link With Shareable Respondent Forms | DullyPDF',
+      'Start from a saved DullyPDF template, publish a mobile-friendly form link, collect respondent answers, and either let respondents download their submitted copy after submit or generate the filled PDF later in the workspace.',
+    seoTitle: 'Free Automatic PDF Fill By Link and Web Forms | DullyPDF',
     seoDescription:
-      'Publish a native Fill By Link from a saved PDF template, collect respondent answers in a DullyPDF-hosted HTML form, and generate the filled PDF from the response list when needed.',
-    seoKeywords: ['fill pdf by link', 'shareable pdf form link', 'pdf form respondent link', 'collect pdf form responses', 'html form to fill pdf'],
+      'Use free automatic Fill By Link workflows to send web forms, collect respondent answers, and fill mapped PDFs later in DullyPDF.',
+    seoKeywords: [
+      'fill pdf by link',
+      'free fill pdf by link',
+      'automatic pdf web form fill',
+      'shareable pdf form link',
+      'pdf form respondent link',
+      'collect pdf form responses',
+      'html form to fill pdf',
+    ],
     valuePoints: [
       'Publish a DullyPDF-hosted HTML form from any saved template.',
       'Store respondent answers as structured records under the template owner account.',
+      'Optionally let template respondents download their submitted PDF copy on the success screen.',
       'Pick a respondent later in the workspace and fill the source PDF on demand.',
     ],
     proofPoints: [
@@ -122,10 +304,217 @@ const INTENT_PAGES = [
       'Premium unlocks a shareable link for every saved template with up to 10,000 responses per link.',
       'Respondent records can be reused through the same Search & Fill workflow before download.',
     ],
+    articleSections: [
+      {
+        title: 'Why collecting answers by link is different from sending a PDF',
+        paragraphs: [
+          'Many teams do not actually want respondents opening and editing a PDF on a phone. They want the information collected in a simpler web form, then they want the final PDF generated later in a controlled owner workflow. That distinction matters because it separates data collection from document generation.',
+          'DullyPDF Fill By Link is built around that separation. The respondent submits answers through a mobile-friendly HTML form, while the owner keeps the saved template, stored responses, and final PDF generation workflow inside the workspace. That usually creates a cleaner process than emailing PDFs back and forth or relying on manual re-entry after someone submits a form.',
+        ],
+      },
+      {
+        title: 'How the owner workflow works in DullyPDF',
+        paragraphs: [
+          'The workflow starts from a saved template or saved-form group. The owner publishes a link, configures the respondent-facing form, collects responses, and then reviews those records later in the workspace. At that point the owner can choose a respondent, run the fill step, and generate the final PDF on demand.',
+          'This is useful because the template remains the canonical source of truth. You do not lose control over field mapping, document versioning, or output QA just because the data arrived through a link. The same mapped template still drives the finished PDF.',
+        ],
+        bullets: [
+          'Publish from a saved template or saved-form group.',
+          'Collect structured responses through a mobile-friendly form.',
+          'Review the saved responses in the workspace before generating the PDF.',
+        ],
+      },
+      {
+        title: 'When Fill By Link is a better fit than direct spreadsheet filling',
+        paragraphs: [
+          'If you already have the data in CSV, XLSX, or JSON, Search & Fill is usually the fastest route. Fill By Link becomes more valuable when the row data does not exist yet or when respondents need to provide it themselves. Intake forms, applicant workflows, patient questionnaires, and client-submitted requests are the natural fit.',
+          'The key advantage is that you still end up with structured records that can flow into the same template logic used for local rows. It is not a separate system with a separate document model. It is another way to source the row data that the PDF template needs.',
+        ],
+      },
+    ],
     faqs: [
-      { question: 'Does the respondent fill the actual PDF?', answer: 'No. The respondent fills a DullyPDF-hosted mobile-friendly HTML form, and the owner generates the final PDF from the saved response later.' },
-      { question: 'How many Fill By Link responses are allowed on free and premium?', answer: 'Free includes 1 active link with 5 accepted responses. Premium supports a shareable link on every saved template and up to 10,000 accepted responses per link.' },
-      { question: 'Can I publish one link for every template?', answer: 'Premium users can publish a shareable link for every saved template they keep in DullyPDF. Free users are limited to 1 active published link at a time.' },
+      {
+        question: 'Does the respondent fill the actual PDF?',
+        answer:
+          'No. The respondent fills a DullyPDF-hosted mobile-friendly HTML form. Template links can optionally expose a post-submit PDF download, but the owner still manages the saved response and final workflow in the workspace.',
+      },
+      {
+        question: 'How many Fill By Link responses are allowed on free and premium?',
+        answer:
+          'Free includes 1 active link with 5 accepted responses. Premium supports a shareable link on every saved template and up to 10,000 accepted responses per link.',
+      },
+      {
+        question: 'Can I publish one link for every template?',
+        answer:
+          'Premium users can publish a shareable link for every saved template they keep in DullyPDF. Free users are limited to 1 active published link at a time.',
+      },
+    ],
+  },
+  {
+    key: 'pdf-signature-workflow',
+    category: 'workflow',
+    path: '/pdf-signature-workflow',
+    navLabel: 'PDF Signature Workflow',
+    heroTitle: 'Send PDFs for Signature by Email or After a Web Form',
+    heroSummary:
+      'Use one signing engine for two real workflows: email a final PDF for signature, or collect answers through a web form first and then hand that exact filled record into the signer ceremony.',
+    seoTitle: 'Electronic Signature PDF Workflow by Email or Web Form | DullyPDF',
+    seoDescription:
+      'Send PDFs for signature by email or collect web form answers first, then sign the exact immutable PDF with audit-ready artifacts in DullyPDF.',
+    seoKeywords: [
+      'send pdf for signature by email',
+      'electronic signature workflow',
+      'pdf signature workflow',
+      'esign pdf by email',
+      'web form to signed pdf',
+      'collect information then sign pdf',
+      'fillable web form with signature',
+      'pdf signing audit trail',
+      'us electronic signature workflow',
+    ],
+    valuePoints: [
+      'Send a final PDF for signature by email without forcing a separate intake form.',
+      'Collect web form answers first, then route the exact filled PDF into the same signing ceremony.',
+      'Freeze an immutable PDF before the signer reviews, adopts, and finishes signing.',
+      'Keep signed PDFs and audit receipts available to the owner inside the workspace.',
+    ],
+    proofPoints: [
+      'The signing flow is designed around core U.S. E-SIGN requirements: clear sign action, logical association with the record, and retention-ready artifacts.',
+      'Consumer-facing requests add a separate electronic-record consent step before signing, while business requests go straight from review to adopt-signature to finish-sign.',
+      'Paper/manual fallback remains available and excluded document categories are intentionally not treated as standard self-serve e-sign workflows.',
+    ],
+    articleSections: [
+      {
+        title: 'Why a real PDF signature workflow is more than drawing a signature',
+        paragraphs: [
+          'Teams searching for a PDF signature workflow usually do not need a decorative scribble tool. They need a process that can show what was signed, how the signer acted, and what record needs to be retained later. The useful product question is not whether a signature image can be placed on a page. The useful question is whether the system captures intent, ties that act to the exact PDF, and preserves the final record in a way the owner can reproduce later.',
+          'That is why DullyPDF treats signing as the final stage of a document workflow instead of a floating annotation step. The signer reviews the exact PDF that will be signed, adopts a signature inside the ceremony, completes an explicit finish action, and the final artifacts stay connected to the same request in the owner workspace.',
+        ],
+      },
+      {
+        title: 'Two entry paths, one immutable signing engine',
+        paragraphs: [
+          'DullyPDF supports two practical entry points because real teams start from different places. Some already have a final PDF and simply need to email it for signature. Others need to collect data first, usually through a phone-friendly web form, then turn that response into the final PDF before the signer sees it. Those are different acquisition paths, but they should not become different signing systems.',
+          'In DullyPDF both routes converge on the same boundary: an immutable PDF snapshot. The email path starts from the current PDF and sends that frozen record into signing. The web form path stores the respondent answers, materializes the filled PDF from the stored response, and only then hands the signer into the ceremony. That gives the owner one consistent signing model instead of disconnected products for email and intake.',
+        ],
+        bullets: [
+          'Email pipeline: final PDF -> immutable snapshot -> signer email -> review and sign.',
+          'Web form pipeline: public form -> stored answers -> immutable filled PDF -> signer ceremony.',
+        ],
+      },
+      {
+        title: 'How the workflow is designed around U.S. E-SIGN and UETA principles',
+        paragraphs: [
+          'DullyPDF is designed for standard U.S. business e-sign workflows, so the product language and ceremony are built around the legal basics that matter most in practice. Under the federal E-SIGN Act, a signature or record generally cannot be denied effect solely because it is electronic. The system therefore makes the signer review the record, take a clear sign action, and complete the signature on the same logically associated document. It also preserves the final signed record so it can be reproduced later.',
+          'The same design also respects the limits of that framework. The workflow does not assume everyone must accept e-signing, because E-SIGN does not require a person to agree to electronic records or signatures. Consumer-facing requests can include separate electronic-record consent before the signature step. Excluded categories such as wills, family-law matters, court documents, certain foreclosure and utility notices, certain insurance cancellation notices, and hazardous-material transport documents are not the ordinary self-serve use case and should be blocked or handled under separate legal review.',
+        ],
+        bullets: [
+          'Explicit signer action instead of passive completion.',
+          'Immutable PDF generated before signature collection.',
+          'Retention-ready signed PDF plus audit receipt for later reproduction.',
+          'Manual fallback path so e-sign is not the only option.',
+        ],
+      },
+      {
+        title: 'What owners actually keep after signing is finished',
+        paragraphs: [
+          'A signature workflow is only useful operationally if the owner can retrieve the finished artifacts later without depending on the signer. DullyPDF stores the immutable source PDF, the final signed PDF, and a human-readable audit receipt tied to the request. For web-form-driven signature requests, the Fill By Web Form Link responses view also surfaces the linked signing status so the owner can see whether the respondent is waiting, signed, or requested a manual fallback and can download the completed signed copy directly from that response row.',
+          'That owner-visible artifact chain is what makes the workflow practical for repeated business use. The signer can still download their completed copy, but the record does not disappear into the respondent side of the experience. The owner keeps the signed output in the same workspace that generated the template, form, and signing request in the first place.',
+        ],
+      },
+    ],
+    faqs: [
+      {
+        question: 'Can DullyPDF send a PDF for signature by email without using a web form first?',
+        answer:
+          'Yes. The direct signing path starts from the current PDF, freezes that exact document, and emails the signer into the public signing ceremony.',
+      },
+      {
+        question: 'Can DullyPDF collect answers through a web form and then send the same filled PDF into signing?',
+        answer:
+          'Yes. Template web forms can require signature after submit, which stores the answers, materializes the filled PDF from that saved response, and then hands the respondent into the signing flow.',
+      },
+      {
+        question: 'What U.S. legal standards does this workflow target?',
+        answer:
+          'It is designed around core E-SIGN and UETA principles for ordinary U.S. business e-sign workflows: explicit intent to sign, logical association of the signature with the record, retention and reproducibility of the final record, and paper/manual fallback when needed.',
+      },
+      {
+        question: 'Does DullyPDF force every signer to use electronic signing?',
+        answer:
+          'No. The workflow keeps a manual fallback path because e-sign is not supposed to be forced on every signer or every document category.',
+      },
+    ],
+  },
+  {
+    key: 'pdf-fill-api',
+    category: 'workflow',
+    path: '/pdf-fill-api',
+    navLabel: 'PDF Fill API',
+    heroTitle: 'Publish a JSON to PDF Fill API From Saved Templates',
+    heroSummary:
+      'Turn a reviewed saved template into a hosted JSON-to-PDF endpoint with schema downloads, key rotation, rate limits, and audit activity.',
+    seoTitle: 'JSON to PDF API and Template Fill API | DullyPDF',
+    seoDescription:
+      'Publish a template-scoped JSON-to-PDF API, return filled PDFs from hosted requests, and keep schema, auth, and audit controls tied to one saved DullyPDF template.',
+    seoKeywords: [
+      'pdf fill api',
+      'json to pdf api',
+      'template api pdf',
+      'pdf form api',
+      'fillable pdf api',
+      'hosted json to pdf endpoint',
+      'pdf automation api',
+    ],
+    valuePoints: [
+      'Publish one saved-template snapshot as a hosted JSON-to-PDF endpoint.',
+      'Download the frozen schema, copy example requests, and rotate or revoke keys from the workspace.',
+      'Keep API Fill separate from browser-local Search & Fill so server-side use stays explicit.',
+    ],
+    proofPoints: [
+      'The public API path is template-scoped and governed by rate limits, monthly request caps, and endpoint audit activity.',
+      'Radio groups are resolved deterministically as one selected option key instead of relying on legacy checkbox hints.',
+      'The hosted API does not depend on the generic materialize endpoint or browser session state.',
+    ],
+    articleSections: [
+      {
+        title: 'Why teams search for a PDF fill API instead of a browser workflow',
+        paragraphs: [
+          'Some teams still want an operator in the loop, which is exactly what Search & Fill is for. But other teams already have the record data in another system and need a server-to-server way to turn that data into a filled PDF. In that case a JSON-to-PDF API is the better product shape because the external system can call one endpoint without recreating the template logic itself.',
+          'That API only works well if it is tied to a reviewed template snapshot. Otherwise the caller is sending data into a moving target. DullyPDF treats API Fill as a published snapshot of a saved template so the schema, field rules, and output expectations stay stable until the owner intentionally republishes or rotates the endpoint.',
+        ],
+      },
+      {
+        title: 'How DullyPDF keeps API Fill different from Search and Fill',
+        paragraphs: [
+          'Search & Fill is browser-local: an operator loads data, searches rows, picks the record, and validates the result in the workspace. API Fill is a hosted runtime. The caller sends structured JSON, authenticates with the endpoint key, and receives a PDF back from the backend. Those are different trust boundaries and should not be blurred together.',
+          'That distinction matters operationally too. Hosted API requests need their own rate limits, request caps, and audit activity. Browser-local Search & Fill does not. Keeping those boundaries explicit makes the product easier to reason about and easier to secure later.',
+        ],
+      },
+      {
+        title: 'Why radio groups and deterministic fill rules matter for APIs',
+        paragraphs: [
+          'An API caller cannot rely on informal UI hints. The template has to define exactly how text fields, checkbox rules, radio groups, and transforms behave when the JSON payload arrives. That is why DullyPDF exposes radio group expectations and deterministic fill rules as part of the frozen template schema instead of leaving those behaviors implicit.',
+          'The result is a tighter contract between the saved template and the system calling it. When the template is updated, the endpoint and schema can be rotated intentionally rather than silently drifting under production traffic.',
+        ],
+      },
+    ],
+    faqs: [
+      {
+        question: 'What is DullyPDF API Fill?',
+        answer:
+          'It is a template-scoped JSON-to-PDF endpoint published from a saved DullyPDF template, with its own schema, key, rate limits, and audit activity.',
+      },
+      {
+        question: 'How is API Fill different from Search and Fill?',
+        answer:
+          'Search and Fill keeps chosen row data local in the browser, while API Fill is a hosted backend runtime for other systems that need a JSON-to-PDF endpoint.',
+      },
+      {
+        question: 'Does API Fill support checkbox and radio logic?',
+        answer:
+          'Yes. The published schema includes deterministic fill rules, including checkbox rules, radio group expectations, and text transforms from the frozen saved-template snapshot.',
+      },
     ],
   },
   {
@@ -136,10 +525,15 @@ const INTENT_PAGES = [
     heroTitle: 'Fill Information in PDF Forms With Structured Data',
     heroSummary:
       'If you need to fill information in PDF forms repeatedly, DullyPDF helps you map once and populate forms from searchable records.',
-    seoTitle: 'Fill Information in PDF Forms With Structured Data | DullyPDF',
+    seoTitle: 'Free Automatic PDF Form Filling With Structured Data | DullyPDF',
     seoDescription:
-      'Fill information in PDF forms using mapped templates and structured records so repeat form entry workflows stay consistent.',
-    seoKeywords: ['fill information in pdf', 'fill data in pdf forms', 'automated pdf form filling'],
+      'Use free automatic PDF form filling with mapped templates, database headers, and structured records for repeat workflows in DullyPDF.',
+    seoKeywords: [
+      'fill information in pdf',
+      'free automatic pdf form filling',
+      'fill data in pdf forms',
+      'automated pdf form filling',
+    ],
     valuePoints: [
       'Turn manual copy/paste workflows into reusable mapped templates.',
       'Fill name, date, checkbox, and text fields from structured rows.',
@@ -148,12 +542,52 @@ const INTENT_PAGES = [
     proofPoints: [
       'Date and checkbox handling include normalization and rule logic.',
       'Field edits can be audited through the editor and inspector panels.',
-      'Templates can be reused across repeated packets and updates.',
+      'Templates can be reused across repeated packets, updates, and Fill By Link respondent collection.',
+    ],
+    articleSections: [
+      {
+        title: 'What people usually mean when they say fill information in PDF',
+        paragraphs: [
+          'In most business workflows, filling information in a PDF does not mean typing into a single document once. It means reusing the same document layout over and over again with new record data. Client details, patient demographics, employee onboarding data, policy information, or application fields all need to land in the right place repeatedly.',
+          'That is why DullyPDF focuses on mapped templates instead of one-off document editing. The durable value comes from setting the form up once, then letting structured records drive the output each time the workflow repeats.',
+        ],
+      },
+      {
+        title: 'Why mapped templates beat repeated copy and paste',
+        paragraphs: [
+          'Manual PDF filling is slow mostly because the operator has to translate data mentally while moving between systems. They are not just typing. They are matching names, dates, checkbox meanings, and repeated sections of the same form. A mapped template removes that translation work and replaces it with reusable field-to-data relationships.',
+          'Once the template is saved, the operator can search a record, fill the document, inspect the result, and move on. That is a fundamentally different workflow from opening a PDF and typing through every field again from scratch.',
+        ],
+      },
+      {
+        title: 'How DullyPDF supports repeat fill from rows or collected respondents',
+        paragraphs: [
+          'Some teams fill from internal spreadsheets or JSON exports. Others collect the information from respondents first. DullyPDF supports both patterns because the final fill step still depends on structured records. Search & Fill can work with CSV, XLSX, JSON, or stored Fill By Link responses without changing the underlying template logic.',
+          'That shared workflow matters because it keeps the PDF template stable even as the source of the record changes. The same document can serve staff-driven filling and respondent-driven collection without creating multiple disconnected versions of the form.',
+        ],
+      },
     ],
     faqs: [
-      { question: 'Can I fill patient or client information into a PDF quickly?', answer: 'Yes. DullyPDF is designed for repeated intake and form workflows where data comes from structured records.' },
-      { question: 'Do I have to re-map fields every time?', answer: 'No. Once saved, templates retain mapping metadata so you can run repeat fills with less setup.' },
-      { question: 'Does this work for checkbox-heavy forms?', answer: 'Yes. Checkbox metadata and rule precedence are part of the mapping and fill workflow.' },
+      {
+        question: 'Can I fill patient or client information into a PDF quickly?',
+        answer:
+          'Yes. DullyPDF is designed for repeated intake and form workflows where data comes from structured records.',
+      },
+      {
+        question: 'Do I have to re-map fields every time?',
+        answer:
+          'No. Once saved, templates retain mapping metadata so you can run repeat fills with less setup.',
+      },
+      {
+        question: 'Does this work for checkbox-heavy forms?',
+        answer:
+          'Yes. Checkbox metadata and rule precedence are part of the mapping and fill workflow.',
+      },
+      {
+        question: 'Can people submit their own information through a link first?',
+        answer:
+          'Yes. DullyPDF Fill By Link lets the template owner collect respondent answers first, then select that respondent inside the workspace when generating the PDF.',
+      },
     ],
   },
   {
@@ -164,10 +598,16 @@ const INTENT_PAGES = [
     heroTitle: 'Standardize Fillable Form Field Names for Reliable Auto-Fill',
     heroSummary:
       'Normalize fillable form field names, map them to schema columns, and keep naming consistent across complex PDF packets.',
-    seoTitle: 'Fillable Form Field Name Standardization and Mapping | DullyPDF',
+    seoTitle: 'Free Automatic Fillable Form Field Naming and Mapping | DullyPDF',
     seoDescription:
-      'Standardize fillable form field names, map them to schema columns, and improve downstream PDF auto-fill reliability.',
-    seoKeywords: ['fillable form field name', 'pdf field naming standardization', 'pdf field rename mapping'],
+      'Use free automatic AI rename and mapping to standardize fillable form field names, align them to database headers, and improve PDF fill reliability.',
+    seoKeywords: [
+      'fillable form field name',
+      'automatic pdf field rename',
+      'free fillable form field mapping',
+      'pdf field naming standardization',
+      'pdf field rename mapping',
+    ],
     valuePoints: [
       'Use AI-assisted rename to convert inconsistent labels into stable names.',
       'Align renamed fields with schema headers for dependable fill behavior.',
@@ -178,10 +618,45 @@ const INTENT_PAGES = [
       'Field naming updates can be verified before template save.',
       'Supports mixed field types including text, date, signature, and checkbox.',
     ],
+    articleSections: [
+      {
+        title: 'Why bad field names break automation even when the PDF looks fine',
+        paragraphs: [
+          'A PDF can look perfectly usable to a person and still be weak for automation if the field names are vague, duplicated, or inherited from an old authoring tool. Search and mapping logic need a stable way to understand what each field represents. Names like Text1, Field_17, or repeated generic labels create ambiguity that causes mapping errors later.',
+          'That is why field naming is not cosmetic. It is part of the template contract. Better names make mapping easier, make QA easier, and make future edits easier when someone reopens the template months later.',
+        ],
+      },
+      {
+        title: 'How AI rename improves downstream mapping quality',
+        paragraphs: [
+          'Rename helps by turning weak field metadata into something closer to the language used in your real schema. Instead of forcing the map step to guess from noisy names, DullyPDF can use visual context and surrounding labels to suggest more meaningful field identifiers first. That usually improves the quality of the mapping pass that follows.',
+          'This is especially useful on dense packets, multi-page forms, and documents where similar labels repeat across sections. Better names create less cleanup work and reduce the chance that a field is technically mapped but semantically wrong.',
+        ],
+      },
+      {
+        title: 'A naming standard worth keeping across templates',
+        paragraphs: [
+          'The strongest teams keep naming conventions stable across all recurring templates. Dates should look like dates, checkbox groups should have coherent group keys, and person or policy fields should use consistent prefixes rather than whatever the PDF happened to suggest the first time.',
+          'That discipline pays off later when templates are updated or grouped. Instead of debugging one-off naming oddities on each form, teams get a cleaner library of reusable templates that are easier to map, test, and maintain.',
+        ],
+      },
+    ],
     faqs: [
-      { question: 'Why does fillable form field naming matter?', answer: 'Consistent field names improve mapping accuracy and reduce missing values during automated fill runs.' },
-      { question: 'Can I rename fields without changing PDF appearance?', answer: 'Yes. Naming changes happen in template metadata and do not alter the visual PDF source layout.' },
-      { question: 'Can I combine field rename with database mapping?', answer: 'Yes. DullyPDF supports rename-only, map-only, and combined rename-plus-map workflows.' },
+      {
+        question: 'Why does fillable form field naming matter?',
+        answer:
+          'Consistent field names improve mapping accuracy and reduce missing values during automated fill runs.',
+      },
+      {
+        question: 'Can I rename fields without changing PDF appearance?',
+        answer:
+          'Yes. Naming changes happen in template metadata and do not alter the visual PDF source layout.',
+      },
+      {
+        question: 'Can I combine field rename with database mapping?',
+        answer:
+          'Yes. DullyPDF supports rename-only, map-only, and combined rename-plus-map workflows.',
+      },
     ],
   },
   {
@@ -195,7 +670,15 @@ const INTENT_PAGES = [
     seoTitle: 'Healthcare and Dental Intake PDF Form Automation | DullyPDF',
     seoDescription:
       'Automate medical and dental intake forms, map patient intake PDFs to database-ready templates, and fill healthcare PDFs from structured records.',
-    seoKeywords: ['automate medical intake forms', 'dental intake form automation', 'dental patient intake pdf automation', 'patient intake pdf to database', 'healthcare pdf form automation', 'patient registration form automation', 'hipaa release form automation'],
+    seoKeywords: [
+      'automate medical intake forms',
+      'dental intake form automation',
+      'dental patient intake pdf automation',
+      'patient intake pdf to database',
+      'healthcare pdf form automation',
+      'patient registration form automation',
+      'hipaa release form automation',
+    ],
     valuePoints: [
       'Build reusable templates for medical and dental intake, registration, history, and consent packets.',
       'Normalize field names so front-desk teams can map once and reuse consistently.',
@@ -203,13 +686,66 @@ const INTENT_PAGES = [
     ],
     proofPoints: [
       'CSV/XLSX/JSON rows are searchable in-browser for controlled patient record lookup.',
+      'Native Fill By Link supports phone-friendly respondent intake before front-desk review.',
       'Detection plus editor cleanup helps handle scanned and native healthcare PDFs.',
       'Templates can be saved and reused for recurring appointment workflows.',
     ],
+    articleSections: [
+      {
+        title: 'Why healthcare PDF automation remains a front-desk bottleneck',
+        paragraphs: [
+          'Healthcare teams still operate around recurring PDFs: intake packets, registration forms, health history documents, HIPAA releases, consent forms, insurance worksheets, and specialty-specific questionnaires. The same patient demographics and appointment context often need to appear across several documents, but many clinics still retype that information form by form because the PDFs are fixed and the workflow around them is manual.',
+          'That is exactly the kind of problem DullyPDF is designed to reduce. The goal is not to replace clinical systems. The goal is to convert recurring healthcare PDFs into reusable templates that map cleanly to structured patient data so staff stop re-entering the same information on every visit or every packet revision.',
+        ],
+      },
+      {
+        title: 'A practical clinic workflow: map once, fill repeatedly',
+        paragraphs: [
+          'The practical rollout starts with one high-volume document, usually a registration or history form. Upload the PDF, detect the fields, clean the layout, rename unclear fields, and map them to patient-data headers. Once the template is stable, front-desk staff can search a patient record and fill the document instead of typing each field manually.',
+          'From there, the same pattern can expand across a packet. Once teams trust one template, it becomes much easier to standardize the rest of the intake flow. That is usually a better rollout than attempting a full packet conversion in one pass without any QA checkpoints.',
+        ],
+        bullets: [
+          'Start with one frequently used intake or registration form.',
+          'Validate the template with several real patient records.',
+          'Expand the same mapping conventions across the rest of the packet.',
+        ],
+      },
+      {
+        title: 'Why healthcare forms need strong checkbox and consent handling',
+        paragraphs: [
+          'Healthcare documents are rarely simple text-only forms. Symptom checklists, allergy disclosures, release acknowledgments, medication questions, tobacco or alcohol history, and consent selections all introduce checkbox logic that has to behave consistently. If checkbox metadata is weak, the filled packet becomes unreliable even when the basic demographics look correct.',
+          'That is why checkbox rules matter so much in healthcare template setup. DullyPDF supports yes-no, presence, enum, and list-style checkbox behavior so the template can mirror the way real intake data is represented. The result is a more realistic automation workflow for actual clinic packets rather than a narrow demo built only around text boxes.',
+        ],
+      },
+      {
+        title: 'Where Fill By Link fits for patient-facing intake collection',
+        paragraphs: [
+          'Some clinics want staff-driven filling from internal records. Others want the patient to submit information first. DullyPDF supports both patterns. Teams can publish a mobile-friendly Fill By Link from a saved template, collect respondent data in a structured form, and then generate the final PDF from the response list later in the workspace after review.',
+          'That separation is useful operationally. Patients do not need to edit a PDF directly on their phone, and staff still keep control over the final document generation step. The template remains the canonical document setup regardless of whether the source data came from an export or a respondent submission.',
+        ],
+      },
+    ],
     faqs: [
-      { question: 'Can DullyPDF automate patient and dental intake PDFs and registration forms?', answer: 'Yes. You can detect fields, refine them in the editor, map to schema headers, and then fill medical or dental intake forms from structured data.' },
-      { question: 'Does DullyPDF work for HIPAA release and consent forms?', answer: 'Yes. Checkbox and text field mapping supports release and consent-style healthcare forms.' },
-      { question: 'Can healthcare teams reuse the same mapped template daily?', answer: 'Yes. Saved templates retain PDF bytes, field metadata, and mapping context for repeat usage.' },
+      {
+        question: 'Can DullyPDF automate patient and dental intake PDFs and registration forms?',
+        answer:
+          'Yes. You can detect fields, refine them in the editor, map to schema headers, and then fill medical or dental intake forms from structured data.',
+      },
+      {
+        question: 'Does DullyPDF work for HIPAA release and consent forms?',
+        answer:
+          'Yes. Checkbox and text field mapping supports release and consent-style healthcare forms.',
+      },
+      {
+        question: 'Can healthcare teams reuse the same mapped template daily?',
+        answer:
+          'Yes. Saved templates retain PDF bytes, field metadata, and mapping context for repeat usage.',
+      },
+      {
+        question: 'Can clinics send patients a link instead of filling the PDF directly?',
+        answer:
+          'Yes. Teams can publish a DullyPDF Fill By Link, collect patient responses through a mobile-friendly form, and then generate the final PDF from the response list later.',
+      },
     ],
   },
   {
@@ -223,7 +759,18 @@ const INTENT_PAGES = [
     seoTitle: 'ACORD Form Automation for Insurance Certificate Workflows | DullyPDF',
     seoDescription:
       'Automate ACORD forms (25, 24, 27, 28, 126, and 140), auto-fill certificate of insurance PDFs, and map insurance data to structured templates.',
-    seoKeywords: ['acord form automation', 'auto fill acord 25 pdf', 'certificate of insurance automation', 'acord certificate automation', 'insurance pdf automation', 'acord 24 automation', 'acord 27 automation', 'acord 28 automation', 'acord 126 automation', 'acord 140 automation'],
+    seoKeywords: [
+      'acord form automation',
+      'auto fill acord 25 pdf',
+      'certificate of insurance automation',
+      'acord certificate automation',
+      'insurance pdf automation',
+      'acord 24 automation',
+      'acord 27 automation',
+      'acord 28 automation',
+      'acord 126 automation',
+      'acord 140 automation',
+    ],
     valuePoints: [
       'Standardize repetitive ACORD field naming across brokers and account teams.',
       'Map ACORD certificate and liability forms to shared schema headers from AMS exports.',
@@ -234,10 +781,57 @@ const INTENT_PAGES = [
       'Field confidence and inspector-based QA provide pre-fill verification.',
       'Docs include rename/mapping and Search & Fill validation guidance for ACORD packets.',
     ],
+    articleSections: [
+      {
+        title: 'Why ACORD workflows stay stubbornly manual',
+        paragraphs: [
+          'Insurance operations teams usually do not struggle because they lack data. They struggle because the last mile is still a PDF. ACORD certificates, liability forms, and recurring carrier documents often arrive as fixed layouts that need the same insured, producer, policy, and coverage details inserted over and over again. That creates a high-volume rekeying problem even when the agency management system already contains the underlying information.',
+          'ACORD work is also unforgiving. A wrong policy number, effective date, limit, or certificate holder field can cause downstream servicing friction or worse. That makes reliable template setup more valuable than flashy automation claims. Teams want repeatable fills they can validate, not a black-box guess at the finished form.',
+        ],
+      },
+      {
+        title: 'How to build a reusable ACORD template in DullyPDF',
+        paragraphs: [
+          'The safest pattern is to start with a single recurring form such as ACORD 25, then expand outward. Upload the PDF, run field detection, clean geometry in the editor, normalize field names, and map the final field set to your AMS or broker export headers. Once that template is stable, Search & Fill can pull the correct insured record and populate the document in one pass.',
+          'That template-first approach scales better than trying to solve every ACORD variation at once. Each recurring form becomes a known workflow artifact with its own QA history, instead of a collection of one-off manual fixes performed under deadline pressure.',
+        ],
+      },
+      {
+        title: 'What to verify before using ACORD automation in production',
+        paragraphs: [
+          'For ACORD and certificate workflows, the highest-risk fields are usually the fields that appear simple: producer blocks, named insured details, effective and expiration dates, certificate holder information, and limit tables. Those are the places where a nearly-correct fill can still create real operational risk. Teams should validate those fields explicitly with representative records before treating a template as production-ready.',
+          'A good rollout is to test five to ten real records, compare the filled PDF against the source data, and only then standardize the workflow for the broader account or certificate team. That process is slower than a demo, but much faster than cleaning up avoidable servicing errors later.',
+        ],
+        bullets: [
+          'Validate the insured, producer, and certificate holder blocks.',
+          'Check policy numbers, effective dates, expiration dates, and coverage limits.',
+          'Confirm checkbox or option-style fields on carrier supplements behave as expected.',
+        ],
+      },
+      {
+        title: 'Where DullyPDF fits relative to generic PDF tools',
+        paragraphs: [
+          'DullyPDF is not trying to replace every PDF workflow in an agency. It is most useful when the same ACORD or certificate form type needs to be filled repeatedly from structured data. That is a narrower but more valuable problem than general PDF editing. Agencies that still need annotation, ad hoc editing, or signing workflows can keep those tools and use DullyPDF for the repeat template-filling layer.',
+          'That division of labor usually makes the implementation easier. Teams do not need to change every document process at once. They only need to move the high-volume ACORD workflows into a mapped-template model where repeat fills become predictable and fast.',
+        ],
+      },
+    ],
     faqs: [
-      { question: 'Can DullyPDF auto-fill ACORD 25 and similar insurance forms?', answer: 'Yes. DullyPDF supports mapped template workflows for common ACORD-style PDF forms.' },
-      { question: 'Can insurance teams map ACORD fields to internal database columns?', answer: 'Yes. Schema mapping aligns PDF fields with your preferred naming and column structure.' },
-      { question: 'Does this support ACORD renewals and recurring certificate requests?', answer: 'Yes. Teams can map once and fill repeatedly instead of retyping policy and certificate data every cycle.' },
+      {
+        question: 'Can DullyPDF auto-fill ACORD 25 and similar insurance forms?',
+        answer:
+          'Yes. DullyPDF supports mapped template workflows for common ACORD-style PDF forms.',
+      },
+      {
+        question: 'Can insurance teams map ACORD fields to internal database columns?',
+        answer:
+          'Yes. Schema mapping aligns PDF fields with your preferred naming and column structure.',
+      },
+      {
+        question: 'Does this support ACORD renewals and recurring certificate requests?',
+        answer:
+          'Yes. Teams can map once and fill repeatedly instead of retyping policy and certificate data every cycle.',
+      },
     ],
   },
   {
@@ -251,7 +845,14 @@ const INTENT_PAGES = [
     seoTitle: 'Insurance PDF Automation for ACORD and Certificate Forms | DullyPDF',
     seoDescription:
       'Automate insurance PDF forms, including ACORD workflows and certificate of insurance documents, by mapping fields to structured agency or broker data.',
-    seoKeywords: ['insurance pdf automation', 'insurance form automation', 'certificate of insurance automation', 'insurance certificate pdf automation', 'auto fill insurance forms', 'acord form automation'],
+    seoKeywords: [
+      'insurance pdf automation',
+      'insurance form automation',
+      'certificate of insurance automation',
+      'insurance certificate pdf automation',
+      'auto fill insurance forms',
+      'acord form automation',
+    ],
     valuePoints: [
       'Build reusable templates for ACORD packets and carrier-specific insurance forms.',
       'Map insured, producer, policy, and coverage fields to AMS or broker export columns.',
@@ -262,10 +863,45 @@ const INTENT_PAGES = [
       'Supports checkbox, date, and text cleanup for carrier-specific PDF variants.',
       'Saved templates accelerate recurring certificate and renewal workflows.',
     ],
+    articleSections: [
+      {
+        title: 'Insurance PDF automation goes beyond one ACORD form',
+        paragraphs: [
+          'Insurance teams rarely work with a single perfect template. They handle certificate requests, carrier supplements, renewal packets, policy summaries, loss-run support documents, and other recurring PDFs that still arrive as fixed forms. Even when ACORD is the core workflow, the surrounding paperwork often introduces multiple variants that all require structured filling.',
+          'That is why insurance PDF automation needs more than a single-page ACORD pitch. Teams need a repeatable process for turning recurring insurance documents into mapped templates that can be filled from operational data without retyping the same insured and policy details every cycle.',
+        ],
+      },
+      {
+        title: 'Where mapped templates save time for certificates, renewals, and supplements',
+        paragraphs: [
+          'Mapped templates help most where the same insured, producer, policy, and coverage data has to be pushed into multiple documents. Certificate requests are the obvious example, but renewal prep and carrier-specific supplement workflows often benefit just as much because they repeat the same values under slightly different layouts.',
+          'Once the field names and mappings are stable, teams can work from AMS exports or broker data, search the right record, and fill the document with much less manual translation work. The savings come from repeatability and error reduction, not just from raw speed.',
+        ],
+      },
+      {
+        title: 'How to roll out insurance template automation safely',
+        paragraphs: [
+          'Start with the documents that are both frequent and painful. Build one certificate or supplement template, validate it with real records, and document which fields must be checked every time before output leaves the team. Only after that first workflow is trusted should you expand to adjacent forms.',
+          'That phased approach keeps the template library clean. Instead of dozens of half-reviewed insurance forms, you get a smaller set of well-understood templates that teams can actually rely on during high-volume servicing work.',
+        ],
+      },
+    ],
     faqs: [
-      { question: 'Can DullyPDF automate insurance PDFs beyond ACORD 25?', answer: 'Yes. Teams use it for ACORD 24/27/28/126/140 and carrier-specific insurance PDFs that require repeat filling.' },
-      { question: 'Can insurance teams map form fields to agency management exports?', answer: 'Yes. Map once to your export schema, then run repeat fills from structured records in Search & Fill.' },
-      { question: 'Is this useful for certificate of insurance turnaround speed?', answer: 'Yes. Reusable mapped templates reduce manual retyping and help teams produce certificates faster with fewer entry errors.' },
+      {
+        question: 'Can DullyPDF automate insurance PDFs beyond ACORD 25?',
+        answer:
+          'Yes. Teams use it for ACORD 24/27/28/126/140 and carrier-specific insurance PDFs that require repeat filling.',
+      },
+      {
+        question: 'Can insurance teams map form fields to agency management exports?',
+        answer:
+          'Yes. Map once to your export schema, then run repeat fills from structured records in Search & Fill.',
+      },
+      {
+        question: 'Is this useful for certificate of insurance turnaround speed?',
+        answer:
+          'Yes. Reusable mapped templates reduce manual retyping and help teams produce certificates faster with fewer entry errors.',
+      },
     ],
   },
   {
@@ -279,7 +915,13 @@ const INTENT_PAGES = [
     seoTitle: 'Real Estate and Mortgage PDF Automation | DullyPDF',
     seoDescription:
       'Automate rental application PDFs, map mortgage forms to database templates, and streamline real estate form filling workflows.',
-    seoKeywords: ['automate rental application pdf', 'mortgage pdf to database', 'real estate form automation', 'lease agreement pdf automation', 'property inspection form automation'],
+    seoKeywords: [
+      'automate rental application pdf',
+      'mortgage pdf to database',
+      'real estate form automation',
+      'lease agreement pdf automation',
+      'property inspection form automation',
+    ],
     valuePoints: [
       'Support rental intake packets, mortgage documents, and lease workflows.',
       'Map tenant and borrower fields to shared CRM or operational schemas.',
@@ -290,10 +932,45 @@ const INTENT_PAGES = [
       'Editor tools help resolve geometry mismatch in legacy property forms.',
       'Template reuse reduces repetitive office data entry across teams.',
     ],
+    articleSections: [
+      {
+        title: 'Real estate teams still run on recurring PDF packets',
+        paragraphs: [
+          'Real estate and mortgage operations often revolve around packets rather than single forms. Rental applications, lease addenda, borrower disclosures, inspection forms, and transaction-specific worksheets all move through the same office while many of the underlying names, addresses, and dates repeat across them.',
+          'That makes real estate paperwork a strong template candidate. The challenge is not usually missing data. The challenge is that the final step still involves fixed PDFs that staff keep filling again and again.',
+        ],
+      },
+      {
+        title: 'How mapped templates help with tenant, buyer, and borrower workflows',
+        paragraphs: [
+          'A mapped template lets teams connect common property, tenant, borrower, and transaction fields to the document once instead of retyping them every time. Once the setup is done, staff can select the right record, fill the form, inspect the output, and move on without rebuilding the field relationships.',
+          'That is useful for property management, leasing, and mortgage workflows because the same office often touches similar data under different document layouts. Template reuse turns those layouts into assets instead of recurring interruptions.',
+        ],
+      },
+      {
+        title: 'How to manage form variation across properties and transactions',
+        paragraphs: [
+          'The practical challenge in real estate is variation. Different owners, lenders, associations, or jurisdictions may use slightly different forms. The best answer is usually not to create dozens of barely-different templates without discipline. It is to define which form types are canonical, keep naming conventions stable, and update only the templates that truly need to diverge.',
+          'That approach keeps the library maintainable and reduces the risk that staff pick the wrong version of a document when deadlines are tight.',
+        ],
+      },
+    ],
     faqs: [
-      { question: 'Can DullyPDF automate rental application PDF workflows?', answer: 'Yes. Rental application and lease-style forms can be mapped and filled from structured tenant data.' },
-      { question: 'Does it work for mortgage-related PDF forms?', answer: 'Yes. Mortgage and lending packets can be converted into reusable mapped templates.' },
-      { question: 'Can real estate teams reuse templates across properties?', answer: 'Yes. Saved templates can be reloaded and reused for recurring packet types.' },
+      {
+        question: 'Can DullyPDF automate rental application PDF workflows?',
+        answer:
+          'Yes. Rental application and lease-style forms can be mapped and filled from structured tenant data.',
+      },
+      {
+        question: 'Does it work for mortgage-related PDF forms?',
+        answer:
+          'Yes. Mortgage and lending packets can be converted into reusable mapped templates.',
+      },
+      {
+        question: 'Can real estate teams reuse templates across properties?',
+        answer:
+          'Yes. Saved templates can be reloaded and reused for recurring packet types.',
+      },
     ],
   },
   {
@@ -307,7 +984,13 @@ const INTENT_PAGES = [
     seoTitle: 'Government PDF Permit and Tax Form Automation | DullyPDF',
     seoDescription:
       'Automate government PDF forms, map permit and tax paperwork to structured schemas, and improve public service document workflows.',
-    seoKeywords: ['government form automation', 'pdf permit automation', 'tax form database mapping', 'public sector pdf automation', 'license renewal form automation'],
+    seoKeywords: [
+      'government form automation',
+      'pdf permit automation',
+      'tax form database mapping',
+      'public sector pdf automation',
+      'license renewal form automation',
+    ],
     valuePoints: [
       'Handle standardized permit, licensing, tax, and public service forms.',
       'Map required fields to internal tracking columns for consistent intake.',
@@ -318,10 +1001,45 @@ const INTENT_PAGES = [
       'Search-based fill supports quick retrieval of known record values.',
       'Troubleshooting docs support QA for edge-case form behaviors.',
     ],
+    articleSections: [
+      {
+        title: 'Why government workflows still depend on fixed PDFs',
+        paragraphs: [
+          'Government and public-service teams often operate on forms that cannot simply be replaced with a new web experience. Permits, tax forms, licensing documents, compliance packets, and citizen-service paperwork frequently remain fixed PDFs with strict layout expectations. The operational pain is not whether the form exists. It is the cost of repeatedly keying the same values into it.',
+          'That makes government form automation a strong fit for reusable templates. The goal is to keep the official layout intact while reducing repeated manual entry and inconsistency across submissions.',
+        ],
+      },
+      {
+        title: 'How agencies can keep one template per recurring form type',
+        paragraphs: [
+          'The best pattern is to treat each recurring form type as a canonical template. Build it once, map the field set to the internal schema used by the team, test it with representative records, and then reuse that same setup across future submissions. When form revisions arrive, update the existing template instead of allowing duplicate versions to spread across departments.',
+          'This matters operationally because government processes often outlive individual staff knowledge. A stable template library is easier to maintain than informal process memory.',
+        ],
+      },
+      {
+        title: 'Why QA and naming discipline matter more than adding more pages',
+        paragraphs: [
+          'For public-sector workflows, the core win is consistency. Stable field naming, controlled review, and repeatable record selection matter more than trying to maximize the number of documents in the library as quickly as possible. A smaller set of trusted templates usually beats a larger set of weakly reviewed ones.',
+          'That same principle applies to the public SEO surface too. Stronger, clearer pages around real recurring workflows are more useful than a long tail of near-duplicate content that does not help users make a decision.',
+        ],
+      },
+    ],
     faqs: [
-      { question: 'Can DullyPDF automate permit and license PDF forms?', answer: 'Yes. Permit and license forms can be converted, mapped, and reused as structured templates.' },
-      { question: 'Does this help with tax and compliance form workflows?', answer: 'Yes. Standardized mapping and row-based fill reduce repetitive manual entry for recurring forms.' },
-      { question: 'Can agencies keep one canonical template per form type?', answer: 'Yes. Saved template workflows support a canonical setup per recurring government form.' },
+      {
+        question: 'Can DullyPDF automate permit and license PDF forms?',
+        answer:
+          'Yes. Permit and license forms can be converted, mapped, and reused as structured templates.',
+      },
+      {
+        question: 'Does this help with tax and compliance form workflows?',
+        answer:
+          'Yes. Standardized mapping and row-based fill reduce repetitive manual entry for recurring forms.',
+      },
+      {
+        question: 'Can agencies keep one canonical template per form type?',
+        answer:
+          'Yes. Saved template workflows support a canonical setup per recurring government form.',
+      },
     ],
   },
   {
@@ -335,7 +1053,13 @@ const INTENT_PAGES = [
     seoTitle: 'Loan Application PDF Automation and Mapping | DullyPDF',
     seoDescription:
       'Automate loan PDF forms, fill financial disclosure documents from mapped records, and streamline lending document workflows.',
-    seoKeywords: ['loan pdf automation', 'loan application pdf automation', 'fill pdf financial form from database', 'financial disclosure pdf automation', 'kyc aml pdf automation'],
+    seoKeywords: [
+      'loan pdf automation',
+      'loan application pdf automation',
+      'fill pdf financial form from database',
+      'financial disclosure pdf automation',
+      'kyc aml pdf automation',
+    ],
     valuePoints: [
       'Map borrower and underwriting fields to lending schema columns.',
       'Reduce rekeying on loan applications and disclosure packets.',
@@ -346,10 +1070,45 @@ const INTENT_PAGES = [
       'Rename and mapping assist with inconsistent legacy field labels.',
       'Saved templates preserve mapping context for repeat monthly workflows.',
     ],
+    articleSections: [
+      {
+        title: 'Why loan and finance teams re-enter the same borrower data',
+        paragraphs: [
+          'Finance and lending teams often handle packets where the same borrower, applicant, or client details need to appear across applications, disclosures, supporting forms, and compliance documents. The data already exists in underwriting or operational systems, but the last mile is still a PDF that someone has to prepare accurately.',
+          'That creates a repeat-typing problem with higher stakes than many other workflows. Even small errors can create rework, borrower friction, or compliance headaches. A reusable template workflow is valuable because it reduces both effort and avoidable inconsistency.',
+        ],
+      },
+      {
+        title: 'Where template mapping helps across disclosures and compliance documents',
+        paragraphs: [
+          'Once a loan or finance PDF is converted into a mapped template, borrower fields, dates, and repeated identifiers can be driven from structured records instead of manual re-entry. That is useful not just for the main application, but for disclosures and supporting documents that reuse the same data under different layouts.',
+          'The biggest gains often come from establishing one dependable mapping pattern and then extending it to adjacent documents. That keeps the process coherent as packet complexity grows.',
+        ],
+      },
+      {
+        title: 'How to validate finance templates before rollout',
+        paragraphs: [
+          'Start with the fields that create the most downstream risk: borrower names, dates, identifiers, disclosure-specific values, and checkbox-like attestations. Validate those against representative records before the template is adopted broadly.',
+          'For finance workflows, slower initial QA is usually cheaper than discovering a weak template only after it has been used repeatedly. The template needs to be trusted before it can actually save time.',
+        ],
+      },
+    ],
     faqs: [
-      { question: 'Can DullyPDF automate loan application PDFs?', answer: 'Yes. Loan application templates can be mapped to structured data and reused for repetitive fill tasks.' },
-      { question: 'Does DullyPDF support financial disclosure form filling?', answer: 'Yes. Disclosure and related finance forms can be filled from mapped record fields.' },
-      { question: 'Can lenders use this for KYC and AML paperwork workflows?', answer: 'Yes. Mapped template workflows can support recurring compliance document preparation.' },
+      {
+        question: 'Can DullyPDF automate loan application PDFs?',
+        answer:
+          'Yes. Loan application templates can be mapped to structured data and reused for repetitive fill tasks.',
+      },
+      {
+        question: 'Does DullyPDF support financial disclosure form filling?',
+        answer:
+          'Yes. Disclosure and related finance forms can be filled from mapped record fields.',
+      },
+      {
+        question: 'Can lenders use this for KYC and AML paperwork workflows?',
+        answer:
+          'Yes. Mapped template workflows can support recurring compliance document preparation.',
+      },
     ],
   },
   {
@@ -363,7 +1122,13 @@ const INTENT_PAGES = [
     seoTitle: 'HR Onboarding PDF Form Automation | DullyPDF',
     seoDescription:
       'Automate HR onboarding forms, map employee PDF paperwork to structured data, and streamline repetitive HR document entry.',
-    seoKeywords: ['automate hr onboarding forms', 'pdf employee form automation', 'onboarding packet pdf automation', 'benefits enrollment form automation', 'w4 1099 pdf automation'],
+    seoKeywords: [
+      'automate hr onboarding forms',
+      'pdf employee form automation',
+      'onboarding packet pdf automation',
+      'benefits enrollment form automation',
+      'w4 1099 pdf automation',
+    ],
     valuePoints: [
       'Use one mapped template set for common onboarding packet forms.',
       'Fill employee details from structured HR records instead of retyping.',
@@ -374,10 +1139,45 @@ const INTENT_PAGES = [
       'Mapped templates improve consistency across locations and recruiters.',
       'Template save/reload supports recurring hiring cycles.',
     ],
+    articleSections: [
+      {
+        title: 'Why onboarding packets create repetitive HR data entry',
+        paragraphs: [
+          'HR teams often repeat the same employee information across multiple forms during onboarding. Names, addresses, dates, job details, tax information, and benefit selections get pushed into several documents even though the underlying employee record already exists elsewhere.',
+          'That is why onboarding packets are such a common PDF automation target. The problem is not collecting the data. The problem is repeatedly transferring it into fixed forms under time pressure.',
+        ],
+      },
+      {
+        title: 'How one employee record can drive multiple forms',
+        paragraphs: [
+          'A mapped template workflow lets the HR team use structured employee data as the source for recurring paperwork instead of retyping it. Once each form type is configured, the same employee record can drive multiple onboarding documents through repeat fills.',
+          'This is especially useful when several forms share overlapping fields but still need to remain distinct documents. The template layer keeps that overlap manageable.',
+        ],
+      },
+      {
+        title: 'Where HR teams should focus their first rollout',
+        paragraphs: [
+          'The strongest starting point is usually the form that is both high-volume and repetitive, not necessarily the longest form. Build one dependable onboarding or benefits template, validate it with a handful of real employee records, and then extend the same field-naming and mapping conventions across the rest of the packet.',
+          'That phased rollout makes it easier to keep templates clean and helps new recruiters or coordinators trust the workflow quickly.',
+        ],
+      },
+    ],
     faqs: [
-      { question: 'Can DullyPDF automate onboarding PDF packets?', answer: 'Yes. HR teams can map onboarding templates once and fill forms from structured employee records.' },
-      { question: 'Does it support employee tax and benefits forms?', answer: 'Yes. HR-focused PDF templates can include tax and benefits form workflows.' },
-      { question: 'Can HR teams reuse templates for every new hire?', answer: 'Yes. Saved templates support repeat onboarding runs with minimal setup.' },
+      {
+        question: 'Can DullyPDF automate onboarding PDF packets?',
+        answer:
+          'Yes. HR teams can map onboarding templates once and fill forms from structured employee records.',
+      },
+      {
+        question: 'Does it support employee tax and benefits forms?',
+        answer:
+          'Yes. HR-focused PDF templates can include tax and benefits form workflows.',
+      },
+      {
+        question: 'Can HR teams reuse templates for every new hire?',
+        answer:
+          'Yes. Saved templates support repeat onboarding runs with minimal setup.',
+      },
     ],
   },
   {
@@ -391,7 +1191,13 @@ const INTENT_PAGES = [
     seoTitle: 'Legal PDF Workflow and Court Document Automation | DullyPDF',
     seoDescription:
       'Automate legal PDF workflows, map contract and court document templates, and fill recurring legal forms from structured records.',
-    seoKeywords: ['legal pdf workflow automation', 'court document automation', 'contract pdf to database', 'legal intake form automation', 'affidavit template automation'],
+    seoKeywords: [
+      'legal pdf workflow automation',
+      'court document automation',
+      'contract pdf to database',
+      'legal intake form automation',
+      'affidavit template automation',
+    ],
     valuePoints: [
       'Reuse mapped templates for legal intake, contracts, and filing workflows.',
       'Reduce repetitive copy/paste across recurring court or client packets.',
@@ -402,10 +1208,45 @@ const INTENT_PAGES = [
       'Editor cleanup handles variable legacy form geometry before production.',
       'Troubleshooting docs provide fast validation steps for misfills.',
     ],
+    articleSections: [
+      {
+        title: 'Why legal teams still rely on repeat PDF packets',
+        paragraphs: [
+          'Legal operations often depend on fixed forms, repeated packet assembly, and documents that need consistent client or matter data inserted under deadline pressure. Contracts, intake forms, declarations, affidavits, and filing-related documents all create opportunities for repetitive copy and paste when the last mile is still a PDF.',
+          'That makes legal document workflows a natural fit for template reuse. The core need is not flashy automation. It is dependable, repeatable output from structured case or client data.',
+        ],
+      },
+      {
+        title: 'How mapped templates fit client and case-data workflows',
+        paragraphs: [
+          'A mapped legal template connects the document field set to the values the team already tracks in practice-management systems, intake sheets, or matter exports. That lets staff fill recurring documents from structured data instead of manually propagating the same names, dates, and identifiers across every packet.',
+          'The biggest win comes when naming is normalized early. Legal forms often reuse similar concepts with different visual labels, so clean field names reduce confusion during later mapping and QA.',
+        ],
+      },
+      {
+        title: 'What legal teams should validate before standardizing templates',
+        paragraphs: [
+          'Before a legal template becomes a shared workflow, the team should validate the fields that matter most to the document’s purpose: names, dates, case identifiers, signature-related fields, and any attestations or option-driven sections. That review is what turns the template from a promising draft into something that can be trusted under time pressure.',
+          'The same principle applies across a library of legal forms. Fewer, better-reviewed templates are usually more valuable than a larger set of thinly maintained ones.',
+        ],
+      },
+    ],
     faqs: [
-      { question: 'Can DullyPDF automate legal contract and filing PDFs?', answer: 'Yes. Legal teams can map recurring templates and fill them from structured client and case records.' },
-      { question: 'Does this work for affidavit and declaration form templates?', answer: 'Yes. Affidavit and declaration-style PDFs can be standardized and reused as mapped templates.' },
-      { question: 'Can law firms maintain consistent field naming across templates?', answer: 'Yes. Rename plus mapping workflows are designed to normalize inconsistent field labels.' },
+      {
+        question: 'Can DullyPDF automate legal contract and filing PDFs?',
+        answer:
+          'Yes. Legal teams can map recurring templates and fill them from structured client and case records.',
+      },
+      {
+        question: 'Does this work for affidavit and declaration form templates?',
+        answer:
+          'Yes. Affidavit and declaration-style PDFs can be standardized and reused as mapped templates.',
+      },
+      {
+        question: 'Can law firms maintain consistent field naming across templates?',
+        answer:
+          'Yes. Rename plus mapping workflows are designed to normalize inconsistent field labels.',
+      },
     ],
   },
   {
@@ -419,7 +1260,13 @@ const INTENT_PAGES = [
     seoTitle: 'Education and Student Application PDF Automation | DullyPDF',
     seoDescription:
       'Automate student application PDFs, map enrollment forms to structured data columns, and streamline education document workflows.',
-    seoKeywords: ['automate student application pdfs', 'university form pdf automation', 'education pdf automation', 'enrollment form automation', 'transcript request form automation'],
+    seoKeywords: [
+      'automate student application pdfs',
+      'university form pdf automation',
+      'education pdf automation',
+      'enrollment form automation',
+      'transcript request form automation',
+    ],
     valuePoints: [
       'Handle recurring admissions packets and enrollment form workflows.',
       'Map common student data fields once and reuse across terms.',
@@ -430,10 +1277,45 @@ const INTENT_PAGES = [
       'Template reuse reduces repetitive office operations overhead.',
       'Structured mapping reduces mismatch across multi-form packets.',
     ],
+    articleSections: [
+      {
+        title: 'Why admissions and registrar workflows stay repetitive',
+        paragraphs: [
+          'Education workflows often require the same student information to appear across multiple documents: admissions forms, enrollment materials, consent forms, transcript requests, and other administrative paperwork. Even when the student data is already structured, staff still end up transferring it into recurring PDF layouts.',
+          'That makes education document workflows a strong template use case. The operational problem is not just one form. It is the repeated movement of the same student data across many fixed documents.',
+        ],
+      },
+      {
+        title: 'How student-data mapping improves recurring packet preparation',
+        paragraphs: [
+          'Once a form is mapped to the underlying student-data schema, teams can search or select the right record and fill the PDF with much less manual work. That helps admissions, registrars, and administrative staff standardize output even when the packet includes several documents with overlapping fields.',
+          'The value compounds when teams reuse the same mapping patterns across terms and programs. Clean naming and stable schema relationships reduce avoidable mismatch later.',
+        ],
+      },
+      {
+        title: 'How to reuse templates across terms and form revisions',
+        paragraphs: [
+          'The safest maintenance pattern is to keep each recurring form type as a canonical template, then update that template when the school revises the document. That is easier to manage than letting small visual revisions create a sprawl of nearly-identical templates.',
+          'When the naming conventions stay stable, teams can adjust the geometry or field set of a revised form without losing the broader workflow discipline that made the template useful in the first place.',
+        ],
+      },
+    ],
     faqs: [
-      { question: 'Can DullyPDF automate admissions and enrollment PDFs?', answer: 'Yes. Admissions teams can map and reuse student form templates for repeat cycles.' },
-      { question: 'Does this support transcript request and consent forms?', answer: 'Yes. Education teams can automate repetitive transcript and consent form workflows.' },
-      { question: 'Can schools use one template across semesters?', answer: 'Yes. Saved templates can be reused and adjusted as forms evolve.' },
+      {
+        question: 'Can DullyPDF automate admissions and enrollment PDFs?',
+        answer:
+          'Yes. Admissions teams can map and reuse student form templates for repeat cycles.',
+      },
+      {
+        question: 'Does this support transcript request and consent forms?',
+        answer:
+          'Yes. Education teams can automate repetitive transcript and consent form workflows.',
+      },
+      {
+        question: 'Can schools use one template across semesters?',
+        answer:
+          'Yes. Saved templates can be reused and adjusted as forms evolve.',
+      },
     ],
   },
   {
@@ -447,7 +1329,13 @@ const INTENT_PAGES = [
     seoTitle: 'Nonprofit PDF Form and Grant Workflow Automation | DullyPDF',
     seoDescription:
       'Automate nonprofit PDF forms, streamline grant and volunteer paperwork, and map recurring human services documents to structured data.',
-    seoKeywords: ['nonprofit pdf form automation', 'grant pdf automation', 'volunteer registration pdf automation', 'human services form automation', 'nonprofit intake pdf automation'],
+    seoKeywords: [
+      'nonprofit pdf form automation',
+      'grant pdf automation',
+      'volunteer registration pdf automation',
+      'human services form automation',
+      'nonprofit intake pdf automation',
+    ],
     valuePoints: [
       'Support grant packets, volunteer onboarding, and program intake forms.',
       'Reduce repetitive manual entry in resource-constrained operations teams.',
@@ -458,10 +1346,45 @@ const INTENT_PAGES = [
       'Search & Fill supports quick record lookup before form output.',
       'Docs provide practical troubleshooting for mapping and fill issues.',
     ],
+    articleSections: [
+      {
+        title: 'Why nonprofit teams benefit from template reuse quickly',
+        paragraphs: [
+          'Nonprofit and human-services teams often work under tighter staffing and budget constraints than the number of recurring forms would suggest. Grant paperwork, volunteer onboarding, client intake packets, and compliance documents all compete for the same staff time, which makes repetitive PDF entry especially expensive.',
+          'That is why template reuse can create visible gains quickly in nonprofit operations. Even modest reductions in retyping and form cleanup free up time for the actual program work.',
+        ],
+      },
+      {
+        title: 'How mapped templates fit grants, volunteer, and intake workflows',
+        paragraphs: [
+          'A mapped template gives the team a repeatable way to connect shared program, client, or volunteer data to the PDF layouts they keep using. That is helpful for internal program intake, volunteer processes, and recurring grant-related documents where many fields repeat across submissions.',
+          'Once the template is established, staff can fill the document from structured records instead of rebuilding the same information by hand every time.',
+        ],
+      },
+      {
+        title: 'How smaller teams should phase rollout',
+        paragraphs: [
+          'The best rollout for a smaller team is to start with the form that recurs most often or causes the most avoidable rework. Build one dependable template, validate it with real records, and only then expand to adjacent forms. That keeps the effort proportional and avoids overwhelming the team with too many half-finished templates.',
+          'Over time, a small but trusted library usually performs better than a larger library that nobody feels confident using.',
+        ],
+      },
+    ],
     faqs: [
-      { question: 'Can DullyPDF automate grant and volunteer PDF workflows?', answer: 'Yes. Nonprofit teams can map recurring forms and populate them from structured records.' },
-      { question: 'Is this useful for human services intake packets?', answer: 'Yes. Intake-style packet templates can be standardized and reused across programs.' },
-      { question: 'Can smaller teams benefit from template reuse?', answer: 'Yes. Template reuse reduces repetitive manual entry and improves consistency.' },
+      {
+        question: 'Can DullyPDF automate grant and volunteer PDF workflows?',
+        answer:
+          'Yes. Nonprofit teams can map recurring forms and populate them from structured records.',
+      },
+      {
+        question: 'Is this useful for human services intake packets?',
+        answer:
+          'Yes. Intake-style packet templates can be standardized and reused across programs.',
+      },
+      {
+        question: 'Can smaller teams benefit from template reuse?',
+        answer:
+          'Yes. Template reuse reduces repetitive manual entry and improves consistency.',
+      },
     ],
   },
   {
@@ -475,7 +1398,13 @@ const INTENT_PAGES = [
     seoTitle: 'Logistics and Transportation PDF Automation | DullyPDF',
     seoDescription:
       'Automate logistics PDF forms, map transportation paperwork to database templates, and streamline recurring shipping document workflows.',
-    seoKeywords: ['transport pdf automation', 'logistics form to database', 'bill of lading automation', 'delivery receipt pdf automation', 'safety inspection form automation'],
+    seoKeywords: [
+      'transport pdf automation',
+      'logistics form to database',
+      'bill of lading automation',
+      'delivery receipt pdf automation',
+      'safety inspection form automation',
+    ],
     valuePoints: [
       'Standardize recurring shipping, inspection, and delivery document templates.',
       'Map shipment and carrier fields to structured operations data.',
@@ -486,10 +1415,45 @@ const INTENT_PAGES = [
       'Field editor and inspector tools handle template quality checks.',
       'Template reuse supports repeated daily form output operations.',
     ],
+    articleSections: [
+      {
+        title: 'Why logistics operations still revolve around recurring paperwork',
+        paragraphs: [
+          'Logistics and transportation teams often have structured operational data but still finish the job through recurring paperwork. Bills of lading, delivery receipts, inspection forms, and shipment-related PDFs continue to move between dispatch, operations, and back-office teams even when the route and shipment data already exists in another system.',
+          'That makes logistics paperwork a strong fit for template automation. The data is often available. The friction comes from repeatedly placing it into fixed document layouts.',
+        ],
+      },
+      {
+        title: 'How shipment data maps into repeat document output',
+        paragraphs: [
+          'A mapped logistics template connects shipment, route, carrier, or delivery fields to the PDF once so the team can fill documents from structured records later. Instead of rebuilding the same paperwork by hand for each shipment, staff can select the right record and let the template drive the output.',
+          'This becomes especially useful in high-frequency operations where the same document type is prepared many times each day under tight turnaround expectations.',
+        ],
+      },
+      {
+        title: 'How to keep high-volume document templates stable',
+        paragraphs: [
+          'For high-volume logistics work, stability matters as much as speed. Teams should define one canonical template per recurring document type, validate the important fields with real shipment records, and update the template only when the form itself changes materially.',
+          'That discipline prevents a sprawl of lightly different versions that slows teams down when they need the process to be fast and predictable.',
+        ],
+      },
+    ],
     faqs: [
-      { question: 'Can DullyPDF automate bill of lading and delivery receipt PDFs?', answer: 'Yes. Logistics teams can map those recurring forms and fill them from structured records.' },
-      { question: 'Does this support transportation safety inspection forms?', answer: 'Yes. Inspection forms can be standardized and reused as mapped templates.' },
-      { question: 'Can operations teams maintain one template per document type?', answer: 'Yes. Saved template workflows support canonical forms for recurring logistics tasks.' },
+      {
+        question: 'Can DullyPDF automate bill of lading and delivery receipt PDFs?',
+        answer:
+          'Yes. Logistics teams can map those recurring forms and fill them from structured records.',
+      },
+      {
+        question: 'Does this support transportation safety inspection forms?',
+        answer:
+          'Yes. Inspection forms can be standardized and reused as mapped templates.',
+      },
+      {
+        question: 'Can operations teams maintain one template per document type?',
+        answer:
+          'Yes. Saved template workflows support canonical forms for recurring logistics tasks.',
+      },
     ],
   },
   {
@@ -498,16 +1462,73 @@ const INTENT_PAGES = [
     path: '/batch-fill-pdf-forms',
     navLabel: 'Batch Fill PDF Forms',
     heroTitle: 'Batch Fill PDF Forms From Multiple Records',
-    heroSummary: 'Fill the same PDF template with multiple records from your CSV, Excel, or JSON data. Map once, then fill form after form in seconds.',
-    seoTitle: 'Batch Fill PDF Forms From CSV, Excel, and JSON | DullyPDF',
-    seoDescription: 'Batch fill PDF forms by mapping a template once and populating it from multiple records in CSV, Excel, or JSON data sources.',
-    seoKeywords: ['batch fill pdf forms', 'bulk pdf filling', 'fill multiple pdfs from spreadsheet', 'batch pdf form automation'],
-    valuePoints: ['Map a PDF template once and fill it from any number of records.', 'Search and select rows individually for controlled batch output.', 'Clear and refill between records to verify mapping quality.'],
-    proofPoints: ['Search & Fill supports fast row switching for sequential form filling.', 'Templates persist mapping context between fill sessions.', 'Filled output can be downloaded immediately for each record.'],
+    heroSummary:
+      'Fill the same PDF template with multiple records from your CSV, Excel, or JSON data. Map once, then fill form after form in seconds.',
+    seoTitle: 'Free Automatic Batch Fill PDF Forms From CSV and Excel | DullyPDF',
+    seoDescription:
+      'Use free automatic batch-style PDF filling by mapping a template once, then repeatedly filling it from CSV, Excel, or JSON records through Search & Fill.',
+    seoKeywords: [
+      'batch fill pdf forms',
+      'free batch fill pdf forms',
+      'automatic batch pdf filling',
+      'bulk pdf filling',
+      'fill multiple pdfs from spreadsheet',
+      'batch pdf form automation',
+    ],
+    valuePoints: [
+      'Map a PDF template once and fill it from any number of records.',
+      'Search and select rows individually for controlled batch output.',
+      'Clear and refill between records to verify mapping quality.',
+    ],
+    proofPoints: [
+      'Search & Fill supports fast row switching for sequential form filling.',
+      'Templates persist mapping context between fill sessions.',
+      'Filled output can be downloaded immediately for each record.',
+    ],
+    articleSections: [
+      {
+        title: 'What batch fill means in DullyPDF',
+        paragraphs: [
+          'Some teams searching for batch fill PDF forms expect a fire-and-forget bulk generator. DullyPDF is more deliberate than that. It is designed around a mapped template plus repeat record selection, which means you can fill the same document again and again from structured data while keeping human review in the loop.',
+          'That is still a batch-style workflow in the operational sense. You map once, then process many records. The difference is that the product prioritizes controlled output over blind mass generation.',
+        ],
+      },
+      {
+        title: 'How to process many records without losing QA',
+        paragraphs: [
+          'The practical pattern is to open the mapped template, search or select the first row, fill the PDF, inspect the result, clear it, and repeat for the next record. That sounds slower than a pure batch export, but it is often the right tradeoff for forms where the cost of a bad fill is higher than the cost of a quick review step.',
+          'Because the mapping context persists, the operator is not rebuilding the workflow each time. They are running a repeatable fill loop against a stable template.',
+        ],
+        bullets: [
+          'Map the template once before starting the run.',
+          'Use row search to pull up the right record quickly.',
+          'Clear and refill between records so each output starts from a known state.',
+        ],
+      },
+      {
+        title: 'When controlled sequential fill is better than blind bulk generation',
+        paragraphs: [
+          'If the document is simple, a pure bulk generator may be fine. But many real-world forms contain dates, checkboxes, repeated names, and edge-case fields that still benefit from a brief review before the output is sent or archived. That is where DullyPDF’s workflow is strongest.',
+          'The template does the hard work once, and the operator keeps enough control to catch mistakes early rather than after an entire export run has completed.',
+        ],
+      },
+    ],
     faqs: [
-      { question: 'Can I fill the same PDF form with different records?', answer: 'Yes. After mapping, use Search & Fill to select any row and populate the template, then clear and fill with the next record.' },
-      { question: 'Does DullyPDF support bulk PDF generation?', answer: 'DullyPDF fills one record at a time through Search & Fill for controlled output. Map once, then fill repeatedly from your data rows.' },
-      { question: 'What data sources work for batch filling?', answer: 'CSV, XLSX, and JSON files with row data. Each row represents one form to fill.' },
+      {
+        question: 'Can I fill the same PDF form with different records?',
+        answer:
+          'Yes. After mapping, use Search & Fill to select any row and populate the template, then clear and fill with the next record.',
+      },
+      {
+        question: 'Does DullyPDF support bulk PDF generation?',
+        answer:
+          'DullyPDF fills one record at a time through Search & Fill for controlled output. Map once, then fill repeatedly from your data rows.',
+      },
+      {
+        question: 'What data sources work for batch filling?',
+        answer:
+          'CSV, XLSX, and JSON files with row data. Each row represents one form to fill.',
+      },
     ],
   },
   {
@@ -516,16 +1537,138 @@ const INTENT_PAGES = [
     path: '/pdf-checkbox-automation',
     navLabel: 'PDF Checkbox Automation',
     heroTitle: 'Automate PDF Checkbox Fields With Rule-Based Logic',
-    heroSummary: 'DullyPDF handles complex checkbox scenarios including yes/no pairs, enum selections, multi-select lists, and presence-based toggles with configurable rule logic.',
-    seoTitle: 'PDF Checkbox Automation With Rule-Based Fill Logic | DullyPDF',
-    seoDescription: 'Automate PDF checkbox filling with yes/no, enum, presence, and list rules. Map checkbox groups to data columns for reliable automated form output.',
-    seoKeywords: ['pdf checkbox automation', 'auto fill checkboxes pdf', 'pdf checkbox rules', 'checkbox form automation'],
-    valuePoints: ['Support four checkbox rule types: yes_no, presence, enum, and list.', 'Map checkbox groups and option keys to structured data columns.', 'Handle multi-select checkbox fields with list-based splitting.'],
-    proofPoints: ['Checkbox rule precedence follows a defined six-step resolution order.', 'Built-in alias fallback groups handle common medical and HR patterns.', 'Boolean token normalization covers yes/no, true/false, 1/0, and variants.'],
+    heroSummary:
+      'DullyPDF handles complex checkbox scenarios including yes/no pairs, enum selections, multi-select lists, and presence-based toggles with configurable rule logic.',
+    seoTitle: 'Free Automatic PDF Checkbox Automation | DullyPDF',
+    seoDescription:
+      'Use free automatic PDF checkbox automation with yes/no, enum, presence, and list rules. Map checkbox groups to data columns for reliable output.',
+    seoKeywords: [
+      'pdf checkbox automation',
+      'free pdf checkbox automation',
+      'automatic checkbox fill pdf',
+      'auto fill checkboxes pdf',
+      'pdf checkbox rules',
+      'checkbox form automation',
+    ],
+    valuePoints: [
+      'Support four checkbox rule types: yes_no, presence, enum, and list.',
+      'Map checkbox groups and option keys to structured data columns.',
+      'Handle multi-select checkbox fields with list-based splitting.',
+    ],
+    proofPoints: [
+      'Checkbox rule precedence follows a defined six-step resolution order.',
+      'Built-in alias fallback groups handle common medical and HR patterns.',
+      'Boolean token normalization covers yes/no, true/false, 1/0, and variants.',
+    ],
+    articleSections: [
+      {
+        title: 'Why checkbox automation is harder than text fill',
+        paragraphs: [
+          'Checkboxes look simple on the page, but they are usually the part of a PDF workflow that breaks first. A text field can often accept a value directly. A checkbox field needs the system to understand what the source value means, which box it belongs to, and whether the form expects a boolean, an option selection, or a list-style interpretation.',
+          'That is why checkbox-heavy forms often feel unreliable in generic fill workflows. The hard part is not ticking a box. It is modeling the decision logic behind that box correctly.',
+        ],
+      },
+      {
+        title: 'How DullyPDF models checkbox groups and rules',
+        paragraphs: [
+          'DullyPDF handles checkboxes through group keys, option keys, and explicit rule types such as yes_no, presence, enum, and list. That gives the template a way to interpret the incoming value rather than guessing from the visual layout alone.',
+          'Once the checkbox metadata is configured, the same logic can be reused across recurring fills. That is especially important in medical, HR, and intake workflows where checkboxes often carry real operational meaning.',
+        ],
+      },
+      {
+        title: 'How to QA checkbox-heavy templates',
+        paragraphs: [
+          'The best QA process is to test the template with records that exercise different checkbox states, not just a single happy-path row. Use records that trigger yes and no cases, multiple options, and empty states so you can see how the template behaves before it is shared widely.',
+          'If the checkbox logic is correct under those conditions, the rest of the document usually becomes much easier to trust.',
+        ],
+      },
+    ],
     faqs: [
-      { question: 'Can DullyPDF auto-fill checkboxes in PDF forms?', answer: 'Yes. DullyPDF supports rule-based checkbox automation with yes/no, presence, enum, and list modes.' },
-      { question: 'How does checkbox group mapping work?', answer: 'Each checkbox has a groupKey and optionKey. Map the group to a data column, and DullyPDF selects the correct option based on the cell value and rule type.' },
-      { question: 'Does this work for forms with dozens of checkboxes?', answer: 'Yes. Checkbox-heavy forms like medical intake and benefits enrollment are common use cases for rule-based automation.' },
+      {
+        question: 'Can DullyPDF auto-fill checkboxes in PDF forms?',
+        answer:
+          'Yes. DullyPDF supports rule-based checkbox automation with yes/no, presence, enum, and list modes.',
+      },
+      {
+        question: 'How does checkbox group mapping work?',
+        answer:
+          'Each checkbox has a groupKey and optionKey. Map the group to a data column, and DullyPDF selects the correct option based on the cell value and rule type.',
+      },
+      {
+        question: 'Does this work for forms with dozens of checkboxes?',
+        answer:
+          'Yes. Checkbox-heavy forms like medical intake and benefits enrollment are common use cases for rule-based automation.',
+      },
+    ],
+  },
+  {
+    key: 'pdf-radio-button-editor',
+    category: 'workflow',
+    path: '/pdf-radio-button-editor',
+    navLabel: 'PDF Radio Button Editor',
+    heroTitle: 'Edit PDF Radio Button Groups Without Losing Single-Select Logic',
+    heroSummary:
+      'Create, inspect, and map PDF radio fields with explicit group keys and option keys so single-select forms stay predictable during Search & Fill, API Fill, and web-form publishing.',
+    seoTitle: 'PDF Radio Button Editor and Radio Group Mapping | DullyPDF',
+    seoDescription:
+      'Edit PDF radio buttons, create single-select radio groups, and map radio option keys to structured data for reliable fill behavior in DullyPDF.',
+    seoKeywords: [
+      'pdf radio button editor',
+      'pdf radio buttons',
+      'edit pdf radio groups',
+      'pdf radio group mapping',
+      'single select pdf form fields',
+      'radio button pdf automation',
+    ],
+    valuePoints: [
+      'Create and inspect radio fields directly in the editor instead of treating them like generic checkboxes.',
+      'Keep single-select groups explicit through group keys, option keys, and quick-radio helpers.',
+      'Reuse the same radio metadata across Search & Fill, API Fill, and Fill By Web Form Link publishing.',
+    ],
+    proofPoints: [
+      'Runtime fill logic now depends on deterministic radio group metadata instead of legacy checkbox hints.',
+      'PDF import preserves radio widgets as radio fields so saved templates keep the correct single-select behavior.',
+      'Template snapshots and public schemas include radio group expectations for later fill and API workflows.',
+    ],
+    articleSections: [
+      {
+        title: 'Why radio buttons should not be modeled like checkboxes',
+        paragraphs: [
+          'A checkbox and a radio button may both look like small click targets on a PDF page, but they behave very differently. Checkboxes can represent booleans or multi-select choices. Radio buttons represent one selected option inside a mutually exclusive group. If a system treats both field types the same way, the single-select behavior starts to break down as soon as real data touches the form.',
+          'That is why DullyPDF now treats radio fields as their own first-class template metadata instead of relying on checkbox hints. The template needs to know which options belong together, which option key each widget represents, and how one selected value should be resolved later.',
+        ],
+      },
+      {
+        title: 'How radio groups stay stable across fill workflows',
+        paragraphs: [
+          'Once the radio group is explicit, the same metadata can drive multiple workflows cleanly. Search & Fill can choose one option key from a row value. API Fill can expose the same expectation in the published schema. Fill By Web Form Link can translate the single-select choice into the right downstream PDF behavior without inventing a second model for respondent questions.',
+          'That consistency matters because radio fields often represent business-critical selections: employment status, coverage class, marital status, application type, or other mutually exclusive answers. Those fields need a stronger contract than a visual checkbox guess.',
+        ],
+      },
+      {
+        title: 'How to QA radio-heavy templates',
+        paragraphs: [
+          'The best QA loop is to test one option from each radio group, then retest the same template with a different option from the same group. That confirms the group is actually single-select and that no old option stays active after refill. If a template passes that check across the important groups, the radio behavior is usually production-safe.',
+          'Radio QA also becomes easier once the inspector shows the group key and option key directly. You are validating explicit metadata instead of trying to infer what the PDF author meant later.',
+        ],
+      },
+    ],
+    faqs: [
+      {
+        question: 'Can DullyPDF edit radio button groups in existing PDFs?',
+        answer:
+          'Yes. The editor supports radio fields with explicit group keys and option keys so single-select behavior is preserved in saved templates.',
+      },
+      {
+        question: 'How are radio buttons different from checkboxes in DullyPDF?',
+        answer:
+          'Radio fields are single-select groups. DullyPDF keeps them separate from checkbox rules so only one option is chosen per group during fill workflows.',
+      },
+      {
+        question: 'Do radio groups work in API Fill and Fill By Web Form Link too?',
+        answer:
+          'Yes. Radio group metadata is preserved in template snapshots and can drive Search & Fill, API Fill, and respondent-facing web-form publishing.',
+      },
     ],
   },
   {
@@ -534,16 +1677,68 @@ const INTENT_PAGES = [
     path: '/pdf-field-detection-tool',
     navLabel: 'PDF Field Detection Tool',
     heroTitle: 'Detect Form Fields in Any PDF With AI',
-    heroSummary: 'Upload any PDF and let AI detect text fields, checkboxes, date fields, and signature areas automatically. Review confidence scores and refine in the visual editor.',
-    seoTitle: 'AI PDF Field Detection Tool for Form Automation | DullyPDF',
-    seoDescription: 'Detect form fields in any PDF with AI-powered field detection. Identify text, checkbox, date, and signature fields with confidence scoring.',
-    seoKeywords: ['pdf field detection', 'detect form fields in pdf', 'pdf field detection tool', 'ai form field detection'],
-    valuePoints: ['Detect text, date, checkbox, and signature fields automatically.', 'Review confidence scores to prioritize fields needing manual review.', 'Refine detection results with visual editor tools.'],
-    proofPoints: ['Supports PDF uploads up to 50MB with multi-page detection.', 'Confidence tiers: high (80%+), medium (65-80%), low (below 65%).', 'Field geometry uses normalized top-left origin coordinates.'],
+    heroSummary:
+      'Upload any PDF and let AI detect text fields, checkboxes, date fields, and signature areas automatically. Review confidence scores and refine in the visual editor.',
+    seoTitle: 'Free Automatic AI PDF Field Detection Tool | DullyPDF',
+    seoDescription:
+      'Use DullyPDF as a free automatic AI PDF field detection tool to identify text, checkbox, date, and signature fields in existing PDFs.',
+    seoKeywords: [
+      'pdf field detection',
+      'free pdf field detection tool',
+      'automatic pdf field detection',
+      'detect form fields in pdf',
+      'pdf field detection tool',
+      'ai form field detection',
+    ],
+    valuePoints: [
+      'Detect text, date, checkbox, and signature fields automatically.',
+      'Review confidence scores to prioritize fields needing manual review.',
+      'Refine detection results with visual editor tools.',
+    ],
+    proofPoints: [
+      'Supports PDF uploads up to 50MB with multi-page detection.',
+      'Confidence tiers: high (80%+), medium (65-80%), low (below 65%).',
+      'Field geometry uses normalized top-left origin coordinates.',
+    ],
+    articleSections: [
+      {
+        title: 'How AI field detection works on flat PDFs',
+        paragraphs: [
+          'Most PDFs that teams want to automate are not born with clean embedded form metadata. They are flat documents with boxes, lines, labels, and visual cues that a person can interpret but a normal PDF workflow cannot fill directly. DullyPDF addresses that by rendering the page, analyzing the visual layout, and proposing likely fields such as text boxes, dates, checkboxes, and signature areas.',
+          'The output is a draft field set that still needs review, but it is much faster than creating every field manually from scratch. That is the real operational value of field detection.',
+        ],
+      },
+      {
+        title: 'Where detection is strong and where review is required',
+        paragraphs: [
+          'Detection usually performs best on clean PDFs with clear contrast and form structure. It usually needs more review on noisy scans, dense tables, heavily decorated forms, or layouts where visual boxes are close together. Those cases are not failures so much as the normal edge cases of document automation.',
+          'The confidence score is there to help prioritize review. High-confidence detections often need minimal changes, while low-confidence items deserve attention first.',
+        ],
+      },
+      {
+        title: 'What to do after the first detection pass',
+        paragraphs: [
+          'After detection, the most effective next step is cleanup rather than immediate filling. Review the suggested fields, fix geometry, remove false positives, add anything the detector missed, and only then move into rename and mapping if the document will be filled from structured data.',
+          'That workflow keeps the template clean and makes every later step more reliable. Detection creates the draft. The editor is where that draft becomes a usable template.',
+        ],
+      },
+    ],
     faqs: [
-      { question: 'Can DullyPDF detect fields in scanned PDFs?', answer: 'Yes. The AI model analyzes rendered page images and works with both native and scanned PDFs.' },
-      { question: 'How accurate is field detection?', answer: 'Detection quality depends on PDF clarity. High-confidence detections (80%+) are typically accurate. Low-confidence items should be reviewed.' },
-      { question: 'Can I add fields the AI missed?', answer: 'Yes. The editor lets you add text, date, checkbox, and signature fields manually for regions the detector did not identify.' },
+      {
+        question: 'Can DullyPDF detect fields in scanned PDFs?',
+        answer:
+          'Yes. The AI model analyzes rendered page images and works with both native and scanned PDFs.',
+      },
+      {
+        question: 'How accurate is field detection?',
+        answer:
+          'Detection quality depends on PDF clarity. High-confidence detections (80%+) are typically accurate. Low-confidence items should be reviewed.',
+      },
+      {
+        question: 'Can I add fields the AI missed?',
+        answer:
+          'Yes. The editor lets you add text, date, checkbox, and signature fields manually for regions the detector did not identify.',
+      },
     ],
   },
   {
@@ -552,16 +1747,67 @@ const INTENT_PAGES = [
     path: '/construction-pdf-automation',
     navLabel: 'Construction PDF Automation',
     heroTitle: 'Construction Permit and Safety Form PDF Automation',
-    heroSummary: 'Automate construction permits, safety inspection forms, change orders, and daily logs by mapping PDF fields to project and subcontractor data.',
+    heroSummary:
+      'Automate construction permits, safety inspection forms, change orders, and daily logs by mapping PDF fields to project and subcontractor data.',
     seoTitle: 'Construction PDF Form Automation for Permits and Safety | DullyPDF',
-    seoDescription: 'Automate construction permit PDFs, safety inspection forms, and change orders with mapped templates and structured project data.',
-    seoKeywords: ['construction pdf automation', 'permit form automation', 'safety inspection form pdf', 'construction change order automation', 'daily log pdf automation'],
-    valuePoints: ['Standardize permit, inspection, and change order form templates.', 'Map project and subcontractor data fields to form inputs.', 'Reuse templates across job sites and recurring submission cycles.'],
-    proofPoints: ['Search & Fill supports fast row selection from project records.', 'Editor tools handle variable legacy form layouts from different agencies.', 'Template reuse reduces repetitive data entry for field office teams.'],
+    seoDescription:
+      'Automate construction permit PDFs, safety inspection forms, and change orders with mapped templates and structured project data.',
+    seoKeywords: [
+      'construction pdf automation',
+      'permit form automation',
+      'safety inspection form pdf',
+      'construction change order automation',
+      'daily log pdf automation',
+    ],
+    valuePoints: [
+      'Standardize permit, inspection, and change order form templates.',
+      'Map project and subcontractor data fields to form inputs.',
+      'Reuse templates across job sites and recurring submission cycles.',
+    ],
+    proofPoints: [
+      'Search & Fill supports fast row selection from project records.',
+      'Editor tools handle variable legacy form layouts from different agencies.',
+      'Template reuse reduces repetitive data entry for field office teams.',
+    ],
+    articleSections: [
+      {
+        title: 'Why construction paperwork stays repetitive across job sites',
+        paragraphs: [
+          'Construction teams often deal with recurring permits, inspection forms, daily logs, change orders, and subcontractor paperwork that still move as PDFs between field offices, general contractors, and local agencies. The same project and subcontractor data may be typed repeatedly into different forms because the layouts stay fixed while the operational data keeps changing.',
+          'That makes construction paperwork a strong candidate for reusable templates. The pain is not the existence of the forms. It is the repeated transfer of the same project information into them.',
+        ],
+      },
+      {
+        title: 'How project-data mapping helps permits, inspections, and change orders',
+        paragraphs: [
+          'A mapped template lets the team connect job, site, subcontractor, and scheduling data to the form once so later fills become much faster. That is useful across permit workflows, inspection forms, and change-order documents where many core fields repeat.',
+          'When the template is stable, staff can select the right project record and generate the document without reconstructing the field relationships every time.',
+        ],
+      },
+      {
+        title: 'How to standardize templates across agencies and crews',
+        paragraphs: [
+          'Construction teams often face variation across municipalities, owners, and project types. The best way to manage that is to define which documents are true recurring standards, keep one canonical template for each, and only split into separate templates when the layout or field logic really changes.',
+          'That keeps the template library useful to both office staff and field teams instead of becoming another source of confusion during active project work.',
+        ],
+      },
+    ],
     faqs: [
-      { question: 'Can DullyPDF automate construction permit PDF forms?', answer: 'Yes. Upload permit forms, detect fields, map to your project data, and fill them from structured records.' },
-      { question: 'Does this work for safety inspection and daily log forms?', answer: 'Yes. Safety inspection and daily log PDFs can be standardized as mapped templates.' },
-      { question: 'Can GCs reuse templates across multiple job sites?', answer: 'Yes. Saved templates can be reused for recurring form types across projects.' },
+      {
+        question: 'Can DullyPDF automate construction permit PDF forms?',
+        answer:
+          'Yes. Upload permit forms, detect fields, map to your project data, and fill them from structured records.',
+      },
+      {
+        question: 'Does this work for safety inspection and daily log forms?',
+        answer:
+          'Yes. Safety inspection and daily log PDFs can be standardized as mapped templates.',
+      },
+      {
+        question: 'Can GCs reuse templates across multiple job sites?',
+        answer:
+          'Yes. Saved templates can be reused for recurring form types across projects.',
+      },
     ],
   },
   {
@@ -570,16 +1816,67 @@ const INTENT_PAGES = [
     path: '/accounting-tax-pdf-automation',
     navLabel: 'Accounting & Tax PDF Automation',
     heroTitle: 'Accounting and Tax Form PDF Automation Workflows',
-    heroSummary: 'Automate W-9s, 1099s, engagement letters, and other accounting-related PDFs by mapping form fields to client records and tax preparation data.',
+    heroSummary:
+      'Automate W-9s, 1099s, engagement letters, and other accounting-related PDFs by mapping form fields to client records and tax preparation data.',
     seoTitle: 'Accounting and Tax PDF Form Automation | DullyPDF',
-    seoDescription: 'Automate accounting and tax PDF forms, fill W-9 and 1099 templates from client data, and streamline CPA firm document workflows.',
-    seoKeywords: ['accounting pdf automation', 'tax form pdf automation', 'w9 form automation', '1099 pdf automation', 'cpa firm pdf automation'],
-    valuePoints: ['Map client and entity data to recurring tax and engagement forms.', 'Reduce rekeying for W-9 collection, 1099 preparation, and engagement letters.', 'Support repeat workflows across clients and tax seasons.'],
-    proofPoints: ['Template reuse supports high-volume tax season processing.', 'Search & Fill handles quick client record lookup from data exports.', 'Rename and mapping improve consistency for inconsistent legacy form labels.'],
+    seoDescription:
+      'Automate accounting and tax PDF forms, fill W-9 and 1099 templates from client data, and streamline CPA firm document workflows.',
+    seoKeywords: [
+      'accounting pdf automation',
+      'tax form pdf automation',
+      'w9 form automation',
+      '1099 pdf automation',
+      'cpa firm pdf automation',
+    ],
+    valuePoints: [
+      'Map client and entity data to recurring tax and engagement forms.',
+      'Reduce rekeying for W-9 collection, 1099 preparation, and engagement letters.',
+      'Support repeat workflows across clients and tax seasons.',
+    ],
+    proofPoints: [
+      'Template reuse supports high-volume tax season processing.',
+      'Search & Fill handles quick client record lookup from data exports.',
+      'Rename and mapping improve consistency for inconsistent legacy form labels.',
+    ],
+    articleSections: [
+      {
+        title: 'Why accounting and tax forms are good template candidates',
+        paragraphs: [
+          'Accounting and tax workflows often repeat the same client and entity data across standard forms. W-9s, 1099-related paperwork, engagement letters, and other recurring documents all reuse details that already exist in client records, bookkeeping exports, or prep workflows. The friction comes from repeatedly placing that data into fixed PDFs.',
+          'That makes these documents strong candidates for template automation. Once the form layout is mapped, the same client data can drive repeat fills without the same level of manual re-entry.',
+        ],
+      },
+      {
+        title: 'How client-data mapping supports W-9, 1099, and engagement workflows',
+        paragraphs: [
+          'A mapped accounting template connects client or entity data to the PDF field set once, then supports later filling from structured records. That helps reduce repetitive rekeying during onboarding, vendor documentation, engagement setup, and seasonal tax preparation workflows.',
+          'The biggest gains usually come from keeping names and identifiers consistent across the template library so staff can trust the workflow even when pressure increases during busy periods.',
+        ],
+      },
+      {
+        title: 'How firms should prepare for tax-season volume',
+        paragraphs: [
+          'The best rollout is to build and validate the recurring forms before the peak workload arrives. Start with the documents that consume the most repetitive time, test them with real client records, and make sure the template behaves correctly before it becomes part of the seasonal process.',
+          'A small library of dependable templates usually creates more value than a larger set of unreviewed forms that fail when the team needs them most.',
+        ],
+      },
+    ],
     faqs: [
-      { question: 'Can DullyPDF automate W-9 and 1099 PDF forms?', answer: 'Yes. Tax document templates can be mapped to client data and filled from structured records.' },
-      { question: 'Does this work for CPA firm engagement letters?', answer: 'Yes. Engagement letter templates can be standardized and reused across clients.' },
-      { question: 'Can accounting teams handle tax season volume with templates?', answer: 'Yes. Saved templates support repeat filling from client data exports for high-volume processing.' },
+      {
+        question: 'Can DullyPDF automate W-9 and 1099 PDF forms?',
+        answer:
+          'Yes. Tax document templates can be mapped to client data and filled from structured records.',
+      },
+      {
+        question: 'Does this work for CPA firm engagement letters?',
+        answer:
+          'Yes. Engagement letter templates can be standardized and reused across clients.',
+      },
+      {
+        question: 'Can accounting teams handle tax season volume with templates?',
+        answer:
+          'Yes. Saved templates support repeat filling from client data exports for high-volume processing.',
+      },
     ],
   },
 ];
@@ -595,7 +1892,7 @@ const USAGE_DOCS_PAGES = [
     path: '/usage-docs',
     navLabel: 'Overview',
     title: 'DullyPDF Usage Docs',
-    summary: 'Implementation-level guide for the full DullyPDF workflow, including concrete limits, matching rules, and checkbox behavior.',
+    summary: 'Implementation-level guide for the full DullyPDF workflow, including concrete limits, matching rules, radio groups, API Fill, and signing behavior.',
     sectionTitles: ['Pipeline overview', 'Before you start', 'Choose the right docs page', 'Hard numbers used by the app'],
   },
   {
@@ -651,6 +1948,24 @@ const USAGE_DOCS_PAGES = [
     title: 'Fill By Link',
     summary: 'Publish a DullyPDF-hosted form from a saved template or open group, share the generated link, and turn stored respondent answers into PDFs when needed.',
     sectionTitles: ['What gets published', 'Owner publishing flow', 'What respondents see', 'Reviewing responses and generating PDFs', 'Limits and sharing guidance'],
+  },
+  {
+    key: 'signature-workflow',
+    slug: 'signature-workflow',
+    path: '/usage-docs/signature-workflow',
+    navLabel: 'Signature Workflow',
+    title: 'Signature Workflow',
+    summary: 'How DullyPDF freezes immutable PDFs for signature, supports both email-based and web-form-to-sign flows, and keeps signed artifacts available to owners later.',
+    sectionTitles: ['Two entry paths, one signing engine', 'Public signer ceremony', 'Artifacts and owner visibility', 'U.S. e-sign scope and guardrails'],
+  },
+  {
+    key: 'api-fill',
+    slug: 'api-fill',
+    path: '/usage-docs/api-fill',
+    navLabel: 'API Fill',
+    title: 'API Fill',
+    summary: 'How DullyPDF publishes frozen JSON-to-PDF endpoints from saved templates, enforces hosted limits, and keeps API Fill distinct from browser-local Search & Fill.',
+    sectionTitles: ['What API Fill is', 'Owner manager flow', 'Payload and fill behavior', 'When to use API Fill instead of Search and Fill'],
   },
   {
     key: 'create-group',
@@ -752,12 +2067,29 @@ const toFaqSchema = (faqs) => [{
   })),
 }];
 
+const buildBreadcrumbSchema = (items) => ({
+  '@context': 'https://schema.org',
+  '@type': 'BreadcrumbList',
+  itemListElement: items.map((item, index) => ({
+    '@type': 'ListItem',
+    position: index + 1,
+    name: item.label,
+    ...(item.href ? { item: `${SITE_ORIGIN}${item.href}` } : {}),
+  })),
+});
+
+const appendStructuredData = (existingEntries, nextEntry) => [...(existingEntries || []), nextEntry];
+
+const buildIntentSeoTitle = (heroTitle) => `${heroTitle} | DullyPDF`;
+
+const buildIntentSeoDescription = (heroSummary) => heroSummary;
+
 const HOME_ROUTE_SEO = {
-  title: 'DullyPDF | Convert PDFs to Fillable Forms & Map to Database',
+  title: 'DullyPDF | Automatic Free PDF to Fillable Form with Search & Fill',
   description:
-    'DullyPDF is a PDF form builder for existing documents. Convert PDFs into fillable templates with AI field detection, map fields to database columns, and auto-fill from CSV, Excel, or JSON. Free to start.',
+    'DullyPDF turns existing PDFs into fillable forms with AI field detection. Map fields to database headers, fill row data automatically, send web forms to collect answers, or route immutable PDFs into email-based signature workflows.',
   canonicalPath: '/',
-  keywords: ['pdf to fillable form', 'pdf form builder', 'fillable pdf builder', 'pdf to database template', 'fillable pdf template generator', 'map pdf fields to database columns', 'auto fill pdf from csv'],
+  keywords: ['pdf to fillable form', 'free pdf to fillable form', 'automatic pdf to fillable form', 'pdf form builder', 'fillable pdf builder', 'pdf fill api', 'json to pdf api', 'pdf radio button editor', 'send pdf for signature by email', 'electronic signature workflow', 'web form to signed pdf', 'pdf search and fill', 'pdf to database template', 'fillable pdf template generator', 'map pdf fields to database columns', 'auto fill pdf from csv'],
   structuredData: [
     {
       '@context': 'https://schema.org',
@@ -766,9 +2098,9 @@ const HOME_ROUTE_SEO = {
       applicationCategory: 'BusinessApplication',
       operatingSystem: 'Web',
       url: 'https://dullypdf.com/',
-      description: 'DullyPDF is a PDF form builder for existing documents. It converts PDFs into fillable templates, maps fields to schema headers, and fills mapped fields from structured data rows.',
+      description: 'DullyPDF turns existing PDFs into fillable forms with AI field detection. It maps fields to database headers, fills row data automatically, publishes template-scoped JSON-to-PDF endpoints, and lets teams send web forms to collect answers or route immutable PDFs into email-based signature workflows.',
       offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
-      featureList: ['PDF form builder for existing PDFs', 'PDF field detection', 'Fillable form template editing', 'Schema mapping for CSV/XLSX/JSON', 'Search and fill workflows'],
+      featureList: ['Free PDF form builder for existing PDFs', 'Automatic AI field detection', 'Fillable form template editing', 'Radio group editing and deterministic radio fill behavior', 'Template-scoped JSON-to-PDF API Fill endpoints', 'Email-based PDF signature requests with immutable record freeze', 'Web-form-to-sign handoff for collected respondent data', 'Schema mapping for CSV/XLSX/JSON', 'Search and fill workflows'],
     },
     {
       '@context': 'https://schema.org',
@@ -780,10 +2112,10 @@ const HOME_ROUTE_SEO = {
     },
   ],
   bodyContent: {
-    heading: 'DullyPDF | Convert PDFs to Fillable Forms & Map to Database',
+    heading: 'DullyPDF | Automatic Free PDF to Fillable Form with Search & Fill',
     paragraphs: [
-      'DullyPDF converts raw PDFs into fillable templates with AI field detection. Map fields to database columns and auto-fill from CSV, Excel, or JSON. Free to start.',
-      'Upload a PDF, detect form fields automatically, refine in the visual editor, map to your schema, and fill from structured data in seconds.',
+      'DullyPDF turns existing PDFs into fillable forms with AI field detection. Map fields to database headers, fill row data automatically, send web forms to collect answers, or route immutable PDFs into email-based signature workflows.',
+      'Search & Fill maps fields to database headers, fills selected row data automatically, and can use web form answers collected from clients.',
     ],
     sections: [
       { title: 'Upload PDF Document', description: 'Upload any PDF with text fields, checkboxes, or signature areas. Supports files up to 50MB.' },
@@ -850,6 +2182,22 @@ const USAGE_DOCS_FAQ_SCHEMAS = {
       { '@type': 'Question', name: 'Can one group publish a single shared respondent form?', acceptedAnswer: { '@type': 'Answer', text: 'Yes. An open group can publish one merged Fill By Link that includes every distinct respondent-facing field across the group.' } },
     ],
   }],
+  'signature-workflow': [{
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    mainEntity: [
+      { '@type': 'Question', name: 'Can DullyPDF send a PDF for signature by email?', acceptedAnswer: { '@type': 'Answer', text: 'Yes. The owner can freeze the current PDF into an immutable snapshot, email the signer, and keep the signed artifacts in the workspace afterward.' } },
+      { '@type': 'Question', name: 'Can Fill By Web Form Link route respondents into signing after submit?', acceptedAnswer: { '@type': 'Answer', text: 'Yes. Template links can require signature after submit, which stores the response, materializes the filled PDF, and continues into the public signing ceremony.' } },
+    ],
+  }],
+  'api-fill': [{
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    mainEntity: [
+      { '@type': 'Question', name: 'What is DullyPDF API Fill?', acceptedAnswer: { '@type': 'Answer', text: 'API Fill publishes one saved-template snapshot as a hosted JSON-to-PDF endpoint with its own schema, auth key, limits, and audit activity.' } },
+      { '@type': 'Question', name: 'How is API Fill different from Search and Fill?', acceptedAnswer: { '@type': 'Answer', text: 'Search and Fill keeps chosen row data local in the browser, while API Fill is a hosted backend runtime for other systems that need a template-scoped JSON-to-PDF endpoint.' } },
+    ],
+  }],
   'create-group': [{
     '@context': 'https://schema.org',
     '@type': 'FAQPage',
@@ -898,6 +2246,16 @@ for (const page of USAGE_DOCS_PAGES) {
       description: 'Publish native DullyPDF Fill By Link forms from saved templates or groups, share respondent links, and generate PDFs later from stored submissions.',
       keywords: ['fill by link pdf', 'shareable pdf form link', 'respondent form workflow', 'html form to fill pdf'],
     },
+    'signature-workflow': {
+      title: 'PDF Signature Workflow by Email or Web Form | DullyPDF Docs',
+      description: 'Learn how DullyPDF freezes immutable PDFs for signature, supports both email and post-submit web-form signing, and keeps signed artifacts available to owners later.',
+      keywords: ['pdf signature workflow', 'send pdf for signature by email', 'web form to signed pdf', 'us electronic signature workflow'],
+    },
+    'api-fill': {
+      title: 'JSON to PDF API Fill Workflow | DullyPDF Docs',
+      description: 'Learn how DullyPDF publishes template-scoped JSON-to-PDF API endpoints with schema downloads, key rotation, audit activity, and hosted guardrails.',
+      keywords: ['pdf fill api', 'json to pdf api', 'template api pdf', 'pdf form api'],
+    },
     'create-group': {
       title: 'Create Group Workflows for Full PDF Packets | DullyPDF Docs',
       description: 'Create groups of saved templates, switch packet members quickly, Search and Fill full document sets, and batch Rename + Map every template in the group.',
@@ -916,12 +2274,22 @@ for (const page of USAGE_DOCS_PAGES) {
   };
 
   const seo = seoLookup[page.key];
+  const breadcrumbItems = page.key === 'index'
+    ? [
+        { label: 'Home', href: '/' },
+        { label: 'Usage Docs' },
+      ]
+    : [
+        { label: 'Home', href: '/' },
+        { label: 'Usage Docs', href: '/usage-docs' },
+        { label: page.title },
+      ];
   USAGE_DOCS_ROUTE_SEO[page.key] = {
     title: seo.title,
     description: seo.description,
     canonicalPath: page.path,
     keywords: seo.keywords,
-    structuredData: USAGE_DOCS_FAQ_SCHEMAS[page.key] || undefined,
+    structuredData: appendStructuredData(USAGE_DOCS_FAQ_SCHEMAS[page.key], buildBreadcrumbSchema(breadcrumbItems)),
     bodyContent: {
       heading: page.title,
       paragraphs: [page.summary],
@@ -933,14 +2301,22 @@ for (const page of USAGE_DOCS_PAGES) {
 const INTENT_ROUTE_SEO = {};
 for (const page of INTENT_PAGES) {
   INTENT_ROUTE_SEO[page.key] = {
-    title: page.seoTitle,
-    description: page.seoDescription,
+    title: buildIntentSeoTitle(page.heroTitle),
+    description: buildIntentSeoDescription(page.heroSummary),
     canonicalPath: page.path,
     keywords: page.seoKeywords,
-    structuredData: toFaqSchema(page.faqs),
+    structuredData: appendStructuredData(
+      toFaqSchema(page.faqs),
+      buildBreadcrumbSchema([
+        { label: 'Home', href: '/' },
+        { label: page.category === 'industry' ? 'Industries' : 'Workflows' },
+        { label: page.navLabel },
+      ]),
+    ),
     bodyContent: {
       heading: page.heroTitle,
       paragraphs: [page.heroSummary],
+      articleSections: page.articleSections,
       valuePoints: page.valuePoints,
       proofPoints: page.proofPoints,
       faqs: page.faqs,
@@ -998,7 +2374,14 @@ for (const page of FEATURE_PLAN_PAGES) {
     description: page.seoDescription,
     canonicalPath: page.path,
     keywords: page.seoKeywords,
-    structuredData: toFaqSchema(page.faqs),
+    structuredData: appendStructuredData(
+      toFaqSchema(page.faqs),
+      buildBreadcrumbSchema([
+        { label: 'Home', href: '/' },
+        { label: 'Plans' },
+        { label: page.navLabel },
+      ]),
+    ),
     bodyContent: {
       heading: page.heroTitle,
       paragraphs: [page.heroSummary],
@@ -1078,186 +2461,466 @@ const BLOG_POSTS = [
     slug: 'how-to-convert-pdf-to-fillable-form',
     title: 'How to Convert a PDF to a Fillable Form Without Adobe Acrobat',
     seoTitle: 'Convert PDF to Fillable Form Without Adobe Acrobat | DullyPDF Blog',
-    seoDescription: 'Learn how to convert any PDF into a fillable form without Acrobat. DullyPDF uses AI field detection to create reusable templates for free.',
+    seoDescription:
+      'Learn how to convert any PDF into a fillable form without Acrobat. DullyPDF uses AI field detection to create reusable templates for free.',
     seoKeywords: ['pdf to fillable form without acrobat', 'convert pdf to fillable form free', 'fillable pdf without adobe'],
     publishedDate: '2026-03-04',
+    updatedDate: '2026-03-24',
     author: 'DullyPDF Team',
-    summary: 'Adobe Acrobat is expensive and overkill for most fillable form needs. This guide shows how to convert any PDF into a fillable template using AI-powered field detection in your browser.',
+    summary:
+      'Adobe Acrobat is expensive and overkill for most fillable form needs. This guide shows how to convert any PDF into a fillable template using AI-powered field detection in your browser.',
     sections: [
-      { id: 'why-skip-acrobat', title: 'Why skip Adobe Acrobat?', body: 'Adobe Acrobat Pro costs $23/month and requires installation. Browser-based tools like DullyPDF detect fields automatically and save reusable templates without any desktop software.' },
-      { id: 'step-by-step', title: 'Step-by-step: convert a PDF to fillable form', body: 'Upload your PDF to DullyPDF (up to 50MB). The AI detection pipeline identifies text fields, checkboxes, date fields, and signature areas with confidence scores.' },
-      { id: 'field-detection', title: 'How AI field detection works', body: 'DullyPDF uses the CommonForms ML model to scan each page and identify input regions with confidence scores.' },
-      { id: 'mapping-schema', title: 'Map fields to your database schema', body: 'Upload a CSV, Excel, or JSON schema file and let OpenAI rename and map fields to your column headers.' },
-      { id: 'reuse-templates', title: 'Save and reuse templates', body: 'Save your template to your DullyPDF profile for repeat use without re-detection or re-mapping.' },
+      {
+        id: 'why-skip-acrobat',
+        title: 'Why skip Adobe Acrobat?',
+        body: 'Adobe Acrobat Pro costs $23/month and requires installation. For teams that just need to convert a PDF into a fillable form and map it to their data, that is overkill. Browser-based tools like DullyPDF detect fields automatically, let you refine them visually, and save reusable templates without any desktop software.',
+      },
+      {
+        id: 'step-by-step',
+        title: 'Step-by-step: convert a PDF to fillable form',
+        body: 'Upload your PDF to DullyPDF (up to 50MB). The AI detection pipeline analyzes every page and identifies text fields, checkboxes, date fields, and signature areas with confidence scores. Review the detected fields in the visual editor, resize or rename any that need adjustment, then save the template. The entire process takes minutes, not hours.',
+      },
+      {
+        id: 'field-detection',
+        title: 'How AI field detection works',
+        body: 'DullyPDF uses the CommonForms ML model to scan each page image and identify regions likely to be form inputs. Each detection comes with a confidence score: high (above 80%), medium (65-80%), and low (below 65%). Start by reviewing low-confidence detections first, since those are most likely to need manual correction.',
+      },
+      {
+        id: 'mapping-schema',
+        title: 'Map fields to your database schema',
+        body: 'Once fields are detected and cleaned up, upload a CSV, Excel, or JSON schema file. DullyPDF can use OpenAI to automatically rename fields and map them to your column headers. This turns your fillable PDF into a database-ready template that can be populated from structured data rows.',
+      },
+      {
+        id: 'reuse-templates',
+        title: 'Save and reuse templates',
+        body: 'Save your finished template to your DullyPDF profile. Next time you need to fill the same form type, reload the template, connect your data source, and use Search & Fill to populate all mapped fields in seconds. No re-detection or re-mapping required.',
+      },
     ],
+    relatedIntentPages: ['pdf-to-fillable-form'],
+    relatedDocs: ['getting-started'],
   },
   {
     slug: 'auto-fill-pdf-from-spreadsheet',
     title: 'How to Auto-Fill PDF Forms From a Spreadsheet (CSV or Excel)',
     seoTitle: 'Auto-Fill PDF Forms From CSV or Excel Spreadsheet | DullyPDF Blog',
-    seoDescription: 'Fill PDF form fields automatically from CSV or Excel spreadsheet rows. Map columns to PDF fields and populate forms in seconds.',
-    seoKeywords: ['fill pdf from spreadsheet', 'auto fill pdf from excel', 'fill pdf from csv'],
+    seoDescription:
+      'Fill PDF form fields automatically from CSV or Excel spreadsheet rows. Map columns to PDF fields and populate forms in seconds.',
+    seoKeywords: ['fill pdf from spreadsheet', 'auto fill pdf from excel', 'fill pdf from csv', 'pdf form from spreadsheet'],
     publishedDate: '2026-03-04',
+    updatedDate: '2026-03-24',
     author: 'DullyPDF Team',
-    summary: 'Stop copying and pasting from spreadsheets into PDF forms. Map spreadsheet columns to PDF fields and auto-fill forms from any row.',
+    summary:
+      'Stop copying and pasting from spreadsheets into PDF forms. This guide shows how to map spreadsheet columns to PDF fields and auto-fill forms from any row in your data.',
     sections: [
-      { id: 'the-problem', title: 'The copy-paste problem', body: 'Office teams manually copy data from spreadsheets into PDF forms every day, wasting hours on tedious, error-prone data entry.' },
-      { id: 'how-it-works', title: 'How spreadsheet-to-PDF filling works', body: 'DullyPDF connects spreadsheet columns to PDF form fields through schema mapping.' },
-      { id: 'search-and-fill', title: 'Search & Fill: find the right record fast', body: 'Search across any column using contains or exact-match mode, then fill all mapped fields with one click.' },
-      { id: 'supported-formats', title: 'Supported data formats', body: 'CSV, XLSX, and JSON for row-based filling. TXT for schema-only mapping.' },
-      { id: 'tips', title: 'Tips for reliable auto-fill', body: 'Run Rename + Map together. Test with one record before batch processing.' },
+      {
+        id: 'the-problem',
+        title: 'The copy-paste problem',
+        body: 'Every day, office teams manually copy data from spreadsheets into PDF forms. Patient records into intake forms, employee data into onboarding packets, policy details into insurance certificates. Each form takes 5-15 minutes of tedious, error-prone data entry. Multiply that by dozens of forms per day and the waste is enormous.',
+      },
+      {
+        id: 'how-it-works',
+        title: 'How spreadsheet-to-PDF filling works',
+        body: 'DullyPDF connects your spreadsheet columns to PDF form fields through schema mapping. Upload your PDF, detect fields, then upload your CSV or Excel file. The mapping step links column headers like "first_name" to the corresponding PDF field. Once mapped, select any row and DullyPDF fills every mapped field instantly.',
+      },
+      {
+        id: 'search-and-fill',
+        title: 'Search & Fill: find the right record fast',
+        body: 'The Search & Fill panel lets you search across any column using contains or exact-match mode. Results are capped at 25 rows for controlled review. Click "Fill PDF" on any result row to populate all mapped fields. Clear and refill as many times as needed to verify mapping quality before downloading or saving.',
+      },
+      {
+        id: 'supported-formats',
+        title: 'Supported data formats',
+        body: 'DullyPDF supports CSV, XLSX (Excel), and JSON for row-based filling. TXT files work for schema-only mapping without row data. CSV and Excel files can contain up to 5,000 rows. Duplicate column headers are automatically renamed to prevent conflicts.',
+      },
+      {
+        id: 'tips',
+        title: 'Tips for reliable auto-fill',
+        body: 'Run Rename + Map together for the best field alignment. Always test with one record before batch processing. Check that checkbox groups and date fields are mapping correctly. Use the inspector panel to verify individual field values after filling.',
+      },
     ],
+    relatedIntentPages: ['fill-pdf-from-csv'],
+    relatedDocs: ['search-fill'],
   },
   {
     slug: 'acord-25-certificate-fill-faster',
     title: 'ACORD 25 Certificate of Insurance: How to Fill It Faster',
     seoTitle: 'Fill ACORD 25 Certificate of Insurance Faster | DullyPDF Blog',
-    seoDescription: 'Speed up ACORD 25 certificate processing with mapped templates.',
-    seoKeywords: ['acord 25 fillable', 'fill acord form automatically', 'acord certificate of insurance automation', 'insurance pdf automation', 'certificate of insurance automation'],
-    publishedDate: '2026-03-04',
-    author: 'DullyPDF Team',
-    summary: 'Insurance agencies process hundreds of ACORD 25 certificates monthly. Turn the ACORD 25 into a mapped template that fills from your management system data.',
-    sections: [
-      { id: 'acord-25-overview', title: 'What is the ACORD 25?', body: 'The standard certificate of liability insurance used across the US insurance industry.' },
-      { id: 'manual-pain', title: 'Why manual ACORD filling is painful', body: 'ACORD forms have dozens of fields. Manual copy-paste is slow and error-prone.' },
-      { id: 'template-workflow', title: 'Create a reusable ACORD 25 template', body: 'Upload, detect, map to your AMS export, and save for repeat use.' },
-      { id: 'fill-from-ams', title: 'Fill certificates from your data', body: 'Search for the insured and fill all mapped fields with one click.' },
+    seoDescription:
+      'Speed up ACORD 25 certificate of insurance processing with mapped templates. Detect fields, map to your data, and fill in seconds.',
+    seoKeywords: [
+      'acord 25 fillable',
+      'fill acord form automatically',
+      'acord certificate of insurance automation',
+      'acord 25 template',
+      'insurance pdf automation',
+      'certificate of insurance automation',
     ],
+    publishedDate: '2026-03-04',
+    updatedDate: '2026-03-24',
+    author: 'DullyPDF Team',
+    summary:
+      'Insurance agencies process hundreds of ACORD 25 certificates monthly. This guide shows how to turn the ACORD 25 into a mapped template that fills from your management system data.',
+    sections: [
+      {
+        id: 'acord-25-overview',
+        title: 'What is the ACORD 25?',
+        body: 'The ACORD 25 is the standard certificate of liability insurance used across the US insurance industry. It includes fields for named insured, producer, insurers, coverage types, policy numbers, limits, and certificate holder details. Most agencies fill this form dozens of times per week from their agency management system.',
+      },
+      {
+        id: 'manual-pain',
+        title: 'Why manual ACORD filling is painful',
+        body: 'ACORD forms have dozens of fields across multiple coverage sections. Manually copying policy numbers, effective dates, limits, and named insureds from your AMS into the PDF is slow and error-prone. One transposed digit in a policy number or wrong effective date can cause E&O exposure.',
+      },
+      {
+        id: 'template-workflow',
+        title: 'Create a reusable ACORD 25 template',
+        body: 'Upload the ACORD 25 PDF to DullyPDF. Run field detection to identify all input regions. Use the editor to verify and clean up field boundaries. Then upload a CSV or Excel export from your agency management system and map the ACORD fields to your column headers. Save the template for repeat use.',
+      },
+      {
+        id: 'fill-from-ams',
+        title: 'Fill certificates from your data',
+        body: 'Once the ACORD 25 template is mapped, export your policy data as CSV or Excel. Load it into DullyPDF, search for the insured, and fill all mapped fields with one click. Download the completed certificate immediately or save it to your profile for record-keeping.',
+      },
+    ],
+    relatedIntentPages: ['acord-form-automation'],
+    relatedDocs: ['getting-started', 'search-fill'],
   },
   {
     slug: 'insurance-pdf-automation-acord-and-coi-workflows',
     title: 'Insurance PDF Automation: ACORD and Certificate Workflows',
     seoTitle: 'Insurance PDF Automation for ACORD and COI Workflows | DullyPDF Blog',
-    seoDescription: 'Learn how insurance teams automate ACORD forms and certificate of insurance PDFs with mapped templates tied to agency data exports.',
-    seoKeywords: ['insurance pdf automation', 'insurance form automation', 'certificate of insurance automation', 'acord form automation software', 'auto fill insurance forms'],
-    publishedDate: '2026-03-04',
-    author: 'DullyPDF Team',
-    summary: 'If your team handles recurring ACORD packets and COI requests, this workflow shows how to map once and fill insurance PDFs from AMS exports in seconds.',
-    sections: [
-      { id: 'why-insurance-pdfs-stay-manual', title: 'Why insurance PDF workflows stay manual', body: 'Insurance teams still process many forms as PDFs and repeatedly retype insured, policy, and coverage data.' },
-      { id: 'acord-and-carrier-forms', title: 'ACORD plus carrier-specific form variants', body: 'Treat each recurring ACORD or carrier form as a reusable template to avoid repeated setup work.' },
-      { id: 'map-from-ams-exports', title: 'Map once from AMS or broker exports', body: 'Map insured, producer, policy, and coverage fields once, then fill from structured data exports.' },
-      { id: 'coi-turnaround', title: 'Speed up certificate of insurance turnaround', body: 'Mapped templates help account teams search a policy record, fill quickly, and validate key fields.' },
-      { id: 'implementation-checklist', title: 'Implementation checklist for insurance teams', body: 'Start with one high-volume form, validate with real records, then roll out to adjacent forms.' },
+    seoDescription:
+      'Learn how insurance teams automate ACORD forms and certificate of insurance PDFs with mapped templates tied to agency data exports.',
+    seoKeywords: [
+      'insurance pdf automation',
+      'insurance form automation',
+      'certificate of insurance automation',
+      'acord form automation software',
+      'auto fill insurance forms',
     ],
+    publishedDate: '2026-03-04',
+    updatedDate: '2026-03-24',
+    author: 'DullyPDF Team',
+    summary:
+      'If your team handles recurring ACORD packets and COI requests, this workflow shows how to map once and fill insurance PDFs from AMS exports in seconds.',
+    sections: [
+      {
+        id: 'why-insurance-pdfs-stay-manual',
+        title: 'Why insurance PDF workflows stay manual',
+        body: 'Insurance operations teams still process many carrier and ACORD forms as PDFs, not APIs. Producers and account managers repeatedly retype the same insured, policy, and coverage values for renewals, certificates, and endorsements. The bottleneck is not data availability. The bottleneck is mapping that data reliably into fixed PDF layouts.',
+      },
+      {
+        id: 'acord-and-carrier-forms',
+        title: 'ACORD plus carrier-specific form variants',
+        body: 'ACORD 25 is common, but most agencies also touch ACORD 24, 27, 28, 126, and carrier-specific supplements. A practical setup treats each recurring form as a reusable template: detect fields, clean geometry, normalize names, and save. This prevents repeated setup work each time a carrier changes spacing or a field label.',
+      },
+      {
+        id: 'map-from-ams-exports',
+        title: 'Map once from AMS or broker exports',
+        body: 'Export policy data from your agency management system as CSV or Excel. Map insured name, producer details, policy numbers, limits, effective dates, and holder data once. After mapping, Search & Fill can locate an insured record and populate the entire form in one pass, reducing rekeying mistakes.',
+      },
+      {
+        id: 'coi-turnaround',
+        title: 'Speed up certificate of insurance turnaround',
+        body: 'Certificate requests often arrive with tight deadlines. With a mapped template, account teams can search a policy record, fill the certificate, validate key fields, and deliver quickly. The workflow is especially useful for high-volume COI operations where consistency and speed matter more than custom one-off editing.',
+      },
+      {
+        id: 'implementation-checklist',
+        title: 'Implementation checklist for insurance teams',
+        body: 'Start with your highest-volume ACORD or COI form. Build one template, validate with five real records, and lock naming conventions for policy and coverage fields. Then duplicate the pattern across your next forms. This phased rollout builds trust and minimizes disruption to current servicing workflows.',
+      },
+    ],
+    relatedIntentPages: ['insurance-pdf-automation', 'acord-form-automation'],
+    relatedDocs: ['getting-started', 'rename-mapping', 'search-fill'],
   },
   {
     slug: 'pdf-form-field-detection-how-ai-finds-fields',
     title: 'PDF Form Field Detection: How AI Finds Fields in Any PDF',
     seoTitle: 'PDF Form Field Detection: How AI Finds Fields | DullyPDF Blog',
-    seoDescription: 'Learn how AI-powered field detection identifies text fields, checkboxes, and signatures in any PDF.',
-    seoKeywords: ['pdf form field detection', 'detect fields in pdf', 'ai pdf field detection'],
+    seoDescription:
+      'Learn how AI-powered field detection identifies text fields, checkboxes, and signatures in any PDF. Understand confidence scores and optimization tips.',
+    seoKeywords: ['pdf form field detection', 'detect fields in pdf', 'ai pdf field detection', 'pdf field recognition'],
     publishedDate: '2026-03-04',
+    updatedDate: '2026-03-24',
     author: 'DullyPDF Team',
-    summary: 'How does AI find form fields in a PDF that has no embedded form data? This post explains the detection pipeline and confidence scoring.',
+    summary:
+      'How does AI find form fields in a PDF that has no embedded form data? This post explains the detection pipeline, confidence scoring, and how to get the best results.',
     sections: [
-      { id: 'the-challenge', title: 'The field detection challenge', body: 'Most PDFs are not fillable and require image analysis to find form fields.' },
-      { id: 'how-detection-works', title: 'How DullyPDF detection works', body: 'The CommonForms ML model analyzes rendered page images to identify input regions.' },
-      { id: 'confidence-scores', title: 'Understanding confidence scores', body: 'High (80%+), medium (65-80%), low (below 65%).' },
-      { id: 'tips-for-better-results', title: 'Tips for better detection results', body: 'Use clean, high-resolution PDFs for best results.' },
-      { id: 'after-detection', title: 'What to do after detection', body: 'Review low-confidence detections first, then proceed to rename and mapping.' },
+      {
+        id: 'the-challenge',
+        title: 'The field detection challenge',
+        body: 'Most PDFs in the wild are not fillable. They are flat documents with lines, boxes, and labels that humans recognize as form fields, but that contain no embedded form metadata. Turning these visual cues into actual fillable fields requires analyzing the page image and understanding document layout.',
+      },
+      {
+        id: 'how-detection-works',
+        title: 'How DullyPDF detection works',
+        body: 'DullyPDF uses the CommonForms ML model to analyze rendered page images. The model identifies rectangular regions likely to be input areas and classifies them as text, date, checkbox, or signature fields. Each detection includes geometry coordinates (position and size) and a confidence score.',
+      },
+      {
+        id: 'confidence-scores',
+        title: 'Understanding confidence scores',
+        body: 'Confidence scores tell you how certain the model is about each detection. High confidence (80% and above) means the model is very sure this is a real field. Medium confidence (65-80%) suggests a probable field that may need review. Low confidence (below 65%) flags uncertain detections that should be checked first.',
+      },
+      {
+        id: 'tips-for-better-results',
+        title: 'Tips for better detection results',
+        body: 'Use clean, high-resolution PDFs when possible. Scanned documents with low quality or skewed pages produce less precise field boundaries. Dense forms with fields very close together may need manual cleanup. Decorative borders or boxes can sometimes be mistaken for input fields and should be deleted in the editor.',
+      },
+      {
+        id: 'after-detection',
+        title: 'What to do after detection',
+        body: 'Review low-confidence detections first. Use the visual editor to resize, reposition, or delete incorrect fields. Add any fields the model missed. Once the field set is clean, proceed to rename and mapping to prepare the template for data-driven filling.',
+      },
     ],
+    relatedIntentPages: ['pdf-to-fillable-form'],
+    relatedDocs: ['detection'],
   },
   {
     slug: 'map-pdf-fields-to-database-columns',
     title: 'Map PDF Fields to Database Columns: A Step-by-Step Guide',
     seoTitle: 'Map PDF Fields to Database Columns Step-by-Step | DullyPDF Blog',
-    seoDescription: 'Learn how to map PDF form fields to database columns for automated filling.',
-    seoKeywords: ['pdf to database', 'map pdf fields to database', 'pdf database mapping'],
+    seoDescription:
+      'Learn how to map PDF form fields to database or spreadsheet columns for automated filling. Step-by-step guide with best practices.',
+    seoKeywords: ['pdf to database', 'map pdf fields to database', 'pdf database mapping', 'pdf schema mapping guide'],
     publishedDate: '2026-03-04',
+    updatedDate: '2026-03-24',
     author: 'DullyPDF Team',
-    summary: 'Mapping PDF fields to database columns transforms a fillable form into an automated data-entry tool.',
+    summary:
+      'Mapping PDF fields to database columns is the key step that turns a fillable form into an automated data-entry tool. This guide walks through the complete process.',
     sections: [
-      { id: 'why-mapping-matters', title: 'Why mapping matters', body: 'Without mapping, each PDF field is just a named rectangle. Mapping links field names to data columns.' },
-      { id: 'prepare-your-schema', title: 'Prepare your schema file', body: 'Export database headers as CSV, Excel, or JSON with clean snake_case naming.' },
-      { id: 'rename-first', title: 'Rename fields before mapping', body: 'Run OpenAI Rename first for better mapping accuracy.' },
-      { id: 'run-mapping', title: 'Run the mapping step', body: 'Upload schema and run Map or Rename + Map combined workflow.' },
-      { id: 'test-and-save', title: 'Test and save your mapped template', body: 'Test with Search & Fill, then save for repeat use.' },
+      {
+        id: 'why-mapping-matters',
+        title: 'Why mapping matters',
+        body: 'Without mapping, each PDF field is just a named rectangle on a page. Mapping links field names to your data column headers so that when you select a record, every field knows which value to display. This is what transforms a fillable PDF from a digital form into an automated data pipeline.',
+      },
+      {
+        id: 'prepare-your-schema',
+        title: 'Prepare your schema file',
+        body: 'Export your database table headers as a CSV, Excel, or JSON file. The headers should be clean and consistent: snake_case works best (e.g., first_name, policy_number, effective_date). DullyPDF will normalize headers by converting spaces and hyphens to underscores automatically.',
+      },
+      {
+        id: 'rename-first',
+        title: 'Rename fields before mapping',
+        body: 'If your PDF field names are inconsistent (like "Field1", "untitled_2", or "Text Box 3"), run OpenAI Rename first. The AI analyzes the PDF page image and nearby labels to suggest meaningful names. This dramatically improves mapping accuracy because the mapping step can then match field names to column headers more reliably.',
+      },
+      {
+        id: 'run-mapping',
+        title: 'Run the mapping step',
+        body: 'Upload your schema file and run Map (or Rename + Map for a combined workflow). DullyPDF sends the field names and schema headers to OpenAI, which suggests alignments. Review the mapping confidence scores and adjust any misaligned fields in the editor. Pay special attention to checkbox groups, which may need explicit group and option key configuration.',
+      },
+      {
+        id: 'test-and-save',
+        title: 'Test and save your mapped template',
+        body: 'Load your actual data file and run a test fill with Search & Fill. Check that all fields populate correctly. Pay attention to date formatting, checkbox selections, and composite fields. Once satisfied, save the template to your profile for repeat use across future fill cycles.',
+      },
     ],
+    relatedIntentPages: ['pdf-to-database-template'],
+    relatedDocs: ['rename-mapping'],
   },
   {
     slug: 'automate-medical-intake-forms',
     title: 'Automate Medical Intake Forms: Reduce Front-Desk Data Entry by 80%',
     seoTitle: 'Automate Medical Intake Forms: Cut Data Entry 80% | DullyPDF Blog',
-    seoDescription: 'Reduce front-desk data entry by automating patient intake PDF forms.',
-    seoKeywords: ['automate patient intake forms', 'healthcare pdf automation', 'medical intake form automation'],
+    seoDescription:
+      'Reduce front-desk data entry by automating patient intake PDF forms. Map intake fields to your EHR data and fill in seconds.',
+    seoKeywords: ['automate patient intake forms', 'healthcare pdf automation', 'medical intake form automation', 'patient registration automation'],
     publishedDate: '2026-03-04',
+    updatedDate: '2026-03-24',
     author: 'DullyPDF Team',
-    summary: 'Front-desk staff spend hours retyping patient data into intake PDFs. Create mapped templates that fill automatically from patient records.',
+    summary:
+      'Front-desk staff spend hours retyping patient data into intake PDFs. This guide shows how to create mapped templates that fill automatically from your patient records.',
     sections: [
-      { id: 'intake-form-problem', title: 'The intake form data entry problem', body: 'Medical offices manually type patient data into stacks of intake PDFs daily.' },
-      { id: 'template-approach', title: 'The template-based approach', body: 'Create a mapped template once and reuse it for every patient visit.' },
-      { id: 'checkbox-handling', title: 'Handling medical checkboxes', body: 'DullyPDF supports yes_no, presence, enum, and list checkbox rule types.' },
-      { id: 'privacy-note', title: 'Privacy considerations', body: 'Patient data stays in your browser during Search & Fill operations.' },
-      { id: 'getting-started', title: 'Getting started with healthcare automation', body: 'Start with your most frequently used intake form.' },
+      {
+        id: 'intake-form-problem',
+        title: 'The intake form data entry problem',
+        body: 'Medical offices use stacks of intake PDFs: patient registration, medical history, consent forms, HIPAA releases, and insurance verification. Front-desk staff manually type patient demographics, insurance details, and medical history into each form. With 20-40 patients per day, this consumes hours of staff time and introduces transcription errors.',
+      },
+      {
+        id: 'template-approach',
+        title: 'The template-based approach',
+        body: 'Instead of filling forms manually, create a mapped template once and reuse it. Upload your intake PDF to DullyPDF, detect all fields, clean up the layout, and map fields to your patient data columns. Save the template. Now for every patient visit, just search their record and fill all forms in seconds.',
+      },
+      {
+        id: 'checkbox-handling',
+        title: 'Handling medical checkboxes',
+        body: 'Medical intake forms are checkbox-heavy: symptom lists, allergy disclosures, medication history, and yes/no questions. DullyPDF supports four checkbox rule types: yes_no for boolean fields, presence for truthy/falsey values, enum for categorical selections, and list for multi-select groups. Configure checkbox rules during mapping for accurate automated filling.',
+      },
+      {
+        id: 'privacy-note',
+        title: 'Privacy considerations',
+        body: 'Patient data stays in your browser during Search & Fill operations. CSV and Excel rows are never uploaded to DullyPDF servers. Only PDF page images and field metadata are sent for detection and optional AI operations. Review the privacy policy for complete data handling details.',
+      },
+      {
+        id: 'getting-started',
+        title: 'Getting started with healthcare automation',
+        body: 'Start with your most frequently used intake form. Upload it, detect fields, run Rename + Map with a patient data export, and test with a few records. Once the template is working well, expand to your full intake packet. Most practices see the biggest time savings within the first week.',
+      },
     ],
+    relatedIntentPages: ['healthcare-pdf-automation'],
+    relatedDocs: ['getting-started', 'search-fill'],
   },
   {
     slug: 'fillable-pdf-field-names-why-they-matter',
     title: 'Fillable PDF Field Names: Why They Matter and How to Fix Them',
     seoTitle: 'PDF Field Names: Why They Matter & How to Fix | DullyPDF Blog',
-    seoDescription: 'Understand why consistent PDF field names are critical for auto-fill and how AI rename fixes it.',
-    seoKeywords: ['pdf field names', 'rename pdf form fields', 'pdf field naming'],
+    seoDescription:
+      'Understand why consistent PDF field names are critical for auto-fill and how to standardize them using AI rename.',
+    seoKeywords: ['pdf field names', 'rename pdf form fields', 'pdf field naming', 'fix pdf field names'],
     publishedDate: '2026-03-04',
+    updatedDate: '2026-03-24',
     author: 'DullyPDF Team',
-    summary: 'Bad field names are the number-one cause of mapping failures. This post explains why field naming matters and how AI rename fixes it.',
+    summary:
+      'Bad field names are the number-one cause of mapping failures. This post explains why field naming matters and how AI rename fixes it.',
     sections: [
-      { id: 'why-names-matter', title: 'Why field names matter', body: 'Meaningful, consistent field names are essential for accurate schema mapping.' },
-      { id: 'common-naming-problems', title: 'Common naming problems', body: 'Detection outputs and PDF tools often produce meaningless field names.' },
-      { id: 'ai-rename', title: 'How AI rename works', body: 'OpenAI analyzes page images and labels to suggest meaningful field names.' },
-      { id: 'rename-best-practices', title: 'Rename best practices', body: 'Run rename before mapping. Review low-confidence renames manually.' },
-      { id: 'combined-workflow', title: 'Rename + Map combined workflow', body: 'Use Rename + Map for best results in a single step.' },
+      {
+        id: 'why-names-matter',
+        title: 'Why field names matter',
+        body: 'When you map PDF fields to database columns, the mapping relies on field names being meaningful and consistent. A field named "first_name" maps easily to a "first_name" column. But a field named "Text1" or "Unnamed_Field_23" gives the mapping algorithm nothing to work with. The result is missed fields, wrong mappings, and hours of manual correction.',
+      },
+      {
+        id: 'common-naming-problems',
+        title: 'Common naming problems',
+        body: 'Detection outputs often use labels pulled from nearby text, which may be truncated, duplicated, or irrelevant. PDF authoring tools generate names like "topmostSubform[0].Page1[0].TextField1[0]". Scanned forms may have no meaningful labels at all. Multi-page packets may reuse the same field name across pages. All of these problems degrade downstream mapping quality.',
+      },
+      {
+        id: 'ai-rename',
+        title: 'How AI rename works',
+        body: 'DullyPDF sends the PDF page image and field overlay tags to OpenAI, which analyzes the visual context to suggest meaningful field names. The AI looks at labels, position, field type, and surrounding text to generate names like "patient_first_name", "policy_effective_date", or "signature_insured". Each rename comes with a confidence score for review.',
+      },
+      {
+        id: 'rename-best-practices',
+        title: 'Rename best practices',
+        body: 'Run rename before mapping for best results. Review low-confidence renames manually. Check that checkbox groups have consistent group keys and distinct option keys. Verify that date fields are named clearly (e.g., "date_of_birth" not "dob_field_2"). Save the renamed template before mapping so you can revert if needed.',
+      },
+      {
+        id: 'combined-workflow',
+        title: 'Rename + Map combined workflow',
+        body: 'For the fastest setup, use the Rename + Map combined action. This sends both the rename and mapping requests in a single step, consuming 2 credits per 5 pages. The combined workflow typically produces better mappings than map-only because the mapping algorithm works with clean, meaningful field names.',
+      },
     ],
+    relatedIntentPages: ['fillable-form-field-name'],
+    relatedDocs: ['rename-mapping'],
   },
   {
     slug: 'hr-onboarding-stop-retyping-employee-data',
     title: 'HR Onboarding Paperwork: Stop Retyping Employee Data Into PDFs',
     seoTitle: 'Stop Retyping HR Onboarding Data Into PDFs | DullyPDF Blog',
-    seoDescription: 'Automate HR onboarding paperwork by mapping employee data to PDF form templates.',
-    seoKeywords: ['hr onboarding form automation', 'automate employee paperwork', 'hr pdf automation'],
+    seoDescription:
+      'Automate HR onboarding paperwork by mapping employee data to PDF form templates. Fill W-4s, I-9s, and benefits forms in seconds.',
+    seoKeywords: ['hr onboarding form automation', 'automate employee paperwork', 'hr pdf automation', 'onboarding forms automation'],
     publishedDate: '2026-03-04',
+    updatedDate: '2026-03-24',
     author: 'DullyPDF Team',
-    summary: 'HR teams retype the same employee data across W-4s, I-9s, benefits enrollments, and policy acknowledgments.',
+    summary:
+      'HR teams retype the same employee data across W-4s, I-9s, benefits enrollments, and policy acknowledgments. This guide shows how to fill all onboarding forms from one data source.',
     sections: [
-      { id: 'onboarding-pain', title: 'The onboarding paperwork problem', body: 'Every new hire means a stack of PDF forms with the same data retyped.' },
-      { id: 'one-source-many-forms', title: 'One data source, many forms', body: 'Export your HRIS data and create mapped templates for each form type.' },
-      { id: 'template-setup', title: 'Setting up onboarding templates', body: 'Upload each form, detect fields, map to HRIS columns, and save.' },
-      { id: 'batch-workflow', title: 'Filling forms for each new hire', body: 'Search for the employee and fill each template with their data.' },
-      { id: 'tips', title: 'Tips for HR teams', body: 'Start with the most frequently used forms. Test with a few employees first.' },
+      {
+        id: 'onboarding-pain',
+        title: 'The onboarding paperwork problem',
+        body: 'Every new hire means a stack of PDF forms: W-4, I-9, state tax withholding, benefits enrollment, direct deposit, handbook acknowledgment, emergency contact, and more. HR staff retype the same employee name, address, SSN, and date of birth into each form. For companies hiring 10+ people per month, this consumes entire workdays.',
+      },
+      {
+        id: 'one-source-many-forms',
+        title: 'One data source, many forms',
+        body: 'Export your HRIS or onboarding spreadsheet as CSV or Excel. It contains all the employee data you need: name, address, SSN, date of birth, department, start date, benefits selections. Create a mapped template for each form type in your onboarding packet. Now filling the entire packet for a new hire takes minutes instead of an hour.',
+      },
+      {
+        id: 'template-setup',
+        title: 'Setting up onboarding templates',
+        body: 'Upload each onboarding form PDF to DullyPDF. Run detection, clean up fields, then map to your HRIS export columns. Pay attention to checkbox fields on benefits forms and yes/no questions on policy acknowledgments. Save each template to your profile. The initial setup takes about 30 minutes per form, but saves hours every month after.',
+      },
+      {
+        id: 'batch-workflow',
+        title: 'Filling forms for each new hire',
+        body: 'When a new hire starts, load your HRIS export, search for the employee, and fill each onboarding template with their data. Download the completed forms or save them to your profile. The Search & Fill workflow ensures every field is populated consistently across all forms in the packet.',
+      },
+      {
+        id: 'tips',
+        title: 'Tips for HR teams',
+        body: 'Start with the forms you fill most frequently. Test with a few employees before rolling out to the full team. Keep your HRIS export columns consistent so templates work reliably across hire cohorts. Update templates when form versions change, but keep the mapping structure stable.',
+      },
     ],
+    relatedIntentPages: ['hr-pdf-automation'],
+    relatedDocs: ['getting-started', 'search-fill'],
   },
   {
     slug: 'dullypdf-vs-adobe-acrobat-pdf-form-automation',
     title: 'DullyPDF vs Adobe Acrobat for PDF Form Automation',
     seoTitle: 'DullyPDF vs Adobe Acrobat for PDF Form Automation | Comparison',
-    seoDescription: 'Compare DullyPDF and Adobe Acrobat for PDF form automation.',
-    seoKeywords: ['dullypdf vs acrobat', 'acrobat fillable form alternative', 'pdf form automation comparison'],
+    seoDescription:
+      'Compare DullyPDF and Adobe Acrobat for PDF form automation. See how AI field detection and schema mapping differ from Acrobat\'s manual form tools.',
+    seoKeywords: ['dullypdf vs acrobat', 'acrobat fillable form alternative', 'pdf form automation comparison', 'acrobat alternative'],
     publishedDate: '2026-03-04',
+    updatedDate: '2026-03-24',
     author: 'DullyPDF Team',
-    summary: 'Adobe Acrobat is the industry standard for PDF editing, but its form automation features are limited compared to DullyPDF\'s AI-driven workflow.',
+    summary:
+      'Adobe Acrobat is the industry standard for PDF editing, but its form automation features are limited. This comparison shows where DullyPDF\'s AI-driven workflow excels for repeat form-filling use cases.',
     sections: [
-      { id: 'overview', title: 'Overview: different tools for different needs', body: 'Acrobat is a general PDF editor. DullyPDF is purpose-built for database-mapped template filling.' },
-      { id: 'field-detection', title: 'Field detection', body: 'Acrobat detects existing form fields. DullyPDF uses AI to detect fields even in flat PDFs.' },
-      { id: 'schema-mapping', title: 'Schema mapping and auto-fill', body: 'Acrobat does not support schema mapping. DullyPDF links fields to data columns for one-click filling.' },
-      { id: 'pricing', title: 'Pricing comparison', body: 'Acrobat Pro costs $23/month. DullyPDF offers free detection with paid AI features.' },
-      { id: 'when-to-choose', title: 'When to choose each tool', body: 'Choose Acrobat for general PDF editing. Choose DullyPDF for automated form filling from data.' },
+      {
+        id: 'overview',
+        title: 'Overview: different tools for different needs',
+        body: 'Adobe Acrobat is a comprehensive PDF editor built for general-purpose document work: annotating, signing, converting, and creating fillable forms manually. DullyPDF is purpose-built for one workflow: converting PDFs into database-mapped templates that can be filled automatically from structured data. If you need a general PDF editor, Acrobat is the right choice. If you need to fill the same form type repeatedly from spreadsheet or database records, DullyPDF is built for that.',
+      },
+      {
+        id: 'field-detection',
+        title: 'Field detection',
+        body: 'Acrobat\'s "Prepare Form" tool detects existing form fields embedded in PDFs. It works well for PDFs that were authored with form fields. DullyPDF uses AI to detect fields even in flat PDFs that have no embedded form data, using the page image and layout analysis. This is a significant advantage for scanned forms, legacy documents, and PDFs from organizations that don\'t create fillable forms.',
+      },
+      {
+        id: 'schema-mapping',
+        title: 'Schema mapping and auto-fill',
+        body: 'Acrobat does not support mapping form fields to external data schemas. You can fill forms manually or use JavaScript scripting for limited automation. DullyPDF\'s core feature is schema mapping: link PDF fields to CSV/Excel/JSON column headers, then fill any record with one click. This eliminates manual data entry for repeat workflows.',
+      },
+      {
+        id: 'pricing',
+        title: 'Pricing comparison',
+        body: 'Adobe Acrobat Pro costs $23/month. DullyPDF offers free detection and editing with paid AI features (rename and mapping) starting at low per-use credit costs. For teams that primarily need form-filling automation, DullyPDF can be significantly more cost-effective than an Acrobat subscription.',
+      },
+      {
+        id: 'when-to-choose',
+        title: 'When to choose each tool',
+        body: 'Choose Acrobat when you need general PDF editing, document signing, PDF conversion, or annotation. Choose DullyPDF when you need to convert PDFs into mapped templates for repeat data-entry workflows from CSV, Excel, or JSON sources. Many teams use both: Acrobat for one-off PDF work and DullyPDF for automated form filling.',
+      },
     ],
+    relatedIntentPages: ['pdf-to-fillable-form', 'pdf-field-detection-tool'],
+    relatedDocs: ['getting-started', 'detection'],
   },
   {
     slug: 'dullypdf-vs-jotform-pdf-data-collection',
     title: 'DullyPDF vs JotForm for PDF Data Collection',
     seoTitle: 'DullyPDF vs JotForm for PDF Data Collection | Comparison',
-    seoDescription: 'Compare DullyPDF and JotForm for PDF-based data collection workflows.',
-    seoKeywords: ['dullypdf vs jotform', 'jotform alternative for pdf', 'pdf data collection comparison'],
+    seoDescription:
+      'Compare DullyPDF and JotForm for PDF-based data collection. Understand the differences between form-builder and template-mapping approaches.',
+    seoKeywords: ['dullypdf vs jotform', 'jotform alternative for pdf', 'pdf data collection comparison', 'pdf form builder alternative'],
     publishedDate: '2026-03-04',
+    updatedDate: '2026-03-24',
     author: 'DullyPDF Team',
-    summary: 'JotForm builds online forms from scratch. DullyPDF works with existing PDF forms.',
+    summary:
+      'JotForm builds online forms from scratch. DullyPDF works with existing PDF forms. This comparison helps you choose the right approach for your data collection workflow.',
     sections: [
-      { id: 'different-approaches', title: 'Two different approaches to forms', body: 'JotForm creates new web forms. DullyPDF automates existing PDF documents.' },
-      { id: 'existing-pdf-workflows', title: 'When you must use existing PDFs', body: 'Industries with mandated PDF formats need DullyPDF, not a form builder.' },
-      { id: 'data-privacy', title: 'Data privacy differences', body: 'DullyPDF keeps data rows in-browser. JotForm stores submissions on their servers.' },
-      { id: 'when-to-choose', title: 'When to choose each tool', body: 'JotForm for new online forms. DullyPDF for automating existing PDF forms.' },
+      {
+        id: 'different-approaches',
+        title: 'Two different approaches to forms',
+        body: 'JotForm is an online form builder: you create new web-based forms from scratch, collect submissions, and export data. DullyPDF works with existing PDF documents: you upload a PDF that already exists, detect its fields, map them to your data, and fill them from records. The choice depends on whether you need to create new forms or automate existing ones.',
+      },
+      {
+        id: 'existing-pdf-workflows',
+        title: 'When you must use existing PDFs',
+        body: 'Many industries require specific PDF forms: ACORD certificates in insurance, government permit applications, medical intake packets, legal court filings. These forms can\'t be replaced with online form builders because they have regulatory or industry-mandated formats. DullyPDF automates filling these existing PDF documents. JotForm can\'t help here because the form format is fixed.',
+      },
+      {
+        id: 'data-privacy',
+        title: 'Data privacy differences',
+        body: 'JotForm submissions are stored on JotForm\'s servers. With DullyPDF, your CSV/Excel/JSON data rows stay in your browser during Search & Fill. Only PDF page images and field metadata are sent for detection and optional AI features. For organizations with strict data handling requirements, DullyPDF\'s browser-local approach can be an advantage.',
+      },
+      {
+        id: 'when-to-choose',
+        title: 'When to choose each tool',
+        body: 'Choose JotForm when you want to create new online forms, collect submissions from external respondents, and build form workflows from scratch. Choose DullyPDF when you have existing PDF forms that need to be filled from your internal data repeatedly. Some organizations use both: JotForm for external data collection and DullyPDF for internal PDF form automation.',
+      },
     ],
+    relatedIntentPages: ['fill-pdf-from-csv', 'fill-information-in-pdf'],
+    relatedDocs: ['search-fill'],
   },
 ];
 
@@ -1275,7 +2938,10 @@ const BLOG_INDEX_ROUTE = {
       name: 'DullyPDF Blog',
       url: 'https://dullypdf.com/blog',
       description: 'Guides and tutorials for PDF form automation, field detection, schema mapping, and auto-fill workflows.',
-    }],
+    }, buildBreadcrumbSchema([
+      { label: 'Home', href: '/' },
+      { label: 'Blog' },
+    ])],
     bodyContent: {
       heading: 'PDF Automation Guides & Tutorials',
       paragraphs: ['Practical guides for converting PDFs to fillable forms, mapping fields to databases, and automating repetitive form-filling workflows.'],
@@ -1291,19 +2957,29 @@ const BLOG_POST_ROUTES = BLOG_POSTS.map((post) => ({
     description: post.seoDescription,
     canonicalPath: `/blog/${post.slug}`,
     keywords: post.seoKeywords,
-    structuredData: [{
+    structuredData: appendStructuredData([{
       '@context': 'https://schema.org',
       '@type': 'BlogPosting',
       headline: post.title,
       description: post.seoDescription,
       author: { '@type': 'Organization', name: post.author },
       datePublished: post.publishedDate,
+      dateModified: post.updatedDate,
       url: `https://dullypdf.com/blog/${post.slug}`,
       publisher: { '@type': 'Organization', name: 'DullyPDF', logo: { '@type': 'ImageObject', url: 'https://dullypdf.com/DullyPDFLogoImproved.png' } },
-    }],
+    }], buildBreadcrumbSchema([
+      { label: 'Home', href: '/' },
+      { label: 'Blog', href: '/blog' },
+      { label: post.title },
+    ])),
     bodyContent: {
       heading: post.title,
-      paragraphs: [post.summary],
+      paragraphs: [
+        post.updatedDate && post.updatedDate !== post.publishedDate
+          ? `Published ${post.publishedDate}. Last updated ${post.updatedDate}.`
+          : `Published ${post.publishedDate}.`,
+        post.summary,
+      ],
       sections: post.sections.map((s) => ({ title: s.title, description: s.body })),
     },
   },

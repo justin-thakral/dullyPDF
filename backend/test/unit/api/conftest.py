@@ -22,6 +22,8 @@ import backend.api.routes.public as public_routes
 import backend.api.routes.saved_forms as saved_forms_routes
 import backend.api.routes.schemas as schemas_routes
 import backend.api.routes.sessions as sessions_routes
+import backend.api.routes.template_api as template_api_routes
+import backend.api.routes.template_api_public as template_api_public_routes
 import backend.services.app_config as app_config_service
 import backend.services.auth_service as auth_service
 import backend.services.billing_service as billing_service
@@ -35,8 +37,10 @@ import backend.services.detection_service as detection_service
 import backend.services.limits_service as limits_service
 import backend.services.mapping_service as mapping_service
 import backend.services.pdf_service as pdf_service
+import backend.services.template_api_service as template_api_service
 import backend.firebaseDB.billing_database as billing_database
 import backend.firebaseDB.fill_link_database as fill_link_database
+import backend.firebaseDB.template_api_endpoint_database as template_api_endpoint_database
 
 
 class _ModuleProxy:
@@ -126,6 +130,8 @@ def app_main():
         saved_forms_routes,
         schemas_routes,
         sessions_routes,
+        template_api_routes,
+        template_api_public_routes,
         app_config_service,
         auth_service,
         billing_service,
@@ -139,8 +145,10 @@ def app_main():
         limits_service,
         mapping_service,
         pdf_service,
+        template_api_service,
         billing_database,
         fill_link_database,
+        template_api_endpoint_database,
     ]
     return _ModuleProxy(modules)
 

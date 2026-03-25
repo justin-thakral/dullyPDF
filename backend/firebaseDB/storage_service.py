@@ -16,7 +16,8 @@ logger = get_logger(__name__)
 FORMS_BUCKET = (os.getenv("FORMS_BUCKET") or "").strip()
 TEMPLATES_BUCKET = (os.getenv("TEMPLATES_BUCKET") or "").strip()
 SESSION_BUCKET = (os.getenv("SANDBOX_SESSION_BUCKET") or os.getenv("SESSION_BUCKET") or "").strip()
-ALLOWED_BUCKETS = {name for name in (FORMS_BUCKET, TEMPLATES_BUCKET, SESSION_BUCKET) if name}
+SIGNING_BUCKET = (os.getenv("SIGNING_BUCKET") or "").strip()
+ALLOWED_BUCKETS = {name for name in (FORMS_BUCKET, TEMPLATES_BUCKET, SESSION_BUCKET, SIGNING_BUCKET) if name}
 
 
 def _require_bucket_config() -> None:
@@ -35,6 +36,23 @@ def _require_session_bucket_config() -> str:
     if not bucket_name:
         raise RuntimeError("SANDBOX_SESSION_BUCKET or FORMS_BUCKET must be set for sessions")
     return bucket_name
+
+
+def _require_signing_bucket_config() -> str:
+    """
+    Return the bucket name used for signing artifacts.
+    """
+    bucket_name = SIGNING_BUCKET or SESSION_BUCKET or FORMS_BUCKET
+    if not bucket_name:
+        raise RuntimeError("SIGNING_BUCKET, SANDBOX_SESSION_BUCKET, or FORMS_BUCKET must be set for signing artifacts")
+    return bucket_name
+
+
+def build_signing_bucket_uri(destination_path: str) -> str:
+    """Build a gs:// URI for a signing artifact path without uploading it."""
+    bucket_name = _require_signing_bucket_config()
+    safe_destination = _assert_safe_object_path(destination_path)
+    return f"gs://{bucket_name}/{safe_destination}"
 
 
 def _assert_safe_object_path(destination_path: str) -> str:
@@ -124,6 +142,31 @@ def upload_session_pdf_bytes(pdf_bytes: bytes, destination_path: str) -> str:
     return f"gs://{bucket_name}/{safe_destination}"
 
 
+def upload_signing_pdf_bytes(pdf_bytes: bytes, destination_path: str) -> str:
+    """Upload immutable signing PDF bytes to the signing bucket."""
+    bucket_name = _require_signing_bucket_config()
+    safe_destination = _assert_safe_object_path(destination_path)
+    bucket = get_storage_bucket(bucket_name)
+    blob = bucket.blob(safe_destination)
+    blob.cache_control = "private, no-store"
+    blob.upload_from_string(pdf_bytes, content_type="application/pdf")
+    logger.debug("Uploaded signing PDF bytes: %s", safe_destination)
+    return f"gs://{bucket_name}/{safe_destination}"
+
+
+def upload_signing_json(payload, destination_path: str) -> str:
+    """Upload signing JSON payload to the signing bucket."""
+    bucket_name = _require_signing_bucket_config()
+    safe_destination = _assert_safe_object_path(destination_path)
+    bucket = get_storage_bucket(bucket_name)
+    blob = bucket.blob(safe_destination)
+    blob.cache_control = "private, no-store"
+    body = json.dumps(payload if payload is not None else {}, ensure_ascii=True, sort_keys=True).encode("utf-8")
+    blob.upload_from_string(body, content_type="application/json")
+    logger.debug("Uploaded signing JSON: %s", safe_destination)
+    return f"gs://{bucket_name}/{safe_destination}"
+
+
 def upload_session_json(payload, destination_path: str) -> str:
     """Upload session JSON payload to the session bucket.
     """
@@ -153,6 +196,14 @@ def delete_pdf(bucket_path: str) -> None:
     logger.debug("Deleted PDF from storage: %s", bucket_path)
 
 
+def delete_storage_object(bucket_path: str) -> None:
+    """Delete any allowlisted storage object regardless of content type."""
+    bucket_name, file_path = _parse_gs_uri(bucket_path)
+    bucket = get_storage_bucket(bucket_name)
+    bucket.blob(file_path).delete(if_generation_match=None)
+    logger.debug("Deleted object from storage: %s", bucket_path)
+
+
 def stream_pdf(bucket_path: str):
     """Stream a PDF from storage, falling back to memory buffer on errors.
     """
@@ -172,6 +223,13 @@ def download_pdf_bytes(bucket_path: str) -> bytes:
     """Download PDF bytes from an allowlisted bucket.
     """
     _require_session_bucket_config()
+    bucket_name, file_path = _parse_gs_uri(bucket_path)
+    bucket = get_storage_bucket(bucket_name)
+    return bucket.blob(file_path).download_as_bytes()
+
+
+def download_storage_bytes(bucket_path: str) -> bytes:
+    """Download arbitrary bytes from an allowlisted storage path."""
     bucket_name, file_path = _parse_gs_uri(bucket_path)
     bucket = get_storage_bucket(bucket_name)
     return bucket.blob(file_path).download_as_bytes()

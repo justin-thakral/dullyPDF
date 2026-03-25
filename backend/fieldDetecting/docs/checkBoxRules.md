@@ -10,7 +10,7 @@ Simple direct matching works when a row key already equals a checkbox field name
 - `i_allergies_penicillin` / `i_allergies_shellfish`
 - `i_marital_status_single` / `i_marital_status_married`
 
-`checkboxRules` and `checkboxHints` provide structured metadata that maps row values to those groups.
+`checkboxRules` and explicit radio-group metadata provide structured data that maps row values to those groups.
 
 ## Data model
 
@@ -25,14 +25,16 @@ Simple direct matching works when a row key already equals a checkbox field name
 - optional `confidence`
 - optional `reasoning`
 
-### `checkboxHints`
+### `radioGroupSuggestions`
 
-- `databaseField`
+- `suggestedType`
 - `groupKey`
-- optional `operation`
-- optional `directBooleanPossible`
+- `groupLabel`
+- `suggestedFields`
+- optional `sourceField`
+- optional `selectionReason`
 
-Hints are fallback metadata. Rules are higher-priority.
+Suggestions are editor migration metadata, not runtime fill rules. Rules are higher-priority.
 
 ## Rule generation paths
 
@@ -58,7 +60,7 @@ File: `backend/fieldDetecting/rename_pipeline/combinedSrc/rename_resolver.py`
 Important detail:
 - Rename can also infer checkbox field naming (`groupKey`, `optionKey`) even when no schema is provided, but `checkboxRules` are only retained when they pass schema and group allowlists.
 
-### Mapping flow rule and hint generation
+### Mapping flow rule and radio-group suggestion generation
 
 Files:
 - `backend/ai/schema_mapping.py`
@@ -67,10 +69,10 @@ Files:
 1. Backend builds an allowlist payload (`schemaFields` + `templateTags` only).
 2. Payload is byte-capped (`OPENAI_SCHEMA_MAX_PAYLOAD_BYTES`, default 80k).
 3. If too large, template tags are chunked across multiple requests while schema fields are repeated per chunk.
-4. Returned `checkboxRules` and `checkboxHints` are normalized and filtered:
+4. Returned `checkboxRules` and `radioGroupSuggestions` are normalized and filtered:
    - schema field must resolve to an allowed schema field
-   - group key must resolve to an allowed template checkbox group
-   - hint `operation` is constrained to supported values
+   - group key must resolve to an allowed template checkbox or radio group
+   - suggested fields must resolve to concrete checkbox/radio widgets
 
 ## Persistence behavior
 
@@ -81,12 +83,11 @@ Files:
 - `backend/sessions/session_store.py`
 - `backend/sessions/l2_persistence.py`
 
-- Rename writes `checkboxRules` and intentionally clears `checkboxHints`.
-- Mapping writes both arrays.
+- Rename writes `checkboxRules` only.
+- Mapping writes `checkboxRules`, `radioGroupSuggestions`, and text transforms.
 - Mapping persists explicit arrays (including `[]`) so reruns can clear stale metadata.
 - Session artifacts are stored as:
   - `sessions/<session_id>/checkbox-rules.json`
-  - `sessions/<session_id>/checkbox-hints.json`
 
 ### Saved form persistence
 
@@ -94,7 +95,7 @@ Files:
 - `backend/api/routes/saved_forms.py`
 - `frontend/src/hooks/useSaveDownload.ts`
 
-- Saved form payloads include `checkboxRules` and `checkboxHints`.
+- Saved form payloads include `checkboxRules`, `radioGroups`, and editor snapshots.
 - Empty arrays are sent as real clears (`[]`), not omitted.
 - If omitted and a `sessionId` exists, backend can fallback to session metadata.
 
@@ -111,8 +112,7 @@ Checkbox application runs in strict precedence with guard sets to prevent lower-
 3. Direct group value match.
    - Keys like `i_<group>`, `checkbox_<group>`, or `<group>`.
 4. Rule-driven application (`checkboxRules`).
-5. Hint-driven boolean fallback (`checkboxHints` with `directBooleanPossible=true`).
-6. Hardcoded alias fallback (`CHECKBOX_ALIASES`).
+5. Hardcoded alias fallback (`CHECKBOX_ALIASES`).
 
 Conflict controls:
 - `explicitGroupKeys` blocks lower-priority writes to already explicit groups.
@@ -173,7 +173,7 @@ This allows values like `Not Applicable`, `not_applicable`, and `not-applicable`
 
 ## Row lookup rules for `databaseField`
 
-When executing rules/hints, Search & Fill resolves row values using normalized keys with fallbacks:
+When executing checkbox rules, Search & Fill resolves row values using normalized keys with fallbacks:
 
 - exact key
 - `patient_<key>`

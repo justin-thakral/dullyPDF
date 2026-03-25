@@ -8,7 +8,35 @@ export type { AlertTone } from '../components/ui/Alert';
 export type { DialogTone } from '../components/ui/Dialog';
 
 // Supported field categories used by the editor and overlay styling.
-export type FieldType = 'text' | 'checkbox' | 'signature' | 'date';
+export type FieldType = 'text' | 'checkbox' | 'radio' | 'signature' | 'date';
+
+export type CreateTool = FieldType | 'quick-radio';
+
+export type RadioGroupSource = 'manual' | 'ai_suggestion' | 'migrated_legacy';
+
+export type RadioGroupOption = {
+  fieldId: string;
+  optionKey: string;
+  optionLabel: string;
+};
+
+export type RadioGroup = {
+  id: string;
+  key: string;
+  label: string;
+  page?: number;
+  optionOrder: string[];
+  options: RadioGroupOption[];
+  source: RadioGroupSource;
+};
+
+export type RadioToolDraft = {
+  groupId: string;
+  groupKey: string;
+  groupLabel: string;
+  nextOptionKey: string;
+  nextOptionLabel: string;
+};
 
 export type ConfidenceTier = 'high' | 'medium' | 'low';
 
@@ -53,6 +81,16 @@ export type PdfField = {
   optionKey?: string;
   optionLabel?: string;
   groupLabel?: string;
+  /**
+   * Explicit radio-group metadata for app-level single-choice controls.
+   */
+  radioGroupId?: string;
+  radioGroupKey?: string;
+  radioGroupLabel?: string;
+  radioOptionKey?: string;
+  radioOptionLabel?: string;
+  radioOptionOrder?: number;
+  radioGroupSource?: RadioGroupSource;
 };
 
 export type CheckboxRule = {
@@ -66,11 +104,29 @@ export type CheckboxRule = {
   reasoning?: string;
 };
 
-export type CheckboxHint = {
-  databaseField: string;
+export type RadioGroupSuggestionReason =
+  | 'yes_no'
+  | 'enum'
+  | 'binary_pair'
+  | 'label_pattern';
+
+export type RadioGroupSuggestionField = {
+  fieldId?: string;
+  fieldName: string;
+  optionKey: string;
+  optionLabel: string;
+};
+
+export type RadioGroupSuggestion = {
+  id: string;
+  suggestedType: 'radio_group';
   groupKey: string;
-  operation?: 'yes_no' | 'enum' | 'list' | 'presence';
-  directBooleanPossible?: boolean;
+  groupLabel: string;
+  suggestedFields: RadioGroupSuggestionField[];
+  sourceField?: string;
+  selectionReason?: RadioGroupSuggestionReason;
+  confidence?: number;
+  reasoning?: string;
 };
 
 export type TextTransformRuleOperation =
@@ -95,7 +151,6 @@ export type TextTransformRule = {
 export type FillRules = {
   version?: number;
   checkboxRules?: CheckboxRule[];
-  checkboxHints?: CheckboxHint[];
   textTransformRules?: TextTransformRule[];
 };
 
@@ -110,6 +165,7 @@ export type SavedFormEditorSnapshot = {
   pageCount: number;
   pageSizes: Record<number, PageSize>;
   fields: PdfField[];
+  radioGroups: RadioGroup[];
   hasRenamedFields: boolean;
   hasMappedSchema: boolean;
 };

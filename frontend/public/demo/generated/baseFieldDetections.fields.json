@@ -1,0 +1,2182 @@
+{
+  "generatedAt": "2026-03-25T02:06:42.789836+00:00",
+  "sourcePdf": "quickTestFiles/new_patient_forms_1915ccb015.pdf",
+  "sourcePdfSha256": "1915ccb01534d9a11745ba736dac285a1a0a1b64cf29d05d4052752243a55976",
+  "pipeline": "commonforms",
+  "model": "FFDNet-L",
+  "fast": false,
+  "fieldCount": 167,
+  "fields": [
+    {
+      "id": "commonforms_1_1",
+      "name": "commonforms_text_p1_1",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 64.664,
+        "y": 125.317,
+        "width": 331.22,
+        "height": 13.966
+      },
+      "fieldConfidence": 0.891818
+    },
+    {
+      "id": "commonforms_1_2",
+      "name": "commonforms_text_p1_2",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 440.325,
+        "y": 125.233,
+        "width": 135.965,
+        "height": 14.094
+      },
+      "fieldConfidence": 0.933901
+    },
+    {
+      "id": "commonforms_1_3",
+      "name": "commonforms_text_p1_3",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 72.906,
+        "y": 140.189,
+        "width": 215.37,
+        "height": 14.201
+      },
+      "fieldConfidence": 0.953683
+    },
+    {
+      "id": "commonforms_1_4",
+      "name": "commonforms_text_p1_4",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 312.056,
+        "y": 140.305,
+        "width": 106.143,
+        "height": 14.092
+      },
+      "fieldConfidence": 0.952721
+    },
+    {
+      "id": "commonforms_1_5",
+      "name": "commonforms_text_p1_5",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 443.943,
+        "y": 140.271,
+        "width": 36.302,
+        "height": 14.149
+      },
+      "fieldConfidence": 0.942326
+    },
+    {
+      "id": "commonforms_1_6",
+      "name": "commonforms_text_p1_6",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 500.713,
+        "y": 140.234,
+        "width": 75.658,
+        "height": 14.198
+      },
+      "fieldConfidence": 0.941205
+    },
+    {
+      "id": "commonforms_1_7",
+      "name": "commonforms_text_p1_7",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 92.737,
+        "y": 155.294,
+        "width": 123.522,
+        "height": 14.131
+      },
+      "fieldConfidence": 0.953155
+    },
+    {
+      "id": "commonforms_1_8",
+      "name": "commonforms_text_p1_8",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 272.572,
+        "y": 155.413,
+        "width": 123.712,
+        "height": 14.038
+      },
+      "fieldConfidence": 0.955036
+    },
+    {
+      "id": "commonforms_1_9",
+      "name": "commonforms_text_p1_9",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 426.258,
+        "y": 155.49,
+        "width": 150.12,
+        "height": 13.97
+      },
+      "fieldConfidence": 0.943954
+    },
+    {
+      "id": "commonforms_1_10",
+      "name": "commonforms_checkbox_p1_10",
+      "type": "checkbox",
+      "page": 1,
+      "rect": {
+        "x": 54.409,
+        "y": 176.86,
+        "width": 8.818,
+        "height": 6.608
+      },
+      "fieldConfidence": 0.79069
+    },
+    {
+      "id": "commonforms_1_11",
+      "name": "commonforms_checkbox_p1_11",
+      "type": "checkbox",
+      "page": 1,
+      "rect": {
+        "x": 83.475,
+        "y": 176.75,
+        "width": 9.012,
+        "height": 6.768
+      },
+      "fieldConfidence": 0.800967
+    },
+    {
+      "id": "commonforms_1_12",
+      "name": "commonforms_checkbox_p1_12",
+      "type": "checkbox",
+      "page": 1,
+      "rect": {
+        "x": 256.24,
+        "y": 176.806,
+        "width": 9.074,
+        "height": 6.661
+      },
+      "fieldConfidence": 0.81387
+    },
+    {
+      "id": "commonforms_1_13",
+      "name": "commonforms_checkbox_p1_13",
+      "type": "checkbox",
+      "page": 1,
+      "rect": {
+        "x": 298.475,
+        "y": 176.697,
+        "width": 8.809,
+        "height": 6.752
+      },
+      "fieldConfidence": 0.79777
+    },
+    {
+      "id": "commonforms_1_14",
+      "name": "commonforms_checkbox_p1_14",
+      "type": "checkbox",
+      "page": 1,
+      "rect": {
+        "x": 349.341,
+        "y": 176.836,
+        "width": 8.906,
+        "height": 6.664
+      },
+      "fieldConfidence": 0.819262
+    },
+    {
+      "id": "commonforms_1_15",
+      "name": "commonforms_checkbox_p1_15",
+      "type": "checkbox",
+      "page": 1,
+      "rect": {
+        "x": 404.293,
+        "y": 176.807,
+        "width": 8.928,
+        "height": 6.718
+      },
+      "fieldConfidence": 0.799378
+    },
+    {
+      "id": "commonforms_1_16",
+      "name": "commonforms_checkbox_p1_16",
+      "type": "checkbox",
+      "page": 1,
+      "rect": {
+        "x": 461.38,
+        "y": 176.803,
+        "width": 8.908,
+        "height": 6.711
+      },
+      "fieldConfidence": 0.811821
+    },
+    {
+      "id": "commonforms_1_17",
+      "name": "commonforms_checkbox_p1_17",
+      "type": "checkbox",
+      "page": 1,
+      "rect": {
+        "x": 526.047,
+        "y": 176.749,
+        "width": 8.903,
+        "height": 6.756
+      },
+      "fieldConfidence": 0.807629
+    },
+    {
+      "id": "commonforms_1_18",
+      "name": "commonforms_text_p1_18",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 120.224,
+        "y": 185.464,
+        "width": 276.032,
+        "height": 13.963
+      },
+      "fieldConfidence": 0.940924
+    },
+    {
+      "id": "commonforms_1_19",
+      "name": "commonforms_text_p1_19",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 428.26,
+        "y": 185.601,
+        "width": 147.842,
+        "height": 13.802
+      },
+      "fieldConfidence": 0.944054
+    },
+    {
+      "id": "commonforms_1_20",
+      "name": "commonforms_text_p1_20",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 72.825,
+        "y": 200.376,
+        "width": 215.307,
+        "height": 14.052
+      },
+      "fieldConfidence": 0.949873
+    },
+    {
+      "id": "commonforms_1_21",
+      "name": "commonforms_text_p1_21",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 311.867,
+        "y": 200.388,
+        "width": 106.501,
+        "height": 14.063
+      },
+      "fieldConfidence": 0.950865
+    },
+    {
+      "id": "commonforms_1_22",
+      "name": "commonforms_text_p1_22",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 443.951,
+        "y": 200.341,
+        "width": 36.316,
+        "height": 14.065
+      },
+      "fieldConfidence": 0.946678
+    },
+    {
+      "id": "commonforms_1_23",
+      "name": "commonforms_text_p1_23",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 500.757,
+        "y": 200.285,
+        "width": 75.569,
+        "height": 14.139
+      },
+      "fieldConfidence": 0.949129
+    },
+    {
+      "id": "commonforms_1_24",
+      "name": "commonforms_text_p1_24",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 167.189,
+        "y": 215.523,
+        "width": 409.075,
+        "height": 13.766
+      },
+      "fieldConfidence": 0.921495
+    },
+    {
+      "id": "commonforms_1_25",
+      "name": "commonforms_text_p1_25",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 207.666,
+        "y": 230.349,
+        "width": 224.721,
+        "height": 14.036
+      },
+      "fieldConfidence": 0.936135
+    },
+    {
+      "id": "commonforms_1_26",
+      "name": "commonforms_text_p1_26",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 464.322,
+        "y": 230.352,
+        "width": 111.919,
+        "height": 14.045
+      },
+      "fieldConfidence": 0.935493
+    },
+    {
+      "id": "commonforms_1_27",
+      "name": "commonforms_text_p1_27",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 356.868,
+        "y": 245.39,
+        "width": 219.368,
+        "height": 14.018
+      },
+      "fieldConfidence": 0.940554
+    },
+    {
+      "id": "commonforms_1_28",
+      "name": "commonforms_text_p1_28",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 379.762,
+        "y": 260.316,
+        "width": 196.672,
+        "height": 14.089
+      },
+      "fieldConfidence": 0.954049
+    },
+    {
+      "id": "commonforms_1_29",
+      "name": "commonforms_text_p1_29",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 72.87,
+        "y": 275.55,
+        "width": 215.371,
+        "height": 13.791
+      },
+      "fieldConfidence": 0.931392
+    },
+    {
+      "id": "commonforms_1_30",
+      "name": "commonforms_text_p1_30",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 312.008,
+        "y": 275.56,
+        "width": 106.272,
+        "height": 13.818
+      },
+      "fieldConfidence": 0.947352
+    },
+    {
+      "id": "commonforms_1_31",
+      "name": "commonforms_text_p1_31",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 443.967,
+        "y": 275.327,
+        "width": 36.241,
+        "height": 14.015
+      },
+      "fieldConfidence": 0.947336
+    },
+    {
+      "id": "commonforms_1_32",
+      "name": "commonforms_text_p1_32",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 500.719,
+        "y": 275.297,
+        "width": 75.622,
+        "height": 14.073
+      },
+      "fieldConfidence": 0.945358
+    },
+    {
+      "id": "commonforms_1_33",
+      "name": "commonforms_text_p1_33",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 66.082,
+        "y": 290.311,
+        "width": 150.273,
+        "height": 14.133
+      },
+      "fieldConfidence": 0.937136
+    },
+    {
+      "id": "commonforms_1_34",
+      "name": "commonforms_text_p1_34",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 246.264,
+        "y": 290.479,
+        "width": 186.042,
+        "height": 13.957
+      },
+      "fieldConfidence": 0.95177
+    },
+    {
+      "id": "commonforms_1_35",
+      "name": "commonforms_text_p1_35",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 474.129,
+        "y": 290.544,
+        "width": 102.218,
+        "height": 13.918
+      },
+      "fieldConfidence": 0.936477
+    },
+    {
+      "id": "commonforms_1_36",
+      "name": "commonforms_text_p1_36",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 119.374,
+        "y": 335.306,
+        "width": 312.968,
+        "height": 14.088
+      },
+      "fieldConfidence": 0.839212
+    },
+    {
+      "id": "commonforms_1_37",
+      "name": "commonforms_text_p1_37",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 469.015,
+        "y": 335.406,
+        "width": 107.24,
+        "height": 14.01
+      },
+      "fieldConfidence": 0.923705
+    },
+    {
+      "id": "commonforms_1_38",
+      "name": "commonforms_text_p1_38",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 151.705,
+        "y": 350.433,
+        "width": 136.473,
+        "height": 14.007
+      },
+      "fieldConfidence": 0.938386
+    },
+    {
+      "id": "commonforms_1_39",
+      "name": "commonforms_text_p1_39",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 325.738,
+        "y": 350.435,
+        "width": 106.477,
+        "height": 13.999
+      },
+      "fieldConfidence": 0.94433
+    },
+    {
+      "id": "commonforms_1_40",
+      "name": "commonforms_text_p1_40",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 454.394,
+        "y": 350.372,
+        "width": 121.887,
+        "height": 14.039
+      },
+      "fieldConfidence": 0.942301
+    },
+    {
+      "id": "commonforms_1_41",
+      "name": "commonforms_text_p1_41",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 72.786,
+        "y": 365.474,
+        "width": 215.462,
+        "height": 13.936
+      },
+      "fieldConfidence": 0.9378
+    },
+    {
+      "id": "commonforms_1_42",
+      "name": "commonforms_text_p1_42",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 312.067,
+        "y": 365.381,
+        "width": 106.198,
+        "height": 14.066
+      },
+      "fieldConfidence": 0.943806
+    },
+    {
+      "id": "commonforms_1_43",
+      "name": "commonforms_text_p1_43",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 443.905,
+        "y": 365.466,
+        "width": 36.212,
+        "height": 13.928
+      },
+      "fieldConfidence": 0.942551
+    },
+    {
+      "id": "commonforms_1_44",
+      "name": "commonforms_text_p1_44",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 500.724,
+        "y": 365.436,
+        "width": 75.603,
+        "height": 13.943
+      },
+      "fieldConfidence": 0.95166
+    },
+    {
+      "id": "commonforms_1_45",
+      "name": "commonforms_text_p1_45",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 159.835,
+        "y": 380.392,
+        "width": 38.282,
+        "height": 13.992
+      },
+      "fieldConfidence": 0.939989
+    },
+    {
+      "id": "commonforms_1_46",
+      "name": "commonforms_text_p1_46",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 309.182,
+        "y": 380.502,
+        "width": 35.986,
+        "height": 13.837
+      },
+      "fieldConfidence": 0.942366
+    },
+    {
+      "id": "commonforms_1_47",
+      "name": "commonforms_text_p1_47",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 507.732,
+        "y": 380.363,
+        "width": 68.453,
+        "height": 14.019
+      },
+      "fieldConfidence": 0.949216
+    },
+    {
+      "id": "commonforms_1_48",
+      "name": "commonforms_text_p1_48",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 203.985,
+        "y": 395.668,
+        "width": 354.463,
+        "height": 13.805
+      },
+      "fieldConfidence": 0.874246
+    },
+    {
+      "id": "commonforms_1_49",
+      "name": "commonforms_text_p1_49",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 173.376,
+        "y": 410.425,
+        "width": 258.768,
+        "height": 13.909
+      },
+      "fieldConfidence": 0.938224
+    },
+    {
+      "id": "commonforms_1_50",
+      "name": "commonforms_text_p1_50",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 464.364,
+        "y": 410.366,
+        "width": 111.846,
+        "height": 14.011
+      },
+      "fieldConfidence": 0.943977
+    },
+    {
+      "id": "commonforms_1_51",
+      "name": "commonforms_text_p1_51",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 72.895,
+        "y": 425.523,
+        "width": 215.382,
+        "height": 13.826
+      },
+      "fieldConfidence": 0.934754
+    },
+    {
+      "id": "commonforms_1_52",
+      "name": "commonforms_text_p1_52",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 312.023,
+        "y": 425.394,
+        "width": 106.215,
+        "height": 13.986
+      },
+      "fieldConfidence": 0.945577
+    },
+    {
+      "id": "commonforms_1_53",
+      "name": "commonforms_text_p1_53",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 443.911,
+        "y": 425.496,
+        "width": 36.263,
+        "height": 13.864
+      },
+      "fieldConfidence": 0.938275
+    },
+    {
+      "id": "commonforms_1_54",
+      "name": "commonforms_text_p1_54",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 500.726,
+        "y": 425.365,
+        "width": 75.618,
+        "height": 14.017
+      },
+      "fieldConfidence": 0.951004
+    },
+    {
+      "id": "commonforms_1_55",
+      "name": "commonforms_text_p1_55",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 119.021,
+        "y": 470.486,
+        "width": 312.725,
+        "height": 13.886
+      },
+      "fieldConfidence": 0.871882
+    },
+    {
+      "id": "commonforms_1_56",
+      "name": "commonforms_text_p1_56",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 469.056,
+        "y": 470.244,
+        "width": 107.208,
+        "height": 14.141
+      },
+      "fieldConfidence": 0.922542
+    },
+    {
+      "id": "commonforms_1_57",
+      "name": "commonforms_text_p1_57",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 151.698,
+        "y": 485.408,
+        "width": 136.465,
+        "height": 14.011
+      },
+      "fieldConfidence": 0.945027
+    },
+    {
+      "id": "commonforms_1_58",
+      "name": "commonforms_text_p1_58",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 325.739,
+        "y": 485.395,
+        "width": 106.501,
+        "height": 14.023
+      },
+      "fieldConfidence": 0.9429
+    },
+    {
+      "id": "commonforms_1_59",
+      "name": "commonforms_text_p1_59",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 454.378,
+        "y": 485.354,
+        "width": 121.9,
+        "height": 14.045
+      },
+      "fieldConfidence": 0.943285
+    },
+    {
+      "id": "commonforms_1_60",
+      "name": "commonforms_text_p1_60",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 72.821,
+        "y": 500.417,
+        "width": 215.368,
+        "height": 14.049
+      },
+      "fieldConfidence": 0.944447
+    },
+    {
+      "id": "commonforms_1_61",
+      "name": "commonforms_text_p1_61",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 312.011,
+        "y": 500.385,
+        "width": 106.198,
+        "height": 14.064
+      },
+      "fieldConfidence": 0.945934
+    },
+    {
+      "id": "commonforms_1_62",
+      "name": "commonforms_text_p1_62",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 443.928,
+        "y": 500.444,
+        "width": 36.175,
+        "height": 13.963
+      },
+      "fieldConfidence": 0.941661
+    },
+    {
+      "id": "commonforms_1_63",
+      "name": "commonforms_text_p1_63",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 500.686,
+        "y": 500.409,
+        "width": 75.628,
+        "height": 14.021
+      },
+      "fieldConfidence": 0.95251
+    },
+    {
+      "id": "commonforms_1_64",
+      "name": "commonforms_text_p1_64",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 159.841,
+        "y": 515.41,
+        "width": 38.316,
+        "height": 14.013
+      },
+      "fieldConfidence": 0.939488
+    },
+    {
+      "id": "commonforms_1_65",
+      "name": "commonforms_text_p1_65",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 309.201,
+        "y": 515.526,
+        "width": 35.968,
+        "height": 13.872
+      },
+      "fieldConfidence": 0.939658
+    },
+    {
+      "id": "commonforms_1_66",
+      "name": "commonforms_text_p1_66",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 507.727,
+        "y": 515.422,
+        "width": 68.45,
+        "height": 13.978
+      },
+      "fieldConfidence": 0.947018
+    },
+    {
+      "id": "commonforms_1_67",
+      "name": "commonforms_text_p1_67",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 187.985,
+        "y": 530.694,
+        "width": 388.204,
+        "height": 13.619
+      },
+      "fieldConfidence": 0.890595
+    },
+    {
+      "id": "commonforms_1_68",
+      "name": "commonforms_text_p1_68",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 172.977,
+        "y": 545.483,
+        "width": 259.374,
+        "height": 14.008
+      },
+      "fieldConfidence": 0.904695
+    },
+    {
+      "id": "commonforms_1_69",
+      "name": "commonforms_text_p1_69",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 464.326,
+        "y": 545.401,
+        "width": 111.901,
+        "height": 14.029
+      },
+      "fieldConfidence": 0.938687
+    },
+    {
+      "id": "commonforms_1_70",
+      "name": "commonforms_text_p1_70",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 72.787,
+        "y": 560.61,
+        "width": 215.514,
+        "height": 13.79
+      },
+      "fieldConfidence": 0.937882
+    },
+    {
+      "id": "commonforms_1_71",
+      "name": "commonforms_text_p1_71",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 312.049,
+        "y": 560.443,
+        "width": 106.186,
+        "height": 13.986
+      },
+      "fieldConfidence": 0.946715
+    },
+    {
+      "id": "commonforms_1_72",
+      "name": "commonforms_text_p1_72",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 443.914,
+        "y": 560.547,
+        "width": 36.284,
+        "height": 13.859
+      },
+      "fieldConfidence": 0.931613
+    },
+    {
+      "id": "commonforms_1_73",
+      "name": "commonforms_text_p1_73",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 500.7,
+        "y": 560.369,
+        "width": 75.65,
+        "height": 14.063
+      },
+      "fieldConfidence": 0.947424
+    },
+    {
+      "id": "commonforms_1_74",
+      "name": "commonforms_text_p1_74",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 156.717,
+        "y": 605.059,
+        "width": 354.437,
+        "height": 14.313
+      },
+      "fieldConfidence": 0.677953
+    },
+    {
+      "id": "commonforms_1_75",
+      "name": "commonforms_text_p1_75",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 150.163,
+        "y": 620.404,
+        "width": 174.113,
+        "height": 13.989
+      },
+      "fieldConfidence": 0.924721
+    },
+    {
+      "id": "commonforms_1_76",
+      "name": "commonforms_text_p1_76",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 429.591,
+        "y": 620.406,
+        "width": 146.714,
+        "height": 13.968
+      },
+      "fieldConfidence": 0.926945
+    },
+    {
+      "id": "commonforms_1_77",
+      "name": "commonforms_text_p1_77",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 129.616,
+        "y": 635.481,
+        "width": 302.623,
+        "height": 13.861
+      },
+      "fieldConfidence": 0.892673
+    },
+    {
+      "id": "commonforms_1_78",
+      "name": "commonforms_text_p1_78",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 464.316,
+        "y": 635.457,
+        "width": 111.978,
+        "height": 13.969
+      },
+      "fieldConfidence": 0.924525
+    },
+    {
+      "id": "commonforms_1_79",
+      "name": "commonforms_checkbox_p1_79",
+      "type": "checkbox",
+      "page": 1,
+      "rect": {
+        "x": 36.058,
+        "y": 671.692,
+        "width": 8.927,
+        "height": 6.901
+      },
+      "fieldConfidence": 0.733464
+    },
+    {
+      "id": "commonforms_1_80",
+      "name": "commonforms_checkbox_p1_80",
+      "type": "checkbox",
+      "page": 1,
+      "rect": {
+        "x": 305.993,
+        "y": 671.729,
+        "width": 8.877,
+        "height": 6.81
+      },
+      "fieldConfidence": 0.748885
+    },
+    {
+      "id": "commonforms_1_81",
+      "name": "commonforms_checkbox_p1_81",
+      "type": "checkbox",
+      "page": 1,
+      "rect": {
+        "x": 36.047,
+        "y": 686.497,
+        "width": 8.945,
+        "height": 7.065
+      },
+      "fieldConfidence": 0.712491
+    },
+    {
+      "id": "commonforms_1_82",
+      "name": "commonforms_checkbox_p1_82",
+      "type": "checkbox",
+      "page": 1,
+      "rect": {
+        "x": 305.952,
+        "y": 686.549,
+        "width": 8.864,
+        "height": 7.009
+      },
+      "fieldConfidence": 0.733806
+    },
+    {
+      "id": "commonforms_1_83",
+      "name": "commonforms_checkbox_p1_83",
+      "type": "checkbox",
+      "page": 1,
+      "rect": {
+        "x": 36.042,
+        "y": 701.519,
+        "width": 8.888,
+        "height": 7.135
+      },
+      "fieldConfidence": 0.703298
+    },
+    {
+      "id": "commonforms_1_84",
+      "name": "commonforms_checkbox_p1_84",
+      "type": "checkbox",
+      "page": 1,
+      "rect": {
+        "x": 305.969,
+        "y": 701.563,
+        "width": 8.885,
+        "height": 7.036
+      },
+      "fieldConfidence": 0.7386
+    },
+    {
+      "id": "commonforms_1_85",
+      "name": "commonforms_checkbox_p1_85",
+      "type": "checkbox",
+      "page": 1,
+      "rect": {
+        "x": 36.047,
+        "y": 716.535,
+        "width": 8.871,
+        "height": 6.973
+      },
+      "fieldConfidence": 0.716673
+    },
+    {
+      "id": "commonforms_1_86",
+      "name": "commonforms_checkbox_p1_86",
+      "type": "checkbox",
+      "page": 1,
+      "rect": {
+        "x": 305.974,
+        "y": 716.559,
+        "width": 8.873,
+        "height": 6.858
+      },
+      "fieldConfidence": 0.732875
+    },
+    {
+      "id": "commonforms_1_87",
+      "name": "commonforms_checkbox_p1_87",
+      "type": "checkbox",
+      "page": 1,
+      "rect": {
+        "x": 36.054,
+        "y": 731.569,
+        "width": 8.837,
+        "height": 6.945
+      },
+      "fieldConfidence": 0.706575
+    },
+    {
+      "id": "commonforms_1_88",
+      "name": "commonforms_checkbox_p1_88",
+      "type": "checkbox",
+      "page": 1,
+      "rect": {
+        "x": 306.011,
+        "y": 731.585,
+        "width": 8.823,
+        "height": 6.739
+      },
+      "fieldConfidence": 0.731163
+    },
+    {
+      "id": "commonforms_1_89",
+      "name": "commonforms_text_p1_89",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 133.663,
+        "y": 740.173,
+        "width": 154.566,
+        "height": 14.308
+      },
+      "fieldConfidence": 0.861972
+    },
+    {
+      "id": "commonforms_1_90",
+      "name": "commonforms_text_p1_90",
+      "type": "text",
+      "page": 1,
+      "rect": {
+        "x": 393.172,
+        "y": 740.509,
+        "width": 183.111,
+        "height": 13.991
+      },
+      "fieldConfidence": 0.885751
+    },
+    {
+      "id": "commonforms_2_1",
+      "name": "commonforms_text_p2_1",
+      "type": "text",
+      "page": 2,
+      "rect": {
+        "x": 99.819,
+        "y": 45.305,
+        "width": 260.351,
+        "height": 13.994
+      },
+      "fieldConfidence": 0.794504
+    },
+    {
+      "id": "commonforms_2_2",
+      "name": "commonforms_text_p2_2",
+      "type": "text",
+      "page": 2,
+      "rect": {
+        "x": 430.819,
+        "y": 45.083,
+        "width": 145.472,
+        "height": 14.258
+      },
+      "fieldConfidence": 0.753399
+    },
+    {
+      "id": "commonforms_2_3",
+      "name": "commonforms_checkbox_p2_3",
+      "type": "checkbox",
+      "page": 2,
+      "rect": {
+        "x": 381.128,
+        "y": 66.468,
+        "width": 8.971,
+        "height": 7.028
+      },
+      "fieldConfidence": 0.629989
+    },
+    {
+      "id": "commonforms_2_4",
+      "name": "commonforms_checkbox_p2_4",
+      "type": "checkbox",
+      "page": 2,
+      "rect": {
+        "x": 416.966,
+        "y": 66.498,
+        "width": 8.684,
+        "height": 7.002
+      },
+      "fieldConfidence": 0.633794
+    },
+    {
+      "id": "commonforms_2_5",
+      "name": "commonforms_checkbox_p2_5",
+      "type": "checkbox",
+      "page": 2,
+      "rect": {
+        "x": 244.036,
+        "y": 81.497,
+        "width": 8.588,
+        "height": 7.084
+      },
+      "fieldConfidence": 0.549974
+    },
+    {
+      "id": "commonforms_2_6",
+      "name": "commonforms_checkbox_p2_6",
+      "type": "checkbox",
+      "page": 2,
+      "rect": {
+        "x": 279.383,
+        "y": 81.391,
+        "width": 8.663,
+        "height": 7.213
+      },
+      "fieldConfidence": 0.453669
+    },
+    {
+      "id": "commonforms_2_7",
+      "name": "commonforms_text_p2_7",
+      "type": "text",
+      "page": 2,
+      "rect": {
+        "x": 121.352,
+        "y": 90.547,
+        "width": 354.234,
+        "height": 13.706
+      },
+      "fieldConfidence": 0.586758
+    },
+    {
+      "id": "commonforms_2_8",
+      "name": "commonforms_checkbox_p2_8",
+      "type": "checkbox",
+      "page": 2,
+      "rect": {
+        "x": 205.05,
+        "y": 111.547,
+        "width": 8.77,
+        "height": 6.957
+      },
+      "fieldConfidence": 0.588169
+    },
+    {
+      "id": "commonforms_2_9",
+      "name": "commonforms_checkbox_p2_9",
+      "type": "checkbox",
+      "page": 2,
+      "rect": {
+        "x": 240.576,
+        "y": 111.623,
+        "width": 8.749,
+        "height": 6.865
+      },
+      "fieldConfidence": 0.568736
+    },
+    {
+      "id": "commonforms_2_10",
+      "name": "commonforms_text_p2_10",
+      "type": "text",
+      "page": 2,
+      "rect": {
+        "x": 156.82,
+        "y": 120.64,
+        "width": 419.117,
+        "height": 13.573
+      },
+      "fieldConfidence": 0.774782
+    },
+    {
+      "id": "commonforms_2_11",
+      "name": "commonforms_checkbox_p2_11",
+      "type": "checkbox",
+      "page": 2,
+      "rect": {
+        "x": 155.109,
+        "y": 141.559,
+        "width": 8.569,
+        "height": 7.015
+      },
+      "fieldConfidence": 0.562812
+    },
+    {
+      "id": "commonforms_2_12",
+      "name": "commonforms_checkbox_p2_12",
+      "type": "checkbox",
+      "page": 2,
+      "rect": {
+        "x": 190.392,
+        "y": 141.526,
+        "width": 8.871,
+        "height": 6.97
+      },
+      "fieldConfidence": 0.619043
+    },
+    {
+      "id": "commonforms_2_13",
+      "name": "commonforms_checkbox_p2_13",
+      "type": "checkbox",
+      "page": 2,
+      "rect": {
+        "x": 116.517,
+        "y": 156.493,
+        "width": 8.562,
+        "height": 7.192
+      },
+      "fieldConfidence": 0.606238
+    },
+    {
+      "id": "commonforms_2_14",
+      "name": "commonforms_checkbox_p2_14",
+      "type": "checkbox",
+      "page": 2,
+      "rect": {
+        "x": 151.803,
+        "y": 156.57,
+        "width": 8.795,
+        "height": 7.066
+      },
+      "fieldConfidence": 0.628675
+    },
+    {
+      "id": "commonforms_2_15",
+      "name": "commonforms_checkbox_p2_15",
+      "type": "checkbox",
+      "page": 2,
+      "rect": {
+        "x": 164.23,
+        "y": 171.505,
+        "width": 8.649,
+        "height": 7.028
+      },
+      "fieldConfidence": 0.651272
+    },
+    {
+      "id": "commonforms_2_16",
+      "name": "commonforms_checkbox_p2_16",
+      "type": "checkbox",
+      "page": 2,
+      "rect": {
+        "x": 199.603,
+        "y": 171.582,
+        "width": 8.738,
+        "height": 6.918
+      },
+      "fieldConfidence": 0.632692
+    },
+    {
+      "id": "commonforms_2_17",
+      "name": "commonforms_checkbox_p2_17",
+      "type": "checkbox",
+      "page": 2,
+      "rect": {
+        "x": 36.069,
+        "y": 201.513,
+        "width": 8.913,
+        "height": 6.998
+      },
+      "fieldConfidence": 0.683875
+    },
+    {
+      "id": "commonforms_2_18",
+      "name": "commonforms_checkbox_p2_18",
+      "type": "checkbox",
+      "page": 2,
+      "rect": {
+        "x": 218.081,
+        "y": 201.577,
+        "width": 8.799,
+        "height": 6.936
+      },
+      "fieldConfidence": 0.677067
+    },
+    {
+      "id": "commonforms_2_19",
+      "name": "commonforms_checkbox_p2_19",
+      "type": "checkbox",
+      "page": 2,
+      "rect": {
+        "x": 399.981,
+        "y": 201.535,
+        "width": 8.924,
+        "height": 6.994
+      },
+      "fieldConfidence": 0.719585
+    },
+    {
+      "id": "commonforms_2_20",
+      "name": "commonforms_checkbox_p2_20",
+      "type": "checkbox",
+      "page": 2,
+      "rect": {
+        "x": 36.532,
+        "y": 216.546,
+        "width": 8.834,
+        "height": 7.06
+      },
+      "fieldConfidence": 0.630784
+    },
+    {
+      "id": "commonforms_2_21",
+      "name": "commonforms_checkbox_p2_21",
+      "type": "checkbox",
+      "page": 2,
+      "rect": {
+        "x": 218.39,
+        "y": 216.582,
+        "width": 8.756,
+        "height": 6.999
+      },
+      "fieldConfidence": 0.697656
+    },
+    {
+      "id": "commonforms_2_22",
+      "name": "commonforms_checkbox_p2_22",
+      "type": "checkbox",
+      "page": 2,
+      "rect": {
+        "x": 400.257,
+        "y": 216.561,
+        "width": 8.826,
+        "height": 7.007
+      },
+      "fieldConfidence": 0.740996
+    },
+    {
+      "id": "commonforms_2_23",
+      "name": "commonforms_checkbox_p2_23",
+      "type": "checkbox",
+      "page": 2,
+      "rect": {
+        "x": 36.548,
+        "y": 231.668,
+        "width": 8.805,
+        "height": 6.874
+      },
+      "fieldConfidence": 0.643052
+    },
+    {
+      "id": "commonforms_2_24",
+      "name": "commonforms_checkbox_p2_24",
+      "type": "checkbox",
+      "page": 2,
+      "rect": {
+        "x": 218.451,
+        "y": 231.667,
+        "width": 8.656,
+        "height": 6.837
+      },
+      "fieldConfidence": 0.713271
+    },
+    {
+      "id": "commonforms_2_25",
+      "name": "commonforms_checkbox_p2_25",
+      "type": "checkbox",
+      "page": 2,
+      "rect": {
+        "x": 400.313,
+        "y": 231.644,
+        "width": 8.7,
+        "height": 6.846
+      },
+      "fieldConfidence": 0.726581
+    },
+    {
+      "id": "commonforms_2_26",
+      "name": "commonforms_checkbox_p2_26",
+      "type": "checkbox",
+      "page": 2,
+      "rect": {
+        "x": 36.491,
+        "y": 246.521,
+        "width": 8.943,
+        "height": 7.154
+      },
+      "fieldConfidence": 0.682267
+    },
+    {
+      "id": "commonforms_2_27",
+      "name": "commonforms_checkbox_p2_27",
+      "type": "checkbox",
+      "page": 2,
+      "rect": {
+        "x": 218.462,
+        "y": 246.597,
+        "width": 8.703,
+        "height": 7.02
+      },
+      "fieldConfidence": 0.72396
+    },
+    {
+      "id": "commonforms_2_28",
+      "name": "commonforms_checkbox_p2_28",
+      "type": "checkbox",
+      "page": 2,
+      "rect": {
+        "x": 400.264,
+        "y": 246.556,
+        "width": 8.808,
+        "height": 6.974
+      },
+      "fieldConfidence": 0.750066
+    },
+    {
+      "id": "commonforms_2_29",
+      "name": "commonforms_checkbox_p2_29",
+      "type": "checkbox",
+      "page": 2,
+      "rect": {
+        "x": 36.522,
+        "y": 261.553,
+        "width": 8.871,
+        "height": 7.115
+      },
+      "fieldConfidence": 0.682169
+    },
+    {
+      "id": "commonforms_2_30",
+      "name": "commonforms_checkbox_p2_30",
+      "type": "checkbox",
+      "page": 2,
+      "rect": {
+        "x": 218.442,
+        "y": 261.585,
+        "width": 8.763,
+        "height": 7.094
+      },
+      "fieldConfidence": 0.704572
+    },
+    {
+      "id": "commonforms_2_31",
+      "name": "commonforms_checkbox_p2_31",
+      "type": "checkbox",
+      "page": 2,
+      "rect": {
+        "x": 400.254,
+        "y": 261.555,
+        "width": 8.853,
+        "height": 7.035
+      },
+      "fieldConfidence": 0.72731
+    },
+    {
+      "id": "commonforms_2_32",
+      "name": "commonforms_checkbox_p2_32",
+      "type": "checkbox",
+      "page": 2,
+      "rect": {
+        "x": 36.585,
+        "y": 276.611,
+        "width": 8.764,
+        "height": 6.902
+      },
+      "fieldConfidence": 0.690019
+    },
+    {
+      "id": "commonforms_2_33",
+      "name": "commonforms_checkbox_p2_33",
+      "type": "checkbox",
+      "page": 2,
+      "rect": {
+        "x": 218.422,
+        "y": 276.64,
+        "width": 8.76,
+        "height": 6.922
+      },
+      "fieldConfidence": 0.713296
+    },
+    {
+      "id": "commonforms_2_34",
+      "name": "commonforms_checkbox_p2_34",
+      "type": "checkbox",
+      "page": 2,
+      "rect": {
+        "x": 400.203,
+        "y": 276.615,
+        "width": 8.829,
+        "height": 6.87
+      },
+      "fieldConfidence": 0.724535
+    },
+    {
+      "id": "commonforms_2_35",
+      "name": "commonforms_checkbox_p2_35",
+      "type": "checkbox",
+      "page": 2,
+      "rect": {
+        "x": 36.525,
+        "y": 291.496,
+        "width": 8.86,
+        "height": 7.13
+      },
+      "fieldConfidence": 0.685861
+    },
+    {
+      "id": "commonforms_2_36",
+      "name": "commonforms_checkbox_p2_36",
+      "type": "checkbox",
+      "page": 2,
+      "rect": {
+        "x": 218.387,
+        "y": 291.558,
+        "width": 8.793,
+        "height": 7.125
+      },
+      "fieldConfidence": 0.70784
+    },
+    {
+      "id": "commonforms_2_37",
+      "name": "commonforms_checkbox_p2_37",
+      "type": "checkbox",
+      "page": 2,
+      "rect": {
+        "x": 400.229,
+        "y": 291.637,
+        "width": 8.667,
+        "height": 6.913
+      },
+      "fieldConfidence": 0.713414
+    },
+    {
+      "id": "commonforms_2_38",
+      "name": "commonforms_checkbox_p2_38",
+      "type": "checkbox",
+      "page": 2,
+      "rect": {
+        "x": 36.508,
+        "y": 306.545,
+        "width": 8.815,
+        "height": 7.044
+      },
+      "fieldConfidence": 0.67358
+    },
+    {
+      "id": "commonforms_2_39",
+      "name": "commonforms_checkbox_p2_39",
+      "type": "checkbox",
+      "page": 2,
+      "rect": {
+        "x": 218.407,
+        "y": 306.629,
+        "width": 8.751,
+        "height": 6.989
+      },
+      "fieldConfidence": 0.723686
+    },
+    {
+      "id": "commonforms_2_40",
+      "name": "commonforms_checkbox_p2_40",
+      "type": "checkbox",
+      "page": 2,
+      "rect": {
+        "x": 400.246,
+        "y": 306.642,
+        "width": 8.777,
+        "height": 6.953
+      },
+      "fieldConfidence": 0.729168
+    },
+    {
+      "id": "commonforms_2_41",
+      "name": "commonforms_checkbox_p2_41",
+      "type": "checkbox",
+      "page": 2,
+      "rect": {
+        "x": 36.512,
+        "y": 321.595,
+        "width": 8.816,
+        "height": 7.015
+      },
+      "fieldConfidence": 0.714963
+    },
+    {
+      "id": "commonforms_2_42",
+      "name": "commonforms_checkbox_p2_42",
+      "type": "checkbox",
+      "page": 2,
+      "rect": {
+        "x": 218.388,
+        "y": 321.581,
+        "width": 8.791,
+        "height": 7.027
+      },
+      "fieldConfidence": 0.736185
+    },
+    {
+      "id": "commonforms_2_43",
+      "name": "commonforms_checkbox_p2_43",
+      "type": "checkbox",
+      "page": 2,
+      "rect": {
+        "x": 400.284,
+        "y": 321.498,
+        "width": 8.796,
+        "height": 7.024
+      },
+      "fieldConfidence": 0.74912
+    },
+    {
+      "id": "commonforms_2_44",
+      "name": "commonforms_checkbox_p2_44",
+      "type": "checkbox",
+      "page": 2,
+      "rect": {
+        "x": 36.525,
+        "y": 336.674,
+        "width": 8.788,
+        "height": 6.904
+      },
+      "fieldConfidence": 0.72628
+    },
+    {
+      "id": "commonforms_2_45",
+      "name": "commonforms_checkbox_p2_45",
+      "type": "checkbox",
+      "page": 2,
+      "rect": {
+        "x": 218.409,
+        "y": 336.678,
+        "width": 8.632,
+        "height": 6.803
+      },
+      "fieldConfidence": 0.744464
+    },
+    {
+      "id": "commonforms_2_46",
+      "name": "commonforms_checkbox_p2_46",
+      "type": "checkbox",
+      "page": 2,
+      "rect": {
+        "x": 400.279,
+        "y": 336.638,
+        "width": 8.718,
+        "height": 6.872
+      },
+      "fieldConfidence": 0.760645
+    },
+    {
+      "id": "commonforms_2_47",
+      "name": "commonforms_checkbox_p2_47",
+      "type": "checkbox",
+      "page": 2,
+      "rect": {
+        "x": 36.48,
+        "y": 351.527,
+        "width": 8.92,
+        "height": 7.168
+      },
+      "fieldConfidence": 0.747786
+    },
+    {
+      "id": "commonforms_2_48",
+      "name": "commonforms_checkbox_p2_48",
+      "type": "checkbox",
+      "page": 2,
+      "rect": {
+        "x": 218.415,
+        "y": 351.591,
+        "width": 8.717,
+        "height": 7.019
+      },
+      "fieldConfidence": 0.743705
+    },
+    {
+      "id": "commonforms_2_49",
+      "name": "commonforms_checkbox_p2_49",
+      "type": "checkbox",
+      "page": 2,
+      "rect": {
+        "x": 400.235,
+        "y": 351.533,
+        "width": 8.825,
+        "height": 7.01
+      },
+      "fieldConfidence": 0.777391
+    },
+    {
+      "id": "commonforms_2_50",
+      "name": "commonforms_checkbox_p2_50",
+      "type": "checkbox",
+      "page": 2,
+      "rect": {
+        "x": 36.484,
+        "y": 366.535,
+        "width": 8.874,
+        "height": 7.154
+      },
+      "fieldConfidence": 0.749334
+    },
+    {
+      "id": "commonforms_2_51",
+      "name": "commonforms_checkbox_p2_51",
+      "type": "checkbox",
+      "page": 2,
+      "rect": {
+        "x": 218.382,
+        "y": 366.54,
+        "width": 8.811,
+        "height": 7.126
+      },
+      "fieldConfidence": 0.738038
+    },
+    {
+      "id": "commonforms_2_52",
+      "name": "commonforms_checkbox_p2_52",
+      "type": "checkbox",
+      "page": 2,
+      "rect": {
+        "x": 400.008,
+        "y": 366.624,
+        "width": 8.944,
+        "height": 6.924
+      },
+      "fieldConfidence": 0.74775
+    },
+    {
+      "id": "commonforms_2_53",
+      "name": "commonforms_checkbox_p2_53",
+      "type": "checkbox",
+      "page": 2,
+      "rect": {
+        "x": 36.516,
+        "y": 381.593,
+        "width": 8.847,
+        "height": 6.971
+      },
+      "fieldConfidence": 0.754092
+    },
+    {
+      "id": "commonforms_2_54",
+      "name": "commonforms_checkbox_p2_54",
+      "type": "checkbox",
+      "page": 2,
+      "rect": {
+        "x": 218.388,
+        "y": 381.595,
+        "width": 8.77,
+        "height": 6.937
+      },
+      "fieldConfidence": 0.73174
+    },
+    {
+      "id": "commonforms_2_55",
+      "name": "commonforms_checkbox_p2_55",
+      "type": "checkbox",
+      "page": 2,
+      "rect": {
+        "x": 36.462,
+        "y": 396.528,
+        "width": 8.928,
+        "height": 7.145
+      },
+      "fieldConfidence": 0.739525
+    },
+    {
+      "id": "commonforms_2_56",
+      "name": "commonforms_checkbox_p2_56",
+      "type": "checkbox",
+      "page": 2,
+      "rect": {
+        "x": 218.34,
+        "y": 396.574,
+        "width": 8.819,
+        "height": 7.128
+      },
+      "fieldConfidence": 0.727817
+    },
+    {
+      "id": "commonforms_2_57",
+      "name": "commonforms_text_p2_57",
+      "type": "text",
+      "page": 2,
+      "rect": {
+        "x": 37.787,
+        "y": 453.086,
+        "width": 268.0,
+        "height": 13.396
+      },
+      "fieldConfidence": 0.91098
+    },
+    {
+      "id": "commonforms_2_58",
+      "name": "commonforms_text_p2_58",
+      "type": "text",
+      "page": 2,
+      "rect": {
+        "x": 306.957,
+        "y": 453.067,
+        "width": 267.907,
+        "height": 13.401
+      },
+      "fieldConfidence": 0.90906
+    },
+    {
+      "id": "commonforms_2_59",
+      "name": "commonforms_text_p2_59",
+      "type": "text",
+      "page": 2,
+      "rect": {
+        "x": 37.819,
+        "y": 467.492,
+        "width": 268.059,
+        "height": 13.363
+      },
+      "fieldConfidence": 0.906246
+    },
+    {
+      "id": "commonforms_2_60",
+      "name": "commonforms_text_p2_60",
+      "type": "text",
+      "page": 2,
+      "rect": {
+        "x": 307.065,
+        "y": 467.466,
+        "width": 267.743,
+        "height": 13.368
+      },
+      "fieldConfidence": 0.900816
+    },
+    {
+      "id": "commonforms_2_61",
+      "name": "commonforms_text_p2_61",
+      "type": "text",
+      "page": 2,
+      "rect": {
+        "x": 37.888,
+        "y": 481.897,
+        "width": 267.968,
+        "height": 13.351
+      },
+      "fieldConfidence": 0.892419
+    },
+    {
+      "id": "commonforms_2_62",
+      "name": "commonforms_text_p2_62",
+      "type": "text",
+      "page": 2,
+      "rect": {
+        "x": 306.945,
+        "y": 481.864,
+        "width": 267.814,
+        "height": 13.387
+      },
+      "fieldConfidence": 0.89082
+    },
+    {
+      "id": "commonforms_2_63",
+      "name": "commonforms_text_p2_63",
+      "type": "text",
+      "page": 2,
+      "rect": {
+        "x": 37.872,
+        "y": 496.261,
+        "width": 268.032,
+        "height": 13.35
+      },
+      "fieldConfidence": 0.895598
+    },
+    {
+      "id": "commonforms_2_64",
+      "name": "commonforms_text_p2_64",
+      "type": "text",
+      "page": 2,
+      "rect": {
+        "x": 307.013,
+        "y": 496.28,
+        "width": 267.847,
+        "height": 13.322
+      },
+      "fieldConfidence": 0.892878
+    },
+    {
+      "id": "commonforms_2_65",
+      "name": "commonforms_text_p2_65",
+      "type": "text",
+      "page": 2,
+      "rect": {
+        "x": 37.773,
+        "y": 510.652,
+        "width": 268.093,
+        "height": 13.328
+      },
+      "fieldConfidence": 0.916219
+    },
+    {
+      "id": "commonforms_2_66",
+      "name": "commonforms_text_p2_66",
+      "type": "text",
+      "page": 2,
+      "rect": {
+        "x": 307.058,
+        "y": 510.65,
+        "width": 267.753,
+        "height": 13.317
+      },
+      "fieldConfidence": 0.904722
+    },
+    {
+      "id": "commonforms_2_67",
+      "name": "commonforms_text_p2_67",
+      "type": "text",
+      "page": 2,
+      "rect": {
+        "x": 37.787,
+        "y": 524.994,
+        "width": 268.115,
+        "height": 13.309
+      },
+      "fieldConfidence": 0.919197
+    },
+    {
+      "id": "commonforms_2_68",
+      "name": "commonforms_text_p2_68",
+      "type": "text",
+      "page": 2,
+      "rect": {
+        "x": 307.082,
+        "y": 525.002,
+        "width": 267.752,
+        "height": 13.281
+      },
+      "fieldConfidence": 0.911406
+    },
+    {
+      "id": "commonforms_2_69",
+      "name": "commonforms_text_p2_69",
+      "type": "text",
+      "page": 2,
+      "rect": {
+        "x": 37.815,
+        "y": 539.386,
+        "width": 268.02,
+        "height": 13.264
+      },
+      "fieldConfidence": 0.903214
+    },
+    {
+      "id": "commonforms_2_70",
+      "name": "commonforms_text_p2_70",
+      "type": "text",
+      "page": 2,
+      "rect": {
+        "x": 307.443,
+        "y": 539.374,
+        "width": 267.382,
+        "height": 13.278
+      },
+      "fieldConfidence": 0.901878
+    },
+    {
+      "id": "commonforms_2_71",
+      "name": "commonforms_text_p2_71",
+      "type": "text",
+      "page": 2,
+      "rect": {
+        "x": 37.455,
+        "y": 584.205,
+        "width": 267.898,
+        "height": 13.327
+      },
+      "fieldConfidence": 0.896548
+    },
+    {
+      "id": "commonforms_2_72",
+      "name": "commonforms_text_p2_72",
+      "type": "text",
+      "page": 2,
+      "rect": {
+        "x": 307.004,
+        "y": 584.34,
+        "width": 267.742,
+        "height": 13.327
+      },
+      "fieldConfidence": 0.891635
+    },
+    {
+      "id": "commonforms_2_73",
+      "name": "commonforms_text_p2_73",
+      "type": "text",
+      "page": 2,
+      "rect": {
+        "x": 37.855,
+        "y": 598.684,
+        "width": 267.903,
+        "height": 13.337
+      },
+      "fieldConfidence": 0.891761
+    },
+    {
+      "id": "commonforms_2_74",
+      "name": "commonforms_text_p2_74",
+      "type": "text",
+      "page": 2,
+      "rect": {
+        "x": 306.95,
+        "y": 598.692,
+        "width": 267.811,
+        "height": 13.339
+      },
+      "fieldConfidence": 0.890418
+    },
+    {
+      "id": "commonforms_2_75",
+      "name": "commonforms_text_p2_75",
+      "type": "text",
+      "page": 2,
+      "rect": {
+        "x": 37.782,
+        "y": 613.067,
+        "width": 267.989,
+        "height": 13.233
+      },
+      "fieldConfidence": 0.894884
+    },
+    {
+      "id": "commonforms_2_76",
+      "name": "commonforms_text_p2_76",
+      "type": "text",
+      "page": 2,
+      "rect": {
+        "x": 306.917,
+        "y": 613.085,
+        "width": 267.877,
+        "height": 13.238
+      },
+      "fieldConfidence": 0.882206
+    },
+    {
+      "id": "commonforms_2_77",
+      "name": "commonforms_text_p2_77",
+      "type": "text",
+      "page": 2,
+      "rect": {
+        "x": 441.187,
+        "y": 680.227,
+        "width": 134.982,
+        "height": 15.675
+      },
+      "fieldConfidence": 0.486264
+    }
+  ]
+}

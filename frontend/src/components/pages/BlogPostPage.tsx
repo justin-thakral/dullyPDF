@@ -18,6 +18,13 @@ const HEADER_LINKS = [
   { label: 'Usage Docs', href: '/usage-docs' },
 ];
 
+const formatDisplayDate = (date: string): string =>
+  new Date(`${date}T00:00:00`).toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+
 const BlogPostPage = ({ slug }: BlogPostPageProps) => {
   const post = getBlogPost(slug);
 
@@ -67,6 +74,15 @@ const BlogPostPage = ({ slug }: BlogPostPageProps) => {
     [post.relatedDocs],
   );
 
+  const inlineResourceLinks = useMemo(
+    () => [...relatedIntentLinks.slice(0, 2), ...relatedDocsLinks.slice(0, 2)],
+    [relatedDocsLinks, relatedIntentLinks],
+  );
+
+  const publishedDateLabel = formatDisplayDate(post.publishedDate);
+  const updatedDateLabel = formatDisplayDate(post.updatedDate);
+  const showUpdatedDate = post.updatedDate !== post.publishedDate;
+
   return (
     <div className="blog-post">
       <div className="blog-post__card">
@@ -103,16 +119,30 @@ const BlogPostPage = ({ slug }: BlogPostPageProps) => {
             <header className="blog-post__article-header">
               <h1>{post.title}</h1>
               <div className="blog-post__meta">
-                <time dateTime={post.publishedDate}>
-                  {new Date(post.publishedDate + 'T00:00:00').toLocaleDateString('en-US', {
-                    year: 'numeric',
-                    month: 'long',
-                    day: 'numeric',
-                  })}
-                </time>
+                <span className="blog-post__meta-label">Published</span>
+                <time dateTime={post.publishedDate}>{publishedDateLabel}</time>
+                {showUpdatedDate ? (
+                  <>
+                    <span className="blog-post__meta-separator" aria-hidden="true">•</span>
+                    <span className="blog-post__meta-label">Last updated</span>
+                    <time dateTime={post.updatedDate}>{updatedDateLabel}</time>
+                  </>
+                ) : null}
                 <span className="blog-post__author">by {post.author}</span>
               </div>
               <p className="blog-post__summary">{post.summary}</p>
+              {inlineResourceLinks.length > 0 ? (
+                <div className="blog-post__inline-links" aria-label="Key workflow links">
+                  <span className="blog-post__inline-links-label">Key workflow links</span>
+                  <div className="blog-post__inline-links-list">
+                    {inlineResourceLinks.map((link) => (
+                      <a key={link.href} href={link.href} className="blog-post__inline-link">
+                        {link.label}
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
             </header>
 
             {post.sections.map((section) => (

@@ -491,6 +491,18 @@ def test_resolve_cors_origins_wildcard_debug_gating(monkeypatch, app_main, mocke
     origins = app_main._resolve_cors_origins()
     assert "*" not in origins
     assert "http://localhost:5173" in origins
+    assert "http://127.0.0.1:5177" in origins
+
+
+def test_resolve_cors_origins_dev_defaults_cover_vite_increment_ports(monkeypatch, app_main, mocker) -> None:
+    monkeypatch.delenv("SANDBOX_CORS_ORIGINS", raising=False)
+    mocker.patch.object(app_main, "_is_prod", return_value=False)
+
+    origins = app_main._resolve_cors_origins()
+
+    assert "http://localhost:5173" in origins
+    assert "http://localhost:5189" in origins
+    assert "http://127.0.0.1:5177" in origins
 
 
 def test_resolve_cors_origins_dedupes_and_handles_malformed_values(monkeypatch, app_main, mocker) -> None:

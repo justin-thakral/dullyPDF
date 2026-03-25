@@ -193,6 +193,19 @@ require_fill_link_secret_quality() {
   fi
 }
 
+require_signing_link_secret_quality() {
+  local name="$1"
+  local actual="${!name:-}"
+  if [[ "$actual" == "change_me_prod_signing_link_token_secret" || "$actual" == "dullypdf-signing-dev-secret" ]]; then
+    echo "$name must not use the placeholder prod example value." >&2
+    exit 1
+  fi
+  if [[ "${#actual}" -lt 32 ]]; then
+    echo "$name must be at least 32 characters in prod." >&2
+    exit 1
+  fi
+}
+
 require_exact ENV "prod"
 require_exact SANDBOX_LOG_OPENAI_RESPONSE "false"
 require_exact SANDBOX_ENABLE_LEGACY_ENDPOINTS "false"
@@ -216,6 +229,10 @@ require_nonempty FORMS_BUCKET
 require_nonempty TEMPLATES_BUCKET
 require_nonempty FILL_LINK_TOKEN_SECRET
 require_fill_link_secret_quality FILL_LINK_TOKEN_SECRET
+require_nonempty SIGNING_LINK_TOKEN_SECRET
+require_signing_link_secret_quality SIGNING_LINK_TOKEN_SECRET
+require_nonempty SIGNING_AUDIT_KMS_KEY
+require_nonempty SIGNING_BUCKET
 require_nonempty SANDBOX_CORS_ORIGINS
 require_nonempty CONTACT_TO_EMAIL
 require_nonempty CONTACT_FROM_EMAIL
@@ -234,6 +251,17 @@ require_nonempty OPENAI_REMAP_TASKS_QUEUE_HEAVY
 require_nonempty OPENAI_REMAP_SERVICE_URL_LIGHT
 require_nonempty OPENAI_REMAP_SERVICE_URL_HEAVY
 require_nonempty OPENAI_REMAP_TASKS_SERVICE_ACCOUNT
+require_integer_ge SIGNING_RETENTION_DAYS 30
+require_integer_ge SIGNING_SESSION_TTL_SECONDS 300
+require_integer_ge SIGNING_VIEW_RATE_WINDOW_SECONDS 1
+require_integer_ge SIGNING_VIEW_RATE_PER_IP 1
+require_integer_ge SIGNING_VIEW_RATE_GLOBAL 0
+require_integer_ge SIGNING_ACTION_RATE_WINDOW_SECONDS 1
+require_integer_ge SIGNING_ACTION_RATE_PER_IP 1
+require_integer_ge SIGNING_ACTION_RATE_GLOBAL 0
+require_integer_ge SIGNING_DOCUMENT_RATE_WINDOW_SECONDS 1
+require_integer_ge SIGNING_DOCUMENT_RATE_PER_IP 1
+require_integer_ge SIGNING_DOCUMENT_RATE_GLOBAL 0
 require_optional_integer_ge BACKEND_MIN_INSTANCES 0
 
 if [[ "${SANDBOX_CORS_ORIGINS}" == "*" ]]; then

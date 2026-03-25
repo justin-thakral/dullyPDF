@@ -225,6 +225,8 @@ describe('main entrypoint', () => {
     ['/usage-docs', 'index'],
     ['/usage-docs/getting-started', 'getting-started'],
     ['/usage-docs/editor-workflow', 'editor-workflow'],
+    ['/usage-docs/signature-workflow', 'signature-workflow'],
+    ['/usage-docs/api-fill', 'api-fill'],
     ['/usage-docs/create-group', 'create-group'],
     ['/usage-docs/search-fill/', 'search-fill'],
   ])('renders UsageDocs pageKey=%s route=%s', async (pathname, pageKey) => {
@@ -241,6 +243,8 @@ describe('main entrypoint', () => {
     ['/pdf-to-fillable-form', 'pdf-to-fillable-form'],
     ['/pdf-to-database-template', 'pdf-to-database-template'],
     ['/fill-pdf-from-csv', 'fill-pdf-from-csv'],
+    ['/pdf-fill-api', 'pdf-fill-api'],
+    ['/pdf-radio-button-editor', 'pdf-radio-button-editor'],
     ['/fill-information-in-pdf', 'fill-information-in-pdf'],
     ['/fillable-form-field-name', 'fillable-form-field-name'],
     ['/healthcare-pdf-automation', 'healthcare-pdf-automation'],

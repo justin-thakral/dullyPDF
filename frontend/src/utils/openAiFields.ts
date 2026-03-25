@@ -1,8 +1,8 @@
 import type {
-  CheckboxHint,
   CheckboxRule,
   NameQueue,
   PdfField,
+  RadioGroupSuggestion,
   TextTransformRule,
 } from '../types';
 import { computeCheckboxMeta } from './checkboxMeta';
@@ -60,7 +60,7 @@ export function applyRenamePayloadToFields(
 type MappingApplicationResult = {
   fields: PdfField[];
   checkboxRules: CheckboxRule[];
-  checkboxHints: CheckboxHint[];
+  radioGroupSuggestions: RadioGroupSuggestion[];
   textTransformRules: TextTransformRule[];
 };
 
@@ -99,11 +99,9 @@ export function applyMappingPayloadToFields(
     : Array.isArray(mappingResults?.checkboxRules)
       ? (mappingResults.checkboxRules as CheckboxRule[])
       : [];
-  const checkboxHints = Array.isArray(fillRules?.checkboxHints)
-    ? (fillRules.checkboxHints as CheckboxHint[])
-    : Array.isArray(mappingResults?.checkboxHints)
-      ? (mappingResults.checkboxHints as CheckboxHint[])
-      : [];
+  const radioGroupSuggestions = Array.isArray(mappingResults?.radioGroupSuggestions)
+    ? (mappingResults.radioGroupSuggestions as RadioGroupSuggestion[])
+    : [];
   const textTransformRules = Array.isArray(fillRules?.textTransformRules)
     ? (fillRules.textTransformRules as TextTransformRule[])
     : Array.isArray((fillRules as Record<string, unknown> | null)?.templateRules)
@@ -117,7 +115,7 @@ export function applyMappingPayloadToFields(
   return {
     fields: nextFields,
     checkboxRules,
-    checkboxHints,
+    radioGroupSuggestions,
     textTransformRules,
   };
 }

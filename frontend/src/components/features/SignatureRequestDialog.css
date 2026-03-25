@@ -1,0 +1,490 @@
+.ui-dialog.signature-request-dialog {
+  width: min(90vw, 1360px);
+  max-width: calc(100vw - 32px);
+  height: min(90vh, 980px);
+  max-height: calc(100vh - 32px);
+  padding: 1rem 1rem 0;
+  gap: 0.9rem;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at top right, rgba(191, 219, 254, 0.32), transparent 34%),
+    linear-gradient(180deg, rgba(248, 250, 252, 0.98), rgba(255, 255, 255, 0.98));
+}
+
+.signature-request-dialog .ui-dialog__header {
+  align-items: flex-start;
+  padding-bottom: 0.9rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.signature-request-dialog .ui-dialog__title {
+  font-size: 1.32rem;
+  line-height: 1.15;
+}
+
+.signature-request-dialog .ui-dialog__message {
+  margin: 0;
+  max-width: 74ch;
+  font-size: 0.96rem;
+  line-height: 1.55;
+  color: #475569;
+}
+
+.signature-request-dialog__intro {
+  display: block;
+}
+
+.signature-request-dialog__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 0 0.25rem 1rem 0;
+  scrollbar-gutter: stable;
+}
+
+.signature-request-dialog__topbar {
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+}
+
+.signature-request-dialog__tabs {
+  display: inline-flex;
+  gap: 0.5rem;
+  padding: 0.25rem;
+  border-radius: 999px;
+  background: rgba(226, 232, 240, 0.72);
+}
+
+.signature-request-dialog__tab {
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #475569;
+  font-weight: 700;
+  padding: 0.65rem 1rem;
+  cursor: pointer;
+}
+
+.signature-request-dialog__tab--active {
+  background: #fff;
+  color: #0f172a;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.1);
+}
+
+.signature-request-dialog__hero,
+.signature-request-dialog__section {
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 18px 45px rgba(15, 23, 42, 0.06);
+}
+
+.signature-request-dialog__hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(320px, 1fr);
+  gap: 1rem;
+  padding: 1.2rem 1.25rem;
+  background:
+    linear-gradient(140deg, rgba(255, 255, 255, 0.98), rgba(239, 246, 255, 0.96));
+}
+
+.signature-request-dialog__hero-copy {
+  display: grid;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.signature-request-dialog__eyebrow {
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #2563eb;
+}
+
+.signature-request-dialog__hero-copy h3 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  line-height: 1.18;
+  color: #0f172a;
+}
+
+.signature-request-dialog__hero-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem;
+  min-width: 0;
+}
+
+.signature-request-dialog__metric,
+.signature-request-dialog__fact-grid > div,
+.signature-request-dialog__draft-preview {
+  display: grid;
+  gap: 0.28rem;
+  min-width: 0;
+}
+
+.signature-request-dialog__metric strong,
+.signature-request-dialog__fact-grid strong,
+.signature-request-dialog__draft-preview strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.signature-request-dialog__metric {
+  padding: 0.9rem 1rem;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.signature-request-dialog__layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.95fr);
+  gap: 1rem;
+  align-items: start;
+  min-height: 0;
+}
+
+.signature-request-dialog__column {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+  align-content: start;
+}
+
+.signature-request-dialog__column--side {
+  position: sticky;
+  top: 0;
+}
+
+.signature-request-dialog__section {
+  display: grid;
+  gap: 0.85rem;
+  padding: 1.05rem 1.1rem;
+}
+
+.signature-request-dialog__section--summary {
+  background:
+    linear-gradient(180deg, rgba(248, 250, 252, 0.98), rgba(241, 245, 249, 0.94));
+}
+
+.signature-request-dialog__section--summary .signature-request-dialog__fact-grid {
+  grid-template-columns: 1fr;
+}
+
+.signature-request-dialog__section h3 {
+  margin: 0;
+  font-size: 1rem;
+  color: #0f172a;
+}
+
+.signature-request-dialog__mode-row {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.signature-request-dialog__supporting-copy {
+  margin: 0;
+  color: #475569;
+  line-height: 1.55;
+}
+
+.signature-request-dialog__fact-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.8rem;
+}
+
+.signature-request-dialog__field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.signature-request-dialog__section-header,
+.signature-request-dialog__responses-header,
+.signature-request-dialog__response-header,
+.signature-request-dialog__recipient-card-actions,
+.signature-request-dialog__recipient-builder-actions,
+.signature-request-dialog__response-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.signature-request-dialog__label {
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.signature-request-dialog__field {
+  display: grid;
+  gap: 0.42rem;
+  min-width: 0;
+}
+
+.signature-request-dialog__field span {
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.signature-request-dialog__field input,
+.signature-request-dialog__field select,
+.signature-request-dialog__field textarea {
+  width: 100%;
+  min-width: 0;
+  padding: 0.8rem 0.9rem;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.98);
+  color: #0f172a;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75);
+}
+
+.signature-request-dialog__field input:focus,
+.signature-request-dialog__field select:focus,
+.signature-request-dialog__field textarea:focus {
+  outline: 2px solid rgba(59, 130, 246, 0.22);
+  outline-offset: 2px;
+  border-color: rgba(59, 130, 246, 0.5);
+}
+
+.signature-request-dialog__field--textarea textarea {
+  min-height: 150px;
+  resize: vertical;
+  font: inherit;
+}
+
+.signature-request-dialog__checkbox {
+  display: flex;
+  gap: 0.7rem;
+  align-items: flex-start;
+  color: #0f172a;
+}
+
+.signature-request-dialog__hash {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.signature-request-dialog__recipient-count,
+.signature-request-dialog__response-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2rem;
+  padding: 0.35rem 0.8rem;
+  border-radius: 999px;
+  background: rgba(219, 234, 254, 0.92);
+  color: #1d4ed8;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.signature-request-dialog__response-badge--muted {
+  background: rgba(226, 232, 240, 0.92);
+  color: #475569;
+}
+
+.signature-request-dialog__recipient-builder,
+.signature-request-dialog__import-grid,
+.signature-request-dialog__recipient-list,
+.signature-request-dialog__responses,
+.signature-request-dialog__responses-stats {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.signature-request-dialog__import-grid {
+  grid-template-columns: minmax(0, 1.2fr) minmax(240px, 0.8fr);
+}
+
+.signature-request-dialog__import-actions,
+.signature-request-dialog__response-identity,
+.signature-request-dialog__responses-stats > div,
+.signature-request-dialog__response-grid > div,
+.signature-request-dialog__recipient-card > div {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.signature-request-dialog__responses-stats {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+.signature-request-dialog__recipient-card,
+.signature-request-dialog__response-card {
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.signature-request-dialog__recipient-card {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.85rem;
+  padding: 0.95rem 1rem;
+  border-radius: 16px;
+}
+
+.signature-request-dialog__recipient-card strong,
+.signature-request-dialog__recipient-card span,
+.signature-request-dialog__response-grid strong,
+.signature-request-dialog__response-identity strong,
+.signature-request-dialog__response-identity span,
+.signature-request-dialog__response-note {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.signature-request-dialog__response-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 0.8rem;
+}
+
+.signature-request-dialog__response-note,
+.signature-request-dialog__empty-state {
+  margin: 0;
+  color: #475569;
+  line-height: 1.55;
+}
+
+.signature-request-dialog__file-button {
+  position: relative;
+  overflow: hidden;
+}
+
+.signature-request-dialog__file-button input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.signature-request-dialog__checklist {
+  display: grid;
+  gap: 0.55rem;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.signature-request-dialog__checklist-item {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.7rem;
+  align-items: center;
+  padding: 0.72rem 0.8rem;
+  border-radius: 15px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: rgba(255, 255, 255, 0.84);
+  color: #334155;
+}
+
+.signature-request-dialog__checklist-item--ready {
+  border-color: rgba(34, 197, 94, 0.2);
+  background: rgba(240, 253, 244, 0.92);
+}
+
+.signature-request-dialog__check-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 5.5rem;
+  padding: 0.3rem 0.55rem;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.12);
+  color: #475569;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.signature-request-dialog__checklist-item--ready .signature-request-dialog__check-indicator {
+  background: rgba(34, 197, 94, 0.16);
+  color: #15803d;
+}
+
+.signature-request-dialog__actions {
+  flex: 0 0 auto;
+  padding: 1rem 0 1rem;
+  border-top: 1px solid rgba(148, 163, 184, 0.18);
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0), rgba(248, 250, 252, 0.94) 40%);
+}
+
+@media (max-width: 1080px) {
+  .ui-dialog.signature-request-dialog {
+    width: min(92vw, 1120px);
+  }
+
+  .signature-request-dialog__hero,
+  .signature-request-dialog__layout {
+    grid-template-columns: 1fr;
+  }
+
+  .signature-request-dialog__column--side {
+    position: static;
+  }
+
+  .signature-request-dialog__import-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .ui-dialog.signature-request-dialog {
+    width: calc(100vw - 20px);
+    height: calc(100vh - 20px);
+    max-width: calc(100vw - 20px);
+    max-height: calc(100vh - 20px);
+    padding: 0.9rem 0.9rem 0;
+  }
+
+  .signature-request-dialog .ui-dialog__header {
+    padding-bottom: 0.75rem;
+  }
+
+  .signature-request-dialog__hero,
+  .signature-request-dialog__section {
+    padding: 0.95rem;
+    border-radius: 18px;
+  }
+
+  .signature-request-dialog__hero-facts,
+  .signature-request-dialog__field-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .signature-request-dialog__response-grid,
+  .signature-request-dialog__responses-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .signature-request-dialog__actions {
+    justify-content: stretch;
+  }
+
+  .signature-request-dialog__actions .ui-button {
+    width: 100%;
+  }
+
+  .signature-request-dialog__checklist-item {
+    grid-template-columns: 1fr;
+  }
+}

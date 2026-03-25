@@ -200,6 +200,42 @@ def test_materialize_inject_fields_path_and_filename_sanitization(
     assert "\r" not in response.headers["content-disposition"]
 
 
+def test_materialize_flat_mode_flattens_generated_output(
+    client,
+    app_main,
+    base_user,
+    mocker,
+    auth_headers,
+    tmp_path: Path,
+) -> None:
+    _patch_auth(mocker, app_main, base_user)
+    temp_pdf = tmp_path / "flat-input.pdf"
+    temp_pdf.write_bytes(b"%PDF-1.4\nfake")
+    mocker.patch.object(app_main, "_write_upload_to_temp", return_value=temp_pdf)
+    mocker.patch.object(app_main.fitz, "open", return_value=_FakePdfDoc(page_count=1))
+    mocker.patch.object(app_main, "_resolve_fillable_max_pages", return_value=10)
+
+    def _inject(temp_path, template_path, output_path):
+        output_path.write_bytes(b"%PDF-1.4\nfilled")
+
+    mocker.patch.object(app_main, "inject_fields", side_effect=_inject)
+    flatten_mock = mocker.patch.object(app_main, "_flatten_pdf_form_widgets", return_value=b"%PDF-1.4\nflat")
+
+    response = client.post(
+        "/api/forms/materialize",
+        files={"pdf": ("flat.pdf", b"%PDF-1.4\n", "application/pdf")},
+        data={
+            "fields": '[{"name":"f","x":1,"y":2,"width":3,"height":4}]',
+            "exportMode": "flat",
+        },
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    assert "-flat" in response.headers["content-disposition"]
+    flatten_mock.assert_called_once_with(b"%PDF-1.4\nfilled")
+
+
 def test_materialize_inject_failure_cleans_temp_files_immediately(
     app_main,
     base_user,

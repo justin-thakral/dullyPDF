@@ -81,7 +81,28 @@ follow-up requests do not get blocked after `gtag.js` loads.
 - `http://localhost:5173/free-features` and `http://localhost:5173/premium-features` for public plan messaging and signed-in premium purchase CTA behavior.
 - Intent/SEO routes such as `/pdf-to-fillable-form`, `/fill-pdf-from-csv`, and `/fill-pdf-by-link`.
 - Fill By Link respondent routes under `/respond/:token`. The route shell is public and mobile-friendly; live submissions still depend on the backend being available.
+- Signing routes under `/sign/:token`. The route is public and mobile-friendly; milestone 3 now includes the signer ceremony for `Sign` mode with session bootstrap, immutable PDF review, consumer e-consent gating, signature adoption, manual fallback recording, and an explicit final sign action.
+- The owner signing dialog on `/ui` now supports batch signer entry via pasted TXT/CSV data or uploaded `.txt` / `.csv` files, and its `Responses` tab tracks waiting vs signed requests with direct artifact downloads.
+- In local/dev, signing invites may fall back to manual link sharing if Gmail API delivery is not configured or fails. The `Responses` tab will show `Manual link` / `Invite failed` states so the owner can copy the signer URL directly.
 - Mobile landing/demo copy should still explain Fill By Link even though the full editor remains desktop-only under the 900px breakpoint.
+- Public token browser routes (`/respond/:token` and `/sign/:token`) are served with `Cache-Control: no-store` in production hosting so link-bearing pages are not cached by the browser or intermediary caches.
+
+## Signing smoke checks
+
+Public signer ceremony smoke from `frontend/`:
+
+```bash
+cd frontend
+PLAYWRIGHT_BASE_URL=http://127.0.0.1:4173 node test/playwright/run_signing_public_smoke.mjs
+```
+
+Owner-side signing smoke from repo root:
+
+```bash
+PLAYWRIGHT_BASE_URL=http://127.0.0.1:4173 node frontend/test/playwright/run_signing_owner_smoke.mjs
+```
+
+The owner smoke signs into the workspace with a Firebase custom token, opens a real fillable PDF in the editor, adds a signature anchor, saves a signing draft, and sends the immutable request with mocked signing endpoints. Both smoke scripts write screenshots and JSON summaries under `frontend/output/playwright/`.
 
 ## reCAPTCHA env flags
 

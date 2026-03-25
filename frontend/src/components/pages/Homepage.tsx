@@ -57,7 +57,7 @@ const DEMO_WALKTHROUGH: DemoWalkthroughStep[] = [
     id: 'inspector',
     title: 'Inspector for precise edits',
     description:
-      'Use the inspector to add, rename, and adjust field types without touching the PDF source.',
+      'Use the inspector to add, rename, and adjust text, checkbox, and radio field types without touching the PDF source.',
     imageWebp: '/demo/mobile-inspector.webp',
     imagePng: '/demo/mobile-inspector.png',
     alt: 'Field inspector panel showing add field actions and edit controls.',
@@ -570,6 +570,7 @@ const Homepage: React.FC<HomepageProps> = ({
                   <CommonFormsAttribution />
                   {' '}
                   for field detections with writable areas at input fields.
+                  It supports text fields, checkbox groups, radio groups, dates, and signatures in the editor.
                   Once your form is ready, you can upload a CSV, Excel, JSON, or TXT schema file and map
                   field names to the PDF, or publish a native DullyPDF Fill By Link from a saved template so up to 10,000 respondents can
                   submit data through a mobile-friendly HTML form to be filled in on your PDF. Database rows stay in browser for Search

@@ -6,7 +6,7 @@ def test_build_schema_mapping_payload_filters_hallucinations_and_alt_keys(app_ma
     ]
     template_tags = [
         {"tag": "A1"},
-        {"tag": "A2", "groupKey": "consent_group"},
+        {"tag": "A2", "type": "checkbox", "groupKey": "consent_group"},
     ]
     ai_response = {
         "mappings": [
@@ -32,15 +32,34 @@ def test_build_schema_mapping_payload_filters_hallucinations_and_alt_keys(app_ma
             {"databaseField": "consent", "groupKey": "unknown-group"},
             {"databaseField": "not_allowed", "groupKey": "consent_group"},
         ],
-        "checkbox_hints": [
-            {"databaseField": "consent", "groupKey": "CONSENT_GROUP", "direct_boolean_possible": "yes", "operation": "enum"},
-            {"databaseField": "consent", "groupKey": "missing"},
-            {"databaseField": "bad", "groupKey": "consent_group"},
+        "radio_group_suggestions": [
+            {
+                "suggested_type": "radio_group",
+                "group_key": "consent_group",
+                "group_label": "Consent",
+                "source_field": "consent",
+                "selection_reason": "yes_no",
+                "suggested_fields": [
+                    {"field_name": "A2", "option_key": "yes", "option_label": "Yes"},
+                    {"field_name": "A3", "option_key": "no", "option_label": "No"},
+                ],
+                "confidence": 0.8,
+            },
+            {
+                "suggested_type": "radio_group",
+                "group_key": "missing",
+                "group_label": "Missing",
+                "suggested_fields": [
+                    {"field_name": "A2", "option_key": "yes", "option_label": "Yes"},
+                    {"field_name": "Z9", "option_key": "no", "option_label": "No"},
+                ],
+            },
         ],
         "patientIdentifierField": "member_id",
         "notes": "model-notes",
     }
 
+    template_tags.append({"tag": "A3", "type": "checkbox", "groupKey": "consent_group"})
     payload = app_main._build_schema_mapping_payload(schema_fields, template_tags, ai_response)
     assert payload["success"] is True
     assert len(payload["mappings"]) == 2
@@ -58,12 +77,19 @@ def test_build_schema_mapping_payload_filters_hallucinations_and_alt_keys(app_ma
         },
     ]
     assert payload["checkboxRules"] == [{"databaseField": "consent", "groupKey": "consent_group"}]
-    assert payload["checkboxHints"] == [
+    assert payload["radioGroupSuggestions"] == [
         {
-            "databaseField": "consent",
+            "id": "consent_group_A2_A3",
+            "suggestedType": "radio_group",
             "groupKey": "consent_group",
-            "directBooleanPossible": True,
-            "operation": "enum",
+            "groupLabel": "Consent",
+            "sourceField": "consent",
+            "selectionReason": "yes_no",
+            "suggestedFields": [
+                {"fieldName": "A2", "optionKey": "yes", "optionLabel": "Yes"},
+                {"fieldName": "A3", "optionKey": "no", "optionLabel": "No"},
+            ],
+            "confidence": 0.8,
         }
     ]
     assert payload["fillRules"]["version"] == 1
@@ -153,47 +179,54 @@ def test_build_schema_mapping_payload_unmapped_calculations(app_main) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Edge-case: _coerce_hint_bool with False, None, and "no"
+# Edge-case: radio-group suggestions are normalized and filtered
 # ---------------------------------------------------------------------------
-# The internal helper converts various representations to bool or None.
-# Verify the specific edge values: False (bool), None (pass-through), "no"
-# (string falsy).
-def test_coerce_hint_bool_edge_values(app_main) -> None:
-    # _coerce_hint_bool is defined inside build_schema_mapping_payload, so
-    # we exercise it indirectly through the mapping builder with checkbox_hints
-    # that carry the directBooleanPossible key using the target values.
-    schema_fields = [{"name": "consent"}]
-    template_tags = [{"tag": "A1", "groupKey": "consent_group"}]
-
-    # directBooleanPossible=False -> bool False
-    ai_response_false = {
+def test_build_schema_mapping_payload_filters_invalid_radio_group_suggestions(app_main) -> None:
+    schema_fields = [{"name": "marital_status"}]
+    template_tags = [
+        {"tag": "single_box", "type": "checkbox", "groupKey": "marital_status", "fieldId": "field-1"},
+        {"tag": "married_box", "type": "checkbox", "groupKey": "marital_status", "fieldId": "field-2"},
+    ]
+    ai_response = {
         "mappings": [],
-        "checkbox_hints": [
-            {"databaseField": "consent", "groupKey": "consent_group", "direct_boolean_possible": False},
+        "radioGroupSuggestions": [
+            {
+                "suggestedType": "radio_group",
+                "groupKey": "marital_status",
+                "groupLabel": "Marital Status",
+                "sourceField": "marital_status",
+                "selectionReason": "enum",
+                "confidence": "0.55",
+                "suggestedFields": [
+                    {"fieldId": "field-1", "optionKey": "single", "optionLabel": "Single"},
+                    {"fieldId": "field-2", "optionKey": "married", "optionLabel": "Married"},
+                ],
+            },
+            {
+                "suggestedType": "radio_group",
+                "groupKey": "marital_status",
+                "groupLabel": "Broken",
+                "suggestedFields": [
+                    {"fieldId": "field-1", "optionKey": "single", "optionLabel": "Single"},
+                ],
+            },
         ],
     }
-    payload_false = app_main._build_schema_mapping_payload(schema_fields, template_tags, ai_response_false)
-    assert len(payload_false["checkboxHints"]) == 1
-    assert payload_false["checkboxHints"][0]["directBooleanPossible"] is False
 
-    # directBooleanPossible=None -> key should be absent (None is returned)
-    ai_response_none = {
-        "mappings": [],
-        "checkbox_hints": [
-            {"databaseField": "consent", "groupKey": "consent_group", "direct_boolean_possible": None},
-        ],
-    }
-    payload_none = app_main._build_schema_mapping_payload(schema_fields, template_tags, ai_response_none)
-    assert len(payload_none["checkboxHints"]) == 1
-    assert "directBooleanPossible" not in payload_none["checkboxHints"][0]
+    payload = app_main._build_schema_mapping_payload(schema_fields, template_tags, ai_response)
 
-    # directBooleanPossible="no" -> bool False
-    ai_response_no = {
-        "mappings": [],
-        "checkbox_hints": [
-            {"databaseField": "consent", "groupKey": "consent_group", "direct_boolean_possible": "no"},
-        ],
-    }
-    payload_no = app_main._build_schema_mapping_payload(schema_fields, template_tags, ai_response_no)
-    assert len(payload_no["checkboxHints"]) == 1
-    assert payload_no["checkboxHints"][0]["directBooleanPossible"] is False
+    assert payload["radioGroupSuggestions"] == [
+        {
+            "id": "marital_status_field_1_field_2",
+            "suggestedType": "radio_group",
+            "groupKey": "marital_status",
+            "groupLabel": "Marital Status",
+            "sourceField": "marital_status",
+            "selectionReason": "enum",
+            "confidence": 0.55,
+            "suggestedFields": [
+                {"fieldId": "field-1", "fieldName": "single_box", "optionKey": "single", "optionLabel": "Single"},
+                {"fieldId": "field-2", "fieldName": "married_box", "optionKey": "married", "optionLabel": "Married"},
+            ],
+        }
+    ]

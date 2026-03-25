@@ -37,9 +37,9 @@ Outputs:
   - `mappingConfidence` when a rename matches a schema header name
 - Optional fill-time rules when schema headers are provided:
   - `checkboxRules`
-  - `checkboxHints`
+  - `radioGroupSuggestions`
   - `textTransformRules` (deterministic text split/join/copy operations)
-  - `fillRules` envelope (`version`, `checkboxRules`, `checkboxHints`, `textTransformRules`)
+  - `fillRules` envelope (`version`, `checkboxRules`, `textTransformRules`)
 
 API response note:
 - `POST /detect-fields` queues detection and returns a `sessionId`.
@@ -49,7 +49,7 @@ API response note:
 - `GET /api/renames/ai/{jobId}` returns queued/running/failed/complete status for async rename jobs.
 - `POST /api/schema-mappings/ai` can return `status=queued` + `jobId` in task mode.
 - `GET /api/schema-mappings/ai/{jobId}` returns queued/running/failed/complete status for async remap jobs.
-- Mapping responses include `mappings` plus deterministic rule payloads (`checkboxRules`, `checkboxHints`, `textTransformRules`, `fillRules`) used by Search & Fill.
+- Mapping responses include `mappings` plus deterministic rule payloads (`checkboxRules`, `radioGroupSuggestions`, `textTransformRules`, `fillRules`) used by Search & Fill.
 - The original name is preserved in `originalName` so the UI can reconcile edits.
 - Template overlay `rect` values may be sent as `{x,y,width,height}` or `[x1,y1,x2,y2]` (originTop points). The backend normalizes to a consistent numeric shape before use: schema mapping allowlists use `{x,y,width,height}`, while rename geometry uses `[x1,y1,x2,y2]`.
 

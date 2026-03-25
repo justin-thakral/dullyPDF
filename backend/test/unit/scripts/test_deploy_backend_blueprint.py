@@ -51,6 +51,25 @@ def test_deploy_backend_requires_fill_link_token_secret_and_recaptcha() -> None:
     assert "require_nonempty RECAPTCHA_ALLOWED_HOSTNAMES" in text
 
 
+def test_deploy_backend_requires_signing_secret_kms_bucket_and_rate_limits() -> None:
+    text = _script_text()
+    assert "require_nonempty SIGNING_LINK_TOKEN_SECRET" in text
+    assert "require_signing_link_secret_quality SIGNING_LINK_TOKEN_SECRET" in text
+    assert "require_nonempty SIGNING_AUDIT_KMS_KEY" in text
+    assert "require_nonempty SIGNING_BUCKET" in text
+    assert "require_integer_ge SIGNING_RETENTION_DAYS 30" in text
+    assert "require_integer_ge SIGNING_SESSION_TTL_SECONDS 300" in text
+    assert "require_integer_ge SIGNING_VIEW_RATE_WINDOW_SECONDS 1" in text
+    assert "require_integer_ge SIGNING_VIEW_RATE_PER_IP 1" in text
+    assert "require_integer_ge SIGNING_VIEW_RATE_GLOBAL 0" in text
+    assert "require_integer_ge SIGNING_ACTION_RATE_WINDOW_SECONDS 1" in text
+    assert "require_integer_ge SIGNING_ACTION_RATE_PER_IP 1" in text
+    assert "require_integer_ge SIGNING_ACTION_RATE_GLOBAL 0" in text
+    assert "require_integer_ge SIGNING_DOCUMENT_RATE_WINDOW_SECONDS 1" in text
+    assert "require_integer_ge SIGNING_DOCUMENT_RATE_PER_IP 1" in text
+    assert "require_integer_ge SIGNING_DOCUMENT_RATE_GLOBAL 0" in text
+
+
 def test_deploy_backend_requires_adc_only_firebase_auth_in_prod() -> None:
     text = _script_text()
     assert 'require_exact FIREBASE_USE_ADC "true"' in text
@@ -101,3 +120,16 @@ def test_backend_prod_env_example_documents_adc_only_and_fill_link_placeholder_r
     assert "preserve the current service min instances across deploys" in text
     assert "# FIREBASE_CREDENTIALS_SECRET=" in text
     assert "GOOGLE_APPLICATION_CREDENTIALS unset" in text
+
+
+def test_backend_prod_env_example_documents_signing_prod_requirements() -> None:
+    text = _prod_env_example_text()
+    assert "SIGNING_LINK_TOKEN_SECRET=" in text
+    assert "SIGNING_AUDIT_KMS_KEY=projects/dullypdf/locations/us-east4/keyRings/dullypdf-signing/cryptoKeys/signing-audit" in text
+    assert "SIGNING_BUCKET=dullypdf-signing" in text
+    assert "SIGNING_RETENTION_DAYS=2555" in text
+    assert "SIGNING_SESSION_TTL_SECONDS=3600" in text
+    assert "SIGNING_VIEW_RATE_WINDOW_SECONDS=60" in text
+    assert "SIGNING_ACTION_RATE_WINDOW_SECONDS=300" in text
+    assert "SIGNING_DOCUMENT_RATE_WINDOW_SECONDS=300" in text
+    assert "Cloud KMS" in text

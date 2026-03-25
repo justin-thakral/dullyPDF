@@ -167,6 +167,62 @@ export function fillLinkQuestionSupportsRespondentIdentity(question: Partial<Fil
   });
 }
 
+function questionCandidateKeys(question: Partial<FillLinkQuestion>): string[] {
+  return [
+    normalizeFillLinkQuestionType(question.type),
+    normalizeFillLinkKey(question.key),
+    normalizeFillLinkKey(question.sourceField),
+    normalizeFillLinkKey(question.label),
+  ].filter(Boolean);
+}
+
+export function fillLinkQuestionLooksLikeEmail(question: Partial<FillLinkQuestion>): boolean {
+  return questionCandidateKeys(question).some((candidate) => (
+    candidate === 'email'
+    || candidate.endsWith('_email')
+    || candidate.includes('email_address')
+  ));
+}
+
+function fillLinkQuestionLooksLikePhone(question: Partial<FillLinkQuestion>): boolean {
+  return questionCandidateKeys(question).some((candidate) => (
+    candidate === 'phone'
+    || candidate === 'mobile_phone'
+    || candidate === 'telephone'
+    || candidate.endsWith('_phone')
+    || candidate.endsWith('_telephone')
+  ));
+}
+
+function inferFieldQuestionType(field: Pick<PdfField, 'name' | 'type'>): FillLinkQuestion['type'] {
+  const normalizedFieldType = normalizeFillLinkKey(field.type) || 'text';
+  if (normalizedFieldType === 'date') {
+    return 'date';
+  }
+  const probe = {
+    key: field.name,
+    sourceField: field.name,
+    label: field.name,
+    type: normalizedFieldType,
+  };
+  if (fillLinkQuestionLooksLikeEmail(probe)) {
+    return 'email';
+  }
+  if (fillLinkQuestionLooksLikePhone(probe)) {
+    return 'phone';
+  }
+  return 'text';
+}
+
+export function fillLinkQuestionIsSigningCeremonyManaged(question: Partial<FillLinkQuestion>): boolean {
+  return questionCandidateKeys(question).some((candidate) => (
+    candidate === 'signature'
+    || candidate.endsWith('_signature')
+    || candidate.startsWith('signature_')
+    || candidate.includes('_signature_')
+  ));
+}
+
 function createSyntheticIdentityQuestion(order: number): FillLinkQuestion {
   return {
     id: defaultQuestionId(IDENTITY_KEY, 'synthetic'),
@@ -303,7 +359,7 @@ export function buildFillLinkQuestionsFromFields(
         id: defaultQuestionId(sourceField, 'pdf_field'),
         key: sourceField,
         label: humanizeFillLinkLabel(sourceField),
-        type: fieldType === 'date' ? 'date' : 'text',
+        type: inferFieldQuestionType(field),
         sourceType: 'pdf_field',
         sourceField,
         visible: true,

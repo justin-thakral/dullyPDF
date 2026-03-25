@@ -149,7 +149,7 @@ describe('HeaderBar', () => {
     expect(screen.getByText('Requires CSV/Excel/JSON/respondent rows')).toBeTruthy();
   });
 
-  it('keeps Fill By Link clickable when the workspace needs to surface a banner guard', async () => {
+  it('keeps Fill By Web Form Link clickable when the workspace needs to surface a banner guard', async () => {
     const user = userEvent.setup();
     const onOpenFillLink = vi.fn();
 
@@ -162,12 +162,31 @@ describe('HeaderBar', () => {
       />,
     );
 
-    const fillLinkButton = screen.getByRole('button', { name: 'Fill By Link' }) as HTMLButtonElement;
+    const fillLinkButton = screen.getByRole('button', { name: 'Fill By Web Form Link' }) as HTMLButtonElement;
     expect(fillLinkButton.disabled).toBe(false);
 
     await user.click(fillLinkButton);
 
     expect(onOpenFillLink).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders API Fill beside download for saved templates', async () => {
+    const user = userEvent.setup();
+    const onOpenTemplateApi = vi.fn();
+
+    render(
+      <HeaderBar
+        {...createProps({
+          onOpenTemplateApi,
+          canOpenTemplateApi: true,
+        })}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'API Fill' }));
+
+    expect(onOpenTemplateApi).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: 'Download' })).toBeTruthy();
   });
 
   it('switches into group mode with a selector and batch rename + map action', async () => {
@@ -314,29 +333,27 @@ describe('HeaderBar', () => {
     const downloadButton = screen.getByRole('button', { name: 'Download' }) as HTMLButtonElement;
     const saveButton = screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement;
 
-    expect(renameButton.disabled).toBe(false);
-    expect(mapButton.disabled).toBe(false);
-    expect(renameMapButton.disabled).toBe(false);
+    expect((dataButton as HTMLButtonElement).disabled).toBe(true);
+    expect(renameButton.disabled).toBe(true);
+    expect(mapButton.disabled).toBe(true);
+    expect(renameMapButton.disabled).toBe(true);
     expect(downloadButton.disabled).toBe(false);
-    expect(saveButton.disabled).toBe(false);
+    expect(saveButton.disabled).toBe(true);
 
-    await user.click(dataButton);
-    await user.click(renameButton);
-    await user.click(mapButton);
-    await user.click(renameMapButton);
     await user.click(downloadButton);
-    await user.click(saveButton);
+    await user.click(screen.getByRole('menuitem', { name: /Download editable PDF/i }));
 
-    expect(onDemoLockedAction).toHaveBeenCalledTimes(5);
+    expect(onDemoLockedAction).not.toHaveBeenCalled();
     expect(screen.queryByRole('menu', { name: 'Choose data source' })).toBeNull();
     expect(onRename).not.toHaveBeenCalled();
     expect(onMapSchema).not.toHaveBeenCalled();
     expect(onRenameAndMap).not.toHaveBeenCalled();
     expect(onDownload).toHaveBeenCalledTimes(1);
+    expect(onDownload).toHaveBeenCalledWith('editable');
     expect(onSaveToProfile).not.toHaveBeenCalled();
   });
 
-  it('shows docs links instead of the Fill By Link action in demo-locked mode', () => {
+  it('shows docs links instead of the Fill By Web Form Link action in demo-locked mode', () => {
     render(
       <HeaderBar
         {...createProps({
@@ -349,16 +366,16 @@ describe('HeaderBar', () => {
       />,
     );
 
-    expect(screen.queryByRole('button', { name: 'Fill By Link' })).toBeNull();
-    expect(screen.getByRole('link', { name: 'See Link Filling docs' }).getAttribute('href')).toBe(
+    expect(screen.queryByRole('button', { name: 'Fill By Web Form Link' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'Fill By Link docs' }).getAttribute('href')).toBe(
       '/usage-docs/fill-by-link',
     );
-    expect(screen.getByRole('link', { name: 'See Create Group docs' }).getAttribute('href')).toBe(
+    expect(screen.getByRole('link', { name: 'Create Group docs' }).getAttribute('href')).toBe(
       '/usage-docs/create-group',
     );
   });
 
-  it('wires download/save callbacks and updates loading button states', async () => {
+  it('opens the download menu and wires format-specific download callbacks', async () => {
     const user = userEvent.setup();
     const onDownload = vi.fn();
     const onDownloadGroup = vi.fn();
@@ -378,10 +395,16 @@ describe('HeaderBar', () => {
     const { rerender } = render(<HeaderBar {...props} />);
 
     await user.click(screen.getByRole('button', { name: 'Download' }));
+    expect(screen.getByRole('menu', { name: 'Choose download format' })).toBeTruthy();
+    await user.click(screen.getByRole('menuitem', { name: /Download flat PDF/i }));
+    await user.click(screen.getByRole('button', { name: 'Download' }));
+    await user.click(screen.getByRole('menuitem', { name: /Download editable PDF/i }));
     await user.click(screen.getByRole('button', { name: 'Download Group' }));
     await user.click(screen.getByRole('button', { name: 'Save' }));
 
-    expect(onDownload).toHaveBeenCalledTimes(1);
+    expect(onDownload).toHaveBeenCalledTimes(2);
+    expect(onDownload).toHaveBeenNthCalledWith(1, 'flat');
+    expect(onDownload).toHaveBeenNthCalledWith(2, 'editable');
     expect(onDownloadGroup).toHaveBeenCalledTimes(1);
     expect(onSaveToProfile).toHaveBeenCalledTimes(1);
 

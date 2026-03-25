@@ -15,10 +15,10 @@ from backend.time_utils import now_iso
 
 logger = get_logger(__name__)
 
-SAVED_FORM_EDITOR_SNAPSHOT_VERSION = 1
+SAVED_FORM_EDITOR_SNAPSHOT_VERSION = 2
 MAX_SAVED_FORM_EDITOR_SNAPSHOT_BYTES = 1_500_000
 SAVED_FORM_EDITOR_SNAPSHOT_METADATA_KEY = "editorSnapshot"
-ALLOWED_FIELD_TYPES = {"text", "checkbox", "signature", "date"}
+ALLOWED_FIELD_TYPES = {"text", "checkbox", "radio", "signature", "date"}
 
 
 def _coerce_bool(value: Any, *, default: bool = False) -> bool:
@@ -90,13 +90,24 @@ def _normalize_field(value: Any) -> Dict[str, Any]:
         "rect": _normalize_rect(value.get("rect")),
     }
 
-    for key in ("groupKey", "optionKey", "optionLabel", "groupLabel"):
+    for key in (
+        "groupKey",
+        "optionKey",
+        "optionLabel",
+        "groupLabel",
+        "radioGroupId",
+        "radioGroupKey",
+        "radioGroupLabel",
+        "radioOptionKey",
+        "radioOptionLabel",
+        "radioGroupSource",
+    ):
         raw = value.get(key)
         if raw is None:
             continue
         normalized[key] = str(raw)
 
-    for key in ("fieldConfidence", "mappingConfidence", "renameConfidence"):
+    for key in ("fieldConfidence", "mappingConfidence", "renameConfidence", "radioOptionOrder"):
         raw = value.get(key)
         if raw is None:
             continue
@@ -108,6 +119,75 @@ def _normalize_field(value: Any) -> Dict[str, Any]:
     else:
         normalized["value"] = str(raw_value)
     return normalized
+
+
+def _normalize_radio_group_option(value: Any) -> Dict[str, str]:
+    if not isinstance(value, dict):
+        raise ValueError("radio group options must contain objects")
+    field_id = str(value.get("fieldId") or "").strip()
+    option_key = str(value.get("optionKey") or "").strip()
+    option_label = str(value.get("optionLabel") or "").strip()
+    if not field_id:
+        raise ValueError("radio group option fieldId is required")
+    if not option_key:
+        raise ValueError("radio group option optionKey is required")
+    if not option_label:
+        raise ValueError("radio group option optionLabel is required")
+    return {
+        "fieldId": field_id,
+        "optionKey": option_key,
+        "optionLabel": option_label,
+    }
+
+
+def _normalize_radio_groups(value: Any) -> list[Dict[str, Any]]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise ValueError("radioGroups must be a list")
+
+    normalized_groups: list[Dict[str, Any]] = []
+    for entry in value:
+        if not isinstance(entry, dict):
+            raise ValueError("radioGroups must contain objects")
+        group_id = str(entry.get("id") or "").strip()
+        group_key = str(entry.get("key") or "").strip()
+        group_label = str(entry.get("label") or "").strip()
+        source = str(entry.get("source") or "manual").strip() or "manual"
+        if not group_id:
+            raise ValueError("radio group id is required")
+        if not group_key:
+            raise ValueError("radio group key is required")
+        if not group_label:
+            raise ValueError("radio group label is required")
+        raw_options = entry.get("options")
+        if not isinstance(raw_options, list) or not raw_options:
+            raise ValueError("radio group options must be a non-empty list")
+        options = [_normalize_radio_group_option(option) for option in raw_options]
+        raw_order = entry.get("optionOrder")
+        option_order = [str(item).strip() for item in raw_order] if isinstance(raw_order, list) else []
+        if not option_order:
+            option_order = [option["optionKey"] for option in options]
+
+        normalized_group: Dict[str, Any] = {
+            "id": group_id,
+            "key": group_key,
+            "label": group_label,
+            "source": source,
+            "optionOrder": option_order,
+            "options": options,
+        }
+        raw_page = entry.get("page")
+        if raw_page is not None:
+            try:
+                page = int(raw_page)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("radio group page must be an integer") from exc
+            if page < 1:
+                raise ValueError("radio group page must be at least 1")
+            normalized_group["page"] = page
+        normalized_groups.append(normalized_group)
+    return normalized_groups
 
 
 def _normalize_page_sizes(value: Any, page_count: int) -> Dict[str, Dict[str, float]]:
@@ -141,7 +221,7 @@ def normalize_saved_form_editor_snapshot_payload(payload: Any) -> Dict[str, Any]
         version_value = int(version)
     except (TypeError, ValueError) as exc:
         raise ValueError("version must be an integer") from exc
-    if version_value != SAVED_FORM_EDITOR_SNAPSHOT_VERSION:
+    if version_value not in {1, SAVED_FORM_EDITOR_SNAPSHOT_VERSION}:
         raise ValueError("editor snapshot version is not supported")
 
     raw_fields = payload.get("fields")
@@ -153,6 +233,7 @@ def normalize_saved_form_editor_snapshot_payload(payload: Any) -> Dict[str, Any]
         "pageCount": page_count,
         "pageSizes": _normalize_page_sizes(payload.get("pageSizes"), page_count),
         "fields": [_normalize_field(field) for field in raw_fields],
+        "radioGroups": _normalize_radio_groups(payload.get("radioGroups")),
         "hasRenamedFields": _coerce_bool(payload.get("hasRenamedFields"), default=False),
         "hasMappedSchema": _coerce_bool(payload.get("hasMappedSchema"), default=False),
     }

@@ -14,7 +14,7 @@ export const AUTH_READY_FALLBACK_MS = 5000;
 
 export const DEMO_ASSETS = {
   rawPdf: 'new_patient_forms_1915ccb015.pdf',
-  baseDetectionsPdf: 'baseFieldDetections.pdf',
+  baseDetectionsFields: 'generated/baseFieldDetections.fields.json',
   openAiRenamePdf: 'openAiRename.pdf',
   openAiRemapPdf: 'openAiRemap.pdf',
   csv: 'new_patient_forms_1915ccb015_mock.csv',
@@ -22,7 +22,7 @@ export const DEMO_ASSETS = {
   openAiRemapNameMap: 'generated/baseToOpenAiRemapNameMap.json',
 };
 
-export const DEMO_DISABLED_MESSAGE = 'Disabled during demo.';
+export const DEMO_DISABLED_MESSAGE = 'Demo is view-only for save, schema, and publish actions. Upload or open your own form to use them.';
 
 export const DEMO_STEPS: DemoStep[] = [
   {
@@ -65,7 +65,7 @@ export const DEMO_STEPS: DemoStep[] = [
   {
     id: 'search-fill',
     title: 'Search & Fill',
-    body: 'Click Search to end the demo and fill Justin Thakral\'s information.',
+    body: null,
     targetSelector: '[data-demo-target="search-fill-search"]',
     placement: 'right',
     showNext: false,
@@ -112,4 +112,7 @@ export const DEFAULT_PROFILE_LIMITS: ProfileLimits = {
   savedFormsMax: 3,
   fillLinksActiveMax: 1,
   fillLinkResponsesMax: 5,
+  templateApiActiveMax: 1,
+  templateApiRequestsMonthlyMax: 250,
+  templateApiMaxPages: 25,
 };

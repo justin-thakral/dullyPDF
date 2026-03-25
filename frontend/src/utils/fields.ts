@@ -10,6 +10,7 @@ const DEFAULT_SIZES: Record<FieldType, FieldRect> = {
   date: { x: 0, y: 0, width: 120, height: 22 },
   signature: { x: 0, y: 0, width: 220, height: 32 },
   checkbox: { x: 0, y: 0, width: 14, height: 14 },
+  radio: { x: 0, y: 0, width: 14, height: 14 },
 };
 
 const MIN_SIZES: Record<FieldType, number> = {
@@ -17,6 +18,7 @@ const MIN_SIZES: Record<FieldType, number> = {
   date: 12,
   signature: 16,
   checkbox: 12,
+  radio: 12,
 };
 
 // Base naming keeps field lists readable while still ensuring unique identifiers.
@@ -25,6 +27,7 @@ const NAME_BASES: Record<FieldType, string> = {
   date: 'date_field',
   signature: 'signature',
   checkbox: 'i_checkbox',
+  radio: 'radio_option',
 };
 
 function nextName(base: string, existing: Set<string>) {
@@ -57,8 +60,9 @@ export function getMinFieldSize(type: FieldType): number {
 
 export function normalizeRectForFieldType(rect: FieldRect, type: FieldType, pageSize: PageSize): FieldRect {
   const minSize = getMinFieldSize(type);
-  if (type === 'checkbox') {
-    const side = Math.max(rect.width, rect.height, getDefaultFieldRect('checkbox').width, minSize);
+  if (type === 'checkbox' || type === 'radio') {
+    const defaultType = type === 'radio' ? 'radio' : 'checkbox';
+    const side = Math.max(rect.width, rect.height, getDefaultFieldRect(defaultType).width, minSize);
     return clampRectToPage(
       {
         x: rect.x,
@@ -154,6 +158,18 @@ function normaliseFieldValueForMaterialize(field: PdfField): PdfField['value'] {
     if (typeof value === 'string' && value.trim().length === 0) return false;
     return value;
   }
+  if (field.type === 'radio') {
+    const exportValue = String(field.radioOptionKey || field.name || '').trim();
+    if (!exportValue) return null;
+    if (value === null || value === undefined) return null;
+    if (typeof value === 'boolean') return value ? exportValue : null;
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (!trimmed) return null;
+      return trimmed;
+    }
+    return String(value);
+  }
   if (value === null || value === undefined) return '';
   if (typeof value === 'string' && value.trim().length === 0) return '';
   return value;
@@ -165,9 +181,18 @@ function normaliseFieldValueForMaterialize(field: PdfField): PdfField['value'] {
  */
 export function buildTemplateFields(sourceFields: PdfField[]) {
   return sourceFields.map((field) => ({
+    id: field.id,
     name: field.name, type: field.type, page: field.page, rect: field.rect,
     groupKey: field.groupKey, optionKey: field.optionKey,
     optionLabel: field.optionLabel, groupLabel: field.groupLabel,
+    radioGroupId: field.radioGroupId,
+    radioGroupKey: field.radioGroupKey,
+    radioGroupLabel: field.radioGroupLabel,
+    radioOptionKey: field.radioOptionKey,
+    radioOptionLabel: field.radioOptionLabel,
+    radioOptionOrder: field.radioOptionOrder,
+    group: field.type === 'radio' ? (field.radioGroupKey || field.radioGroupLabel || field.name) : undefined,
+    exportValue: field.type === 'radio' ? (field.radioOptionKey || field.name) : undefined,
   }));
 }
 

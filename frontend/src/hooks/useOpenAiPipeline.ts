@@ -2,12 +2,12 @@ import { useCallback, useMemo, useState } from 'react';
 import type { User } from 'firebase/auth';
 import type {
   BannerNotice,
-  CheckboxHint,
   CheckboxRule,
   ConfirmDialogOptions,
   FieldNameUpdate,
   NameQueue,
   PdfField,
+  RadioGroupSuggestion,
   TextTransformRule,
 } from '../types';
 import { deriveMappingConfidence, parseConfidence } from '../utils/confidence';
@@ -57,7 +57,7 @@ export function useOpenAiPipeline(deps: UseOpenAiPipelineDeps) {
   const [hasMappedSchema, setHasMappedSchema] = useState(false);
   const [openAiError, setOpenAiError] = useState<string | null>(null);
   const [checkboxRules, setCheckboxRules] = useState<CheckboxRule[]>([]);
-  const [checkboxHints, setCheckboxHints] = useState<CheckboxHint[]>([]);
+  const [radioGroupSuggestions, setRadioGroupSuggestions] = useState<RadioGroupSuggestion[]>([]);
   const [textTransformRules, setTextTransformRules] = useState<TextTransformRule[]>([]);
 
   const resolveCreditExhaustionMessage = useCallback(async (): Promise<string> => {
@@ -121,12 +121,10 @@ export function useOpenAiPipeline(deps: UseOpenAiPipelineDeps) {
           ? (mappingResults.checkboxRules as CheckboxRule[])
           : [];
       setCheckboxRules(rules);
-      const hints = Array.isArray(fillRules?.checkboxHints)
-        ? (fillRules.checkboxHints as CheckboxHint[])
-        : Array.isArray(mappingResults.checkboxHints)
-          ? (mappingResults.checkboxHints as CheckboxHint[])
-          : [];
-      setCheckboxHints(hints);
+      const suggestions = Array.isArray(mappingResults.radioGroupSuggestions)
+        ? (mappingResults.radioGroupSuggestions as RadioGroupSuggestion[])
+        : [];
+      setRadioGroupSuggestions(suggestions);
       const textRules = Array.isArray(fillRules?.textTransformRules)
         ? (fillRules.textTransformRules as TextTransformRule[])
         : Array.isArray((fillRules as Record<string, unknown> | null)?.templateRules)
@@ -333,9 +331,7 @@ export function useOpenAiPipeline(deps: UseOpenAiPipelineDeps) {
         const updated = applyRenameResults(result.fields);
         if (!updated || updated.length === 0) throw new Error('OpenAI rename returned no fields.');
         setCheckboxRules(Array.isArray(result.checkboxRules) ? result.checkboxRules : []);
-        // Rename responses currently include rules but not hints; clear hints unless
-        // a future backend version explicitly returns them.
-        setCheckboxHints(Array.isArray((result as { checkboxHints?: CheckboxHint[] }).checkboxHints) ? (result as { checkboxHints?: CheckboxHint[] }).checkboxHints ?? [] : []);
+        setRadioGroupSuggestions([]);
         setTextTransformRules([]);
         if (!hasSchemaForMap) {
           deps.setBannerNotice({
@@ -500,7 +496,7 @@ export function useOpenAiPipeline(deps: UseOpenAiPipelineDeps) {
     setMappingInProgress(false);
     setHasMappedSchema(false);
     setCheckboxRules([]);
-    setCheckboxHints([]);
+    setRadioGroupSuggestions([]);
     setTextTransformRules([]);
     setRenameInProgress(false);
     setHasRenamedFields(false);
@@ -515,7 +511,7 @@ export function useOpenAiPipeline(deps: UseOpenAiPipelineDeps) {
     hasMappedSchema, setHasMappedSchema,
     openAiError, setOpenAiError,
     checkboxRules, setCheckboxRules,
-    checkboxHints, setCheckboxHints,
+    radioGroupSuggestions, setRadioGroupSuggestions,
     textTransformRules, setTextTransformRules,
     clearPendingAutoActions,
     applyMappingResults,

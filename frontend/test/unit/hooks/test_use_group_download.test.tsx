@@ -38,7 +38,7 @@ function createSnapshot(formId: string, templateName: string, sourceFile: File) 
     hasRenamedFields: false,
     hasMappedSchema: false,
     checkboxRules: [],
-    checkboxHints: [],
+    radioGroupSuggestions: [],
     textTransformRules: [],
     display: {
       showFields: true,

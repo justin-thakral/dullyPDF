@@ -21,8 +21,12 @@ Detection is executed by the dedicated detector service (`backend/detection/dete
 - Schema mapping (OpenAI): `POST /api/schema-mappings/ai` (returns mappings plus fill-time rule payloads; updates session mapping state).
 - Schema mapping job status (task mode): `GET /api/schema-mappings/ai/{jobId}`.
 - Saved forms: `GET /api/saved-forms`, `POST /api/saved-forms` (supports `overwriteFormId` to replace an existing saved form), `GET /api/saved-forms/{id}`, `GET /api/saved-forms/{id}/download`, `POST /api/saved-forms/{id}/session`, `PATCH /api/saved-forms/{id}/editor-snapshot`, `DELETE /api/saved-forms/{id}`.
+- API Fill owner endpoints: `GET /api/template-api-endpoints`, `POST /api/template-api-endpoints`, `POST /api/template-api-endpoints/{id}/rotate`, `POST /api/template-api-endpoints/{id}/revoke`, and `GET /api/template-api-endpoints/{id}/schema` (publishes a frozen saved-form snapshot plus a template-scoped secret, surfaces current plan limits, and returns recent endpoint audit activity).
+- API Fill public endpoints: `GET /api/v1/fill/{endpointId}/schema` and `POST /api/v1/fill/{endpointId}.pdf` (Basic auth with the endpoint-scoped key, deterministic JSON-to-PDF fill, binary PDF response, fail-closed rate limiting, owner-plan page/month limits, and usage/audit logging without storing raw field values by default).
 - Template groups: `GET /api/groups`, `POST /api/groups`, `GET /api/groups/{id}`, `DELETE /api/groups/{id}` (named containers for existing saved forms; deleting a saved form automatically removes it from every group).
-- Fill By Link: `GET /api/fill-links`, `POST /api/fill-links`, `PATCH /api/fill-links/{id}`, `POST /api/fill-links/{id}/close`, and public `/api/fill-links/public/*` routes (supports one link per saved template or one merged link per open group). Published links now persist a normalized `web_form_config` plus a published question schema so owners can control global defaults, per-question requiredness, per-question text limits, and template-only custom web-form questions. Template links can optionally freeze a publish snapshot so accepted respondents can download a PDF copy of their own submission later via a public response download route.
+- Fill By Link: `GET /api/fill-links`, `POST /api/fill-links`, `PATCH /api/fill-links/{id}`, `POST /api/fill-links/{id}/close`, and public `/api/fill-links/public/*` routes (supports one link per saved template or one merged link per open group). Published links now persist a normalized `web_form_config` plus a published question schema so owners can control global defaults, per-question requiredness, per-question text limits, and template-only custom web-form questions. Template links can optionally freeze a publish snapshot so accepted respondents can download a PDF copy of their own submission later via a public response download route. Respondent downloads default to a flattened `flat` artifact, while template owners can opt into an `editable` respondent download mode that preserves widgets for that public response download without affecting signing artifacts. If post-submit signing is enabled, the publish/update routes force respondent downloads back to `flat` so the public response artifact never stays editable. Template links can also enable a post-submit signing handoff: the owner maps signer name/email questions at publish time, the publish flow requires a visible email question for the signer-email mapping, and the public submit route validates that signer name/email before it stores the response. Once validated, the backend materializes the immutable filled PDF from the stored response snapshot, creates a signing request, and returns the `/sign/:token` continuation path so the respondent can review and sign that exact record immediately. Public `/api/fill-links/public/{token}/retry-signing` retries that handoff against the stored response record when a transient failure prevented the first redirect. Owner response listings now embed linked signing status plus signed-PDF / audit-receipt download paths when a response has completed signing.
+- Signing workflow: `GET /api/signing/options`, `GET /api/signing/requests`, `POST /api/signing/requests`, `GET /api/signing/requests/{id}`, `GET /api/signing/requests/{id}/artifacts`, `GET /api/signing/requests/{id}/artifacts/{artifactKey}`, `POST /api/signing/requests/{id}/send`, and public `/api/signing/public/*` routes. The owner workflow remains one-request-per-signer, but the frontend can now create and send recipient batches by saving multiple drafts from pasted/uploaded TXT or CSV data, then tracking them through the owner `Responses` view. Milestone 4 extends `Sign` mode so the final signer action now materializes a flattened signed PDF, stores an audit-manifest JSON envelope plus a human-readable audit receipt PDF, and exposes signed-PDF / audit-receipt downloads to the public completion page while owners can retrieve the full artifact set later. Milestone 5 brings `Fill and Sign` onto the same immutable boundary: the frontend freezes reviewed workspace values through `/api/forms/materialize`, owner drafts can persist Fill By Link response provenance (`source_type=fill_link_response`, `source_id`, `source_link_id`, `source_record_label`), and the send route now requires an explicit owner-review confirmation before a reviewed fill can be frozen and sent. Invite delivery is best-effort per request; when Gmail delivery is unavailable outside production the backend marks the request for manual follow-up instead of failing the send.
+- Post-submit Fill By Link signing reuses the same signing subsystem instead of inventing a second signer flow. The response submit handler creates signing requests with `source_type=fill_link_response`, links them back to the originating Fill By Link response, and derives signing anchors from the response snapshot/template geometry. When signing is enabled for a template link, signature-ceremony-managed questions are excluded from the public Fill By Link question schema so respondents only sign inside `/sign/:token`, not in the HTML intake form itself.
 - Template session (fillable upload): `POST /api/templates/session` (stores PDF bytes + fields so rename/mapping can run).
 - Materialize fillable: `POST /api/forms/materialize` (auth required; injects fields into a PDF upload and enforces fillable page limits).
 - Profile summary: `GET /api/profile` (tier info, credits, limits, billing metadata, and downgrade-retention state when applicable).
@@ -75,9 +79,24 @@ See `frontend/docs/api-routing.md` for the current rewrite list and frontend cal
 - `FIREBASE_CREDENTIALS_SECRET` (local/dev helper Secret Manager name loaded by `scripts/*backend*.sh`)
 - `FIREBASE_CREDENTIALS_PROJECT` (local/dev helper Secret Manager project, if different from `FIREBASE_PROJECT_ID`)
 - `FORMS_BUCKET`, `TEMPLATES_BUCKET`
+- `SIGNING_BUCKET` (recommended in dev and required by the prod deploy preflight so immutable source PDFs and signed artifacts stay isolated from generic form/session storage)
+- `SIGNING_LINK_TOKEN_SECRET` (required in production; public signing links and public signing sessions are HMAC-signed)
+- `SIGNING_AUDIT_KMS_KEY` (required in production for audit-manifest signing; may point at a CryptoKey or a specific CryptoKeyVersion)
+- `SIGNING_RETENTION_DAYS` (default 2555; prod deploy preflight also enforces the integer range before completed signing artifacts are written)
+- `SIGNING_SESSION_TTL_SECONDS` (default 3600; public signer session lifetime after bootstrap)
+- `SIGNING_VIEW_RATE_WINDOW_SECONDS`, `SIGNING_VIEW_RATE_PER_IP`
+- `SIGNING_VIEW_RATE_GLOBAL` (optional; global cap for anonymous signing page loads)
+- `SIGNING_ACTION_RATE_WINDOW_SECONDS`, `SIGNING_ACTION_RATE_PER_IP`
+- `SIGNING_ACTION_RATE_GLOBAL` (optional; global cap for anonymous signing session bootstrap and ceremony actions)
+- `SIGNING_DOCUMENT_RATE_WINDOW_SECONDS`, `SIGNING_DOCUMENT_RATE_PER_IP`
+- `SIGNING_DOCUMENT_RATE_GLOBAL` (optional; global cap for anonymous immutable-PDF preview loads)
 - `OPENAI_API_KEY` (only if schema mapping enabled)
 - `CONTACT_TO_EMAIL`, `CONTACT_FROM_EMAIL`
+- `SIGNING_FROM_EMAIL` (optional; defaults to `CONTACT_FROM_EMAIL` for signing invites)
+- `SIGNING_APP_ORIGIN` (optional; override the origin used when signing invites build `/sign/:token` URLs)
 - `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `GMAIL_REFRESH_TOKEN`
+- `GMAIL_CLIENT_SECRET_SECRET`, `GMAIL_REFRESH_TOKEN_SECRET` (optional local/dev Secret Manager bindings for the Gmail secret/refresh token)
+- `GMAIL_SECRETS_PROJECT` (optional; overrides the Secret Manager project for local/dev Gmail secret loading)
 - `GMAIL_USER_ID` (optional; defaults to `me`)
 - `RECAPTCHA_SITE_KEY`
 - `RECAPTCHA_PROJECT_ID` (or `FIREBASE_PROJECT_ID` / `GCP_PROJECT_ID`)
@@ -202,9 +221,9 @@ Detector env examples:
 - Downgrade retention keeps the default oldest saved forms up to the free limit, stores the rest in a 30-day delete queue, and closes dependent Fill By Link records immediately. The queue can be purged manually with `POST /api/profile/downgrade-retention/delete-now` or automatically through `backend/scripts/purge_downgrade_retention.py`.
 - Email/password logins must be email-verified; OAuth providers are treated as verified.
 - Schema metadata (headers/types) is stored in Firestore; CSV/Excel/JSON rows and field values never reach the server.
-- Schema mapping may emit deterministic fill rules (`fillRules`), including `checkboxRules`, `checkboxHints`, and `textTransformRules` (for split/join text fill cases).
+- Schema mapping may emit deterministic fill rules (`fillRules`), including `checkboxRules`, `radioGroupSuggestions`, and `textTransformRules` (for split/join text fill cases).
 - Session and saved-form metadata persist `textTransformRules` alongside checkbox rule metadata so Search & Fill can replay deterministic transforms.
-- Template Fill By Link can persist an owner-controlled respondent-download snapshot that freezes the published PDF storage path, normalized field payload, and saved-form fill rules at publish time. Public respondent downloads materialize from that snapshot plus the stored respondent answer record; group links never expose PDF downloads.
+- Template Fill By Link can persist an owner-controlled respondent-download snapshot that freezes the published PDF storage path, normalized field payload, fill rules, and download mode at publish time. Public respondent downloads materialize from that snapshot plus the stored respondent answer record; group links never expose PDF downloads.
 - Fill By Link response validation is schema-driven: published questions can carry per-question `required`, `maxLength`, placeholders, help text, and option metadata, while the existing environment-level answer caps remain the hard safety ceiling on stored submissions.
 - Saved-form metadata can reference a versioned editor snapshot JSON artifact in storage so reopen/group-switch flows can hydrate page sizes and extracted fields without repeating PDF extraction on every open. Snapshot upload is best-effort during save and can be backfilled later through `PATCH /api/saved-forms/{id}/editor-snapshot`.
 - Postgres/SQL integrations are not part of the runtime path (moved to `legacy/`).
@@ -352,7 +371,10 @@ For prod deploys, `scripts/deploy-backend.sh` requires Stripe keys to come from
 Secret Manager bindings (`STRIPE_SECRET_KEY_SECRET`, `STRIPE_WEBHOOK_SECRET_SECRET`)
 and rejects literal `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` values. The deploy
 script also hard-fails unless `backend/test/integration/test_billing_webhook_integration.py`
-passes. The same deploy step also resolves the active detector URLs/audiences from
+passes. Signing prod preflight now runs in the same script: it rejects placeholder/short
+`SIGNING_LINK_TOKEN_SECRET` values, requires `SIGNING_AUDIT_KMS_KEY` and `SIGNING_BUCKET`,
+and enforces integer retention/session/rate-limit settings for the public signing ceremony.
+The same deploy step also resolves the active detector URLs/audiences from
 `DETECTOR_ROUTING_MODE`, so switching detector traffic between CPU, split, and GPU
 is an env-file change plus backend redeploy.
 

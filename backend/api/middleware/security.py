@@ -48,8 +48,17 @@ async def enforce_security_guards(request: Request, call_next):
         "/api/recaptcha/assess",
     }
     is_public_fill_link_path = normalized_path.startswith("/api/fill-links/public/")
+    is_public_signing_path = normalized_path.startswith("/api/signing/public/")
+    is_public_template_api_fill_path = normalized_path.startswith("/api/v1/fill/")
     is_public_billing_webhook = normalized_path == "/api/billing/webhook"
-    if path.startswith("/api/") and normalized_path not in public_api_paths and not is_public_billing_webhook and not is_public_fill_link_path:
+    if (
+        path.startswith("/api/")
+        and normalized_path not in public_api_paths
+        and not is_public_billing_webhook
+        and not is_public_fill_link_path
+        and not is_public_signing_path
+        and not is_public_template_api_fill_path
+    ):
         authorization = request.headers.get("authorization")
         try:
             request.state.preverified_auth_payload = verify_token(authorization)

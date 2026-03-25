@@ -38,6 +38,24 @@ const IntentLandingPage = ({ pageKey }: IntentLandingPageProps) => {
       heroTitle={page.heroTitle}
       heroSummary={page.heroSummary}
     >
+      {page.articleSections?.map((section) => (
+        <section key={section.title} className="intent-page__panel intent-page__panel--article">
+          <h2>{section.title}</h2>
+          <div className="intent-page__article-copy">
+            {section.paragraphs.map((paragraph) => (
+              <p key={paragraph}>{paragraph}</p>
+            ))}
+            {section.bullets?.length ? (
+              <ul>
+                {section.bullets.map((bullet) => (
+                  <li key={bullet}>{bullet}</li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        </section>
+      ))}
+
       <section className="intent-page__grid">
         <article className="intent-page__panel">
           <h2>What this page solves</h2>

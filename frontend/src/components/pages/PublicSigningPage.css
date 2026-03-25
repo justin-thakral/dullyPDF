@@ -1,0 +1,366 @@
+.public-signing-page {
+  min-height: 100vh;
+  padding: 2rem 1rem 4rem;
+  background:
+    radial-gradient(900px at 12% -10%, rgba(15, 118, 110, 0.16), transparent 55%),
+    linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
+  color: #0f172a;
+}
+
+.public-signing-page__shell {
+  width: min(960px, 100%);
+  margin: 0 auto;
+  display: grid;
+  gap: 1.1rem;
+}
+
+.public-signing-page__hero {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.public-signing-page__eyebrow {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #0f766e;
+}
+
+.public-signing-page__shell h1,
+.public-signing-page__shell h2 {
+  margin: 0;
+}
+
+.public-signing-page__shell h1 {
+  font-size: clamp(2rem, 4vw, 3rem);
+  line-height: 1;
+}
+
+.public-signing-page__shell h2 {
+  font-size: 1.3rem;
+}
+
+.public-signing-page__lead,
+.public-signing-page__support {
+  margin: 0;
+  color: #334155;
+  line-height: 1.6;
+}
+
+.public-signing-page__lead {
+  max-width: 58ch;
+}
+
+.public-signing-page__card {
+  display: grid;
+  gap: 1rem;
+  padding: 1.25rem;
+  border: 1px solid #dbe2ec;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
+}
+
+.public-signing-page__facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem;
+  margin: 0;
+}
+
+.public-signing-page__fact {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+  padding: 0.85rem 0.95rem;
+  border-radius: 16px;
+  background: rgba(248, 250, 252, 0.92);
+  border: 1px solid rgba(226, 232, 240, 0.95);
+}
+
+.public-signing-page__fact--wide,
+.public-signing-page__fact--full {
+  grid-column: span 2;
+}
+
+.public-signing-page__fact--code dd {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 0.82rem;
+  letter-spacing: -0.01em;
+}
+
+.public-signing-page__facts dt {
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.public-signing-page__facts dd {
+  margin: 0;
+  font-weight: 600;
+  color: #0f172a;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.public-signing-page__hash {
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+
+.public-signing-page__progress-card {
+  gap: 1rem;
+}
+
+.public-signing-page__button-group {
+  display: grid;
+  gap: 0.75rem;
+  align-items: stretch;
+}
+
+.public-signing-page__button-group > .ui-button,
+.public-signing-page__button-group > a.ui-button {
+  display: inline-flex;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  text-decoration: none;
+  min-height: 2.85rem;
+}
+
+.public-signing-page__button-group--secondary {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.public-signing-page__steps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.public-signing-page__step {
+  display: grid;
+  gap: 0.4rem;
+  padding: 0.9rem 1rem;
+  border-radius: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(248, 250, 252, 0.95);
+  color: #475569;
+}
+
+.public-signing-page__step span {
+  width: 1.8rem;
+  height: 1.8rem;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.18);
+  font-weight: 700;
+}
+
+.public-signing-page__step strong {
+  font-size: 0.92rem;
+}
+
+.public-signing-page__step--active {
+  border-color: rgba(37, 99, 235, 0.45);
+  background: rgba(219, 234, 254, 0.95);
+  color: #1d4ed8;
+}
+
+.public-signing-page__step--active span {
+  background: rgba(37, 99, 235, 0.15);
+}
+
+.public-signing-page__step--complete {
+  border-color: rgba(15, 118, 110, 0.3);
+  background: rgba(240, 253, 250, 0.95);
+  color: #0f766e;
+}
+
+.public-signing-page__step--complete span {
+  background: rgba(15, 118, 110, 0.12);
+}
+
+.public-signing-page__document-frame {
+  min-height: 540px;
+  border-radius: 18px;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: #e2e8f0;
+}
+
+.public-signing-page__document-frame iframe {
+  width: 100%;
+  min-height: 540px;
+  border: 0;
+  background: #fff;
+}
+
+.public-signing-page__field {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.public-signing-page__field span {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.public-signing-page__field input {
+  width: 100%;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.5);
+  background: #fff;
+  padding: 0.85rem 1rem;
+  font: inherit;
+  color: #0f172a;
+}
+
+.public-signing-page__field input:focus {
+  outline: 2px solid rgba(37, 99, 235, 0.2);
+  border-color: rgba(37, 99, 235, 0.6);
+}
+
+.public-signing-page__signature-preview {
+  display: grid;
+  gap: 0.45rem;
+  padding: 1rem;
+  border-radius: 16px;
+  border: 1px dashed rgba(15, 23, 42, 0.18);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(241, 245, 249, 0.95));
+}
+
+.public-signing-page__signature-preview span {
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.public-signing-page__signature-preview strong {
+  font-size: 1.6rem;
+  font-style: italic;
+  font-family: "Georgia", "Times New Roman", serif;
+  color: #0f172a;
+}
+
+.public-signing-page__checkbox {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  color: #0f172a;
+  font-weight: 500;
+}
+
+.public-signing-page__checkbox input {
+  margin-top: 0.15rem;
+}
+
+.public-signing-page__list {
+  margin: 0;
+  padding-left: 1.2rem;
+  color: #334155;
+  line-height: 1.6;
+}
+
+@media (max-width: 720px) {
+  .public-signing-page {
+    padding: 1.1rem 0.8rem 2.5rem;
+  }
+
+  .public-signing-page__shell {
+    gap: 0.9rem;
+  }
+
+  .public-signing-page__shell h1 {
+    font-size: clamp(2rem, 10vw, 2.6rem);
+    line-height: 0.98;
+  }
+
+  .public-signing-page__card {
+    padding: 0.95rem;
+    border-radius: 20px;
+  }
+
+  .public-signing-page__facts {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+
+  .public-signing-page__fact,
+  .public-signing-page__fact--wide,
+  .public-signing-page__fact--full {
+    grid-column: span 1;
+  }
+
+  .public-signing-page__fact {
+    padding: 0.8rem 0.85rem;
+  }
+
+  .public-signing-page__fact--code dd,
+  .public-signing-page__hash {
+    font-size: 0.8rem;
+  }
+
+  .public-signing-page__steps {
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(145px, 1fr);
+    overflow-x: auto;
+    padding-bottom: 0.25rem;
+    scroll-snap-type: x proximity;
+  }
+
+  .public-signing-page__step {
+    min-height: 100%;
+    scroll-snap-align: start;
+  }
+
+  .public-signing-page__document-frame,
+  .public-signing-page__document-frame iframe {
+    min-height: 360px;
+  }
+
+  .public-signing-page__checkbox {
+    gap: 0.6rem;
+  }
+
+  .public-signing-page__button-group--secondary {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 420px) {
+  .public-signing-page {
+    padding-inline: 0.7rem;
+  }
+
+  .public-signing-page__shell h1 {
+    font-size: 2.1rem;
+  }
+
+  .public-signing-page__lead,
+  .public-signing-page__support,
+  .public-signing-page__list {
+    font-size: 0.95rem;
+  }
+
+  .public-signing-page__steps {
+    grid-auto-columns: minmax(132px, 1fr);
+  }
+
+  .public-signing-page__document-frame,
+  .public-signing-page__document-frame iframe {
+    min-height: 320px;
+  }
+}

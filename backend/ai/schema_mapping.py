@@ -19,7 +19,7 @@ MAX_PAYLOAD_BYTES = int(os.getenv("OPENAI_SCHEMA_MAX_PAYLOAD_BYTES", "80000"))
 MAX_FIELD_NAME_LEN = int(os.getenv("OPENAI_SCHEMA_MAX_FIELD_NAME_LEN", "120"))
 
 ALLOWED_SCHEMA_TYPES = {"string", "int", "date", "bool"}
-ALLOWED_TEMPLATE_TYPES = {"text", "checkbox", "signature", "date"}
+ALLOWED_TEMPLATE_TYPES = {"text", "checkbox", "radio", "signature", "date"}
 
 def validate_payload_size(payload: Dict[str, Any]) -> None:
     """Reject payloads that exceed the OpenAI request size budget."""
@@ -72,6 +72,7 @@ def build_allowlist_payload(schema_fields: List[Dict[str, Any]], template_fields
         option_label = field.get("optionLabel") or field.get("option_label")
         group_label = field.get("groupLabel") or field.get("group_label")
         cleaned_template.append({
+            "fieldId": str(field.get("id") or "").strip() or None,
             "tag": tag[:MAX_FIELD_NAME_LEN],
             "type": field_type,
             "page": page_value,
@@ -80,6 +81,10 @@ def build_allowlist_payload(schema_fields: List[Dict[str, Any]], template_fields
             "optionKey": str(field.get("optionKey") or "").strip() or None,
             "optionLabel": str(option_label).strip()[:MAX_FIELD_NAME_LEN] if option_label else None,
             "groupLabel": str(group_label).strip()[:MAX_FIELD_NAME_LEN] if group_label else None,
+            "radioGroupKey": str(field.get("radioGroupKey") or "").strip() or None,
+            "radioGroupLabel": str(field.get("radioGroupLabel") or "").strip()[:MAX_FIELD_NAME_LEN] if field.get("radioGroupLabel") else None,
+            "radioOptionKey": str(field.get("radioOptionKey") or "").strip() or None,
+            "radioOptionLabel": str(field.get("radioOptionLabel") or "").strip()[:MAX_FIELD_NAME_LEN] if field.get("radioOptionLabel") else None,
         })
 
     payload = {
@@ -221,11 +226,11 @@ def call_openai_schema_mapping(
     system_prompt = (
         "You map database schema fields to PDF template overlay tags. "
         "You only see schema field names/types and template tags. "
-        "Return JSON with keys: mappings, templateRules, textTransformRules, checkboxRules, checkboxHints, "
+        "Return JSON with keys: mappings, templateRules, textTransformRules, checkboxRules, radioGroupSuggestions, "
         "identifierKey, notes. Each mapping must include schemaField, templateTag, "
         "confidence (0..1), reasoning. "
-        "checkboxHints should identify when a database field can be used as a direct boolean "
-        "for a checkbox group."
+        "radioGroupSuggestions should identify single-choice checkbox clusters that should become "
+        "explicit radio groups in the editor."
     )
     user_prompt = (
         "Schema + template overlay payload (no row values):\n"
@@ -240,8 +245,15 @@ def call_openai_schema_mapping(
         "optional separator/delimiter/part/index, confidence, requiresReview, reasoning.\n"
         "- If split is ambiguous, set requiresReview=true and lower confidence.\n"
         "- checkboxRules should map one schemaField to one template groupKey when possible.\n"
-        "- checkboxHints should be a list of objects with: databaseField, groupKey, "
-        "directBooleanPossible (true/false), and optional operation (yes_no|enum|list|presence).\n"
+        "- radioGroupSuggestions should only describe single-choice groups such as yes/no, enum, "
+        "or binary pairs. Never use them for multi-select lists.\n"
+        "- radioGroupSuggestions should be a list of objects with: suggestedType (radio_group), "
+        "groupKey, groupLabel, suggestedFields, optional sourceField, optional selectionReason "
+        "(yes_no|enum|binary_pair|label_pattern), confidence, reasoning.\n"
+        "- suggestedFields should be a list of at least 2 items. Each item should use: fieldId "
+        "when available, fieldName, optionKey, optionLabel.\n"
+        "- Only suggest radio groups for template tags whose type is checkbox or radio.\n"
+        "- Do not suggest a radio group when the fields already share explicit radio metadata.\n"
     )
 
     client = create_openai_client(api_key=key, max_retries_override=openai_max_retries)
@@ -306,9 +318,14 @@ def _merge_schema_mapping_response(
     if isinstance(checkbox_rules, list):
         aggregate.setdefault("checkboxRules", []).extend([entry for entry in checkbox_rules if isinstance(entry, dict)])
 
-    checkbox_hints = response.get("checkboxHints") or response.get("checkbox_hints")
-    if isinstance(checkbox_hints, list):
-        aggregate.setdefault("checkboxHints", []).extend([entry for entry in checkbox_hints if isinstance(entry, dict)])
+    radio_group_suggestions = (
+        response.get("radioGroupSuggestions")
+        or response.get("radio_group_suggestions")
+    )
+    if isinstance(radio_group_suggestions, list):
+        aggregate.setdefault("radioGroupSuggestions", []).extend(
+            [entry for entry in radio_group_suggestions if isinstance(entry, dict)]
+        )
 
     identifier_key = response.get("identifierKey") or response.get("patientIdentifierField")
     if identifier_key and not aggregate.get("identifierKey"):
@@ -356,7 +373,7 @@ def call_openai_schema_mapping_chunked(
         "templateRules": [],
         "textTransformRules": [],
         "checkboxRules": [],
-        "checkboxHints": [],
+        "radioGroupSuggestions": [],
         "notes": [],
     }
     chunk_count = len(chunks)

@@ -1,8 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
-const repoRoot = process.cwd();
+const helperDir = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(helperDir, '..', '..', '..', '..');
 const frontendEnvPath = path.join(repoRoot, 'env/frontend.dev.env');
 
 function readFrontendEnvValue(key) {

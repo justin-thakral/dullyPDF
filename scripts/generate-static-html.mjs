@@ -81,6 +81,23 @@ function renderBodyContent(route) {
     }
   }
 
+  if (body.articleSections) {
+    for (const section of body.articleSections) {
+      parts.push(`<section><h2>${esc(section.title)}</h2>`);
+      for (const paragraph of section.paragraphs || []) {
+        parts.push(`<p>${esc(paragraph)}</p>`);
+      }
+      if (section.bullets?.length) {
+        parts.push('<ul>');
+        for (const bullet of section.bullets) {
+          parts.push(`<li>${esc(bullet)}</li>`);
+        }
+        parts.push('</ul>');
+      }
+      parts.push('</section>');
+    }
+  }
+
   if (body.sections) {
     for (const section of body.sections) {
       parts.push(`<section><h2>${esc(section.title)}</h2><p>${esc(section.description)}</p></section>`);

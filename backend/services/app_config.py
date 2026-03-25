@@ -13,16 +13,22 @@ from backend.env_utils import env_truthy as _env_truthy, env_value as _env_value
 from backend.logging_config import get_logger
 from backend.fieldDetecting.rename_pipeline.debug_flags import debug_enabled
 
-_DEFAULT_CORS_ORIGINS = [
-    "http://localhost:5173",
-    "http://localhost:5174",
-    "http://localhost:5175",
-    "http://localhost:5176",
-    "http://127.0.0.1:5173",
-    "http://127.0.0.1:5174",
-    "http://127.0.0.1:5175",
-    "http://127.0.0.1:5176",
-]
+def _build_default_dev_cors_origins() -> list[str]:
+    """Allow the standard Vite localhost fallback range in local development.
+
+    Vite increments the port when another dev server is already running, so a
+    fixed four-port allowlist becomes fragile during multi-terminal testing.
+    Keeping the range bounded avoids a wildcard while still covering the normal
+    local workflow on both localhost and 127.0.0.1 origins.
+    """
+    origins: list[str] = []
+    for host in ("localhost", "127.0.0.1"):
+        for port in range(5173, 5190):
+            origins.append(f"http://{host}:{port}")
+    return origins
+
+
+_DEFAULT_CORS_ORIGINS = _build_default_dev_cors_origins()
 
 logger = get_logger(__name__)
 

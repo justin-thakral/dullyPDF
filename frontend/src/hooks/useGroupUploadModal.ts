@@ -3,7 +3,6 @@ import type { User } from 'firebase/auth';
 import { flushSync } from 'react-dom';
 import type {
   BannerNotice,
-  CheckboxHint,
   CheckboxRule,
   TextTransformRule,
 } from '../types';
@@ -549,7 +548,6 @@ export function useGroupUploadModal(deps: UseGroupUploadModalDeps) {
 
           let nextFields = fields;
           let checkboxRules: CheckboxRule[] = [];
-          let checkboxHints: CheckboxHint[] = [];
           let textTransformRules: TextTransformRule[] = [];
 
           if (wantsRename && wantsMap) {
@@ -570,7 +568,6 @@ export function useGroupUploadModal(deps: UseGroupUploadModalDeps) {
             }
             nextFields = renamedFields;
             checkboxRules = Array.isArray(renameResult?.checkboxRules) ? renameResult.checkboxRules : [];
-            checkboxHints = Array.isArray(renameResult?.checkboxHints) ? renameResult.checkboxHints : [];
           } else if (wantsRename) {
             setItemState(item.id, { detail: 'Renaming fields…' });
             const renameResult = await ApiService.renameFields({
@@ -588,7 +585,6 @@ export function useGroupUploadModal(deps: UseGroupUploadModalDeps) {
             }
             nextFields = renamedFields;
             checkboxRules = Array.isArray(renameResult?.checkboxRules) ? renameResult.checkboxRules : [];
-            checkboxHints = Array.isArray(renameResult?.checkboxHints) ? renameResult.checkboxHints : [];
           } else if (wantsMap) {
             setItemState(item.id, { detail: 'Mapping schema…' });
             const mappingResult = await ApiService.mapSchema(
@@ -610,7 +606,6 @@ export function useGroupUploadModal(deps: UseGroupUploadModalDeps) {
             );
             nextFields = mapped.fields;
             checkboxRules = mapped.checkboxRules;
-            checkboxHints = mapped.checkboxHints;
             textTransformRules = mapped.textTransformRules;
           }
 
@@ -637,7 +632,6 @@ export function useGroupUploadModal(deps: UseGroupUploadModalDeps) {
             sessionId,
             undefined,
             checkboxRules,
-            checkboxHints,
             textTransformRules,
             undefined,
             {

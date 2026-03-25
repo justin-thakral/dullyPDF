@@ -76,7 +76,6 @@ def _missing_required_data(
     include_result: bool,
     include_renames: bool,
     include_checkbox_rules: bool,
-    include_checkbox_hints: bool,
     include_text_transform_rules: bool,
 ) -> bool:
     if include_pdf_bytes and not entry.get("pdf_bytes"):
@@ -88,8 +87,6 @@ def _missing_required_data(
     if include_renames and "renames" not in entry and entry.get("renames_path"):
         return True
     if include_checkbox_rules and "checkboxRules" not in entry and entry.get("checkbox_rules_path"):
-        return True
-    if include_checkbox_hints and "checkboxHints" not in entry and entry.get("checkbox_hints_path"):
         return True
     if include_text_transform_rules and "textTransformRules" not in entry and entry.get("text_transform_rules_path"):
         return True
@@ -104,7 +101,6 @@ def _hydrate_from_l2(
     include_result: bool,
     include_renames: bool,
     include_checkbox_rules: bool,
-    include_checkbox_hints: bool,
     include_text_transform_rules: bool,
 ) -> Optional[SessionEntry]:
     metadata = get_session_metadata(session_id)
@@ -118,7 +114,6 @@ def _hydrate_from_l2(
         "result_path": metadata.get("result_path"),
         "renames_path": metadata.get("renames_path"),
         "checkbox_rules_path": metadata.get("checkbox_rules_path"),
-        "checkbox_hints_path": metadata.get("checkbox_hints_path"),
         "text_transform_rules_path": metadata.get("text_transform_rules_path"),
         "page_count": metadata.get("page_count"),
         "detection_status": metadata.get("detection_status"),
@@ -143,8 +138,6 @@ def _hydrate_from_l2(
         entry["renames"] = download_session_json(entry["renames_path"]) or {}
     if include_checkbox_rules and entry.get("checkbox_rules_path"):
         entry["checkboxRules"] = download_session_json(entry["checkbox_rules_path"]) or []
-    if include_checkbox_hints and entry.get("checkbox_hints_path"):
-        entry["checkboxHints"] = download_session_json(entry["checkbox_hints_path"]) or []
     if include_text_transform_rules and entry.get("text_transform_rules_path"):
         entry["textTransformRules"] = download_session_json(entry["text_transform_rules_path"]) or []
 
@@ -160,7 +153,6 @@ def _ensure_l2_data(
     include_result: bool,
     include_renames: bool,
     include_checkbox_rules: bool,
-    include_checkbox_hints: bool,
     include_text_transform_rules: bool,
 ) -> None:
     if not _missing_required_data(
@@ -170,7 +162,6 @@ def _ensure_l2_data(
         include_result=include_result,
         include_renames=include_renames,
         include_checkbox_rules=include_checkbox_rules,
-        include_checkbox_hints=include_checkbox_hints,
         include_text_transform_rules=include_text_transform_rules,
     ):
         return
@@ -181,7 +172,6 @@ def _ensure_l2_data(
         include_result=include_result,
         include_renames=include_renames,
         include_checkbox_rules=include_checkbox_rules,
-        include_checkbox_hints=include_checkbox_hints,
         include_text_transform_rules=include_text_transform_rules,
     )
     if hydrated:
@@ -197,7 +187,6 @@ def _persist_session_entry(
     persist_result: bool = False,
     persist_renames: bool = False,
     persist_checkbox_rules: bool = False,
-    persist_checkbox_hints: bool = False,
     persist_text_transform_rules: bool = False,
     include_created_at: bool = False,
 ) -> None:
@@ -278,16 +267,6 @@ def _persist_session_entry(
         metadata["checkbox_rules_path"] = checkbox_path
     elif entry.get("checkbox_rules_path"):
         metadata["checkbox_rules_path"] = entry.get("checkbox_rules_path")
-
-    if persist_checkbox_hints:
-        checkbox_hints_path = upload_session_json(
-            entry.get("checkboxHints") or [],
-            _session_object_path(session_id, "checkbox-hints.json"),
-        )
-        entry["checkbox_hints_path"] = checkbox_hints_path
-        metadata["checkbox_hints_path"] = checkbox_hints_path
-    elif entry.get("checkbox_hints_path"):
-        metadata["checkbox_hints_path"] = entry.get("checkbox_hints_path")
 
     if persist_text_transform_rules:
         text_transform_rules_path = upload_session_json(

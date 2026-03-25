@@ -13,6 +13,7 @@ type FieldInputOverlayProps = {
   selectedFieldId: string | null;
   onSelectField: (fieldId: string) => void;
   onUpdateField: (fieldId: string, updates: Partial<PdfField>) => void;
+  onSelectRadioField: (fieldId: string) => void;
 };
 
 /**
@@ -56,6 +57,7 @@ export function FieldInputOverlay({
   selectedFieldId,
   onSelectField,
   onUpdateField,
+  onSelectRadioField,
 }: FieldInputOverlayProps) {
   const [draftValues, setDraftValues] = useState<Record<string, string>>({});
 
@@ -95,6 +97,13 @@ export function FieldInputOverlay({
     onUpdateField(field.id, { value: event.target.checked });
   };
 
+  const handleRadioChange = (field: PdfField) => (event: ChangeEvent<HTMLInputElement>) => {
+    if (!event.target.checked) {
+      return;
+    }
+    onSelectRadioField(field.id);
+  };
+
   const handleBlur =
     (field: PdfField) =>
     (event: FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -131,9 +140,13 @@ export function FieldInputOverlay({
         const selected = field.id === selectedFieldId;
         const minSide = Math.min(rect.width, rect.height);
         const fontSize =
-          field.type === 'checkbox' ? undefined : Math.max(8, Math.min(32, rect.height * 0.48));
+          field.type === 'checkbox' || field.type === 'radio'
+            ? undefined
+            : Math.max(8, Math.min(32, rect.height * 0.48));
         const checkboxSize =
-          field.type === 'checkbox' ? Math.max(14, Math.min(56, minSide - 4)) : undefined;
+          field.type === 'checkbox' || field.type === 'radio'
+            ? Math.max(14, Math.min(56, minSide - 4))
+            : undefined;
 
         const boxClassName = [
           'field-input-box',
@@ -175,6 +188,15 @@ export function FieldInputOverlay({
                 type="checkbox"
                 checked={coerceToCheckbox(field.value)}
                 onChange={handleCheckboxChange(field)}
+              />
+            ) : field.type === 'radio' ? (
+              <input
+                {...commonInputProps}
+                className="field-input field-input--radio"
+                type="radio"
+                name={field.radioGroupId || field.radioGroupKey || inputName}
+                checked={coerceToString(field.value) === String(field.radioOptionKey || '')}
+                onChange={handleRadioChange(field)}
               />
             ) : field.type === 'date' ? (
               <input

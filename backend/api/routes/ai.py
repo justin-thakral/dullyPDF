@@ -729,9 +729,9 @@ async def rename_fields_ai(
     entry["fields"] = renamed_fields
     entry["renames"] = rename_report
     entry["checkboxRules"] = checkbox_rules
-    # Rename does not emit checkbox hints, so clear any previous hints to avoid stale
-    # Search & Fill behavior after reruns on the same session.
-    entry["checkboxHints"] = []
+    # Legacy checkbox hints are no longer part of persisted session state.
+    # Drop any stale key from older sessions when rename reruns on the same session.
+    entry.pop("checkboxHints", None)
     # Text transform rules are produced by schema mapping, not rename.
     # Clear stale rules on rename reruns because field names may have changed.
     entry["textTransformRules"] = []
@@ -742,7 +742,6 @@ async def rename_fields_ai(
         persist_fields=True,
         persist_renames=True,
         persist_checkbox_rules=True,
-        persist_checkbox_hints=True,
         persist_text_transform_rules=True,
     )
 
@@ -1039,7 +1038,6 @@ async def map_schema_ai(
     )
     if session_entry and payload.sessionId:
         persist_rules = False
-        persist_hints = False
         persist_text_rules = False
         if isinstance(mapping_results, dict):
             # Persist explicit arrays (including empty arrays) so newer mapping results
@@ -1047,9 +1045,7 @@ async def map_schema_ai(
             checkbox_rules = list(mapping_results.get("checkboxRules") or [])
             session_entry["checkboxRules"] = checkbox_rules
             persist_rules = True
-            checkbox_hints = list(mapping_results.get("checkboxHints") or [])
-            session_entry["checkboxHints"] = checkbox_hints
-            persist_hints = True
+            session_entry.pop("checkboxHints", None)
             text_transform_rules = list(mapping_results.get("textTransformRules") or [])
             session_entry["textTransformRules"] = text_transform_rules
             persist_text_rules = True
@@ -1057,7 +1053,6 @@ async def map_schema_ai(
             payload.sessionId,
             session_entry,
             persist_checkbox_rules=persist_rules,
-            persist_checkbox_hints=persist_hints,
             persist_text_transform_rules=persist_text_rules,
         )
     response_payload = {

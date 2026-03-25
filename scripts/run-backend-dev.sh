@@ -36,6 +36,7 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/_load_firebase_secret.sh"
 load_firebase_secret
+load_backend_email_secrets
 
 VENV_UVICORN="backend/.venv/bin/uvicorn"
 if [[ -x "$VENV_UVICORN" ]]; then

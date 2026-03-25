@@ -3,23 +3,30 @@
 from __future__ import annotations
 
 from typing import Any, Dict
+from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from fastapi.responses import FileResponse
 
-from backend.api.schemas import FillLinkPublicSubmitRequest
+from backend.api.schemas import FillLinkPublicRetrySigningRequest, FillLinkPublicSubmitRequest
 from backend.firebaseDB.fill_link_database import (
     get_fill_link_by_public_token,
     get_fill_link_response,
     submit_fill_link_response,
 )
+from backend.logging_config import get_logger
 from backend.security.rate_limit import check_rate_limit
 from backend.services.contact_service import resolve_client_ip
 from backend.services.app_config import resolve_stream_cors_headers
 from backend.services.fill_link_download_service import (
     build_fill_link_download_payload,
     materialize_fill_link_response_download,
+    respondent_pdf_editable_enabled,
     respondent_pdf_download_enabled,
+)
+from backend.services.fill_link_signing_service import (
+    ensure_fill_link_response_signing_request,
+    resolve_fill_link_signer_identity_from_answers,
 )
 from backend.services.fill_link_scope_service import (
     close_fill_link_if_scope_invalid,
@@ -41,6 +48,7 @@ from backend.services.fill_links_service import (
     resolve_fill_link_view_rate_limits,
 )
 from backend.services.pdf_service import cleanup_paths
+from backend.services.signing_service import build_signing_public_path
 from backend.services.recaptcha_service import (
     recaptcha_required_for_fill_link,
     resolve_fill_link_recaptcha_action,
@@ -48,6 +56,7 @@ from backend.services.recaptcha_service import (
 )
 
 router = APIRouter()
+logger = get_logger(__name__)
 
 
 def _check_public_rate_limits(
@@ -99,8 +108,63 @@ def _serialize_public_link(
         payload["introText"] = web_form_config.get("introText")
         payload["requireAllFields"] = record.require_all_fields
         payload["respondentPdfDownloadEnabled"] = respondent_pdf_download_enabled(record)
+        payload["respondentPdfEditableEnabled"] = respondent_pdf_editable_enabled(record)
+        payload["postSubmitSigningEnabled"] = bool(
+            isinstance(record.signing_config, dict) and record.signing_config.get("enabled")
+        )
         payload["questions"] = record.questions
     return payload
+
+
+def _build_post_submit_signing_payload(*, link, response) -> Dict[str, Any]:
+    snapshot = (
+        response.respondent_pdf_snapshot
+        if response and isinstance(response.respondent_pdf_snapshot, dict)
+        else link.respondent_pdf_snapshot
+        if isinstance(link.respondent_pdf_snapshot, dict)
+        else None
+    )
+    cleanup_targets: list[Any] = []
+    if snapshot is None:
+        return {
+            "enabled": True,
+            "available": False,
+            "errorMessage": "This submitted record could not be prepared for signature. Contact the sender.",
+        }
+    try:
+        output_path, cleanup_targets, _ = materialize_fill_link_response_download(
+            snapshot,
+            answers=response.answers,
+            export_mode="flat",
+        )
+        source_pdf_bytes = Path(output_path).read_bytes()
+        signing_request = ensure_fill_link_response_signing_request(
+            link=link,
+            response=response,
+            source_pdf_bytes=source_pdf_bytes,
+            signing_config=link.signing_config,
+        )
+        return {
+            "enabled": True,
+            "available": True,
+            "requestId": signing_request.id,
+            "status": signing_request.status,
+            "publicPath": build_signing_public_path(signing_request.id),
+        }
+    except Exception:
+        logger.warning(
+            "Fill By Link post-submit signing failed for link=%s response=%s",
+            link.id,
+            response.id,
+            exc_info=True,
+        )
+        return {
+            "enabled": True,
+            "available": False,
+            "errorMessage": "Your form was submitted, but the signing handoff is unavailable right now. Contact the sender.",
+        }
+    finally:
+        cleanup_paths(cleanup_targets)
 
 
 @router.get("/api/fill-links/public/{token}")
@@ -180,6 +244,25 @@ async def submit_public_fill_link(
             status_code=400,
             detail=format_missing_fill_link_questions_message(missing_labels),
         )
+    if isinstance(record.signing_config, dict) and record.signing_config.get("enabled"):
+        try:
+            resolve_fill_link_signer_identity_from_answers(answers, record.signing_config)
+        except ValueError as exc:
+            message = str(exc)
+            if "valid email address" in message or "Signer email is required" in message:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Enter a valid signer email address before continuing to the signing step.",
+                ) from exc
+            if "Signer name is required" in message:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Enter the signer name before continuing to the signing step.",
+                ) from exc
+            raise HTTPException(
+                status_code=409,
+                detail="This signing-enabled form is misconfigured. Contact the sender to update the signer fields.",
+            ) from exc
     respondent_label, respondent_secondary_label = derive_fill_link_respondent_label(answers)
     search_text = build_fill_link_search_text(answers, respondent_label)
     result = submit_fill_link_response(
@@ -214,6 +297,18 @@ async def submit_public_fill_link(
         if result.response
         else None
     )
+    signing_payload: Dict[str, Any] | None = None
+    if (
+        result.response
+        and isinstance((result.link or record).signing_config, dict)
+        and (result.link or record).signing_config.get("enabled")
+    ):
+        signing_payload = _build_post_submit_signing_payload(
+            link=result.link or record,
+            response=result.response,
+        )
+    if signing_payload and signing_payload.get("enabled"):
+        download_payload = None
     return {
         "success": True,
         "responseId": result.response.id if result.response else None,
@@ -222,6 +317,45 @@ async def submit_public_fill_link(
         "responseDownloadAvailable": bool(download_payload and download_payload.get("enabled")),
         "responseDownloadPath": download_payload.get("downloadPath") if download_payload else None,
         "download": download_payload,
+        "signing": signing_payload,
+    }
+
+
+@router.post("/api/fill-links/public/{token}/retry-signing")
+async def retry_public_fill_link_signing(
+    token: str,
+    payload: FillLinkPublicRetrySigningRequest,
+    request: Request,
+) -> Dict[str, Any]:
+    public_token = normalize_fill_link_token(token)
+    window_seconds, per_ip, global_limit = resolve_fill_link_submit_rate_limits()
+    client_ip = resolve_client_ip(request)
+    allowed = _check_public_rate_limits(
+        scope="fill_link_submit",
+        client_ip=client_ip,
+        window_seconds=window_seconds,
+        per_ip=per_ip,
+        global_limit=global_limit,
+    )
+    if not allowed:
+        raise HTTPException(status_code=429, detail="Too many Fill By Link submissions. Please wait and try again.")
+
+    record = close_fill_link_if_scope_invalid(get_fill_link_by_public_token(public_token))
+    if not record:
+        raise HTTPException(status_code=404, detail="Fill By Link not found")
+    if not (isinstance(record.signing_config, dict) and record.signing_config.get("enabled")):
+        raise HTTPException(status_code=409, detail="This Fill By Link does not require signature after submit.")
+
+    response_record = get_fill_link_response(payload.responseId, record.id, record.user_id)
+    if not response_record:
+        raise HTTPException(status_code=404, detail="Submitted response not found.")
+
+    signing_payload = _build_post_submit_signing_payload(link=record, response=response_record)
+    return {
+        "success": bool(signing_payload.get("available")),
+        "responseId": response_record.id,
+        "link": _serialize_public_link(record),
+        "signing": signing_payload,
     }
 
 

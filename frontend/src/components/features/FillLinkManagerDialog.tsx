@@ -1,8 +1,10 @@
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
 import { Dialog } from '../ui/Dialog';
+import { ApiService } from '../../services/api';
 import type {
   FillLinkQuestion,
   FillLinkResponse,
+  FillLinkSigningConfig,
   FillLinkSummary,
   FillLinkWebFormConfig,
 } from '../../services/api';
@@ -11,6 +13,8 @@ import {
   buildFillLinkWebFormConfig,
   buildPublishedFillLinkQuestions,
   createCustomFillLinkQuestion,
+  fillLinkQuestionIsSigningCeremonyManaged,
+  fillLinkQuestionLooksLikeEmail,
   fillLinkQuestionIsBoolean,
   fillLinkQuestionSupportsOptions,
   fillLinkQuestionSupportsTextLimit,
@@ -18,14 +22,19 @@ import {
   sortFillLinkQuestions,
   validateFillLinkWebForm,
 } from '../../utils/fillLinkWebForm';
-import { fillLinkRespondentPdfDownloadEnabled } from '../../utils/fillLinks';
+import {
+  fillLinkRespondentPdfDownloadEnabled,
+  fillLinkRespondentPdfEditableEnabled,
+} from '../../utils/fillLinks';
 import './FillLinkManagerDialog.css';
 
 export type FillLinkPublishOptions = {
   title?: string;
   requireAllFields?: boolean;
   allowRespondentPdfDownload?: boolean;
+  allowRespondentEditablePdfDownload?: boolean;
   webFormConfig?: FillLinkWebFormConfig;
+  signingConfig?: FillLinkSigningConfig;
 };
 
 export type FillLinkManagerDialogProps = {
@@ -109,6 +118,16 @@ function formatDateLabel(value?: string | null): string {
   });
 }
 
+function resolveResponseSigningLabel(response: FillLinkResponse): string | null {
+  const linked = response.linkedSigning;
+  if (!linked?.status) return null;
+  if (linked.manualFallbackRequestedAt) return 'Manual fallback';
+  if (linked.status === 'completed') return 'Signed';
+  if (linked.status === 'sent') return 'Waiting for signature';
+  if (linked.status === 'invalidated') return 'Signing invalidated';
+  return 'Signing prepared';
+}
+
 function resolvePublicUrl(link: FillLinkSummary | null): string | null {
   if (!link?.publicPath) return null;
   if (typeof window === 'undefined') return link.publicPath;
@@ -145,6 +164,20 @@ const QUESTION_FILTER_OPTIONS: Array<{ value: QuestionFilter; label: string }> =
   { value: 'linked', label: 'Linked' },
   { value: 'custom', label: 'Custom' },
   { value: 'required', label: 'Required' },
+];
+
+const SIGNING_MODE_OPTIONS: Array<{ value: NonNullable<FillLinkSigningConfig['signatureMode']>; label: string }> = [
+  { value: 'business', label: 'Business' },
+  { value: 'consumer', label: 'Consumer' },
+];
+
+const SIGNING_CATEGORY_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: 'ordinary_business_form', label: 'Ordinary business form' },
+  { value: 'client_intake_form', label: 'Client intake form' },
+  { value: 'authorization_consent_form', label: 'Authorization or consent form' },
+  { value: 'acknowledgment_receipt', label: 'Acknowledgment or receipt' },
+  { value: 'vendor_service_agreement', label: 'Vendor or service agreement' },
+  { value: 'employment_internal_form', label: 'Internal employment form' },
 ];
 
 function normalizeBuilderQuestion(question: FillLinkQuestion): FillLinkQuestion {
@@ -257,6 +290,8 @@ function ResponsesPanel({
   onUseResponsesAsSearchFill: () => void;
 }) {
   const [query, setQuery] = useState('');
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+  const [downloadingPath, setDownloadingPath] = useState<string | null>(null);
   const previousQueryRef = useRef('');
   const refreshResponses = useEffectEvent((search?: string) => {
     if (typeof search === 'undefined') {
@@ -272,12 +307,26 @@ function ResponsesPanel({
   useEffect(() => {
     if (!open) {
       setQuery('');
+      setDownloadError(null);
+      setDownloadingPath(null);
       previousQueryRef.current = '';
       return;
     }
     previousQueryRef.current = '';
     setQuery('');
   }, [link?.id, open]);
+
+  async function handleArtifactDownload(downloadPath: string, fallbackFilename: string) {
+    setDownloadError(null);
+    setDownloadingPath(downloadPath);
+    try {
+      await ApiService.downloadAuthenticatedFile(downloadPath, { filename: fallbackFilename });
+    } catch (error) {
+      setDownloadError(error instanceof Error ? error.message : 'Failed to download file.');
+    } finally {
+      setDownloadingPath((current) => (current === downloadPath ? null : current));
+    }
+  }
 
   useEffect(() => {
     if (!open) {
@@ -335,6 +384,10 @@ function ResponsesPanel({
         />
       </label>
 
+      {downloadError ? (
+        <p className="fill-link-dialog__error">{downloadError}</p>
+      ) : null}
+
       {loadingResponses ? (
         <p className="fill-link-dialog__loading">Loading responses…</p>
       ) : responses.length === 0 ? (
@@ -345,17 +398,67 @@ function ResponsesPanel({
         <div className="fill-link-dialog__responses">
           {responses.map((response) => (
             <div key={response.id} className="fill-link-dialog__response-card">
-              <div>
-                <strong>{response.respondentLabel}</strong>
-                <p>{response.respondentSecondaryLabel || formatDateLabel(response.submittedAt)}</p>
+              <div className="fill-link-dialog__response-meta">
+                <div className="fill-link-dialog__response-copy">
+                  <strong>{response.respondentLabel}</strong>
+                  <p>{response.respondentSecondaryLabel || formatDateLabel(response.submittedAt)}</p>
+                </div>
+                {resolveResponseSigningLabel(response) ? (
+                  <div className="fill-link-dialog__response-badges">
+                    <span className="fill-link-dialog__response-badge">
+                      {resolveResponseSigningLabel(response)}
+                    </span>
+                    {response.linkedSigning?.completedAt ? (
+                      <span className="fill-link-dialog__response-badge fill-link-dialog__response-badge--muted">
+                        {formatDateLabel(response.linkedSigning.completedAt)}
+                      </span>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
-              <button
-                type="button"
-                className="ui-button ui-button--primary ui-button--compact"
-                onClick={() => onApplyResponse(response)}
-              >
-                Apply to PDF
-              </button>
+              <div className="fill-link-dialog__response-actions">
+                {response.linkedSigning?.artifacts?.signedPdf?.downloadPath ? (
+                  <button
+                    type="button"
+                    className="ui-button ui-button--primary ui-button--compact"
+                    onClick={() => {
+                      void handleArtifactDownload(
+                        response.linkedSigning!.artifacts!.signedPdf!.downloadPath!,
+                        `${response.respondentLabel || 'signed-response'}-signed.pdf`,
+                      );
+                    }}
+                    disabled={downloadingPath === response.linkedSigning.artifacts.signedPdf.downloadPath}
+                  >
+                    {downloadingPath === response.linkedSigning.artifacts.signedPdf.downloadPath
+                      ? 'Downloading…'
+                      : 'Download signed PDF'}
+                  </button>
+                ) : null}
+                {response.linkedSigning?.artifacts?.auditReceipt?.downloadPath ? (
+                  <button
+                    type="button"
+                    className="ui-button ui-button--ghost ui-button--compact"
+                    onClick={() => {
+                      void handleArtifactDownload(
+                        response.linkedSigning!.artifacts!.auditReceipt!.downloadPath!,
+                        `${response.respondentLabel || 'signed-response'}-audit-receipt.pdf`,
+                      );
+                    }}
+                    disabled={downloadingPath === response.linkedSigning.artifacts.auditReceipt.downloadPath}
+                  >
+                    {downloadingPath === response.linkedSigning.artifacts.auditReceipt.downloadPath
+                      ? 'Downloading…'
+                      : 'Audit receipt'}
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  className="ui-button ui-button--primary ui-button--compact"
+                  onClick={() => onApplyResponse(response)}
+                >
+                  Apply to PDF
+                </button>
+              </div>
             </div>
           ))}
         </div>
@@ -397,8 +500,59 @@ function FillLinkScopePanel({
   const [defaultTextMaxLength, setDefaultTextMaxLength] = useState('');
   const [requireAllFields, setRequireAllFields] = useState(false);
   const [allowRespondentPdfDownload, setAllowRespondentPdfDownload] = useState(false);
+  const [allowRespondentEditablePdfDownload, setAllowRespondentEditablePdfDownload] = useState(false);
+  const [signAfterSubmitEnabled, setSignAfterSubmitEnabled] = useState(false);
+  const [signatureMode, setSignatureMode] = useState<NonNullable<FillLinkSigningConfig['signatureMode']>>('business');
+  const [documentCategory, setDocumentCategory] = useState('ordinary_business_form');
+  const [manualFallbackEnabled, setManualFallbackEnabled] = useState(true);
+  const [signerNameQuestionKey, setSignerNameQuestionKey] = useState('');
+  const [signerEmailQuestionKey, setSignerEmailQuestionKey] = useState('');
   const [questions, setQuestions] = useState<FillLinkQuestion[]>([]);
   const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(null);
+  const ensureSigningEmailQuestion = (questionList: FillLinkQuestion[]) => {
+    const existingQuestion = questionList.find((question) => question.key === 'signer_email');
+    if (existingQuestion) {
+      const nextQuestions = questionList.map((question) => {
+        if ((question.id || question.key) !== (existingQuestion.id || existingQuestion.key)) {
+          return question;
+        }
+        return {
+          ...question,
+          key: 'signer_email',
+          label: question.label || 'Signer Email',
+          type: 'email',
+          sourceType: 'custom',
+          required: true,
+          visible: true,
+          placeholder: question.placeholder || 'name@example.com',
+          helpText: question.helpText || 'Used to continue into the signing step after form submit.',
+        };
+      });
+      return {
+        questions: sortFillLinkQuestions(nextQuestions.map(normalizeBuilderQuestion)),
+        questionKey: 'signer_email',
+        questionId: existingQuestion.id || existingQuestion.key || 'signer_email',
+      };
+    }
+    const nextQuestion = {
+      ...createCustomFillLinkQuestion('email'),
+      id: 'custom:signer_email',
+      key: 'signer_email',
+      label: 'Signer Email',
+      type: 'email' as const,
+      sourceType: 'custom' as const,
+      required: true,
+      visible: true,
+      placeholder: 'name@example.com',
+      helpText: 'Used to continue into the signing step after form submit.',
+      order: questionList.length,
+    };
+    return {
+      questions: sortFillLinkQuestions([...questionList, nextQuestion].map(normalizeBuilderQuestion)),
+      questionKey: 'signer_email',
+      questionId: nextQuestion.id || nextQuestion.key || 'signer_email',
+    };
+  };
 
   const publicUrl = useMemo(() => resolvePublicUrl(link), [link]);
   const builderFallbackConfig = useMemo(
@@ -420,6 +574,8 @@ function FillLinkScopePanel({
     defaultTextMaxLength: baseConfig.defaultTextMaxLength || null,
     requireAllFields: link?.requireAllFields || false,
     allowRespondentPdfDownload: fillLinkRespondentPdfDownloadEnabled(link),
+    allowRespondentEditablePdfDownload: fillLinkRespondentPdfEditableEnabled(link),
+    signingConfig: link?.signingConfig || null,
     sourceQuestionCount: sourceQuestions.length,
     sourceLoading,
     questions: baseConfig.questions || [],
@@ -447,6 +603,13 @@ function FillLinkScopePanel({
     setDefaultTextMaxLength(baseConfig.defaultTextMaxLength ? String(baseConfig.defaultTextMaxLength) : '');
     setRequireAllFields(Boolean(link?.requireAllFields));
     setAllowRespondentPdfDownload(fillLinkRespondentPdfDownloadEnabled(link));
+    setAllowRespondentEditablePdfDownload(fillLinkRespondentPdfEditableEnabled(link));
+    setSignAfterSubmitEnabled(Boolean(link?.signingConfig?.enabled));
+    setSignatureMode(link?.signingConfig?.signatureMode === 'consumer' ? 'consumer' : 'business');
+    setDocumentCategory(link?.signingConfig?.documentCategory || 'ordinary_business_form');
+    setManualFallbackEnabled(link?.signingConfig?.manualFallbackEnabled ?? true);
+    setSignerNameQuestionKey(link?.signingConfig?.signerNameQuestionKey || '');
+    setSignerEmailQuestionKey(link?.signingConfig?.signerEmailQuestionKey || '');
     const nextQuestions = sortFillLinkQuestions((baseConfig.questions || []).map(normalizeBuilderQuestion));
     setQuestions(nextQuestions);
     setSelectedQuestionId(nextQuestions[0]?.id || nextQuestions[0]?.key || null);
@@ -469,10 +632,52 @@ function FillLinkScopePanel({
     () => buildPublishedFillLinkQuestions(currentConfig, { requireAllFields }),
     [currentConfig, requireAllFields],
   );
-  const builderError = useMemo(
-    () => (sourceLoading ? null : validateFillLinkWebForm(currentConfig, publishedQuestions)),
-    [currentConfig, publishedQuestions, sourceLoading],
+  const publicQuestions = useMemo(
+    () => (
+      signAfterSubmitEnabled
+        ? publishedQuestions.filter((question) => !fillLinkQuestionIsSigningCeremonyManaged(question))
+        : publishedQuestions
+    ),
+    [publishedQuestions, signAfterSubmitEnabled],
   );
+  const visibleSigningQuestions = useMemo(
+    () => publicQuestions.filter((question) => question.visible !== false),
+    [publicQuestions],
+  );
+  const emailSigningQuestions = useMemo(
+    () => visibleSigningQuestions.filter((question) => fillLinkQuestionLooksLikeEmail(question)),
+    [visibleSigningQuestions],
+  );
+  const signingConfigError = useMemo(() => {
+    if (!signAfterSubmitEnabled) return null;
+    if (!visibleSigningQuestions.length) {
+      return 'Add at least one visible question before enabling post-submit signing.';
+    }
+    if (!emailSigningQuestions.length) {
+      return 'Add a visible email question before enabling post-submit signing.';
+    }
+    if (!signerNameQuestionKey) {
+      return 'Choose which visible question supplies the signer name.';
+    }
+    if (!signerEmailQuestionKey) {
+      return 'Choose which visible question supplies the signer email.';
+    }
+    if (!emailSigningQuestions.some((question) => question.key === signerEmailQuestionKey)) {
+      return 'Choose a visible email question for the signer email mapping.';
+    }
+    return null;
+  }, [
+    emailSigningQuestions,
+    signAfterSubmitEnabled,
+    signerEmailQuestionKey,
+    signerNameQuestionKey,
+    visibleSigningQuestions.length,
+  ]);
+  const builderError = useMemo(
+    () => (sourceLoading ? null : validateFillLinkWebForm(currentConfig, publicQuestions)),
+    [currentConfig, publicQuestions, sourceLoading],
+  );
+  const publishError = builderError || signingConfigError;
   const builderEmpty = !orderedQuestions.length && !sourceLoading;
   const filteredQuestions = useMemo(() => {
     const normalizedQuery = builderSearch.trim().toLowerCase();
@@ -530,6 +735,42 @@ function FillLinkScopePanel({
       setSelectedQuestionId(filteredQuestions[0].id || filteredQuestions[0].key);
     }
   }, [filteredQuestions, selectedQuestion, selectedQuestionId]);
+
+  useEffect(() => {
+    if (!signAfterSubmitEnabled || !visibleSigningQuestions.length) {
+      return;
+    }
+    if (!signerNameQuestionKey) {
+      setSignerNameQuestionKey(visibleSigningQuestions[0]?.key || '');
+    }
+    if (!signerEmailQuestionKey && emailSigningQuestions.length) {
+      setSignerEmailQuestionKey(emailSigningQuestions[0]?.key || '');
+    }
+  }, [
+    emailSigningQuestions,
+    signAfterSubmitEnabled,
+    signerEmailQuestionKey,
+    signerNameQuestionKey,
+    visibleSigningQuestions,
+  ]);
+
+  useEffect(() => {
+    if (!signAfterSubmitEnabled || emailSigningQuestions.length) {
+      return;
+    }
+    const ensured = ensureSigningEmailQuestion(orderedQuestions);
+    setQuestions(ensured.questions);
+    setSignerEmailQuestionKey(ensured.questionKey);
+    if (!selectedQuestionId) {
+      setSelectedQuestionId(ensured.questionId);
+    }
+  }, [emailSigningQuestions.length, orderedQuestions, selectedQuestionId, signAfterSubmitEnabled]);
+
+  useEffect(() => {
+    if (signAfterSubmitEnabled && allowRespondentEditablePdfDownload) {
+      setAllowRespondentEditablePdfDownload(false);
+    }
+  }, [allowRespondentEditablePdfDownload, signAfterSubmitEnabled]);
 
   const updateQuestions = (nextQuestions: FillLinkQuestion[]) => {
     const normalizedQuestions = sortFillLinkQuestions(nextQuestions.map(normalizeBuilderQuestion));
@@ -592,12 +833,23 @@ function FillLinkScopePanel({
   };
 
   const handlePublish = () => {
-    if (builderError) return;
+    if (publishError) return;
     onPublish({
       title: title.trim() || initialTitle,
       requireAllFields,
       allowRespondentPdfDownload,
+      allowRespondentEditablePdfDownload: signAfterSubmitEnabled ? false : allowRespondentEditablePdfDownload,
       webFormConfig: currentConfig,
+      signingConfig: signAfterSubmitEnabled
+        ? {
+          enabled: true,
+          signatureMode,
+          documentCategory,
+          manualFallbackEnabled,
+          signerNameQuestionKey,
+          signerEmailQuestionKey,
+        }
+        : { enabled: false },
     });
   };
 
@@ -838,9 +1090,9 @@ function FillLinkScopePanel({
     <section className="fill-link-dialog__scope">
       <div className="fill-link-dialog__topbar">
         <div className="fill-link-dialog__headline">
-          <strong className="fill-link-dialog__headline-title">Fill By Link:</strong>
+          <strong className="fill-link-dialog__headline-title">Fill By Web Form Link:</strong>
           <span className="fill-link-dialog__headline-copy">
-            Build a DullyPDF-hosted web form and collect respondent answers to fill PDF.
+            Build a DullyPDF-hosted web form, collect respondent answers, and optionally route them into signature.
           </span>
         </div>
 
@@ -873,7 +1125,7 @@ function FillLinkScopePanel({
             type="button"
             className="ui-button ui-button--primary ui-button--compact"
             onClick={handlePublish}
-            disabled={publishing || loadingLink || Boolean(builderError) || sourceLoading}
+            disabled={publishing || loadingLink || Boolean(publishError) || sourceLoading}
           >
             {publishButtonLabel}
           </button>
@@ -885,6 +1137,16 @@ function FillLinkScopePanel({
               requireAllFields,
               allowRespondentPdfDownload,
               webFormConfig: currentConfig,
+              signingConfig: signAfterSubmitEnabled
+                ? {
+                  enabled: true,
+                  signatureMode,
+                  documentCategory,
+                  manualFallbackEnabled,
+                  signerNameQuestionKey,
+                  signerEmailQuestionKey,
+                }
+                : { enabled: false },
             })}
             disabled={closing || (!link && !loadingLink)}
           >
@@ -909,7 +1171,7 @@ function FillLinkScopePanel({
           type="button"
           className="fill-link-dialog__close-button"
           onClick={onClose}
-          aria-label="Close Fill By Link"
+          aria-label="Close Fill By Web Form Link"
         >
           ×
         </button>
@@ -945,7 +1207,7 @@ function FillLinkScopePanel({
               </strong>
               {introText.trim() ? <p>{introText.trim()}</p> : null}
             </div>
-            <QuestionPreview questions={publishedQuestions} />
+            <QuestionPreview questions={publicQuestions} />
           </div>
         </section>
       ) : (
@@ -969,7 +1231,7 @@ function FillLinkScopePanel({
                 />
               </label>
 
-              <label className="fill-link-dialog__field fill-link-dialog__field--wide">
+              <label className="fill-link-dialog__field">
                 <span>Intro text</span>
                 <textarea
                   rows={3}
@@ -992,34 +1254,167 @@ function FillLinkScopePanel({
                 />
               </label>
 
-              <label className="fill-link-dialog__toggle">
-                <input
-                  type="checkbox"
-                  checked={requireAllFields}
-                  onChange={(event) => setRequireAllFields(event.target.checked)}
-                />
-                <div>
-                  <strong>Require all questions</strong>
-                  <p>When enabled, every question becomes required before submit.</p>
-                </div>
-              </label>
-
-              {showRespondentPdfDownloadToggle ? (
-                <label className="fill-link-dialog__toggle">
+              <div className="fill-link-dialog__toggle-row">
+                <label className="fill-link-dialog__toggle fill-link-dialog__toggle--compact">
                   <input
                     type="checkbox"
-                    checked={allowRespondentPdfDownload}
-                    onChange={(event) => setAllowRespondentPdfDownload(event.target.checked)}
+                    checked={requireAllFields}
+                    onChange={(event) => setRequireAllFields(event.target.checked)}
                   />
                   <div>
-                    <strong>Allow respondents to download a PDF copy after submit</strong>
-                    <p>Template links only. The download button appears on the success screen after a valid submission.</p>
+                    <strong>Require all</strong>
+                    <p>Every visible question must be answered.</p>
                   </div>
                 </label>
+
+                {showRespondentPdfDownloadToggle ? (
+                  <label className="fill-link-dialog__toggle fill-link-dialog__toggle--compact">
+                    <input
+                      type="checkbox"
+                      checked={allowRespondentPdfDownload}
+                      onChange={(event) => {
+                        const enabled = event.target.checked;
+                        setAllowRespondentPdfDownload(enabled);
+                        if (!enabled) {
+                          setAllowRespondentEditablePdfDownload(false);
+                        }
+                      }}
+                    />
+                    <div>
+                      <strong>Allow PDF download</strong>
+                      <p>Respondents can download a flat PDF after submit.</p>
+                    </div>
+                  </label>
+                ) : null}
+
+                {showRespondentPdfDownloadToggle ? (
+                  <label className="fill-link-dialog__toggle fill-link-dialog__toggle--compact">
+                    <input
+                      type="checkbox"
+                      checked={allowRespondentEditablePdfDownload}
+                      onChange={(event) => setAllowRespondentEditablePdfDownload(event.target.checked)}
+                      disabled={!allowRespondentPdfDownload || signAfterSubmitEnabled}
+                    />
+                    <div>
+                      <strong>Download editable PDF</strong>
+                      <p>{signAfterSubmitEnabled ? 'Signed flows always stay flat.' : 'Overrides the flat default and preserves fields.'}</p>
+                    </div>
+                  </label>
+                ) : null}
+
+                {showRespondentPdfDownloadToggle ? (
+                  <label className="fill-link-dialog__toggle fill-link-dialog__toggle--compact">
+                    <input
+                      type="checkbox"
+                      checked={signAfterSubmitEnabled}
+                      onChange={(event) => {
+                        const enabled = event.target.checked;
+                        setSignAfterSubmitEnabled(enabled);
+                        if (enabled) {
+                          setAllowRespondentEditablePdfDownload(false);
+                        }
+                        if (!enabled || emailSigningQuestions.length) {
+                          return;
+                        }
+                        const ensured = ensureSigningEmailQuestion(orderedQuestions);
+                        setQuestions(ensured.questions);
+                        setSignerEmailQuestionKey(ensured.questionKey);
+                        setSelectedQuestionId(ensured.questionId);
+                      }}
+                    />
+                    <div>
+                      <strong>Require signature</strong>
+                      <p>Respondents continue into the frozen signing flow.</p>
+                    </div>
+                  </label>
+                ) : null}
+              </div>
+              {showRespondentPdfDownloadToggle && signAfterSubmitEnabled ? (
+                <div className="fill-link-dialog__signing-settings">
+                  <div className="fill-link-dialog__section-header fill-link-dialog__section-header--compact">
+                    <div>
+                      <h3>Post-submit signing</h3>
+                      <p>Choose how the public Fill By Link response hands off into the signing ceremony.</p>
+                    </div>
+                  </div>
+
+                  <div className="fill-link-dialog__settings-grid fill-link-dialog__settings-grid--nested">
+                    <label className="fill-link-dialog__field">
+                      <span>Signature mode</span>
+                      <select
+                        value={signatureMode}
+                        onChange={(event) => setSignatureMode(event.target.value === 'consumer' ? 'consumer' : 'business')}
+                      >
+                        {SIGNING_MODE_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label className="fill-link-dialog__field">
+                      <span>Document category</span>
+                      <select
+                        value={documentCategory}
+                        onChange={(event) => setDocumentCategory(event.target.value)}
+                      >
+                        {SIGNING_CATEGORY_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label className="fill-link-dialog__field">
+                      <span>Signer name question</span>
+                      <select
+                        value={signerNameQuestionKey}
+                        onChange={(event) => setSignerNameQuestionKey(event.target.value)}
+                      >
+                        <option value="">Choose a visible question</option>
+                        {visibleSigningQuestions.map((question) => (
+                          <option key={`signer-name-${question.key}`} value={question.key}>
+                            {question.label || question.key}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label className="fill-link-dialog__field">
+                      <span>Signer email question</span>
+                      <select
+                        value={signerEmailQuestionKey}
+                        onChange={(event) => setSignerEmailQuestionKey(event.target.value)}
+                        disabled={!emailSigningQuestions.length}
+                      >
+                        <option value="">{emailSigningQuestions.length ? 'Choose a visible email question' : 'Add an email question first'}</option>
+                        {emailSigningQuestions.map((question) => (
+                          <option key={`signer-email-${question.key}`} value={question.key}>
+                            {question.label || question.key}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label className="fill-link-dialog__toggle fill-link-dialog__field--full">
+                      <input
+                        type="checkbox"
+                        checked={manualFallbackEnabled}
+                        onChange={(event) => setManualFallbackEnabled(event.target.checked)}
+                      />
+                      <div>
+                        <strong>Allow paper/manual fallback</strong>
+                        <p>Respondents can opt out of e-signing and ask the sender for an offline copy.</p>
+                      </div>
+                    </label>
+                  </div>
+                </div>
               ) : null}
             </div>
 
-            {builderError ? <p className="fill-link-dialog__error">{builderError}</p> : null}
+            {publishError ? <p className="fill-link-dialog__error">{publishError}</p> : null}
           </section>
 
           <section className="fill-link-dialog__section fill-link-dialog__section--surface fill-link-dialog__section--questions">
@@ -1143,10 +1538,10 @@ export function FillLinkManagerDialog({
     <Dialog
       open={open}
       onClose={onClose}
-      title="Fill By Link"
+      title="Fill By Web Form Link"
       description={(
         <span className="fill-link-dialog__intro">
-          Build a DullyPDF-hosted web form and collect respondent answers to fill PDF.
+          Build a DullyPDF-hosted web form, collect respondent answers, and optionally route them into signature.
         </span>
       )}
       className="fill-link-dialog"
@@ -1154,7 +1549,7 @@ export function FillLinkManagerDialog({
       <div className="fill-link-dialog__body">
         {!availableScopes.length ? (
           <div className="fill-link-dialog__empty">
-            <p>Load a saved template or open a group in the workspace, then publish Fill By Link from here.</p>
+            <p>Load a saved template or open a group in the workspace, then publish Fill By Web Form Link from here.</p>
           </div>
         ) : null}
 
@@ -1178,7 +1573,7 @@ export function FillLinkManagerDialog({
             open={open}
             onClose={onClose}
             kind="template"
-            heading="Template Fill By Link"
+            heading="Template Web Form Link"
             scopeName={templateName}
             sourceQuestions={templateSourceQuestions}
             sourceLoading={templateBuilderLoading}
@@ -1205,7 +1600,7 @@ export function FillLinkManagerDialog({
             open={open}
             onClose={onClose}
             kind="group"
-            heading="Group Fill By Link"
+            heading="Group Web Form Link"
             scopeName={groupName}
             sourceQuestions={groupSourceQuestions}
             sourceLoading={groupBuilderLoading}

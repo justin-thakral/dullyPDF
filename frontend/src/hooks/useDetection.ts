@@ -3,12 +3,12 @@ import type { User } from 'firebase/auth';
 import type { PDFDocumentProxy } from 'pdfjs-dist/types/src/display/api';
 import type {
   BannerNotice,
-  CheckboxHint,
   CheckboxRule,
   PageSize,
   PdfField,
   PendingAutoActions,
   ProcessingMode,
+  RadioGroupSuggestion,
   TextTransformRule,
 } from '../types';
 import {
@@ -64,7 +64,7 @@ export interface UseDetectionDeps {
   setHasRenamedFields: (value: boolean) => void;
   setHasMappedSchema: (value: boolean) => void;
   setCheckboxRules: (rules: CheckboxRule[]) => void;
-  setCheckboxHints: (hints: CheckboxHint[]) => void;
+  setRadioGroupSuggestions: (suggestions: RadioGroupSuggestion[]) => void;
   setTextTransformRules: (rules: TextTransformRule[]) => void;
   setSchemaError: (value: string | null) => void;
   setOpenAiError: (value: string | null) => void;
@@ -214,7 +214,7 @@ export function useDetection(deps: UseDetectionDeps) {
           deps.setHasRenamedFields(false);
           deps.setHasMappedSchema(false);
           deps.setCheckboxRules([]);
-          deps.setCheckboxHints([]);
+          deps.setRadioGroupSuggestions([]);
           deps.setTextTransformRules([]);
           setDetectSessionId(sessionId);
           setMappingSessionId(sessionId);
@@ -354,7 +354,7 @@ export function useDetection(deps: UseDetectionDeps) {
       deps.setHasRenamedFields(false);
       deps.setHasMappedSchema(false);
       deps.setCheckboxRules([]);
-      deps.setCheckboxHints([]);
+      deps.setRadioGroupSuggestions([]);
       deps.setTextTransformRules([]);
       deps.setSchemaError(null);
       deps.setOpenAiError(null);
@@ -489,15 +489,14 @@ export function useDetection(deps: UseDetectionDeps) {
         deps.setActiveSavedFormName(savedMeta?.name || null);
         const {
           checkboxRules: savedCheckboxRules,
-          checkboxHints: savedCheckboxHints,
+          legacyRadioGroupSuggestions,
           textTransformRules: savedTextTransformRules,
-        } = extractSavedFormFillRuleState(savedMeta);
+        } = extractSavedFormFillRuleState(savedMeta, { fields: initialFields });
         deps.setCheckboxRules(savedCheckboxRules);
-        deps.setCheckboxHints(savedCheckboxHints);
+        deps.setRadioGroupSuggestions(legacyRadioGroupSuggestions);
         deps.setTextTransformRules(savedTextTransformRules);
         const derivedHasMappedSchema = Boolean(
           savedCheckboxRules.length ||
-          savedCheckboxHints.length ||
           savedTextTransformRules.length
         );
         deps.setHasRenamedFields(Boolean(hydratedSnapshot?.hasRenamedFields));
@@ -553,8 +552,12 @@ export function useDetection(deps: UseDetectionDeps) {
         void (async () => {
           const existingFields = await existingFieldsPromise;
           if (loadTokenRef.current !== loadToken) return;
+          const {
+            legacyRadioGroupSuggestions: extractedLegacyRadioSuggestions,
+          } = extractSavedFormFillRuleState(savedMeta, { fields: existingFields });
           deps.resetFieldHistory(existingFields);
           deps.setSelectedFieldId(null);
+          deps.setRadioGroupSuggestions(extractedLegacyRadioSuggestions);
           deps.markSavedFillLinkSnapshot(existingFields, savedCheckboxRules);
           debugLog('Extracted saved form fields', { total: existingFields.length });
           debugLog('Loaded saved form', { name, pages: doc.numPages, fields: existingFields.length });
@@ -623,7 +626,7 @@ export function useDetection(deps: UseDetectionDeps) {
       deps.setHasRenamedFields(false);
       deps.setHasMappedSchema(false);
       deps.setCheckboxRules([]);
-      deps.setCheckboxHints([]);
+      deps.setRadioGroupSuggestions([]);
       deps.setTextTransformRules([]);
       deps.setSchemaError(null);
       deps.setOpenAiError(null);

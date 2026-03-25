@@ -28,7 +28,7 @@ def _snapshot_payload() -> dict:
 def test_normalize_saved_form_editor_snapshot_payload_accepts_valid_payload() -> None:
     normalized = snapshot_service.normalize_saved_form_editor_snapshot_payload(_snapshot_payload())
 
-    assert normalized["version"] == 1
+    assert normalized["version"] == snapshot_service.SAVED_FORM_EDITOR_SNAPSHOT_VERSION
     assert normalized["pageCount"] == 1
     assert normalized["pageSizes"]["1"]["width"] == 612
     assert normalized["fields"][0]["name"] == "full_name"
@@ -77,7 +77,7 @@ def test_upload_saved_form_editor_snapshot_builds_manifest(mocker) -> None:
     )
 
     assert bucket_path == "gs://sessions/new-snapshot.json"
-    assert manifest["version"] == 1
+    assert manifest["version"] == snapshot_service.SAVED_FORM_EDITOR_SNAPSHOT_VERSION
     assert manifest["path"] == "gs://sessions/new-snapshot.json"
     assert manifest["fieldCount"] == 1
     upload_mock.assert_called_once_with(

@@ -31,7 +31,6 @@ def test_persist_session_entry_persists_flagged_artifacts_and_metadata(mocker, m
         "result": {"ok": True},
         "renames": {"A": "first_name"},
         "checkboxRules": [{"name": "agree"}],
-        "checkboxHints": [{"name": "agree", "hint": "x"}],
         "textTransformRules": [{"targetField": "full_name", "operation": "concat", "sources": ["first_name", "last_name"]}],
         "detection_status": "complete",
     }
@@ -44,7 +43,6 @@ def test_persist_session_entry_persists_flagged_artifacts_and_metadata(mocker, m
             "gs://bucket/sess/result.json",
             "gs://bucket/sess/renames.json",
             "gs://bucket/sess/checkbox-rules.json",
-            "gs://bucket/sess/checkbox-hints.json",
             "gs://bucket/sess/text-transform-rules.json",
         ],
     )
@@ -62,13 +60,12 @@ def test_persist_session_entry_persists_flagged_artifacts_and_metadata(mocker, m
         persist_result=True,
         persist_renames=True,
         persist_checkbox_rules=True,
-        persist_checkbox_hints=True,
         persist_text_transform_rules=True,
         include_created_at=True,
     )
 
     upload_pdf.assert_called_once_with(b"%PDF-1.4", "sessions/sess-1/source.pdf")
-    assert upload_json.call_count == 6
+    assert upload_json.call_count == 5
     upsert.assert_called_once()
     metadata = upsert.call_args.args[1]
     assert metadata["user_id"] == "user-1"
@@ -83,7 +80,6 @@ def test_persist_session_entry_persists_flagged_artifacts_and_metadata(mocker, m
     assert metadata["result_path"] == "gs://bucket/sess/result.json"
     assert metadata["renames_path"] == "gs://bucket/sess/renames.json"
     assert metadata["checkbox_rules_path"] == "gs://bucket/sess/checkbox-rules.json"
-    assert metadata["checkbox_hints_path"] == "gs://bucket/sess/checkbox-hints.json"
     assert metadata["text_transform_rules_path"] == "gs://bucket/sess/text-transform-rules.json"
     assert metadata["detection_status"] == "complete"
     assert entry["pdf_path"] == "gs://bucket/sess/source.pdf"
@@ -91,7 +87,6 @@ def test_persist_session_entry_persists_flagged_artifacts_and_metadata(mocker, m
     assert entry["result_path"] == "gs://bucket/sess/result.json"
     assert entry["renames_path"] == "gs://bucket/sess/renames.json"
     assert entry["checkbox_rules_path"] == "gs://bucket/sess/checkbox-rules.json"
-    assert entry["checkbox_hints_path"] == "gs://bucket/sess/checkbox-hints.json"
     assert entry["text_transform_rules_path"] == "gs://bucket/sess/text-transform-rules.json"
     assert entry["_l2_touch_at"] == 42.0
 
@@ -106,7 +101,6 @@ def test_persist_session_entry_reuses_existing_paths_when_flags_disabled(mocker,
         "result_path": "gs://bucket/sess/result.json",
         "renames_path": "gs://bucket/sess/renames.json",
         "checkbox_rules_path": "gs://bucket/sess/checkbox-rules.json",
-        "checkbox_hints_path": "gs://bucket/sess/checkbox-hints.json",
         "text_transform_rules_path": "gs://bucket/sess/text-transform-rules.json",
     }
     upload_pdf = mocker.patch.object(l2_persistence, "upload_session_pdf_bytes")
@@ -127,7 +121,6 @@ def test_persist_session_entry_reuses_existing_paths_when_flags_disabled(mocker,
     assert metadata["result_path"] == "gs://bucket/sess/result.json"
     assert metadata["renames_path"] == "gs://bucket/sess/renames.json"
     assert metadata["checkbox_rules_path"] == "gs://bucket/sess/checkbox-rules.json"
-    assert metadata["checkbox_hints_path"] == "gs://bucket/sess/checkbox-hints.json"
     assert metadata["text_transform_rules_path"] == "gs://bucket/sess/text-transform-rules.json"
     assert "created_at" not in metadata
     assert "expires_at" not in metadata
@@ -145,7 +138,6 @@ def test_persist_session_entry_reuses_existing_paths_when_flags_disabled(mocker,
         ({"result_path": "r.json", "result": {}}, {"include_result": True}, False),
         ({"renames_path": "renames.json"}, {"include_renames": True}, True),
         ({"checkbox_rules_path": "rules.json"}, {"include_checkbox_rules": True}, True),
-        ({"checkbox_hints_path": "hints.json"}, {"include_checkbox_hints": True}, True),
         ({"text_transform_rules_path": "text-rules.json"}, {"include_text_transform_rules": True}, True),
     ],
 )
@@ -157,7 +149,6 @@ def test_missing_required_data_logic(entry, kwargs, expected) -> None:
         include_result=kwargs.get("include_result", False),
         include_renames=kwargs.get("include_renames", False),
         include_checkbox_rules=kwargs.get("include_checkbox_rules", False),
-        include_checkbox_hints=kwargs.get("include_checkbox_hints", False),
         include_text_transform_rules=kwargs.get("include_text_transform_rules", False),
     )
     assert result is expected
@@ -175,7 +166,6 @@ def test_hydrate_from_l2_returns_none_when_metadata_missing(mocker) -> None:
         include_result=True,
         include_renames=True,
         include_checkbox_rules=True,
-        include_checkbox_hints=True,
         include_text_transform_rules=True,
     )
 
@@ -196,7 +186,6 @@ def test_hydrate_from_l2_populates_only_requested_artifacts(mocker) -> None:
             "result_path": "sessions/sess-1/result.json",
             "renames_path": "sessions/sess-1/renames.json",
             "checkbox_rules_path": "sessions/sess-1/checkbox-rules.json",
-            "checkbox_hints_path": "sessions/sess-1/checkbox-hints.json",
             "text_transform_rules_path": "sessions/sess-1/text-transform-rules.json",
             "page_count": 1,
         },
@@ -210,7 +199,6 @@ def test_hydrate_from_l2_populates_only_requested_artifacts(mocker) -> None:
             {"done": True},
             {"A": "first_name"},
             [{"rule": "x"}],
-            None,
             [{"targetField": "full_name", "operation": "concat", "sources": ["first_name", "last_name"]}],
         ],
     )
@@ -222,7 +210,6 @@ def test_hydrate_from_l2_populates_only_requested_artifacts(mocker) -> None:
         include_result=True,
         include_renames=True,
         include_checkbox_rules=True,
-        include_checkbox_hints=True,
         include_text_transform_rules=True,
     )
 
@@ -232,10 +219,9 @@ def test_hydrate_from_l2_populates_only_requested_artifacts(mocker) -> None:
     assert entry["result"] == {"done": True}
     assert entry["renames"] == {"A": "first_name"}
     assert entry["checkboxRules"] == [{"rule": "x"}]
-    assert entry["checkboxHints"] == []
     assert entry["textTransformRules"] == [{"targetField": "full_name", "operation": "concat", "sources": ["first_name", "last_name"]}]
     download_pdf.assert_called_once_with("sessions/sess-1/source.pdf")
-    assert download_json.call_count == 6
+    assert download_json.call_count == 5
 
 
 def test_hydrate_from_l2_skips_downloads_when_paths_absent(mocker) -> None:
@@ -250,7 +236,6 @@ def test_hydrate_from_l2_skips_downloads_when_paths_absent(mocker) -> None:
         include_result=True,
         include_renames=True,
         include_checkbox_rules=True,
-        include_checkbox_hints=True,
         include_text_transform_rules=True,
     )
 
@@ -330,7 +315,6 @@ def test_ensure_l2_data_short_circuits_when_no_required_data_missing(mocker) -> 
         include_result=False,
         include_renames=False,
         include_checkbox_rules=False,
-        include_checkbox_hints=False,
         include_text_transform_rules=False,
     )
 
@@ -349,7 +333,6 @@ def test_ensure_l2_data_merges_hydrated_payload_when_required_data_missing(mocke
         include_result=False,
         include_renames=False,
         include_checkbox_rules=False,
-        include_checkbox_hints=False,
         include_text_transform_rules=False,
     )
 
@@ -368,7 +351,6 @@ def test_store_session_entry_forwards_flags_to_persist_and_store(mocker) -> None
         persist_pdf=False,
         persist_fields=False,
         persist_result=False,
-        persist_checkbox_hints=True,
         persist_text_transform_rules=True,
         persist_l1=True,
     )
@@ -379,7 +361,6 @@ def test_store_session_entry_forwards_flags_to_persist_and_store(mocker) -> None
         persist_pdf=False,
         persist_fields=False,
         persist_result=False,
-        persist_checkbox_hints=True,
         persist_text_transform_rules=True,
         include_created_at=True,
     )
@@ -407,7 +388,6 @@ def test_update_session_entry_forwards_flags_to_persist(mocker) -> None:
         persist_result=True,
         persist_renames=True,
         persist_checkbox_rules=True,
-        persist_checkbox_hints=True,
         persist_text_transform_rules=True,
     )
 
@@ -419,7 +399,6 @@ def test_update_session_entry_forwards_flags_to_persist(mocker) -> None:
         persist_result=True,
         persist_renames=True,
         persist_checkbox_rules=True,
-        persist_checkbox_hints=True,
         persist_text_transform_rules=True,
         include_created_at=False,
     )
@@ -503,7 +482,6 @@ def test_ensure_l2_data_does_not_update_entry_when_hydrate_returns_none(mocker) 
         include_result=False,
         include_renames=False,
         include_checkbox_rules=False,
-        include_checkbox_hints=False,
         include_text_transform_rules=False,
     )
 
@@ -522,7 +500,6 @@ def test_missing_required_data_returns_false_when_all_flags_disabled() -> None:
         include_result=False,
         include_renames=False,
         include_checkbox_rules=False,
-        include_checkbox_hints=False,
         include_text_transform_rules=False,
     )
     assert result is False

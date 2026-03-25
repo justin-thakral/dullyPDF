@@ -114,7 +114,11 @@ async def get_saved_form(form_id: str, authorization: Optional[str] = Header(def
     metadata = template.metadata if isinstance(template.metadata, dict) else {}
     fill_rules = metadata.get("fillRules") if isinstance(metadata.get("fillRules"), dict) else None
     if isinstance(fill_rules, dict):
-        normalized_fill_rules = dict(fill_rules)
+        normalized_fill_rules = {
+            key: value
+            for key, value in fill_rules.items()
+            if key != "checkboxHints"
+        }
         if not isinstance(normalized_fill_rules.get("textTransformRules"), list):
             legacy_template_rules = normalized_fill_rules.get("templateRules")
             if isinstance(legacy_template_rules, list):
@@ -122,8 +126,6 @@ async def get_saved_form(form_id: str, authorization: Optional[str] = Header(def
         response["fillRules"] = normalized_fill_rules
     if isinstance(metadata.get("checkboxRules"), list):
         response["checkboxRules"] = metadata.get("checkboxRules")
-    if isinstance(metadata.get("checkboxHints"), list):
-        response["checkboxHints"] = metadata.get("checkboxHints")
     if isinstance(metadata.get("textTransformRules"), list):
         response["textTransformRules"] = metadata.get("textTransformRules")
     elif isinstance(metadata.get("templateRules"), list):
@@ -137,7 +139,6 @@ async def get_saved_form(form_id: str, authorization: Optional[str] = Header(def
         response["fillRules"] = {
             "version": 1,
             "checkboxRules": response.get("checkboxRules") or [],
-            "checkboxHints": response.get("checkboxHints") or [],
             "textTransformRules": response.get("textTransformRules") or [],
         }
     editor_snapshot = load_saved_form_editor_snapshot(metadata)
@@ -230,7 +231,6 @@ async def save_form(
     name: str = Form("Saved form"),
     sessionId: Optional[str] = Form(default=None),
     checkboxRules: Optional[str] = Form(default=None),
-    checkboxHints: Optional[str] = Form(default=None),
     textTransformRules: Optional[str] = Form(default=None),
     templateRules: Optional[str] = Form(default=None),
     editorSnapshot: Optional[str] = Form(default=None),
@@ -295,7 +295,6 @@ async def save_form(
             metadata["originalSessionId"] = sanitized_session_id
 
         checkbox_rules_payload = parse_json_list_form_field(checkboxRules, "checkboxRules")
-        checkbox_hints_payload = parse_json_list_form_field(checkboxHints, "checkboxHints")
         text_transform_rules_payload = parse_json_list_form_field(
             textTransformRules,
             "textTransformRules",
@@ -308,7 +307,6 @@ async def save_form(
             text_transform_rules_payload = legacy_template_rules_payload
         if (
             checkbox_rules_payload is None
-            or checkbox_hints_payload is None
             or text_transform_rules_payload is None
         ) and sanitized_session_id:
             session_entry = _get_session_entry_if_present(
@@ -319,37 +317,39 @@ async def save_form(
                 include_result=False,
                 include_renames=False,
                 include_checkbox_rules=True,
-                include_checkbox_hints=True,
                 include_text_transform_rules=True,
             )
             if checkbox_rules_payload is None and session_entry and isinstance(session_entry.get("checkboxRules"), list):
                 checkbox_rules_payload = [entry for entry in session_entry.get("checkboxRules") if isinstance(entry, dict)]
-            if checkbox_hints_payload is None and session_entry and isinstance(session_entry.get("checkboxHints"), list):
-                checkbox_hints_payload = [entry for entry in session_entry.get("checkboxHints") if isinstance(entry, dict)]
             if text_transform_rules_payload is None and session_entry and isinstance(session_entry.get("textTransformRules"), list):
                 text_transform_rules_payload = [entry for entry in session_entry.get("textTransformRules") if isinstance(entry, dict)]
             if text_transform_rules_payload is None and session_entry and isinstance(session_entry.get("templateRules"), list):
                 text_transform_rules_payload = [entry for entry in session_entry.get("templateRules") if isinstance(entry, dict)]
         if checkbox_rules_payload is not None:
             metadata["checkboxRules"] = checkbox_rules_payload
-        if checkbox_hints_payload is not None:
-            metadata["checkboxHints"] = checkbox_hints_payload
         if text_transform_rules_payload is not None:
             metadata["textTransformRules"] = text_transform_rules_payload
         if (
             checkbox_rules_payload is not None
-            or checkbox_hints_payload is not None
             or text_transform_rules_payload is not None
         ):
             metadata["fillRules"] = {
                 "version": 1,
                 "checkboxRules": checkbox_rules_payload or [],
-                "checkboxHints": checkbox_hints_payload or [],
                 "textTransformRules": text_transform_rules_payload or [],
             }
 
         if overwrite_template and isinstance(overwrite_template.metadata, dict):
             metadata = {**overwrite_template.metadata, **metadata}
+        metadata.pop("checkboxHints", None)
+        fill_rules_metadata = metadata.get("fillRules") if isinstance(metadata.get("fillRules"), dict) else None
+        if fill_rules_metadata is not None:
+            normalized_fill_rules = {
+                key: value
+                for key, value in fill_rules_metadata.items()
+                if key != "checkboxHints"
+            }
+            metadata["fillRules"] = normalized_fill_rules
         metadata.pop(SAVED_FORM_EDITOR_SNAPSHOT_METADATA_KEY, None)
         old_snapshot_path = get_saved_form_editor_snapshot_path(
             overwrite_template.metadata if overwrite_template and isinstance(overwrite_template.metadata, dict) else None,
