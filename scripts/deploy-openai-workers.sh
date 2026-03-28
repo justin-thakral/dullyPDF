@@ -26,6 +26,9 @@ set -a
 source "$ENV_FILE"
 set +a
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/_artifact_registry_guard.sh"
+
 require_nonempty() {
   local name="$1"
   local actual="${!name:-}"
@@ -55,12 +58,18 @@ require_empty() {
 }
 
 PROJECT_ID="${PROJECT_ID:-${OPENAI_RENAME_TASKS_PROJECT:-${OPENAI_REMAP_TASKS_PROJECT:-${FIREBASE_PROJECT_ID:-dullypdf-dev}}}}"
-REGION="${REGION:-${OPENAI_RENAME_TASKS_LOCATION:-${OPENAI_REMAP_TASKS_LOCATION:-us-central1}}}"
+REGION="${REGION:-${OPENAI_RENAME_TASKS_LOCATION:-${OPENAI_REMAP_TASKS_LOCATION:-us-east4}}}"
+ARTIFACT_REGISTRY_LOCATION="${ARTIFACT_REGISTRY_LOCATION:-us-east4}"
 ARTIFACT_REPO="${WORKER_ARTIFACT_REPO:-dullypdf-backend}"
 TAG="${WORKER_IMAGE_TAG:-$(date +%Y%m%d-%H%M%S)}"
 
-RENAME_IMAGE="${OPENAI_RENAME_WORKER_IMAGE:-us-central1-docker.pkg.dev/${PROJECT_ID}/${ARTIFACT_REPO}/openai-rename-worker:${TAG}}"
-REMAP_IMAGE="${OPENAI_REMAP_WORKER_IMAGE:-us-central1-docker.pkg.dev/${PROJECT_ID}/${ARTIFACT_REPO}/openai-remap-worker:${TAG}}"
+require_prod_artifact_registry_location "OpenAI worker Artifact Registry location" "$ARTIFACT_REGISTRY_LOCATION"
+require_prod_artifact_registry_repo "WORKER_ARTIFACT_REPO" "$ARTIFACT_REPO"
+
+RENAME_IMAGE="${OPENAI_RENAME_WORKER_IMAGE:-${ARTIFACT_REGISTRY_LOCATION}-docker.pkg.dev/${PROJECT_ID}/${ARTIFACT_REPO}/openai-rename-worker:${TAG}}"
+REMAP_IMAGE="${OPENAI_REMAP_WORKER_IMAGE:-${ARTIFACT_REGISTRY_LOCATION}-docker.pkg.dev/${PROJECT_ID}/${ARTIFACT_REPO}/openai-remap-worker:${TAG}}"
+require_prod_artifact_registry_image "OPENAI_RENAME_WORKER_IMAGE" "$RENAME_IMAGE" "$ARTIFACT_REPO"
+require_prod_artifact_registry_image "OPENAI_REMAP_WORKER_IMAGE" "$REMAP_IMAGE" "$ARTIFACT_REPO"
 
 RENAME_SERVICE_LIGHT="${OPENAI_RENAME_SERVICE_NAME_LIGHT:-dullypdf-openai-rename-light}"
 RENAME_SERVICE_HEAVY="${OPENAI_RENAME_SERVICE_NAME_HEAVY:-dullypdf-openai-rename-heavy}"

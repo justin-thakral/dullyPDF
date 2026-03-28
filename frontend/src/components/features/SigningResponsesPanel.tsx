@@ -7,26 +7,65 @@ type SigningResponsesPanelProps = {
   loading?: boolean;
   sourceDocumentName?: string | null;
   sourceTemplateId?: string | null;
+  revokingRequestId?: string | null;
+  reissuingRequestId?: string | null;
+  onRevoke?: (requestId: string) => Promise<void> | void;
+  onReissue?: (requestId: string) => Promise<void> | void;
   onRefresh?: () => Promise<void> | void;
 };
 
 function resolveLifecycleLabel(request: SigningRequestSummary): string {
   if (request.status === 'completed') return 'Signed';
-  if (request.status === 'sent') return 'Waiting';
+  if (request.status === 'invalidated' && request.publicLinkRevokedAt) return 'Revoked';
+  if (request.status === 'sent' && request.isExpired) return 'Expired';
+  if (request.status === 'sent' && (request.publicLinkVersion || 1) > 1) return 'Reissued';
+  if (request.status === 'sent') return 'Active';
   if (request.status === 'invalidated') return 'Invalidated';
   return 'Draft';
 }
 
 function resolveInviteLabel(request: SigningRequestSummary): string {
-  if (request.inviteDeliveryStatus === 'sent') return 'Invite emailed';
-  if (request.inviteDeliveryStatus === 'failed') return 'Invite failed';
-  if (request.inviteDeliveryStatus === 'skipped') return 'Manual link';
-  if (request.status === 'sent') return 'Invite pending';
+  const isReplacementLink = (request.publicLinkVersion || 1) > 1;
+  if (request.status === 'invalidated' && request.publicLinkRevokedAt) return 'Link revoked';
+  if (request.status === 'sent' && request.isExpired) return 'Link expired';
+  if (request.inviteMethod === 'manual_link' || request.manualLinkSharedAt) return 'Manual link shared';
+  if (request.inviteDeliveryStatus === 'sent') return isReplacementLink ? 'Replacement emailed' : 'Invite emailed';
+  if (request.inviteDeliveryStatus === 'failed') return isReplacementLink ? 'Replacement failed' : 'Invite failed';
+  if (request.inviteDeliveryStatus === 'skipped') return 'Email unavailable';
+  if (request.status === 'sent') return isReplacementLink ? 'Replacement pending' : 'Invite pending';
   return 'Not sent';
 }
 
+function resolveInviteMethodSummary(request: SigningRequestSummary): string {
+  if (request.inviteMethod === 'manual_link' || request.manualLinkSharedAt) {
+    return request.manualLinkSharedAt ? `Manual link shared ${formatTimestamp(request.manualLinkSharedAt)}` : 'Manual link shared';
+  }
+  if (request.inviteDeliveryStatus === 'sent') {
+    return request.inviteProvider === 'gmail_api' ? 'Email invite via Gmail API' : 'Email invite';
+  }
+  if (request.inviteDeliveryStatus === 'failed') return 'Email invite failed';
+  if (request.inviteDeliveryStatus === 'skipped') return 'Email delivery unavailable';
+  if (request.status === 'sent') return 'Email invite pending';
+  return 'Not sent';
+}
+
+function resolveSenderSummary(request: SigningRequestSummary): string {
+  return request.senderEmail || 'Owner account';
+}
+
 function canCopySignerLink(request: SigningRequestSummary): boolean {
-  return Boolean(request.publicPath) && (request.status === 'sent' || request.status === 'completed');
+  return Boolean(request.publicPath) && (request.status === 'completed' || (request.status === 'sent' && !request.isExpired));
+}
+
+function canRevokeRequest(request: SigningRequestSummary): boolean {
+  return request.status === 'draft' || request.status === 'sent';
+}
+
+function canReissueRequest(request: SigningRequestSummary): boolean {
+  const hasImmutableSource = Boolean(request.artifacts?.sourcePdf?.available);
+  if (!hasImmutableSource) return false;
+  if (request.status === 'sent') return true;
+  return request.status === 'invalidated' && Boolean(request.publicLinkRevokedAt);
 }
 
 function formatTimestamp(value?: string | null): string {
@@ -59,6 +98,10 @@ export function SigningResponsesPanel({
   loading = false,
   sourceDocumentName = null,
   sourceTemplateId = null,
+  revokingRequestId = null,
+  reissuingRequestId = null,
+  onRevoke,
+  onReissue,
   onRefresh,
 }: SigningResponsesPanelProps) {
   const [copiedRequestId, setCopiedRequestId] = useState<string | null>(null);
@@ -69,16 +112,28 @@ export function SigningResponsesPanel({
     [requests, sourceDocumentName, sourceTemplateId],
   );
   const totals = useMemo(() => ({
-    waiting: scopedRequests.filter((entry) => entry.status === 'sent').length,
+    waiting: scopedRequests.filter((entry) => entry.status === 'sent' && !entry.isExpired).length,
     signed: scopedRequests.filter((entry) => entry.status === 'completed').length,
     drafts: scopedRequests.filter((entry) => entry.status === 'draft').length,
-    needsManual: scopedRequests.filter((entry) => entry.inviteDeliveryStatus === 'failed' || entry.inviteDeliveryStatus === 'skipped').length,
+    expired: scopedRequests.filter((entry) => entry.status === 'sent' && entry.isExpired).length,
+    needsManual: scopedRequests.filter((entry) => (
+      entry.inviteDeliveryStatus === 'failed'
+      || entry.inviteDeliveryStatus === 'skipped'
+      || entry.inviteMethod === 'manual_link'
+      || Boolean(entry.manualLinkSharedAt)
+    )).length,
   }), [scopedRequests]);
 
-async function handleCopyLink(request: SigningRequestSummary) {
+  async function handleCopyLink(request: SigningRequestSummary) {
     if (!request.publicPath) return;
     const signingUrl = `${window.location.origin}${request.publicPath}`;
     await navigator.clipboard.writeText(signingUrl);
+    try {
+      await ApiService.recordSigningManualShare(request.id);
+      await onRefresh?.();
+    } catch {
+      // Copying the signer link should still succeed even if audit recording is temporarily unavailable.
+    }
     setCopiedRequestId(request.id);
     window.setTimeout(() => {
       setCopiedRequestId((current) => (current === request.id ? null : current));
@@ -95,6 +150,28 @@ async function handleCopyLink(request: SigningRequestSummary) {
     } finally {
       setDownloadingPath((current) => (current === downloadPath ? null : current));
     }
+  }
+
+  async function handleRevoke(request: SigningRequestSummary) {
+    if (!onRevoke || !canRevokeRequest(request)) return;
+    const confirmed = window.confirm(
+      request.status === 'draft'
+        ? 'Cancel this signing draft? The signer link will remain inactive.'
+        : 'Revoke this signer link? The public signing URL will stop working immediately.',
+    );
+    if (!confirmed) return;
+    await onRevoke(request.id);
+  }
+
+  async function handleReissue(request: SigningRequestSummary) {
+    if (!onReissue || !canReissueRequest(request)) return;
+    const confirmed = window.confirm(
+      request.status === 'sent' && !request.isExpired
+        ? 'Issue a replacement signer link? The current public signing URL will stop working immediately.'
+        : 'Issue a fresh signer link and email it to the signer? Older public signing URLs will remain inactive.',
+    );
+    if (!confirmed) return;
+    await onReissue(request.id);
   }
 
   return (
@@ -128,6 +205,10 @@ async function handleCopyLink(request: SigningRequestSummary) {
           <div>
             <span className="signature-request-dialog__label">Drafts</span>
             <strong>{totals.drafts}</strong>
+          </div>
+          <div>
+            <span className="signature-request-dialog__label">Expired</span>
+            <strong>{totals.expired}</strong>
           </div>
           <div>
             <span className="signature-request-dialog__label">Manual follow-up</span>
@@ -190,8 +271,20 @@ async function handleCopyLink(request: SigningRequestSummary) {
               <strong>{formatTimestamp(request.completedAt)}</strong>
             </div>
             <div>
+              <span className="signature-request-dialog__label">Expires</span>
+              <strong>{formatTimestamp(request.expiresAt)}</strong>
+            </div>
+            <div>
               <span className="signature-request-dialog__label">Invite attempt</span>
               <strong>{formatTimestamp(request.inviteLastAttemptAt)}</strong>
+            </div>
+            <div>
+              <span className="signature-request-dialog__label">Delivery method</span>
+              <strong>{resolveInviteMethodSummary(request)}</strong>
+            </div>
+            <div>
+              <span className="signature-request-dialog__label">Sender</span>
+              <strong>{resolveSenderSummary(request)}</strong>
             </div>
             <div>
               <span className="signature-request-dialog__label">Source version</span>
@@ -211,7 +304,19 @@ async function handleCopyLink(request: SigningRequestSummary) {
           ) : null}
           {request.status === 'invalidated' ? (
             <p className="signature-request-dialog__response-note">
-              This draft was invalidated after the source PDF changed. Recreate it before sending.
+              {request.publicLinkRevokedAt
+                ? 'This signer link was revoked by the sender. Reissue the link to activate a fresh replacement URL.'
+                : request.invalidationReason || 'This signing request is no longer valid.'}
+            </p>
+          ) : null}
+          {request.status === 'sent' && request.isExpired ? (
+            <p className="signature-request-dialog__response-note">
+              This signer link expired. Reissue it to rotate a fresh URL and restart the signer ceremony.
+            </p>
+          ) : null}
+          {request.status === 'sent' && !request.isExpired && (request.publicLinkVersion || 1) > 1 ? (
+            <p className="signature-request-dialog__response-note">
+              Older signer links were rotated out. Only the newest signer URL remains valid.
             </p>
           ) : null}
 
@@ -223,6 +328,30 @@ async function handleCopyLink(request: SigningRequestSummary) {
                 onClick={() => { void handleCopyLink(request); }}
               >
                 {copiedRequestId === request.id ? 'Copied signer link' : 'Copy signer link'}
+              </button>
+            ) : null}
+            {canRevokeRequest(request) ? (
+              <button
+                type="button"
+                className="ui-button ui-button--ghost"
+                onClick={() => { void handleRevoke(request); }}
+                disabled={revokingRequestId === request.id}
+              >
+                {revokingRequestId === request.id
+                  ? 'Updating…'
+                  : request.status === 'draft'
+                    ? 'Cancel draft'
+                    : 'Revoke signer link'}
+              </button>
+            ) : null}
+            {canReissueRequest(request) ? (
+              <button
+                type="button"
+                className="ui-button ui-button--ghost"
+                onClick={() => { void handleReissue(request); }}
+                disabled={reissuingRequestId === request.id}
+              >
+                {reissuingRequestId === request.id ? 'Updating…' : 'Reissue signer link'}
               </button>
             ) : null}
             {request.artifacts?.sourcePdf?.downloadPath ? (

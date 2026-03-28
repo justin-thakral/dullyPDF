@@ -122,3 +122,35 @@ def test_load_env_file_with_only_comments_and_empty_lines(
     env_loader._load_env_file(env_file)
 
     assert sentinel not in env_loader.os.environ
+
+
+def test_load_env_file_skips_firebase_credentials_for_prod_or_adc_runs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "\n".join(
+            [
+                "FIREBASE_CREDENTIALS=/tmp/firebase-admin.json",
+                "GOOGLE_APPLICATION_CREDENTIALS=/tmp/firebase-adc.json",
+                "FIREBASE_CREDENTIALS_SECRET=dev-secret",
+                "SAFE_VALUE=kept",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("ENV", "prod")
+    monkeypatch.setenv("FIREBASE_USE_ADC", "true")
+    monkeypatch.delenv("FIREBASE_CREDENTIALS", raising=False)
+    monkeypatch.delenv("GOOGLE_APPLICATION_CREDENTIALS", raising=False)
+    monkeypatch.delenv("FIREBASE_CREDENTIALS_SECRET", raising=False)
+    monkeypatch.delenv("SAFE_VALUE", raising=False)
+
+    env_loader._load_env_file(env_file)
+
+    assert "FIREBASE_CREDENTIALS" not in env_loader.os.environ
+    assert "GOOGLE_APPLICATION_CREDENTIALS" not in env_loader.os.environ
+    assert "FIREBASE_CREDENTIALS_SECRET" not in env_loader.os.environ
+    assert env_loader.os.environ["SAFE_VALUE"] == "kept"

@@ -59,6 +59,7 @@ const limits: ProfileLimits = {
   savedFormsMax: 3,
   fillLinksActiveMax: 1,
   fillLinkResponsesMax: 5,
+  signingRequestsPerDocumentMax: 10,
 };
 
 const savedForms: SavedFormSummary[] = [

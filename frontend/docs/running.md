@@ -21,6 +21,8 @@ npm run dev
 ```
 
 Vite will use the next available port (typically `http://localhost:5173`).
+If you run the backend from `env/backend.dev.env` or `env/backend.dev.stack.env`, keep `SIGNING_APP_ORIGIN`
+aligned to that same frontend origin so emailed signing links point at the live dev server.
 
 ## Full-stack scripts (from repo root)
 
@@ -81,7 +83,8 @@ follow-up requests do not get blocked after `gtag.js` loads.
 - `http://localhost:5173/free-features` and `http://localhost:5173/premium-features` for public plan messaging and signed-in premium purchase CTA behavior.
 - Intent/SEO routes such as `/pdf-to-fillable-form`, `/fill-pdf-from-csv`, and `/fill-pdf-by-link`.
 - Fill By Link respondent routes under `/respond/:token`. The route shell is public and mobile-friendly; live submissions still depend on the backend being available.
-- Signing routes under `/sign/:token`. The route is public and mobile-friendly; milestone 3 now includes the signer ceremony for `Sign` mode with session bootstrap, immutable PDF review, consumer e-consent gating, signature adoption, manual fallback recording, and an explicit final sign action.
+- Signing routes under `/sign/:token`. The route is public and mobile-friendly; milestone 3 now includes the signer ceremony for `Sign` mode with session bootstrap, immutable PDF review, consumer e-consent gating, signature adoption, manual fallback recording, and an explicit final sign action. The adopt-signature step now supports typed-name, default legal-name, drawn, and uploaded-image signature marks before completion. Consumer previews now stay locked until consent, Fill By Link sourced requests now show an email-OTP verification step before the immutable PDF or manual fallback action is revealed, signer links expire after the configured request TTL, and public ceremony actions require the same client fingerprint that bootstrapped the session. Completed signer downloads now reuse that same bound session too, so reopening a finished request still needs the current signing session instead of a naked artifact URL. When a PDF signing identity is configured, the completed signed PDF also carries an embedded cryptographic PDF signature in addition to the rendered signature mark and audit artifacts.
+- Validation routes under `/verify-signing/:token`. The page is public, does not require a signing session, and reports whether the retained audit envelope plus signed-PDF hashes still line up for one completed request.
 - The owner signing dialog on `/ui` now supports batch signer entry via pasted TXT/CSV data or uploaded `.txt` / `.csv` files, and its `Responses` tab tracks waiting vs signed requests with direct artifact downloads.
 - In local/dev, signing invites may fall back to manual link sharing if Gmail API delivery is not configured or fails. The `Responses` tab will show `Manual link` / `Invite failed` states so the owner can copy the signer URL directly.
 - Mobile landing/demo copy should still explain Fill By Link even though the full editor remains desktop-only under the 900px breakpoint.

@@ -50,6 +50,8 @@ export function useWorkspaceSigning(deps: UseWorkspaceSigningDeps) {
   const [signingRequestsLoading, setSigningRequestsLoading] = useState(false);
   const [signingSaveInProgress, setSigningSaveInProgress] = useState(false);
   const [signingSendInProgress, setSigningSendInProgress] = useState(false);
+  const [signingRevokeRequestId, setSigningRevokeRequestId] = useState<string | null>(null);
+  const [signingReissueRequestId, setSigningReissueRequestId] = useState<string | null>(null);
   const [signingError, setSigningError] = useState<string | null>(null);
   const [signingNotice, setSigningNotice] = useState<string | null>(null);
   const [createdSigningRequests, setCreatedSigningRequests] = useState<SigningRequestSummary[]>([]);
@@ -275,6 +277,50 @@ export function useWorkspaceSigning(deps: UseWorkspaceSigningDeps) {
     return null;
   }, [createdSigningRequests]);
 
+  const revokeRequest = useCallback(async (requestId: string) => {
+    const normalizedRequestId = String(requestId || '').trim();
+    if (!normalizedRequestId) return;
+    setSigningRevokeRequestId(normalizedRequestId);
+    setSigningError(null);
+    setSigningNotice(null);
+    try {
+      const revokedRequest = await ApiService.revokeSigningRequest(normalizedRequestId);
+      setCreatedSigningRequests((current) => current.map((entry) => (
+        entry.id === revokedRequest.id ? revokedRequest : entry
+      )));
+      await refreshResponses();
+      setSigningNotice(
+        revokedRequest.sentAt
+          ? 'Signing request revoked. The signer link is now inactive.'
+          : 'Signing draft canceled.',
+      );
+    } catch (error) {
+      setSigningError(error instanceof Error ? error.message : 'Unable to revoke the signing request.');
+    } finally {
+      setSigningRevokeRequestId((current) => (current === normalizedRequestId ? null : current));
+    }
+  }, [refreshResponses]);
+
+  const reissueRequest = useCallback(async (requestId: string) => {
+    const normalizedRequestId = String(requestId || '').trim();
+    if (!normalizedRequestId) return;
+    setSigningReissueRequestId(normalizedRequestId);
+    setSigningError(null);
+    setSigningNotice(null);
+    try {
+      const reissuedRequest = await ApiService.reissueSigningRequest(normalizedRequestId);
+      setCreatedSigningRequests((current) => current.map((entry) => (
+        entry.id === reissuedRequest.id ? reissuedRequest : entry
+      )));
+      await refreshResponses();
+      setSigningNotice('Replacement signer link issued. Previous links are now inactive.');
+    } catch (error) {
+      setSigningError(error instanceof Error ? error.message : 'Unable to reissue the signing link.');
+    } finally {
+      setSigningReissueRequestId((current) => (current === normalizedRequestId ? null : current));
+    }
+  }, [refreshResponses]);
+
   const dialogProps = useMemo(() => ({
     open: dialogOpen,
     onClose: closeDialog,
@@ -288,6 +334,8 @@ export function useWorkspaceSigning(deps: UseWorkspaceSigningDeps) {
     responsesLoading: signingRequestsLoading,
     saving: signingSaveInProgress,
     sending: signingSendInProgress,
+    revokingRequestId: signingRevokeRequestId,
+    reissuingRequestId: signingReissueRequestId,
     error: signingError,
     notice: signingNotice,
     createdRequests: createdSigningRequests,
@@ -300,6 +348,8 @@ export function useWorkspaceSigning(deps: UseWorkspaceSigningDeps) {
     onCreateDrafts: createDrafts,
     onSendRequest: sendDrafts,
     onSendRequests: sendDrafts,
+    onRevokeRequest: revokeRequest,
+    onReissueRequest: reissueRequest,
     onRefreshResponses: refreshResponses,
   }), [
     closeDialog,
@@ -318,12 +368,16 @@ export function useWorkspaceSigning(deps: UseWorkspaceSigningDeps) {
     signingNotice,
     signingOptions,
     signingOptionsLoading,
+    signingRevokeRequestId,
+    signingReissueRequestId,
     signingRequests,
     signingRequestsLoading,
     signingSendInProgress,
     signingSaveInProgress,
     sendDisabledReason,
     sendDrafts,
+    revokeRequest,
+    reissueRequest,
     refreshResponses,
   ]);
 

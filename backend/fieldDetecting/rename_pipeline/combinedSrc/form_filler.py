@@ -923,7 +923,7 @@ def inject_fields_from_template(
     """
     fields = _build_field_list(template)
     if not fields:
-        raise SystemExit("No fields to inject.")
+        raise ValueError("No fields to inject.")
 
     origin = _resolve_origin(template)
     reader = PdfReader(str(input_pdf))

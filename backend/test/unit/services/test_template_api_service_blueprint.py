@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -86,6 +87,49 @@ def test_build_template_api_snapshot_requires_editor_snapshot(mocker) -> None:
         template_api_service.build_template_api_snapshot(_template_record())
 
 
+def test_build_template_api_snapshot_requires_valid_pdf_storage_path(mocker) -> None:
+    template = replace(_template_record(), pdf_bucket_path="not-a-gcs-path")
+    mocker.patch.object(template_api_service, "load_saved_form_editor_snapshot", return_value={"fields": [{"name": "full_name"}]})
+
+    with pytest.raises(ValueError, match="storage path is invalid"):
+        template_api_service.build_template_api_snapshot(template)
+
+
+def test_build_template_api_snapshot_rejects_conflicting_normalized_public_keys(mocker) -> None:
+    mocker.patch.object(
+        template_api_service,
+        "load_saved_form_editor_snapshot",
+        return_value={
+            "pageCount": 1,
+            "pageSizes": {"1": {"width": 612, "height": 792}},
+            "fields": [
+                {"name": "consent_group", "type": "text", "page": 1, "rect": [1, 2, 3, 4]},
+                {
+                    "name": "consent_yes",
+                    "type": "checkbox",
+                    "page": 1,
+                    "rect": [1, 2, 3, 4],
+                    "groupKey": "consent_group",
+                    "optionKey": "yes",
+                    "optionLabel": "Yes",
+                },
+                {
+                    "name": "consent_no",
+                    "type": "checkbox",
+                    "page": 1,
+                    "rect": [1, 2, 3, 4],
+                    "groupKey": "consent_group",
+                    "optionKey": "no",
+                    "optionLabel": "No",
+                },
+            ],
+        },
+    )
+
+    with pytest.raises(ValueError, match="conflicting keys after normalization"):
+        template_api_service.build_template_api_snapshot(_template_record())
+
+
 def test_template_api_secret_hash_round_trip_and_basic_auth_parse() -> None:
     secret = template_api_service.generate_template_api_secret()
     secret_hash = template_api_service.hash_template_api_secret(secret)
@@ -95,6 +139,21 @@ def test_template_api_secret_hash_round_trip_and_basic_auth_parse() -> None:
     assert template_api_service.verify_template_api_secret(secret, secret_hash) is True
     assert template_api_service.verify_template_api_secret("wrong-secret", secret_hash) is False
     assert template_api_service.parse_template_api_basic_secret(authorization) == secret
+
+
+def test_parse_template_api_basic_secret_rejects_malformed_or_noncanonical_headers() -> None:
+    secret = "dpa_live_secret"
+    valid_token = base64.b64encode(f"{secret}:".encode("utf-8")).decode("ascii")
+    malformed_headers = [
+        "Basic " + base64.b64encode(secret.encode("utf-8")).decode("ascii"),
+        "Basic " + base64.b64encode(f"{secret}:not-blank".encode("utf-8")).decode("ascii"),
+        "Basic " + valid_token + "%%%garbage",
+        "Basic " + base64.b64encode(b"bearer-token:").decode("ascii"),
+        "Basic " + base64.b64encode(f" {secret}:".encode("utf-8")).decode("ascii"),
+    ]
+
+    for header in malformed_headers:
+        assert template_api_service.parse_template_api_basic_secret(header) is None
 
 
 def test_build_template_api_schema_collects_scalar_checkbox_and_radio_groups() -> None:
@@ -199,6 +258,104 @@ def test_build_template_api_schema_surfaces_standalone_checkbox_fields() -> None
     assert schema["exampleData"]["agree_to_terms"] is True
 
 
+def test_build_template_api_schema_rejects_duplicate_normalized_scalar_field_names() -> None:
+    with pytest.raises(ValueError, match="conflicting keys after normalization"):
+        template_api_service.build_template_api_schema(
+            {
+                "version": 1,
+                "defaultExportMode": "flat",
+                "fields": [
+                    {"name": "Full Name", "type": "text", "page": 1, "rect": [1, 2, 3, 4]},
+                    {"name": "full_name", "type": "text", "page": 1, "rect": [5, 6, 7, 8]},
+                ],
+                "checkboxRules": [],
+                "radioGroups": [],
+            }
+        )
+
+
+def test_build_template_api_schema_rejects_duplicate_normalized_direct_checkbox_field_names() -> None:
+    with pytest.raises(ValueError, match="conflicting keys after normalization"):
+        template_api_service.build_template_api_schema(
+            {
+                "version": 1,
+                "defaultExportMode": "flat",
+                "fields": [
+                    {"name": "Agree Terms", "type": "checkbox", "page": 1, "rect": [1, 2, 3, 4]},
+                    {"name": "agree_terms", "type": "checkbox", "page": 1, "rect": [5, 6, 7, 8]},
+                ],
+                "checkboxRules": [],
+                "radioGroups": [],
+            }
+        )
+
+
+def test_build_template_api_schema_excludes_signature_widgets_from_public_contract() -> None:
+    schema = template_api_service.build_template_api_schema(
+        {
+            "version": 1,
+            "defaultExportMode": "flat",
+            "fields": [
+                {"name": "full_name", "type": "text", "page": 1, "rect": [1, 2, 3, 4]},
+                {"name": "signature", "type": "signature", "page": 1, "rect": [5, 6, 7, 8]},
+            ],
+            "checkboxRules": [],
+            "radioGroups": [],
+        }
+    )
+
+    assert schema["fields"] == [{"key": "full_name", "fieldName": "full_name", "type": "text", "page": 1}]
+    assert "signature" not in schema["exampleData"]
+
+
+def test_build_template_api_schema_surfaces_implicit_checkbox_groups_without_rules() -> None:
+    schema = template_api_service.build_template_api_schema(
+        {
+            "version": 1,
+            "defaultExportMode": "flat",
+            "fields": [
+                {
+                    "name": "consent_yes",
+                    "type": "checkbox",
+                    "page": 1,
+                    "rect": [1, 2, 3, 4],
+                    "groupKey": "consent_group",
+                    "optionKey": "yes",
+                    "optionLabel": "Yes",
+                },
+                {
+                    "name": "consent_no",
+                    "type": "checkbox",
+                    "page": 1,
+                    "rect": [1, 2, 3, 4],
+                    "groupKey": "consent_group",
+                    "optionKey": "no",
+                    "optionLabel": "No",
+                },
+            ],
+            "checkboxRules": [],
+            "radioGroups": [],
+        }
+    )
+
+    assert schema["checkboxGroups"] == [
+        {
+            "key": "consent_group",
+            "groupKey": "consent_group",
+            "type": "checkbox_rule",
+            "operation": "list",
+            "options": [
+                {"optionKey": "yes", "optionLabel": "Yes", "fieldName": "consent_yes"},
+                {"optionKey": "no", "optionLabel": "No", "fieldName": "consent_no"},
+            ],
+            "trueOption": None,
+            "falseOption": None,
+            "valueMap": None,
+        }
+    ]
+    assert schema["exampleData"]["consent_group"] == ["yes"]
+
+
 def test_resolve_template_api_request_data_validates_radio_checkbox_and_unknown_keys() -> None:
     snapshot = {
         "version": 1,
@@ -295,6 +452,144 @@ def test_resolve_template_api_request_data_validates_radio_checkbox_and_unknown_
             {"marital_status": "widowed"},
             strict=False,
         )
+
+
+def test_resolve_template_api_request_data_accepts_implicit_checkbox_group_values() -> None:
+    snapshot = {
+        "version": 1,
+        "defaultExportMode": "flat",
+        "fields": [
+            {
+                "name": "consent_yes",
+                "type": "checkbox",
+                "page": 1,
+                "rect": [1, 2, 3, 4],
+                "groupKey": "consent_group",
+                "optionKey": "yes",
+                "optionLabel": "Yes",
+            },
+            {
+                "name": "consent_no",
+                "type": "checkbox",
+                "page": 1,
+                "rect": [1, 2, 3, 4],
+                "groupKey": "consent_group",
+                "optionKey": "no",
+                "optionLabel": "No",
+            },
+        ],
+        "checkboxRules": [],
+        "radioGroups": [],
+    }
+
+    resolved = template_api_service.resolve_template_api_request_data(
+        snapshot,
+        {"consent_group": "yes"},
+        strict=True,
+    )
+
+    assert resolved == {"consent_group": ["yes"]}
+
+
+def test_resolve_template_api_request_data_preserves_empty_strings_for_scalar_fields() -> None:
+    snapshot = {
+        "version": 1,
+        "defaultExportMode": "flat",
+        "fields": [{"name": "full_name", "type": "text", "page": 1, "rect": [1, 2, 3, 4]}],
+        "checkboxRules": [],
+        "radioGroups": [],
+    }
+
+    resolved = template_api_service.resolve_template_api_request_data(
+        snapshot,
+        {"full_name": ""},
+        strict=True,
+    )
+
+    assert resolved == {"full_name": ""}
+
+
+def test_resolve_template_api_request_data_rejects_conflicting_published_schema() -> None:
+    snapshot = {
+        "version": 1,
+        "defaultExportMode": "flat",
+        "fields": [
+            {"name": "consent_group", "type": "text", "page": 1, "rect": [1, 2, 3, 4]},
+            {
+                "name": "consent_yes",
+                "type": "checkbox",
+                "page": 1,
+                "rect": [1, 2, 3, 4],
+                "groupKey": "consent_group",
+                "optionKey": "yes",
+                "optionLabel": "Yes",
+            },
+            {
+                "name": "consent_no",
+                "type": "checkbox",
+                "page": 1,
+                "rect": [1, 2, 3, 4],
+                "groupKey": "consent_group",
+                "optionKey": "no",
+                "optionLabel": "No",
+            },
+        ],
+        "checkboxRules": [],
+        "radioGroups": [],
+    }
+
+    with pytest.raises(template_api_service.HTTPException) as exc_info:
+        template_api_service.resolve_template_api_request_data(
+            snapshot,
+            {"consent_group": ["yes"]},
+            strict=True,
+        )
+
+    assert exc_info.value.status_code == 500
+    assert "conflicting keys after normalization" in exc_info.value.detail
+
+
+def test_resolve_template_api_request_data_summarizes_large_unknown_key_sets() -> None:
+    snapshot = {
+        "version": 1,
+        "defaultExportMode": "flat",
+        "fields": [{"name": "full_name", "type": "text", "page": 1, "rect": [1, 2, 3, 4]}],
+        "checkboxRules": [],
+        "radioGroups": [],
+    }
+
+    with pytest.raises(template_api_service.HTTPException) as exc_info:
+        template_api_service.resolve_template_api_request_data(
+            snapshot,
+            {f"field_{index}": "x" for index in range(40)},
+            strict=True,
+        )
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail.startswith("Unknown API Fill keys:")
+    assert "(+15 more)." in exc_info.value.detail
+    assert len(exc_info.value.detail) <= template_api_service._MAX_TEMPLATE_API_ERROR_DETAIL_CHARS
+
+
+def test_resolve_template_api_request_data_rejects_ambiguous_normalized_keys() -> None:
+    snapshot = {
+        "version": 1,
+        "defaultExportMode": "flat",
+        "fields": [{"name": "full_name", "type": "text", "page": 1, "rect": [1, 2, 3, 4]}],
+        "checkboxRules": [],
+        "radioGroups": [],
+    }
+
+    with pytest.raises(template_api_service.HTTPException) as exc_info:
+        template_api_service.resolve_template_api_request_data(
+            snapshot,
+            {"full_name": "Alice", "FULL-NAME": "Bob"},
+            strict=False,
+        )
+
+    assert exc_info.value.status_code == 400
+    assert "Ambiguous API Fill keys after normalization" in exc_info.value.detail
+    assert "full_name" in exc_info.value.detail
 
 
 def test_materialize_template_api_snapshot_delegates_to_fill_link_download_path(mocker, tmp_path: Path) -> None:

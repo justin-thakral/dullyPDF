@@ -1,0 +1,102 @@
+name: Template API QA
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/template-api-qa.yml'
+      - 'backend/**'
+      - 'frontend/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'scripts/use-frontend-env.sh'
+      - 'config/public/frontend.dev.env'
+      - 'env/frontend.dev.env'
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/template-api-qa.yml'
+      - 'backend/**'
+      - 'frontend/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'scripts/use-frontend-env.sh'
+      - 'config/public/frontend.dev.env'
+      - 'env/frontend.dev.env'
+
+jobs:
+  template-api-qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: |
+            package-lock.json
+            frontend/package-lock.json
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install frontend dependencies
+        run: npm --prefix frontend ci
+
+      - name: Install backend dependencies
+        run: |
+          python -m venv backend/.venv
+          backend/.venv/bin/pip install --upgrade pip
+          backend/.venv/bin/pip install -r backend/requirements.txt -r backend/requirements-dev.txt
+
+      - name: Run targeted backend API Fill tests
+        run: npm run test:backend:template-api
+
+      - name: Run targeted backend API Fill coverage
+        run: npm run coverage:backend:template-api
+
+      - name: Run targeted frontend API Fill tests
+        run: npm run test:frontend:template-api
+
+      - name: Install Chromium for Playwright
+        run: npx playwright install --with-deps chromium
+
+      - name: Start frontend dev server
+        run: |
+          nohup npm run frontend:dev > /tmp/dullypdf-frontend.log 2>&1 &
+
+      - name: Wait for frontend dev server
+        run: |
+          for attempt in $(seq 1 60); do
+            if curl --silent --fail http://127.0.0.1:5173/ >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Frontend dev server did not become ready in time." >&2
+          cat /tmp/dullypdf-frontend.log >&2 || true
+          exit 1
+
+      - name: Run harnessed API Fill Playwright regression
+        run: npm run test:playwright:template-api:smoke
+
+      - name: Upload Playwright artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: template-api-playwright-artifacts
+          path: |
+            output/playwright/template-api-manager-smoke.png
+            output/playwright/template-api-manager-smoke.json
+            /tmp/dullypdf-frontend.log
+          if-no-files-found: ignore

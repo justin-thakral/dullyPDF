@@ -149,7 +149,7 @@ describe('HeaderBar', () => {
     expect(screen.getByText('Requires CSV/Excel/JSON/respondent rows')).toBeTruthy();
   });
 
-  it('keeps Fill By Web Form Link clickable when the workspace needs to surface a banner guard', async () => {
+  it('keeps Fill By Web Form Link + Sign clickable when the workspace needs to surface a banner guard', async () => {
     const user = userEvent.setup();
     const onOpenFillLink = vi.fn();
 
@@ -162,7 +162,7 @@ describe('HeaderBar', () => {
       />,
     );
 
-    const fillLinkButton = screen.getByRole('button', { name: 'Fill By Web Form Link' }) as HTMLButtonElement;
+    const fillLinkButton = screen.getByRole('button', { name: 'Fill By Web Form Link + Sign' }) as HTMLButtonElement;
     expect(fillLinkButton.disabled).toBe(false);
 
     await user.click(fillLinkButton);
@@ -353,7 +353,7 @@ describe('HeaderBar', () => {
     expect(onSaveToProfile).not.toHaveBeenCalled();
   });
 
-  it('shows docs links instead of the Fill By Web Form Link action in demo-locked mode', () => {
+  it('shows docs links instead of the Fill By Web Form Link + Sign action in demo-locked mode', () => {
     render(
       <HeaderBar
         {...createProps({
@@ -366,7 +366,7 @@ describe('HeaderBar', () => {
       />,
     );
 
-    expect(screen.queryByRole('button', { name: 'Fill By Web Form Link' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Fill By Web Form Link + Sign' })).toBeNull();
     expect(screen.getByRole('link', { name: 'Fill By Link docs' }).getAttribute('href')).toBe(
       '/usage-docs/fill-by-link',
     );

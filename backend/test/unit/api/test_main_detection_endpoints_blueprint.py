@@ -282,10 +282,11 @@ def test_detect_fields_rate_limit_env_negative_values_fallback_to_safe_defaults(
 def test_enqueue_detection_job_failure_marks_session_failed(app_main, base_user, mocker) -> None:
     mocker.patch.object(app_main.uuid, "uuid4", return_value=type("_U", (), {"__str__": lambda self: "sess-fail"})())
     mocker.patch.object(app_main, "resolve_detector_profile", return_value="light")
+    mocker.patch.object(app_main, "resolve_detector_target", return_value="gpu")
     mocker.patch.object(
         app_main,
         "resolve_task_config",
-        return_value={"profile": "light", "queue": "q", "service_url": "https://svc"},
+        return_value={"profile": "light", "target": "gpu", "queue": "q", "service_url": "https://svc"},
     )
 
     def _store(session_id, entry, **kwargs):
@@ -307,10 +308,11 @@ def test_enqueue_detection_job_failure_marks_session_failed(app_main, base_user,
 def test_enqueue_detection_job_raises_when_pdf_path_missing(app_main, base_user, mocker) -> None:
     mocker.patch.object(app_main.uuid, "uuid4", return_value=type("_U", (), {"__str__": lambda self: "sess-missing-path"})())
     mocker.patch.object(app_main, "resolve_detector_profile", return_value="light")
+    mocker.patch.object(app_main, "resolve_detector_target", return_value="gpu")
     mocker.patch.object(
         app_main,
         "resolve_task_config",
-        return_value={"profile": "light", "queue": "q", "service_url": "https://svc"},
+        return_value={"profile": "light", "target": "gpu", "queue": "q", "service_url": "https://svc"},
     )
     mocker.patch.object(app_main, "_store_session_entry", return_value=None)
     record_mock = mocker.patch.object(app_main, "record_detection_request", return_value=None)

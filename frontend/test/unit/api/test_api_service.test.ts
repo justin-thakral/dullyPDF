@@ -24,9 +24,13 @@ import { ApiService } from '../../../src/services/api';
 
 describe('ApiService', () => {
   beforeEach(() => {
+    vi.restoreAllMocks();
     apiConfigMocks.apiFetch.mockReset();
     apiConfigMocks.apiJsonFetch.mockReset();
     apiConfigMocks.buildApiUrl.mockClear();
+    URL.createObjectURL = vi.fn(() => 'blob:download');
+    URL.revokeObjectURL = vi.fn();
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
   });
 
   it('wires profile and public JSON endpoints with expected methods and payloads', async () => {
@@ -229,7 +233,8 @@ describe('ApiService', () => {
     expect(submitted.success).toBe(true);
     expect(submitted.responseDownloadAvailable).toBe(true);
     expect(submitted.responseDownloadPath).toBe('/api/fill-links/public/token-1/responses/resp-1/download');
-    expect(retriedSigning.signing?.publicPath).toBe('/sign/sign-1');
+    expect(retriedSigning.signing?.requestId).toBe('sign-1');
+    expect(retriedSigning.signing?.status).toBe('sent');
     expect(downloaded.filename).toBe('submitted-link-1.pdf');
 
     expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(1, 'GET', '/api/fill-links?templateId=tpl-1');
@@ -291,6 +296,8 @@ describe('ApiService', () => {
       .mockResolvedValueOnce({ id: 'signing-send-response' })
       .mockResolvedValueOnce({ id: 'signing-public-response' })
       .mockResolvedValueOnce({ id: 'signing-bootstrap-response' })
+      .mockResolvedValueOnce({ id: 'signing-verification-send-response' })
+      .mockResolvedValueOnce({ id: 'signing-verification-verify-response' })
       .mockResolvedValueOnce({ id: 'signing-review-response' })
       .mockResolvedValueOnce({ id: 'signing-consent-response' })
       .mockResolvedValueOnce({ id: 'signing-fallback-response' })
@@ -442,6 +449,67 @@ describe('ApiService', () => {
           statusMessage: 'This signing request is ready for review and signature.',
           sourceDocumentName: 'Bravo Packet',
           signerName: 'Alex Signer',
+          signerEmailHint: 'a***@example.com',
+          anchors: [],
+          documentCategory: 'ordinary_business_form',
+          documentCategoryLabel: 'Ordinary business form',
+          disclosureVersion: 'us-esign-business-v1',
+          manualFallbackEnabled: true,
+          mode: 'sign',
+          signatureMode: 'business',
+          verificationRequired: true,
+          verificationMethod: 'email_otp',
+          sourcePdfSha256: 'def',
+          sourceVersion: 'workspace:def',
+          documentPath: '/api/signing/public/token-1/document',
+        },
+        session: {
+          id: 'session-1',
+          token: 'session-token-1',
+          expiresAt: '2026-03-24T12:30:00Z',
+          verificationSentAt: '2026-03-24T12:03:00Z',
+          verificationExpiresAt: '2026-03-24T12:13:00Z',
+          verificationAttemptCount: 0,
+          verificationResendCount: 1,
+          verificationResendAvailableAt: '2026-03-24T12:04:00Z',
+        },
+      })
+      .mockResolvedValueOnce({
+        request: {
+          id: 'req-1',
+          status: 'sent',
+          statusMessage: 'This signing request is ready for review and signature.',
+          sourceDocumentName: 'Bravo Packet',
+          signerName: 'Alex Signer',
+          signerEmailHint: 'a***@example.com',
+          anchors: [],
+          documentCategory: 'ordinary_business_form',
+          documentCategoryLabel: 'Ordinary business form',
+          disclosureVersion: 'us-esign-business-v1',
+          manualFallbackEnabled: true,
+          mode: 'sign',
+          signatureMode: 'business',
+          verificationRequired: true,
+          verificationMethod: 'email_otp',
+          verificationCompletedAt: '2026-03-24T12:04:30Z',
+          sourcePdfSha256: 'def',
+          sourceVersion: 'workspace:def',
+          documentPath: '/api/signing/public/token-1/document',
+        },
+        session: {
+          id: 'session-1',
+          token: 'session-token-1',
+          expiresAt: '2026-03-24T12:30:00Z',
+          verifiedAt: '2026-03-24T12:04:30Z',
+        },
+      })
+      .mockResolvedValueOnce({
+        request: {
+          id: 'req-1',
+          status: 'sent',
+          statusMessage: 'This signing request is ready for review and signature.',
+          sourceDocumentName: 'Bravo Packet',
+          signerName: 'Alex Signer',
           anchors: [],
           documentCategory: 'ordinary_business_form',
           documentCategoryLabel: 'Ordinary business form',
@@ -542,6 +610,7 @@ describe('ApiService', () => {
       sourceTemplateName: 'Bravo Packet',
       sourcePdfSha256: 'abc',
       documentCategory: 'ordinary_business_form',
+      esignEligibilityConfirmed: true,
       manualFallbackEnabled: true,
       signerName: 'Alex Signer',
       signerEmail: 'alex@example.com',
@@ -557,10 +626,15 @@ describe('ApiService', () => {
     });
     const publicRequest = await ApiService.getPublicSigningRequest('token-1');
     const bootstrap = await ApiService.startPublicSigningSession('token-1');
+    const verificationSend = await ApiService.sendPublicSigningVerificationCode('token-1', 'session-token-1');
+    const verificationVerified = await ApiService.verifyPublicSigningVerificationCode('token-1', 'session-token-1', '123456');
     const reviewed = await ApiService.reviewPublicSigningRequest('token-1', 'session-token-1');
-    const consented = await ApiService.consentPublicSigningRequest('token-2', 'session-token-2');
+    const consented = await ApiService.consentPublicSigningRequest('token-2', 'session-token-2', { accessCode: 'ABC123' });
     const fallback = await ApiService.requestPublicSigningManualFallback('token-1', 'session-token-1', 'Need paper');
-    const adopted = await ApiService.adoptPublicSigningSignature('token-1', 'session-token-1', 'Alex Signer');
+    const adopted = await ApiService.adoptPublicSigningSignature('token-1', 'session-token-1', {
+      signatureType: 'typed',
+      adoptedName: 'Alex Signer',
+    });
     const completed = await ApiService.completePublicSigningRequest('token-1', 'session-token-1');
 
     expect(options.modes[0].key).toBe('sign');
@@ -572,6 +646,8 @@ describe('ApiService', () => {
     expect(sent.sourcePdfPath).toBe('gs://signing/path.pdf');
     expect(publicRequest.sourceVersion).toBe('workspace:def');
     expect(bootstrap.session?.token).toBe('session-token-1');
+    expect(verificationSend.session?.verificationSentAt).toBe('2026-03-24T12:03:00Z');
+    expect(verificationVerified.session?.verifiedAt).toBe('2026-03-24T12:04:30Z');
     expect(reviewed.reviewedAt).toBe('2026-03-24T12:05:00Z');
     expect(consented.consentedAt).toBe('2026-03-24T12:06:00Z');
     expect(fallback.manualFallbackRequestedAt).toBe('2026-03-24T12:07:00Z');
@@ -597,6 +673,7 @@ describe('ApiService', () => {
       sourceTemplateName: 'Bravo Packet',
       sourcePdfSha256: 'abc',
       documentCategory: 'ordinary_business_form',
+      esignEligibilityConfirmed: true,
       manualFallbackEnabled: true,
       signerName: 'Alex Signer',
       signerEmail: 'alex@example.com',
@@ -613,7 +690,21 @@ describe('ApiService', () => {
     expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(8, 'POST', '/api/signing/public/token-1/bootstrap', {
       authMode: 'anonymous',
     });
-    expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(9, 'POST', '/api/signing/public/token-1/review', {
+    expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(9, 'POST', '/api/signing/public/token-1/verification/send', {
+      authMode: 'anonymous',
+      headers: {
+        'X-Signing-Session': 'session-token-1',
+      },
+    });
+    expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(10, 'POST', '/api/signing/public/token-1/verification/verify', {
+      authMode: 'anonymous',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Signing-Session': 'session-token-1',
+      },
+      body: JSON.stringify({ code: '123456' }),
+    });
+    expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(11, 'POST', '/api/signing/public/token-1/review', {
       authMode: 'anonymous',
       headers: {
         'Content-Type': 'application/json',
@@ -621,15 +712,15 @@ describe('ApiService', () => {
       },
       body: JSON.stringify({ reviewConfirmed: true }),
     });
-    expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(10, 'POST', '/api/signing/public/token-2/consent', {
+    expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(12, 'POST', '/api/signing/public/token-2/consent', {
       authMode: 'anonymous',
       headers: {
         'Content-Type': 'application/json',
         'X-Signing-Session': 'session-token-2',
       },
-      body: JSON.stringify({ accepted: true }),
+      body: JSON.stringify({ accepted: true, accessCode: 'ABC123' }),
     });
-    expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(11, 'POST', '/api/signing/public/token-1/manual-fallback', {
+    expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(13, 'POST', '/api/signing/public/token-1/manual-fallback', {
       authMode: 'anonymous',
       headers: {
         'Content-Type': 'application/json',
@@ -637,15 +728,15 @@ describe('ApiService', () => {
       },
       body: JSON.stringify({ note: 'Need paper' }),
     });
-    expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(12, 'POST', '/api/signing/public/token-1/adopt-signature', {
+    expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(14, 'POST', '/api/signing/public/token-1/adopt-signature', {
       authMode: 'anonymous',
       headers: {
         'Content-Type': 'application/json',
         'X-Signing-Session': 'session-token-1',
       },
-      body: JSON.stringify({ adoptedName: 'Alex Signer' }),
+      body: JSON.stringify({ signatureType: 'typed', adoptedName: 'Alex Signer' }),
     });
-    expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(13, 'POST', '/api/signing/public/token-1/complete', {
+    expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(15, 'POST', '/api/signing/public/token-1/complete', {
       authMode: 'anonymous',
       headers: {
         'Content-Type': 'application/json',
@@ -658,6 +749,103 @@ describe('ApiService', () => {
     expect(sendForm.get('ownerReviewConfirmed')).toBe('true');
     const sendFile = sendForm.get('pdf');
     expect(sendFile).toBeTruthy();
+  });
+
+  it('issues and downloads protected public signing files with the session header', async () => {
+    const contentDispositionHeader = 'attachment; filename="signed-document.pdf"';
+    const documentBlob = new Blob(['document']);
+    const artifactBlob = new Blob(['artifact']);
+    apiConfigMocks.apiJsonFetch.mockResolvedValueOnce({
+      artifactKey: 'signed_pdf',
+      downloadPath: '/api/signing/public/artifacts/artifact-token-1',
+      expiresAt: '2026-03-28T12:05:00Z',
+    });
+    apiConfigMocks.apiFetch
+      .mockResolvedValueOnce({
+        headers: {
+          get: vi.fn((name: string) => {
+            const normalized = name.toLowerCase();
+            if (normalized === 'content-disposition') return contentDispositionHeader;
+            if (normalized === 'content-type') return 'application/pdf';
+            return null;
+          }),
+        },
+        blob: vi.fn().mockResolvedValue(documentBlob),
+      })
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({
+        headers: {
+          get: vi.fn((name: string) => {
+            const normalized = name.toLowerCase();
+            if (normalized === 'content-disposition') return contentDispositionHeader;
+            if (normalized === 'content-type') return 'application/pdf';
+            return null;
+          }),
+        },
+        blob: vi.fn().mockResolvedValue(artifactBlob),
+      });
+
+    const documentResult = await ApiService.getPublicSigningDocumentBlob('token-1', 'session-token-1');
+    const issueResult = await ApiService.issuePublicSigningArtifactDownload('token-1', 'session-token-1', 'signed_pdf');
+    await ApiService.downloadPublicSigningFile(
+      issueResult.downloadPath,
+      'session-token-1',
+      'signed-document.pdf',
+    );
+
+    expect(documentResult.blob).toBe(documentBlob);
+    expect(documentResult.filename).toBe('signed-document.pdf');
+    expect(documentResult.contentType).toBe('application/pdf');
+    expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(1, 'GET', '/api/signing/public/token-1/document', {
+      authMode: 'anonymous',
+      headers: {
+        'X-Signing-Session': 'session-token-1',
+      },
+    });
+    expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(2, 'POST', '/api/signing/public/token-1/artifacts/signed_pdf/issue', {
+      authMode: 'anonymous',
+      headers: {
+        'X-Signing-Session': 'session-token-1',
+      },
+    });
+    expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(3, 'GET', '/api/signing/public/artifacts/artifact-token-1', {
+      authMode: 'anonymous',
+      headers: {
+        'X-Signing-Session': 'session-token-1',
+      },
+    });
+  });
+
+  it('calls the owner revoke and reissue signing endpoints', async () => {
+    apiConfigMocks.apiJsonFetch
+      .mockResolvedValueOnce({
+        request: {
+          id: 'req-1',
+          status: 'invalidated',
+          publicLinkRevokedAt: '2026-03-24T12:06:00Z',
+        },
+      })
+      .mockResolvedValueOnce({
+        request: {
+          id: 'req-1',
+          status: 'sent',
+          publicLinkVersion: 2,
+          publicPath: '/sign/token-2',
+          publicToken: 'token-2',
+        },
+      });
+
+    const revoked = await ApiService.revokeSigningRequest('req-1');
+    const reissued = await ApiService.reissueSigningRequest('req-1');
+
+    expect(revoked.status).toBe('invalidated');
+    expect(revoked.publicLinkRevokedAt).toBe('2026-03-24T12:06:00Z');
+    expect(reissued.status).toBe('sent');
+    expect(reissued.publicLinkVersion).toBe(2);
+    expect(reissued.publicPath).toBe('/sign/token-2');
+
+    expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(1, 'POST', '/api/signing/requests/req-1/revoke');
+    expect(apiConfigMocks.apiFetch).toHaveBeenNthCalledWith(2, 'POST', '/api/signing/requests/req-1/reissue');
   });
 
   it('wires group-scoped Fill By Link owner endpoints', async () => {

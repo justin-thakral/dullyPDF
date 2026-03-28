@@ -119,6 +119,18 @@ uvicorn backend.detection.detector_app:app --host 0.0.0.0 --port 8000
    - `DETECTOR_TASKS_QUEUE` (or light/heavy split)
    - `DETECTOR_SERVICE_URL` (or light/heavy)
    - `DETECTOR_TASKS_SERVICE_ACCOUNT`
+   - If `DETECTOR_ROUTING_MODE=gpu` but only one GPU is available for the whole
+     detector fleet, set `DETECTOR_SERIALIZE_GPU_TASKS=true` so heavy requests
+     reuse the light/default queue plus the light GPU service, then run
+     `bash scripts/sync-detector-task-queues.sh <env-file>` to cap that shared
+     queue at one in-flight task.
+   - If you want GPU to stay the default for short PDFs but do not want those
+     requests waiting behind the shared GPU lane, also set
+     `DETECTOR_GPU_BUSY_FALLBACK_TO_CPU=true` and provide
+     `DETECTOR_TASKS_QUEUE_LIGHT_CPU` plus `DETECTOR_SERVICE_URL_LIGHT_CPU`.
+     Requests with fewer than `DETECTOR_GPU_BUSY_FALLBACK_PAGE_THRESHOLD`
+     pages will stay on GPU when the lane is idle and spill to CPU only when
+     Firestore already shows queued/running GPU detector work.
 
 3) Call `POST /detect-fields` on the main API.
 4) Poll `GET /detect-fields/{sessionId}` until status is `complete`.

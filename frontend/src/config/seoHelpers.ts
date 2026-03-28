@@ -26,3 +26,39 @@ export const appendStructuredData = (
 export const buildIntentSeoTitle = (heroTitle: string): string => `${heroTitle} | DullyPDF`;
 
 export const buildIntentSeoDescription = (heroSummary: string): string => heroSummary;
+
+export const buildCollectionPageSchema = (
+  name: string,
+  description: string,
+  path: string,
+): SeoStructuredDataEntry => ({
+  '@context': 'https://schema.org',
+  '@type': 'CollectionPage',
+  name,
+  description,
+  url: `${SITE_ORIGIN}${path}`,
+});
+
+export const buildTechArticleSchema = (
+  headline: string,
+  description: string,
+  path: string,
+): SeoStructuredDataEntry => ({
+  '@context': 'https://schema.org',
+  '@type': 'TechArticle',
+  headline,
+  description,
+  url: `${SITE_ORIGIN}${path}`,
+  author: {
+    '@type': 'Organization',
+    name: 'DullyPDF',
+  },
+  publisher: {
+    '@type': 'Organization',
+    name: 'DullyPDF',
+    logo: {
+      '@type': 'ImageObject',
+      url: `${SITE_ORIGIN}/DullyPDFLogoImproved.png`,
+    },
+  },
+});

@@ -19,7 +19,12 @@ from backend.detection.status import (
     DETECTION_STATUS_QUEUED,
     DETECTION_STATUS_RUNNING,
 )
-from backend.detection.tasks import enqueue_detection_task, resolve_detector_profile, resolve_task_config
+from backend.detection.tasks import (
+    enqueue_detection_task,
+    resolve_detector_profile,
+    resolve_detector_target,
+    resolve_task_config,
+)
 from backend.env_utils import int_env
 from backend.logging_config import get_logger
 from backend.firebaseDB.detection_database import record_detection_request, update_detection_request
@@ -231,7 +236,8 @@ def enqueue_detection_job(
     session_id = str(uuid.uuid4())
     resolved_page_count = page_count if page_count is not None else get_pdf_page_count(pdf_bytes)
     detector_profile = resolve_detector_profile(resolved_page_count)
-    task_config = resolve_task_config(detector_profile)
+    detector_target = resolve_detector_target(detector_profile, page_count=resolved_page_count)
+    task_config = resolve_task_config(detector_profile, target=detector_target)
     entry: Dict[str, Any] = {
         "pdf_bytes": pdf_bytes,
         "fields": [],
@@ -243,6 +249,7 @@ def enqueue_detection_job(
         "detection_queued_at": now_iso(),
         "detection_error": "",
         "detection_profile": task_config["profile"],
+        "detection_target": task_config["target"],
         "detection_queue": task_config["queue"],
         "detection_service_url": task_config["service_url"],
         "openai_prewarm_rename": bool(prewarm_rename),
@@ -271,10 +278,18 @@ def enqueue_detection_job(
         session_id=session_id,
         user_id=user.app_user_id if user else None,
         status=DETECTION_STATUS_QUEUED,
+        dispatch_lane=task_config["target"],
+        detection_profile=task_config["profile"],
+        detection_queue=task_config["queue"],
+        detection_service_url=task_config["service_url"],
         page_count=resolved_page_count,
     )
     try:
-        task_name = enqueue_detection_task(payload, profile=task_config["profile"])
+        task_name = enqueue_detection_task(
+            payload,
+            profile=task_config["profile"],
+            target=task_config["target"],
+        )
     except Exception as exc:
         entry["detection_status"] = DETECTION_STATUS_FAILED
         entry["detection_completed_at"] = now_iso()

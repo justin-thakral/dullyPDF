@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Dialog } from '../ui/Dialog';
 import type { MaterializePdfExportMode, TemplateApiSchema } from '../../services/api';
+import { resolveApiUrl } from '../../services/apiConfig';
 import type { ApiFillManagerDialogProps } from '../../hooks/useWorkspaceTemplateApi';
 import './ApiFillManagerDialog.css';
 
@@ -34,15 +35,33 @@ function formatMonthLabel(value?: string | null): string {
   }).format(new Date(Date.UTC(year, monthIndex, 1)));
 }
 
-function resolveAbsolutePath(path: string | null | undefined): string {
-  const normalized = String(path || '').trim();
-  if (!normalized) return '';
-  if (typeof window === 'undefined') return normalized;
-  return new URL(normalized, window.location.origin).toString();
-}
-
 function buildPayloadSnippet(schema: TemplateApiSchema | null): string {
   return JSON.stringify(schema?.exampleData || {}, null, 2);
+}
+
+function buildPythonLiteral(value: unknown): string {
+  if (value === null || value === undefined) {
+    return 'None';
+  }
+  if (typeof value === 'boolean') {
+    return value ? 'True' : 'False';
+  }
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? String(value) : 'None';
+  }
+  if (typeof value === 'string') {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((entry) => buildPythonLiteral(entry)).join(', ')}]`;
+  }
+  if (typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>).map(
+      ([key, entry]) => `${JSON.stringify(key)}: ${buildPythonLiteral(entry)}`,
+    );
+    return `{${entries.join(', ')}}`;
+  }
+  return JSON.stringify(String(value));
 }
 
 function buildCurlSnippet(fillUrl: string, payload: string, exportMode: MaterializePdfExportMode): string {
@@ -50,7 +69,7 @@ function buildCurlSnippet(fillUrl: string, payload: string, exportMode: Material
     `curl -X POST "${fillUrl}" \\`,
     '  -H "Authorization: Basic $(printf \'%s:\' \"$API_KEY\" | base64)" \\',
     '  -H "Content-Type: application/json" \\',
-    `  -d '${JSON.stringify({ data: JSON.parse(payload), exportMode }, null, 2)}'`,
+    `  -d '${JSON.stringify({ data: JSON.parse(payload), exportMode, strict: true }, null, 2)}'`,
   ].join('\n');
 }
 
@@ -63,7 +82,7 @@ function buildNodeSnippet(fillUrl: string, payload: string, exportMode: Material
     "    'Content-Type': 'application/json',",
     "    Authorization: `Basic ${Buffer.from(`${apiKey}:`).toString('base64')}`,",
     '  },',
-    `  body: JSON.stringify({ data: ${payload}, exportMode: ${JSON.stringify(exportMode)} }),`,
+    `  body: JSON.stringify({ data: ${payload}, exportMode: ${JSON.stringify(exportMode)}, strict: true }),`,
     '});',
     '',
     "if (!response.ok) throw new Error(await response.text());",
@@ -71,7 +90,7 @@ function buildNodeSnippet(fillUrl: string, payload: string, exportMode: Material
   ].join('\n');
 }
 
-function buildPythonSnippet(fillUrl: string, payload: string, exportMode: MaterializePdfExportMode): string {
+function buildPythonSnippet(fillUrl: string, payloadLiteral: string, exportMode: MaterializePdfExportMode): string {
   return [
     'import base64',
     'import os',
@@ -79,7 +98,7 @@ function buildPythonSnippet(fillUrl: string, payload: string, exportMode: Materi
     '',
     "api_key = os.environ['DULLYPDF_API_KEY']",
     `url = ${JSON.stringify(fillUrl)}`,
-    `payload = {"data": ${payload}, "exportMode": ${JSON.stringify(exportMode)}}`,
+    `payload = {"data": ${payloadLiteral}, "exportMode": ${JSON.stringify(exportMode)}, "strict": True}`,
     "auth = base64.b64encode(f'{api_key}:'.encode('utf-8')).decode('ascii')",
     "response = requests.post(url, json=payload, headers={",
     "    'Authorization': f'Basic {auth}',",
@@ -152,7 +171,15 @@ export default function ApiFillManagerDialog({
   }, [schema?.defaultExportMode, endpoint?.id]);
 
   const payloadSnippet = useMemo(() => buildPayloadSnippet(schema), [schema]);
-  const fillUrl = useMemo(() => resolveAbsolutePath(endpoint?.fillPath), [endpoint?.fillPath]);
+  const pythonPayloadLiteral = useMemo(
+    () => buildPythonLiteral(schema?.exampleData || {}),
+    [schema],
+  );
+  const fillUrl = useMemo(() => resolveApiUrl(String(endpoint?.fillPath || '').trim()), [endpoint?.fillPath]);
+  const schemaUrl = useMemo(
+    () => resolveApiUrl(endpoint?.id ? `/api/v1/fill/${encodeURIComponent(endpoint.id)}/schema` : ''),
+    [endpoint?.id],
+  );
   const snippetExportMode = schema?.defaultExportMode === 'editable' ? 'editable' : 'flat';
   const curlSnippet = useMemo(
     () => buildCurlSnippet(fillUrl, payloadSnippet, snippetExportMode),
@@ -163,13 +190,14 @@ export default function ApiFillManagerDialog({
     [fillUrl, payloadSnippet, snippetExportMode],
   );
   const pythonSnippet = useMemo(
-    () => buildPythonSnippet(fillUrl, payloadSnippet, snippetExportMode),
-    [fillUrl, payloadSnippet, snippetExportMode],
+    () => buildPythonSnippet(fillUrl, pythonPayloadLiteral, snippetExportMode),
+    [fillUrl, pythonPayloadLiteral, snippetExportMode],
   );
 
   const endpointStatusLabel = endpoint?.status === 'revoked' ? 'Revoked' : endpoint ? 'Active' : 'Not published';
   const publishButtonLabel = !endpoint || endpoint.status === 'revoked' ? 'Generate key' : 'Republish snapshot';
   const isActiveEndpoint = endpoint?.status === 'active';
+  const trackedFailureCount = (endpoint?.authFailureCount || 0) + (endpoint?.validationFailureCount || 0) + (endpoint?.runtimeFailureCount || 0);
 
   return (
     <Dialog
@@ -185,7 +213,7 @@ export default function ApiFillManagerDialog({
             <p className="template-api-dialog__eyebrow">Saved template</p>
             <h3>{templateName || 'No saved template selected'}</h3>
             <p className="template-api-dialog__support">
-              API Fill always uses the last saved template snapshot. Save editor changes before publishing or republishing this endpoint.
+              API Fill uses the last published snapshot for this template. Save editor changes before publishing or republishing to update the live endpoint.
             </p>
           </div>
           <div className={`template-api-dialog__status template-api-dialog__status--${endpoint?.status || 'idle'}`}>
@@ -302,22 +330,40 @@ export default function ApiFillManagerDialog({
                 </div>
               </div>
               {isActiveEndpoint ? (
-                <div className="template-api-dialog__endpoint-row">
-                  <div>
-                    <span className="template-api-dialog__meta-label">URL</span>
-                    <code>{fillUrl}</code>
+                <>
+                  <div className="template-api-dialog__endpoint-row">
+                    <div>
+                      <span className="template-api-dialog__meta-label">URL</span>
+                      <code>{fillUrl}</code>
+                    </div>
+                    <button
+                      type="button"
+                      className="ui-button ui-button--ghost ui-button--compact"
+                      onClick={async () => {
+                        const copied = await copyText(fillUrl);
+                        setCopyNotice(copied ? 'Endpoint URL copied.' : 'Copy failed. Copy the URL manually.');
+                      }}
+                    >
+                      Copy URL
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    className="ui-button ui-button--ghost ui-button--compact"
-                    onClick={async () => {
-                      const copied = await copyText(fillUrl);
-                      setCopyNotice(copied ? 'Endpoint URL copied.' : 'Copy failed. Copy the URL manually.');
-                    }}
-                  >
-                    Copy URL
-                  </button>
-                </div>
+                  <div className="template-api-dialog__endpoint-row">
+                    <div>
+                      <span className="template-api-dialog__meta-label">Schema URL</span>
+                      <code>{schemaUrl}</code>
+                    </div>
+                    <button
+                      type="button"
+                      className="ui-button ui-button--ghost ui-button--compact"
+                      onClick={async () => {
+                        const copied = await copyText(schemaUrl);
+                        setCopyNotice(copied ? 'Schema URL copied.' : 'Copy failed. Copy the schema URL manually.');
+                      }}
+                    >
+                      Copy schema URL
+                    </button>
+                  </div>
+                </>
               ) : (
                 <p className="template-api-dialog__support">
                   The previous public endpoint is inactive. The schema and activity history below are still available for reference.
@@ -368,7 +414,7 @@ export default function ApiFillManagerDialog({
                   <div>
                     <span className="template-api-dialog__meta-label">Failure signals</span>
                     <strong>{endpoint.suspiciousFailureCount || 0} suspicious</strong>
-                    <span className="template-api-dialog__meta-support">{(endpoint.authFailureCount || 0) + (endpoint.validationFailureCount || 0)} tracked failures</span>
+                    <span className="template-api-dialog__meta-support">{trackedFailureCount} tracked failures</span>
                   </div>
                 </div>
                 {endpoint.lastFailureReason ? (
@@ -425,7 +471,7 @@ export default function ApiFillManagerDialog({
                   <div className="template-api-dialog__card-header">
                     <div>
                       <h4>cURL</h4>
-                      <p>Quick server-side smoke test.</p>
+                      <p>Quick server-side smoke test with <code>strict=true</code>.</p>
                     </div>
                   </div>
                   <pre className="template-api-dialog__code-block">{curlSnippet}</pre>
@@ -434,7 +480,7 @@ export default function ApiFillManagerDialog({
                   <div className="template-api-dialog__card-header">
                     <div>
                       <h4>Node</h4>
-                      <p>Uses native `fetch` and returns PDF bytes.</p>
+                      <p>Uses native `fetch`, returns PDF bytes, and fails closed on unknown keys.</p>
                     </div>
                   </div>
                   <pre className="template-api-dialog__code-block">{nodeSnippet}</pre>
@@ -443,7 +489,7 @@ export default function ApiFillManagerDialog({
                   <div className="template-api-dialog__card-header">
                     <div>
                       <h4>Python</h4>
-                      <p>Basic `requests` example for backend jobs.</p>
+                      <p>Basic `requests` example for backend jobs with schema-checked smoke-test defaults.</p>
                     </div>
                   </div>
                   <pre className="template-api-dialog__code-block">{pythonSnippet}</pre>

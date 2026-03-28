@@ -136,7 +136,7 @@ async def send_gmail_message(
     reply_to: Optional[Dict[str, str]] = None,
     failure_context: str = "Gmail API email send",
     failure_detail: str = "Failed to send email",
-) -> None:
+) -> Optional[str]:
     to_label = sanitize_email_header_value(to_email)
     from_label = sanitize_email_header_value(from_email)
     subject_label = sanitize_email_header_value(subject)
@@ -166,6 +166,11 @@ async def send_gmail_message(
     if response.status_code >= 400:
         _log_external_http_failure(failure_context, response)
         raise HTTPException(status_code=502, detail=failure_detail)
+    try:
+        data = response.json()
+        return str(data.get("id") or "") or None
+    except Exception:
+        return None
 
 
 async def send_contact_email(subject: str, body: str, reply_to: Optional[Dict[str, str]]) -> None:

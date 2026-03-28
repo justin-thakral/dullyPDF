@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * Auto-generate sitemap.xml from seo-route-data.mjs.
+ * Auto-generate sitemap.xml from the shared public SEO route dataset exposed via
+ * seo-route-data.mjs.
  * Writes to frontend/dist/sitemap.xml (must run after Vite build).
  */
 

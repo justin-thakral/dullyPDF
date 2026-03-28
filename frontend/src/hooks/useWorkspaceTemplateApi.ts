@@ -89,9 +89,11 @@ export function useWorkspaceTemplateApi(deps: UseWorkspaceTemplateApiDeps) {
         return;
       }
       setLimits(endpointPayload.limits ?? null);
-      const activeEndpoint = endpointPayload.endpoints[0] ?? null;
-      setEndpoint(activeEndpoint);
+      const activeEndpoint = endpointPayload.endpoints.find((entry) => entry.status === 'active')
+        ?? endpointPayload.endpoints[0]
+        ?? null;
       if (!activeEndpoint) {
+        setEndpoint(null);
         setSchema(null);
         setRecentEvents([]);
         return;

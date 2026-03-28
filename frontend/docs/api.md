@@ -25,9 +25,13 @@ Content-Type: application/json
   },
   "filename": "patient-intake.pdf",
   "exportMode": "flat",
-  "strict": false
+  "strict": true
 }
 ```
+
+Request-envelope validation errors are summarized in owner audit history without storing raw caller input values.
+
+The API key must be the Basic username and the Basic password must be blank. Noncanonical Basic auth headers are rejected.
 
 Response:
 
@@ -69,7 +73,7 @@ References:
 - No direct public use of `POST /api/forms/materialize`.
 - No arbitrary unsaved editor-state filling.
 - No packet/group API filling in v1.
-- No customer-managed webhooks in v1.
+- No customer-managed API Fill webhooks in v1. Signing lifecycle webhooks now exist as backend-configured server-to-server delivery and stay separate from the API Fill surface.
 - No async job model unless page counts or latency force it later.
 
 ## Core design decisions
@@ -197,6 +201,7 @@ Define the fill contract now so all later layers are built against it:
 - checkbox group with `enum` rule: one selected option key string
 - checkbox group with `list` rule: array of option keys
 - radio group: one selected option key string
+- signature widgets are excluded from the API Fill schema; use the signing workflow for signature capture instead of the generic fill API
 
 Fail closed when the selected option key is invalid.
 
@@ -237,7 +242,7 @@ Recommended auth:
 
 - `Authorization: Basic base64(API_KEY:)`
 
-This mirrors Anvil's ergonomics while still keeping DullyPDF keys scoped per endpoint rather than org-wide.
+This mirrors Anvil's ergonomics while still keeping DullyPDF keys scoped per endpoint rather than org-wide. The same Basic auth header is required for the public schema route too.
 
 Recommended supporting route:
 
@@ -265,19 +270,32 @@ The public fill route should:
 - materialize the PDF from the frozen snapshot
 - return `application/pdf`
 
-Suggested request fields:
+Required request field:
 
 - `data`
+
+Optional request fields:
 - `filename` optional
 - `exportMode` optional
 - `strict` optional
 
+Top-level request fields must match those names exactly. Unknown top-level keys are rejected instead of being ignored.
+
+The owner publish route follows the same fail-closed rule for its top-level request fields, so misspelled publish options do not silently republish the endpoint with default settings.
+
 Suggested default behavior:
 
 - omitted keys: ignored
-- null/blank values: treated as unset
+- null values: treated as unset
+- blank strings: preserved for scalar fields so callers can intentionally clear a text/date-like value
 - unknown keys: ignored when `strict=false`
 - unknown keys: `400` when `strict=true`
+- differently spelled aliases that normalize to the same schema key are rejected as ambiguous
+- field-defined checkbox groups without explicit `checkboxRules` are exposed as list-style group keys in the schema
+- published snapshots are rejected if two public keys collide after normalization, and older bad snapshots now fail closed instead of silently shadowing one schema entry with another
+- owner activity distinguishes monthly quota blocks from broader plan-limit blocks, and tracked failure counts now include runtime PDF-generation failures in addition to auth/validation failures
+- endpoint monthly usage summaries stay tied to the reserved request month, so a fill that finishes after a UTC month rollover does not drift into the wrong owner-side month bucket
+- recommended first smoke test: send `strict=true` so schema typos fail closed
 
 ### Workspace UI
 
@@ -377,7 +395,18 @@ Add:
 - per-endpoint rate limits
 - global API fill rate limits
 - fail-closed limiter behavior
+- auth and rate-limit admission before request-body parsing
+- metadata-first secret verification so wrong-key traffic does not load the full published snapshot
+- hard request-body size enforcement on the public fill route
+- `application/json` required on the public fill route
+- `private, no-store` responses on the owner endpoint manager routes
+- `private, no-store` responses on the public schema and PDF routes
+- browser-origin allowlist enforcement on public fill `POST`s when an `Origin` header is present
 - usage logging without storing raw field values by default
+- quota accounting that counts each successful fill once and refunds reserved usage when PDF generation fails downstream
+- summarized validation failure reasons so large bad payloads do not create oversized audit entries
+- bounded recent-activity reads so owner refreshes do not scan the full audit history under abuse traffic
+- endpoint-activity query fallback so owner detail refreshes still work when the Firestore `endpoint_id + created_at` composite index is missing
 - endpoint-level revoke and rotation audit history
 - suspicious failure counters
 
@@ -421,8 +450,13 @@ Backend unit and integration:
 - snapshot generation
 - fill engine behavior
 - endpoint lifecycle
+- public fill auth before body parsing
+- public fill browser-origin blocking for disallowed origins
 - rate-limit behavior
-- usage logging
+- usage logging and single-count quota behavior
+- quota refund on downstream materialization failures
+- bounded validation failure summaries
+- bounded recent-activity event reads
 - republish behavior
 - revoked endpoint behavior
 

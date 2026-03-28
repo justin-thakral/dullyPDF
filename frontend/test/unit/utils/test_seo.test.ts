@@ -5,14 +5,14 @@ describe('SEO metadata utility', () => {
   it('applies title, canonical, and social tags for homepage route', () => {
     applyRouteSeo({ kind: 'app' });
 
-    expect(document.title).toBe('DullyPDF | Automatic Free PDF to Fillable Form with Search & Fill');
+    expect(document.title).toBe('DullyPDF | AI PDF Automation Platform for Templates, Filling, and Signing');
     expect(document.querySelector('meta[name="description"]')?.getAttribute('content')).toContain(
-      'DullyPDF turns existing PDFs into fillable forms with AI field detection',
+      'DullyPDF helps teams turn recurring PDFs into reusable templates',
     );
     expect(document.querySelector('link[rel="canonical"]')?.getAttribute('href')).toBe('https://dullypdf.com/');
     expect(document.querySelector('meta[property="og:url"]')?.getAttribute('content')).toBe('https://dullypdf.com/');
     expect(document.querySelector('meta[name="twitter:title"]')?.getAttribute('content')).toBe(
-      'DullyPDF | Automatic Free PDF to Fillable Form with Search & Fill',
+      'DullyPDF | AI PDF Automation Platform for Templates, Filling, and Signing',
     );
     expect(document.querySelectorAll('script[data-seo-jsonld="true"]').length).toBeGreaterThan(0);
   });
@@ -20,15 +20,15 @@ describe('SEO metadata utility', () => {
   it('applies canonical usage-docs paths even when docs content is section-specific', () => {
     applyRouteSeo({ kind: 'usage-docs', pageKey: 'rename-mapping' });
 
-    expect(document.title).toBe('Map PDF Fields to Database Template Columns | DullyPDF Docs');
+    expect(document.title).toBe('Rename PDF Fields and Map Them to Schema Headers | DullyPDF Docs');
     expect(document.querySelector('link[rel="canonical"]')?.getAttribute('href')).toBe(
       'https://dullypdf.com/usage-docs/rename-mapping',
     );
     expect(document.querySelector('meta[property="og:title"]')?.getAttribute('content')).toBe(
-      'Map PDF Fields to Database Template Columns | DullyPDF Docs',
+      'Rename PDF Fields and Map Them to Schema Headers | DullyPDF Docs',
     );
     expect(document.querySelector('meta[name="twitter:description"]')?.getAttribute('content')).toContain(
-      'OpenAI rename and schema mapping',
+      'review field names, align them to headers',
     );
   });
 

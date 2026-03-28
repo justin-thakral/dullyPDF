@@ -65,8 +65,8 @@ You can also run `python3 clean.py --field-detect-logs` from the repo root. Add 
     - `export FIREBASE_CREDENTIALS=/path/to/service-account.json`, or
     - `export GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json`
 - Configure Firebase Storage buckets for saved forms:
-  - `export FORMS_BUCKET=dullypdf-forms`
-  - `export TEMPLATES_BUCKET=dullypdf-templates`
+  - `export FORMS_BUCKET=dullypdf-forms-east4`
+  - `export TEMPLATES_BUCKET=dullypdf-templates-east4`
 - Optional admin override (dev only):
   - `export ADMIN_TOKEN=some-secret` (clients send `Authorization: Bearer <token>` or `x-admin-token`; ignored in prod or when `SANDBOX_ALLOW_ADMIN_OVERRIDE=false`)
 

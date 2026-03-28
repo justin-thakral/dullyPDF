@@ -255,6 +255,83 @@
   color: #0f172a;
 }
 
+.public-signing-page__signature-mode-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.75rem;
+}
+
+.public-signing-page__signature-mode {
+  display: grid;
+  gap: 0.4rem;
+  padding: 0.9rem 1rem;
+  border-radius: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(248, 250, 252, 0.95);
+  color: #334155;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 140ms ease, background-color 140ms ease, transform 140ms ease;
+}
+
+.public-signing-page__signature-mode strong {
+  font-size: 0.95rem;
+  color: #0f172a;
+}
+
+.public-signing-page__signature-mode span {
+  font-size: 0.87rem;
+  line-height: 1.45;
+}
+
+.public-signing-page__signature-mode:hover {
+  transform: translateY(-1px);
+  border-color: rgba(37, 99, 235, 0.3);
+}
+
+.public-signing-page__signature-mode--active {
+  border-color: rgba(37, 99, 235, 0.45);
+  background: rgba(219, 234, 254, 0.95);
+}
+
+.public-signing-page__signature-helper {
+  padding: 0.95rem 1rem;
+  border-radius: 16px;
+  background: rgba(239, 246, 255, 0.82);
+  border: 1px solid rgba(147, 197, 253, 0.6);
+  color: #1e3a8a;
+  line-height: 1.55;
+}
+
+.public-signing-page__signature-pad-shell,
+.public-signing-page__upload-shell {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.public-signing-page__signature-pad {
+  width: 100%;
+  min-height: 220px;
+  border-radius: 18px;
+  border: 1px dashed rgba(100, 116, 139, 0.65);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.96)),
+    repeating-linear-gradient(
+      0deg,
+      transparent 0,
+      transparent 30px,
+      rgba(148, 163, 184, 0.16) 30px,
+      rgba(148, 163, 184, 0.16) 31px
+    );
+  touch-action: none;
+}
+
+.public-signing-page__signature-preview-image {
+  max-width: 100%;
+  max-height: 120px;
+  object-fit: contain;
+}
+
 .public-signing-page__checkbox {
   display: flex;
   align-items: flex-start;

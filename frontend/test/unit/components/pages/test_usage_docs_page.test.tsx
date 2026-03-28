@@ -57,7 +57,7 @@ describe('UsageDocsPage', () => {
     expect(document.querySelector('link[rel="canonical"]')?.getAttribute('href')).toBe('https://dullypdf.com/usage-docs');
 
     rerender(<UsageDocsPage pageKey="search-fill" />);
-    expect(document.title).toBe('Auto Fill PDF from CSV, Excel, JSON, or Fill By Link Respondents | DullyPDF Docs');
+    expect(document.title).toBe('Search & Fill Records and Saved Respondents Into PDFs | DullyPDF Docs');
     expect(document.querySelector('link[rel="canonical"]')?.getAttribute('href')).toBe('https://dullypdf.com/usage-docs/search-fill');
   });
 });

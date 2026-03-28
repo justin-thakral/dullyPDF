@@ -8,10 +8,14 @@ from backend.firebaseDB import firebase_service as fs
 
 
 @pytest.fixture(autouse=True)
-def _reset_firebase_state():
+def _reset_firebase_state(mocker):
     fs._firebase_app = None
     fs._firebase_init_error = None
     fs._firebase_project_id = None
+    mocker.patch(
+        "backend.firebaseDB.firebase_service.get_app",
+        side_effect=ValueError("The default Firebase app does not exist."),
+    )
     yield
     fs._firebase_app = None
     fs._firebase_init_error = None
@@ -146,6 +150,35 @@ def test_init_firebase_caches_initialization_error(mocker) -> None:
 
     assert initialize_app.call_count == 1
     assert isinstance(fs._firebase_init_error, RuntimeError)
+
+
+def test_init_firebase_reuses_existing_default_app_before_initializing(mocker) -> None:
+    app_obj = object()
+    get_app = mocker.patch("backend.firebaseDB.firebase_service.get_app", return_value=app_obj)
+    initialize_app = mocker.patch("backend.firebaseDB.firebase_service.initialize_app")
+
+    fs.init_firebase()
+
+    get_app.assert_called_once_with()
+    initialize_app.assert_not_called()
+    assert fs._firebase_app is app_obj
+    assert fs._firebase_init_error is None
+
+
+def test_init_firebase_recovers_from_duplicate_default_app_error(mocker) -> None:
+    app_obj = object()
+    mocker.patch("backend.firebaseDB.firebase_service._load_firebase_credentials", return_value=(None, None))
+    mocker.patch(
+        "backend.firebaseDB.firebase_service.initialize_app",
+        side_effect=ValueError("The default Firebase app already exists."),
+    )
+    get_app = mocker.patch("backend.firebaseDB.firebase_service.get_app", return_value=app_obj)
+
+    fs.init_firebase()
+
+    get_app.assert_called()
+    assert fs._firebase_app is app_obj
+    assert fs._firebase_init_error is None
 
 
 def test_init_firebase_requires_adc_in_prod(monkeypatch, mocker) -> None:

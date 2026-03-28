@@ -198,6 +198,28 @@
   margin: 0;
 }
 
+.blog-post__section ul,
+.blog-post__section ol {
+  margin: 0.85rem 0 0;
+  padding-left: 1.25rem;
+  color: #475569;
+}
+
+.blog-post__section li {
+  font-size: 0.95rem;
+  line-height: 1.65;
+  margin-bottom: 0.45rem;
+}
+
+.blog-post__section a {
+  color: #4338ca;
+  text-decoration: none;
+}
+
+.blog-post__section a:hover {
+  text-decoration: underline;
+}
+
 .blog-post__related {
   margin-top: 2rem;
   padding: 1.5rem;

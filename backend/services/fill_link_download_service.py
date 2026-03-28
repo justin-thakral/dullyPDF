@@ -345,19 +345,24 @@ def _apply_checkbox_rule_to_group(
 ) -> bool:
     operation = normalize_data_key(str((rule or {}).get("operation") or "yes_no")) or "yes_no"
     value_map = (rule or {}).get("valueMap") if isinstance((rule or {}).get("valueMap"), dict) else None
-    if operation in {"list", "enum"}:
+    if operation in {"list", "enum"} or rule is None:
         matches: List[str] = []
         for entry in _split_multi_value(raw_value):
             resolved = _resolve_mapped_option(aliases, entry, value_map=value_map)
             if not resolved:
-                continue
+                if rule is not None and operation in {"list", "enum"}:
+                    continue
+                matches = []
+                break
             matches.append(resolved)
             if operation == "enum":
                 break
         if not matches:
-            return False
-        _set_checkbox_group_values(group_options, matches)
-        return True
+            if rule is not None and operation in {"list", "enum"}:
+                return False
+        else:
+            _set_checkbox_group_values(group_options, matches)
+            return True
 
     presence = _coerce_checkbox_boolean(raw_value)
     if presence is None:

@@ -250,6 +250,11 @@ Notes:
 - L2 access updates are throttled via `SANDBOX_SESSION_L2_TOUCH_SECONDS`.
 - The scheduled job should run `scripts/cleanup_sessions.py --execute` with the
   same env used by the backend (access to Firestore + GCS).
+- In prod, running that cleanup job every 6 hours is a reasonable default.
+  Hourly runs only make sense if you specifically need tighter orphan cleanup.
+- If you use a dedicated session bucket, disable GCS soft delete on that bucket.
+  Session artifacts are already governed by TTL plus scheduled cleanup, and soft
+  delete extends retained bytes beyond the intended expiry window.
 
 ## Why This Split Is Necessary
 
@@ -286,6 +291,8 @@ Notes:
 Bucket choice:
 - Option A: reuse `FORMS_BUCKET` with a `sessions/` prefix and a scheduled cleanup job.
 - Option B: add a dedicated session bucket for stricter retention control.
+- For Option B, keep lifecycle cleanup aligned to the session prefix and avoid
+  enabling soft delete unless you explicitly need recovery for expired session data.
 
 ## Minimal Session Payload Contract
 

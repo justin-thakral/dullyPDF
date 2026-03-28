@@ -16,6 +16,30 @@ def _resolve_nested(data: dict[str, Any], field: str) -> Any:
     return current
 
 
+def _assign_nested(target: dict[str, Any], field: str, value: Any) -> None:
+    current = target
+    segments = field.split(".")
+    for segment in segments[:-1]:
+        next_value = current.get(segment)
+        if not isinstance(next_value, dict):
+            next_value = {}
+            current[segment] = next_value
+        current = next_value
+    current[segments[-1]] = deepcopy(value)
+
+
+def _project_dict(data: dict[str, Any], field_paths: list[str] | None) -> dict[str, Any]:
+    if not field_paths:
+        return deepcopy(data)
+    projected: dict[str, Any] = {}
+    for field in field_paths:
+        resolved = _resolve_nested(data, field)
+        if resolved is None:
+            continue
+        _assign_nested(projected, field, resolved)
+    return projected
+
+
 def _is_delete_field(value: Any) -> bool:
     return value is firebase_firestore.DELETE_FIELD or repr(value) == repr(firebase_firestore.DELETE_FIELD)
 
@@ -55,8 +79,8 @@ class FakeDocumentRef:
         self._exists = exists
         return self
 
-    def get(self, transaction: Any = None) -> FakeSnapshot:
-        return FakeSnapshot(self.id, deepcopy(self._data), exists=self._exists, reference=self)
+    def get(self, field_paths: list[str] | None = None, transaction: Any = None) -> FakeSnapshot:
+        return FakeSnapshot(self.id, _project_dict(self._data, field_paths), exists=self._exists, reference=self)
 
     def set(self, payload: dict[str, Any], merge: bool = False) -> None:
         payload_copy = deepcopy(payload)
@@ -86,11 +110,46 @@ class FakeDocumentRef:
 
 
 class FakeQuery:
-    def __init__(self, docs: list[FakeDocumentRef]):
+    def __init__(
+        self,
+        docs: list[FakeDocumentRef],
+        *,
+        order_field: str | None = None,
+        order_direction: str = "ASCENDING",
+        limit_count: int | None = None,
+    ):
         self._docs = docs
+        self._order_field = order_field
+        self._order_direction = order_direction
+        self._limit_count = limit_count
 
-    def get(self) -> list[FakeSnapshot]:
-        return [doc.get() for doc in self._docs if doc.get().exists]
+    def order_by(self, field_path: str, direction: str = "ASCENDING") -> "FakeQuery":
+        return FakeQuery(
+            self._docs,
+            order_field=field_path,
+            order_direction=direction,
+            limit_count=self._limit_count,
+        )
+
+    def limit(self, count: int) -> "FakeQuery":
+        return FakeQuery(
+            self._docs,
+            order_field=self._order_field,
+            order_direction=self._order_direction,
+            limit_count=max(0, int(count)),
+        )
+
+    def get(self, transaction: Any = None) -> list[FakeSnapshot]:
+        docs = [doc for doc in self._docs if doc.get().exists]
+        if self._order_field:
+            reverse = str(self._order_direction or "").upper() == "DESCENDING"
+            docs.sort(
+                key=lambda doc: (_resolve_nested(doc.get().to_dict(), self._order_field) or "", doc.id),
+                reverse=reverse,
+            )
+        if self._limit_count is not None:
+            docs = docs[: self._limit_count]
+        return [doc.get() for doc in docs]
 
 
 class FakeCollection:
@@ -122,6 +181,7 @@ class FakeCollection:
 
 class FakeTransaction:
     def __init__(self):
+        self._read_only = False
         self.set_calls: list[dict[str, Any]] = []
         self.delete_calls: list[str] = []
 

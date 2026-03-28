@@ -309,6 +309,11 @@ const ProfilePage: React.FC<ProfilePageProps> = ({
       value: formatCountLabel(limits.fillLinkResponsesMax),
       note: 'Upper bound for accepted respondents on each published Fill By Link.',
     },
+    {
+      label: 'Signature requests / document',
+      value: formatCountLabel(limits.signingRequestsPerDocumentMax),
+      note: 'Maximum signer requests the current tier can create for one immutable document version.',
+    },
   ];
 
   const accountSummaryItems: ProfileDetail[] = [

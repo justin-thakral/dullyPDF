@@ -187,6 +187,7 @@ describe('FillLinkManagerDialog', () => {
     expect(editableToggle.checked).toBe(false);
     expect(editableToggle.disabled).toBe(true);
     expect(screen.getByText('Signed flows always stay flat.')).toBeTruthy();
+    fireEvent.click(screen.getByRole('checkbox', { name: /eligible for dullypdf/i }));
 
     fireEvent.click(screen.getByRole('button', { name: 'Publish link' }));
     expect(onPublishTemplate).toHaveBeenCalledWith(expect.objectContaining({
@@ -240,17 +241,34 @@ describe('FillLinkManagerDialog', () => {
     fireEvent.change(screen.getByLabelText('Signature mode'), { target: { value: 'consumer' } });
     fireEvent.change(screen.getByLabelText('Signer name question'), { target: { value: 'full_name' } });
     fireEvent.change(screen.getByLabelText('Signer email question'), { target: { value: 'email' } });
+    fireEvent.change(screen.getByLabelText('Paper-copy or offline procedure'), {
+      target: { value: 'Email owner@example.com to request paper delivery.' },
+    });
+    fireEvent.change(screen.getByLabelText('Paper-copy fee disclosure'), {
+      target: { value: 'No fee is charged for paper copies.' },
+    });
+    fireEvent.change(screen.getByLabelText('Withdrawal procedure'), {
+      target: { value: 'Email owner@example.com before signing completes.' },
+    });
+    fireEvent.change(screen.getByLabelText('Withdrawal consequences'), {
+      target: { value: 'The request will remain unsigned until the sender follows up offline.' },
+    });
+    fireEvent.change(screen.getByLabelText('Contact-update procedure'), {
+      target: { value: 'Email owner@example.com with the corrected contact details.' },
+    });
+    fireEvent.click(screen.getByRole('checkbox', { name: /eligible for dullypdf/i }));
     fireEvent.click(screen.getByRole('button', { name: 'Publish link' }));
 
     expect(onPublishTemplate).toHaveBeenCalledWith(expect.objectContaining({
-      signingConfig: {
+      signingConfig: expect.objectContaining({
         enabled: true,
         signatureMode: 'consumer',
         documentCategory: 'ordinary_business_form',
+        esignEligibilityConfirmed: true,
         manualFallbackEnabled: true,
         signerNameQuestionKey: 'full_name',
         signerEmailQuestionKey: 'email',
-      },
+      }),
     }));
   });
 
@@ -326,10 +344,12 @@ describe('FillLinkManagerDialog', () => {
     expect(Array.from(signerEmailSelect.options).some((option) => option.textContent === 'Signer Email')).toBe(true);
     expect(signerEmailSelect.value).toBe('signer_email');
 
+    fireEvent.click(screen.getByRole('checkbox', { name: /eligible for dullypdf/i }));
     fireEvent.click(screen.getByRole('button', { name: 'Publish link' }));
     expect(onPublishTemplate).toHaveBeenCalledWith(expect.objectContaining({
       signingConfig: expect.objectContaining({
         enabled: true,
+        esignEligibilityConfirmed: true,
         signerEmailQuestionKey: 'signer_email',
       }),
       webFormConfig: expect.objectContaining({
@@ -342,6 +362,87 @@ describe('FillLinkManagerDialog', () => {
         ]),
       }),
     }));
+  });
+
+  it('keeps Update link enabled when an existing signing link already has an attestation timestamp', () => {
+    renderTemplateDialog({
+      templateLink: {
+        id: 'template-link-legacy-attested',
+        title: 'Template One Intake',
+        status: 'active',
+        responseCount: 3,
+        maxResponses: 1000,
+        publicPath: '/respond/template-link-legacy-attested',
+        requireAllFields: true,
+        allowRespondentPdfDownload: true,
+        respondentPdfEditableEnabled: false,
+        publishedAt: '2026-03-10T12:00:00.000Z',
+        signingConfig: {
+          enabled: true,
+          signatureMode: 'business',
+          documentCategory: 'ordinary_business_form',
+          esignEligibilityConfirmedAt: '2026-03-10T12:00:00.000Z',
+          manualFallbackEnabled: true,
+          signerNameQuestionKey: 'full_name',
+          signerEmailQuestionKey: 'email',
+        },
+      },
+      templateSourceQuestions: [
+        { key: 'full_name', label: 'Full Name', type: 'text', sourceType: 'pdf_field', visible: true },
+        { key: 'email', label: 'Email', type: 'email', sourceType: 'custom', visible: true },
+      ],
+      templateResponses: [],
+      groupName: null,
+      hasActiveGroup: false,
+      groupLink: null,
+      groupResponses: [],
+    });
+
+    const updateButton = screen.getByRole('button', { name: 'Update link' }) as HTMLButtonElement;
+    expect(updateButton.disabled).toBe(false);
+    expect(screen.queryByText(/needs a U\.S\. e-sign eligibility confirmation/i)).toBeNull();
+  });
+
+  it('shows the update-link blocking error for legacy signing links even outside the builder tab', () => {
+    renderTemplateDialog({
+      templateLink: {
+        id: 'template-link-legacy-blocked',
+        title: 'Template One Intake',
+        status: 'active',
+        responseCount: 3,
+        maxResponses: 1000,
+        publicPath: '/respond/template-link-legacy-blocked',
+        requireAllFields: true,
+        allowRespondentPdfDownload: true,
+        respondentPdfEditableEnabled: false,
+        publishedAt: '2026-03-10T12:00:00.000Z',
+        signingConfig: {
+          enabled: true,
+          signatureMode: 'business',
+          documentCategory: 'ordinary_business_form',
+          manualFallbackEnabled: true,
+          signerNameQuestionKey: 'full_name',
+          signerEmailQuestionKey: 'email',
+        },
+      },
+      templateSourceQuestions: [
+        { key: 'full_name', label: 'Full Name', type: 'text', sourceType: 'pdf_field', visible: true },
+        { key: 'email', label: 'Email', type: 'email', sourceType: 'custom', visible: true },
+      ],
+      templateResponses: [],
+      groupName: null,
+      hasActiveGroup: false,
+      groupLink: null,
+      groupResponses: [],
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Responses' }));
+
+    const updateButton = screen.getByRole('button', { name: 'Update link' }) as HTMLButtonElement;
+    expect(updateButton.disabled).toBe(true);
+    expect(
+      screen.getByText('This signing-enabled link needs a U.S. e-sign eligibility confirmation before you can update it.'),
+    ).toBeTruthy();
   });
 
   it('shows signed-form downloads in the responses tab when a linked signing request is complete', () => {
@@ -405,6 +506,27 @@ describe('FillLinkManagerDialog', () => {
     vi.advanceTimersByTime(300);
 
     expect(onRefreshGroup).toHaveBeenLastCalledWith();
+  });
+
+  it('keeps the responses tab active while response data refreshes', () => {
+    const props = buildGroupDialogProps();
+    const { rerender } = render(<FillLinkManagerDialog {...props} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Responses' }));
+    expect(screen.getByRole('heading', { name: 'Responses' })).toBeTruthy();
+    expect(screen.getByText('Ada Lovelace')).toBeTruthy();
+
+    rerender(
+      <FillLinkManagerDialog
+        {...props}
+        groupLink={{ ...props.groupLink! }}
+        groupLoadingResponses
+      />,
+    );
+
+    expect(screen.getByRole('heading', { name: 'Responses' })).toBeTruthy();
+    expect(screen.getByText('Loading responses…')).toBeTruthy();
+    expect(screen.queryByText('Global settings:')).toBeNull();
   });
 
   it('clears the group respondent query when the dialog closes and reopens', () => {

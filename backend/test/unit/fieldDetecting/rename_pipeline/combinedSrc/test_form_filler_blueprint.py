@@ -144,7 +144,7 @@ def test_inject_fields_and_no_fields_edge_cases(tmp_path: Path) -> None:
     form_filler.inject_fields(input_pdf, json_path, output_pdf)
     assert output_pdf.exists()
 
-    with pytest.raises(SystemExit, match="No fields to inject"):
+    with pytest.raises(ValueError, match="No fields to inject"):
         form_filler.inject_fields_from_template(input_pdf, {"fields": []}, tmp_path / "none.pdf")
 
 

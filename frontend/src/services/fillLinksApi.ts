@@ -82,7 +82,15 @@ export type FillLinkSigningConfig = {
   signatureMode?: 'business' | 'consumer';
   documentCategory?: string | null;
   documentCategoryLabel?: string | null;
+  esignEligibilityConfirmed?: boolean;
+  esignEligibilityConfirmedAt?: string | null;
   manualFallbackEnabled?: boolean;
+  consumerPaperCopyProcedure?: string | null;
+  consumerPaperCopyFeeDescription?: string | null;
+  consumerWithdrawalProcedure?: string | null;
+  consumerWithdrawalConsequences?: string | null;
+  consumerContactUpdateProcedure?: string | null;
+  consumerConsentScopeDescription?: string | null;
   signerNameQuestionKey?: string | null;
   signerEmailQuestionKey?: string | null;
 };
@@ -136,6 +144,15 @@ export type FillLinkResponse = {
   linkedSigning?: {
     requestId: string;
     status?: string | null;
+    senderEmail?: string | null;
+    inviteMethod?: string | null;
+    inviteProvider?: string | null;
+    inviteDeliveryStatus?: string | null;
+    inviteLastAttemptAt?: string | null;
+    inviteSentAt?: string | null;
+    inviteDeliveryError?: string | null;
+    inviteDeliveryErrorCode?: string | null;
+    manualLinkSharedAt?: string | null;
     completedAt?: string | null;
     manualFallbackRequestedAt?: string | null;
     publicPath?: string | null;
@@ -179,7 +196,11 @@ export type PublicFillLinkSubmitResult = {
     available?: boolean;
     requestId?: string | null;
     status?: string | null;
-    publicPath?: string | null;
+    deliveryStatus?: string | null;
+    emailHint?: string | null;
+    canResend?: boolean;
+    resendAvailableAt?: string | null;
+    message?: string | null;
     errorMessage?: string | null;
   } | null;
 };
@@ -258,7 +279,11 @@ function normalizePublicFillLinkSubmitResult(payload: any): PublicFillLinkSubmit
           available: Boolean(payload.signing.available),
           requestId: typeof payload.signing.requestId === 'string' ? payload.signing.requestId : null,
           status: typeof payload.signing.status === 'string' ? payload.signing.status : null,
-          publicPath: typeof payload.signing.publicPath === 'string' ? payload.signing.publicPath : null,
+          deliveryStatus: typeof payload.signing.deliveryStatus === 'string' ? payload.signing.deliveryStatus : null,
+          emailHint: typeof payload.signing.emailHint === 'string' ? payload.signing.emailHint : null,
+          canResend: typeof payload.signing.canResend === 'boolean' ? payload.signing.canResend : false,
+          resendAvailableAt: typeof payload.signing.resendAvailableAt === 'string' ? payload.signing.resendAvailableAt : null,
+          message: typeof payload.signing.message === 'string' ? payload.signing.message : null,
           errorMessage: typeof payload.signing.errorMessage === 'string' ? payload.signing.errorMessage : null,
         }
         : null,
@@ -476,7 +501,11 @@ export class FillLinksApiService {
             available: Boolean(result.signing.available),
             requestId: typeof result.signing.requestId === 'string' ? result.signing.requestId : null,
             status: typeof result.signing.status === 'string' ? result.signing.status : null,
-            publicPath: typeof result.signing.publicPath === 'string' ? result.signing.publicPath : null,
+            deliveryStatus: typeof result.signing.deliveryStatus === 'string' ? result.signing.deliveryStatus : null,
+            emailHint: typeof result.signing.emailHint === 'string' ? result.signing.emailHint : null,
+            canResend: typeof result.signing.canResend === 'boolean' ? result.signing.canResend : false,
+            resendAvailableAt: typeof result.signing.resendAvailableAt === 'string' ? result.signing.resendAvailableAt : null,
+            message: typeof result.signing.message === 'string' ? result.signing.message : null,
             errorMessage: typeof result.signing.errorMessage === 'string' ? result.signing.errorMessage : null,
           }
           : null,

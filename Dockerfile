@@ -21,6 +21,7 @@ RUN pip install --upgrade pip \
   && pip install -r /app/backend/requirements.txt
 
 COPY --chown=appuser:appuser backend /app/backend
+COPY --chown=appuser:appuser scripts/cleanup_sessions.py /app/scripts/cleanup_sessions.py
 
 USER appuser
 ENV HOME=/home/appuser

@@ -90,6 +90,24 @@ Notes:
 - CSV/Excel/JSON rows stay in the browser; only headers/types are sent to the server.
 - Do not add PHI/PII to tracked files.
 
+## API Fill QA
+
+Targeted API Fill checks are available at the repo root:
+
+```bash
+npm run test:backend:template-api
+npm run coverage:backend:template-api
+npm run test:frontend:template-api
+npm run test:playwright:template-api
+npm run test:qa:template-api
+```
+
+- `test:backend:template-api` runs the focused backend unit and integration suite for publish, public fill, service normalization, and Firestore bookkeeping.
+- `coverage:backend:template-api` reports coverage only for the core API Fill backend modules.
+- `test:frontend:template-api` runs the focused dialog and hook unit tests.
+- `test:playwright:template-api` runs both the harnessed browser regression and the authenticated `/ui` owner flow.
+- `test:qa:template-api` chains the focused backend, frontend, and Playwright checks together.
+
 ## Cleanup
 
 Use the repo cleanup entrypoint to clear generated artifacts:

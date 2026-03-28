@@ -42,10 +42,11 @@ describe('apiConfig', () => {
 
   it('removes repeated trailing slashes from API base URL env values', async () => {
     vi.stubEnv('VITE_API_URL', ' https://backend.local/// ');
-    const { getApiBaseUrl, buildApiUrl } = await importApiConfig();
+    const { getApiBaseUrl, buildApiUrl, resolveApiUrl } = await importApiConfig();
 
     expect(getApiBaseUrl()).toBe('https://backend.local');
     expect(buildApiUrl('api', 'health')).toBe('https://backend.local/api/health');
+    expect(resolveApiUrl('/api/v1/fill/tep-1.pdf')).toBe('https://backend.local/api/v1/fill/tep-1.pdf');
   });
 
   it('prefers the current site origin for production builds', async () => {

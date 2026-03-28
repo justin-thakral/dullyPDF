@@ -2,15 +2,24 @@
 set -euo pipefail
 
 PROJECT_ID="${PROJECT_ID:-dullypdf}"
-REGION="${REGION:-us-central1}"
-SERVICE_NAME="${BACKEND_SERVICE:-dullypdf-backend}"
+REGION="${REGION:-}"
+BACKEND_REGION="${BACKEND_REGION:-${REGION:-us-east4}}"
+SERVICE_NAME="${BACKEND_SERVICE:-dullypdf-backend-east4}"
 BACKEND_RUNTIME_SERVICE_ACCOUNT="${BACKEND_RUNTIME_SERVICE_ACCOUNT:-}"
 ALLOW_NON_PROD="${DULLYPDF_ALLOW_NON_PROD:-}"
 ENV_FILE="${ENV_FILE:-env/backend.prod.env}"
 EXAMPLE="config/backend.prod.env.example"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/_artifact_registry_guard.sh"
 
 if [[ "$PROJECT_ID" != "dullypdf" && -z "$ALLOW_NON_PROD" ]]; then
   echo "Refusing to deploy backend to non-prod project: $PROJECT_ID. Set DULLYPDF_ALLOW_NON_PROD=1 to override." >&2
+  exit 1
+fi
+
+if [[ "$PROJECT_ID" == "dullypdf" && "$SERVICE_NAME" == "dullypdf-backend" ]]; then
+  echo "Refusing to deploy the retired prod backend service name dullypdf-backend." >&2
+  echo "Use BACKEND_SERVICE=dullypdf-backend-east4 instead." >&2
   exit 1
 fi
 
@@ -32,10 +41,9 @@ set +a
 # Leave unset to preserve the service's current min instance count on redeploy.
 BACKEND_MIN_INSTANCES="${BACKEND_MIN_INSTANCES:-}"
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/_detector_routing.sh"
 
-DETECTOR_SERVICE_REGION="${DETECTOR_SERVICE_REGION:-$REGION}"
+DETECTOR_SERVICE_REGION="${DETECTOR_SERVICE_REGION:-${DETECTOR_TASKS_LOCATION:-${REGION:-us-east4}}}"
 detector_set_active_routing_vars
 DETECTOR_ROUTING_MODE="$DETECTOR_ROUTING_MODE_RESOLVED"
 
@@ -68,6 +76,26 @@ DETECTOR_TASKS_AUDIENCE_HEAVY_ACTIVE="$(
     "heavy" \
     "$DETECTOR_SERVICE_URL_HEAVY_ACTIVE"
 )"
+
+resolve_cloud_run_service_url() {
+  local project_id="$1"
+  local region="$2"
+  local service_name="$3"
+  local setting_name="$4"
+  local resolved_url=""
+
+  resolved_url="$(
+    gcloud run services describe "$service_name" \
+      --region "$region" \
+      --project "$project_id" \
+      --format='value(status.url)' 2>/dev/null || true
+  )"
+  if [[ -z "$resolved_url" ]]; then
+    echo "Failed to resolve ${setting_name} from Cloud Run service ${service_name} in ${region}." >&2
+    exit 1
+  fi
+  printf '%s\n' "$resolved_url"
+}
 
 require_exact() {
   local name="$1"
@@ -227,8 +255,6 @@ require_nonempty FIREBASE_PROJECT_ID
 require_nonempty BACKEND_RUNTIME_SERVICE_ACCOUNT
 require_nonempty FORMS_BUCKET
 require_nonempty TEMPLATES_BUCKET
-require_nonempty FILL_LINK_TOKEN_SECRET
-require_fill_link_secret_quality FILL_LINK_TOKEN_SECRET
 require_nonempty SIGNING_LINK_TOKEN_SECRET
 require_signing_link_secret_quality SIGNING_LINK_TOKEN_SECRET
 require_nonempty SIGNING_AUDIT_KMS_KEY
@@ -241,17 +267,13 @@ require_nonempty OPENAI_RENAME_TASKS_PROJECT
 require_nonempty OPENAI_RENAME_TASKS_LOCATION
 require_nonempty OPENAI_RENAME_TASKS_QUEUE_LIGHT
 require_nonempty OPENAI_RENAME_TASKS_QUEUE_HEAVY
-require_nonempty OPENAI_RENAME_SERVICE_URL_LIGHT
-require_nonempty OPENAI_RENAME_SERVICE_URL_HEAVY
 require_nonempty OPENAI_RENAME_TASKS_SERVICE_ACCOUNT
 require_nonempty OPENAI_REMAP_TASKS_PROJECT
 require_nonempty OPENAI_REMAP_TASKS_LOCATION
 require_nonempty OPENAI_REMAP_TASKS_QUEUE_LIGHT
 require_nonempty OPENAI_REMAP_TASKS_QUEUE_HEAVY
-require_nonempty OPENAI_REMAP_SERVICE_URL_LIGHT
-require_nonempty OPENAI_REMAP_SERVICE_URL_HEAVY
 require_nonempty OPENAI_REMAP_TASKS_SERVICE_ACCOUNT
-require_integer_ge SIGNING_RETENTION_DAYS 30
+require_integer_ge SIGNING_RETENTION_DAYS 2555
 require_integer_ge SIGNING_SESSION_TTL_SECONDS 300
 require_integer_ge SIGNING_VIEW_RATE_WINDOW_SECONDS 1
 require_integer_ge SIGNING_VIEW_RATE_PER_IP 1
@@ -287,12 +309,59 @@ require_value_or_secret() {
 
 require_value_or_secret GMAIL_CLIENT_SECRET GMAIL_CLIENT_SECRET_SECRET
 require_value_or_secret GMAIL_REFRESH_TOKEN GMAIL_REFRESH_TOKEN_SECRET
+require_value_or_secret FILL_LINK_TOKEN_SECRET FILL_LINK_TOKEN_SECRET_SECRET
 require_value_or_secret STRIPE_SECRET_KEY STRIPE_SECRET_KEY_SECRET
 require_value_or_secret STRIPE_WEBHOOK_SECRET STRIPE_WEBHOOK_SECRET_SECRET
+
+OPENAI_RENAME_SERVICE_REGION="${OPENAI_RENAME_SERVICE_REGION:-${OPENAI_RENAME_TASKS_LOCATION:-${REGION:-us-east4}}}"
+OPENAI_REMAP_SERVICE_REGION="${OPENAI_REMAP_SERVICE_REGION:-${OPENAI_REMAP_TASKS_LOCATION:-${REGION:-us-east4}}}"
+OPENAI_RENAME_SERVICE_NAME_LIGHT="${OPENAI_RENAME_SERVICE_NAME_LIGHT:-dullypdf-openai-rename-light}"
+OPENAI_RENAME_SERVICE_NAME_HEAVY="${OPENAI_RENAME_SERVICE_NAME_HEAVY:-dullypdf-openai-rename-heavy}"
+OPENAI_REMAP_SERVICE_NAME_LIGHT="${OPENAI_REMAP_SERVICE_NAME_LIGHT:-dullypdf-openai-remap-light}"
+OPENAI_REMAP_SERVICE_NAME_HEAVY="${OPENAI_REMAP_SERVICE_NAME_HEAVY:-dullypdf-openai-remap-heavy}"
+
+OPENAI_RENAME_SERVICE_URL_LIGHT_ACTIVE="$(
+  resolve_cloud_run_service_url \
+    "$OPENAI_RENAME_TASKS_PROJECT" \
+    "$OPENAI_RENAME_SERVICE_REGION" \
+    "$OPENAI_RENAME_SERVICE_NAME_LIGHT" \
+    "OPENAI_RENAME_SERVICE_URL_LIGHT"
+)"
+OPENAI_RENAME_SERVICE_URL_HEAVY_ACTIVE="$(
+  resolve_cloud_run_service_url \
+    "$OPENAI_RENAME_TASKS_PROJECT" \
+    "$OPENAI_RENAME_SERVICE_REGION" \
+    "$OPENAI_RENAME_SERVICE_NAME_HEAVY" \
+    "OPENAI_RENAME_SERVICE_URL_HEAVY"
+)"
+OPENAI_REMAP_SERVICE_URL_LIGHT_ACTIVE="$(
+  resolve_cloud_run_service_url \
+    "$OPENAI_REMAP_TASKS_PROJECT" \
+    "$OPENAI_REMAP_SERVICE_REGION" \
+    "$OPENAI_REMAP_SERVICE_NAME_LIGHT" \
+    "OPENAI_REMAP_SERVICE_URL_LIGHT"
+)"
+OPENAI_REMAP_SERVICE_URL_HEAVY_ACTIVE="$(
+  resolve_cloud_run_service_url \
+    "$OPENAI_REMAP_TASKS_PROJECT" \
+    "$OPENAI_REMAP_SERVICE_REGION" \
+    "$OPENAI_REMAP_SERVICE_NAME_HEAVY" \
+    "OPENAI_REMAP_SERVICE_URL_HEAVY"
+)"
+
+OPENAI_RENAME_TASKS_AUDIENCE_LIGHT_ACTIVE="$OPENAI_RENAME_SERVICE_URL_LIGHT_ACTIVE"
+OPENAI_RENAME_TASKS_AUDIENCE_HEAVY_ACTIVE="$OPENAI_RENAME_SERVICE_URL_HEAVY_ACTIVE"
+OPENAI_REMAP_TASKS_AUDIENCE_LIGHT_ACTIVE="$OPENAI_REMAP_SERVICE_URL_LIGHT_ACTIVE"
+OPENAI_REMAP_TASKS_AUDIENCE_HEAVY_ACTIVE="$OPENAI_REMAP_SERVICE_URL_HEAVY_ACTIVE"
 
 require_nonempty DETECTOR_SERVICE_URL_LIGHT_ACTIVE
 require_nonempty DETECTOR_SERVICE_URL_HEAVY_ACTIVE
 require_firebase_auth_runtime_access
+
+if [[ -n "${FILL_LINK_TOKEN_SECRET:-}" ]]; then
+  echo "Use FILL_LINK_TOKEN_SECRET_SECRET for prod; literal FILL_LINK_TOKEN_SECRET is not allowed." >&2
+  exit 1
+fi
 
 if [[ -n "${STRIPE_SECRET_KEY:-}" || -n "${STRIPE_WEBHOOK_SECRET:-}" ]]; then
   echo "Use STRIPE_SECRET_KEY_SECRET and STRIPE_WEBHOOK_SECRET_SECRET for prod; literal STRIPE_* values are not allowed." >&2
@@ -312,6 +381,9 @@ if [[ "${CONTACT_REQUIRE_RECAPTCHA:-true}" == "true" || "${SIGNUP_REQUIRE_RECAPT
     exit 1
   fi
 fi
+
+echo "Validating signing storage policy"
+python3 scripts/validate-signing-storage.py
 
 BILLING_INTEGRATION_TEST_PATH="backend/test/integration/test_billing_webhook_integration.py"
 if [[ ! -f "$BILLING_INTEGRATION_TEST_PATH" ]]; then
@@ -347,6 +419,18 @@ script_only = {
     "DETECTOR_TASKS_AUDIENCE",
     "DETECTOR_TASKS_AUDIENCE_LIGHT",
     "DETECTOR_TASKS_AUDIENCE_HEAVY",
+    "OPENAI_RENAME_SERVICE_URL",
+    "OPENAI_RENAME_SERVICE_URL_LIGHT",
+    "OPENAI_RENAME_SERVICE_URL_HEAVY",
+    "OPENAI_RENAME_TASKS_AUDIENCE",
+    "OPENAI_RENAME_TASKS_AUDIENCE_LIGHT",
+    "OPENAI_RENAME_TASKS_AUDIENCE_HEAVY",
+    "OPENAI_REMAP_SERVICE_URL",
+    "OPENAI_REMAP_SERVICE_URL_LIGHT",
+    "OPENAI_REMAP_SERVICE_URL_HEAVY",
+    "OPENAI_REMAP_TASKS_AUDIENCE",
+    "OPENAI_REMAP_TASKS_AUDIENCE_LIGHT",
+    "OPENAI_REMAP_TASKS_AUDIENCE_HEAVY",
 }
 
 # If a Secret Manager binding is configured, do not also emit the literal env var
@@ -356,6 +440,7 @@ secret_bindings = {
     "OPENAI_API_KEY_SECRET": "OPENAI_API_KEY",
     "GMAIL_CLIENT_SECRET_SECRET": "GMAIL_CLIENT_SECRET",
     "GMAIL_REFRESH_TOKEN_SECRET": "GMAIL_REFRESH_TOKEN",
+    "FILL_LINK_TOKEN_SECRET_SECRET": "FILL_LINK_TOKEN_SECRET",
     "STRIPE_SECRET_KEY_SECRET": "STRIPE_SECRET_KEY",
     "STRIPE_WEBHOOK_SECRET_SECRET": "STRIPE_WEBHOOK_SECRET",
     "FIREBASE_GITHUB_CLIENT_SECRET_SECRET": "FIREBASE_GITHUB_CLIENT_SECRET",
@@ -408,7 +493,15 @@ python3 - "$TMP_ENV_FILE" \
   "$DETECTOR_SERVICE_URL_LIGHT_ACTIVE" \
   "$DETECTOR_SERVICE_URL_HEAVY_ACTIVE" \
   "$DETECTOR_TASKS_AUDIENCE_LIGHT_ACTIVE" \
-  "$DETECTOR_TASKS_AUDIENCE_HEAVY_ACTIVE" <<'PY'
+  "$DETECTOR_TASKS_AUDIENCE_HEAVY_ACTIVE" \
+  "$OPENAI_RENAME_SERVICE_URL_LIGHT_ACTIVE" \
+  "$OPENAI_RENAME_SERVICE_URL_HEAVY_ACTIVE" \
+  "$OPENAI_RENAME_TASKS_AUDIENCE_LIGHT_ACTIVE" \
+  "$OPENAI_RENAME_TASKS_AUDIENCE_HEAVY_ACTIVE" \
+  "$OPENAI_REMAP_SERVICE_URL_LIGHT_ACTIVE" \
+  "$OPENAI_REMAP_SERVICE_URL_HEAVY_ACTIVE" \
+  "$OPENAI_REMAP_TASKS_AUDIENCE_LIGHT_ACTIVE" \
+  "$OPENAI_REMAP_TASKS_AUDIENCE_HEAVY_ACTIVE" <<'PY'
 import json
 import sys
 
@@ -418,6 +511,14 @@ light_url = sys.argv[3]
 heavy_url = sys.argv[4]
 light_audience = sys.argv[5]
 heavy_audience = sys.argv[6]
+rename_light_url = sys.argv[7]
+rename_heavy_url = sys.argv[8]
+rename_light_audience = sys.argv[9]
+rename_heavy_audience = sys.argv[10]
+remap_light_url = sys.argv[11]
+remap_heavy_url = sys.argv[12]
+remap_light_audience = sys.argv[13]
+remap_heavy_audience = sys.argv[14]
 
 with open(out_path, "a", encoding="utf-8") as handle:
     handle.write(f"DETECTOR_ROUTING_MODE: {json.dumps(routing_mode)}\n")
@@ -427,10 +528,28 @@ with open(out_path, "a", encoding="utf-8") as handle:
     handle.write(f"DETECTOR_TASKS_AUDIENCE: {json.dumps(light_audience)}\n")
     handle.write(f"DETECTOR_TASKS_AUDIENCE_LIGHT: {json.dumps(light_audience)}\n")
     handle.write(f"DETECTOR_TASKS_AUDIENCE_HEAVY: {json.dumps(heavy_audience)}\n")
+    handle.write(f"OPENAI_RENAME_SERVICE_URL: {json.dumps(rename_light_url)}\n")
+    handle.write(f"OPENAI_RENAME_SERVICE_URL_LIGHT: {json.dumps(rename_light_url)}\n")
+    handle.write(f"OPENAI_RENAME_SERVICE_URL_HEAVY: {json.dumps(rename_heavy_url)}\n")
+    handle.write(f"OPENAI_RENAME_TASKS_AUDIENCE: {json.dumps(rename_light_audience)}\n")
+    handle.write(f"OPENAI_RENAME_TASKS_AUDIENCE_LIGHT: {json.dumps(rename_light_audience)}\n")
+    handle.write(f"OPENAI_RENAME_TASKS_AUDIENCE_HEAVY: {json.dumps(rename_heavy_audience)}\n")
+    handle.write(f"OPENAI_REMAP_SERVICE_URL: {json.dumps(remap_light_url)}\n")
+    handle.write(f"OPENAI_REMAP_SERVICE_URL_LIGHT: {json.dumps(remap_light_url)}\n")
+    handle.write(f"OPENAI_REMAP_SERVICE_URL_HEAVY: {json.dumps(remap_heavy_url)}\n")
+    handle.write(f"OPENAI_REMAP_TASKS_AUDIENCE: {json.dumps(remap_light_audience)}\n")
+    handle.write(f"OPENAI_REMAP_TASKS_AUDIENCE_LIGHT: {json.dumps(remap_light_audience)}\n")
+    handle.write(f"OPENAI_REMAP_TASKS_AUDIENCE_HEAVY: {json.dumps(remap_heavy_audience)}\n")
 PY
 
 TAG="$(date +%Y%m%d-%H%M%S)"
-BACKEND_IMAGE="${BACKEND_IMAGE:-us-central1-docker.pkg.dev/${PROJECT_ID}/dullypdf-backend/backend:${TAG}}"
+ARTIFACT_REGISTRY_LOCATION="${ARTIFACT_REGISTRY_LOCATION:-us-east4}"
+BACKEND_ARTIFACT_REPO="${BACKEND_ARTIFACT_REPO:-dullypdf-backend}"
+BACKEND_IMAGE="${BACKEND_IMAGE:-${ARTIFACT_REGISTRY_LOCATION}-docker.pkg.dev/${PROJECT_ID}/${BACKEND_ARTIFACT_REPO}/backend:${TAG}}"
+
+require_prod_artifact_registry_location "backend Artifact Registry location" "$ARTIFACT_REGISTRY_LOCATION"
+require_prod_artifact_registry_repo "BACKEND_ARTIFACT_REPO" "$BACKEND_ARTIFACT_REPO"
+require_prod_artifact_registry_image "BACKEND_IMAGE" "$BACKEND_IMAGE" "$BACKEND_ARTIFACT_REPO"
 
 gcloud builds submit \
   --tag "$BACKEND_IMAGE" \
@@ -469,6 +588,12 @@ else
   append_csv SECRETS_TO_REMOVE "GMAIL_REFRESH_TOKEN"
 fi
 
+if [[ -n "${FILL_LINK_TOKEN_SECRET_SECRET:-}" ]]; then
+  append_csv SECRETS_TO_UPDATE "FILL_LINK_TOKEN_SECRET=${FILL_LINK_TOKEN_SECRET_SECRET}:latest"
+else
+  append_csv SECRETS_TO_REMOVE "FILL_LINK_TOKEN_SECRET"
+fi
+
 if [[ -n "${STRIPE_SECRET_KEY_SECRET:-}" ]]; then
   append_csv SECRETS_TO_UPDATE "STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY_SECRET}:latest"
 else
@@ -502,7 +627,7 @@ fi
 
 DEPLOY_ARGS=(
   --image "$BACKEND_IMAGE"
-  --region "$REGION"
+  --region "$BACKEND_REGION"
   --project "$PROJECT_ID"
   --service-account "$BACKEND_RUNTIME_SERVICE_ACCOUNT"
   --allow-unauthenticated
@@ -516,3 +641,5 @@ fi
 gcloud run deploy "$SERVICE_NAME" \
   "${DEPLOY_ARGS[@]}" \
   "${SECRET_FLAGS[@]}"
+
+bash "${SCRIPT_DIR}/sync-detector-task-queues.sh" "$ENV_FILE"

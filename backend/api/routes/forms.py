@@ -137,6 +137,7 @@ async def materialize_form(
             background=background_tasks,
         )
         response.headers.update(resolve_stream_cors_headers(request.headers.get("origin")))
+        response.headers["Cache-Control"] = "private, no-store"
         return response
 
     if not raw_fields:
@@ -159,6 +160,7 @@ async def materialize_form(
             background=background_tasks,
         )
         response.headers.update(resolve_stream_cors_headers(request.headers.get("origin")))
+        response.headers["Cache-Control"] = "private, no-store"
         return response
 
     template.setdefault("coordinateSystem", "originTop")
@@ -193,6 +195,7 @@ async def materialize_form(
         background=background_tasks,
     )
     response.headers.update(resolve_stream_cors_headers(request.headers.get("origin")))
+    response.headers["Cache-Control"] = "private, no-store"
     return response
 
 

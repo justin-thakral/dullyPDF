@@ -9,6 +9,8 @@ transforms stay aligned with the current backend behavior.
 from __future__ import annotations
 
 import base64
+import binascii
+from collections import Counter
 import hashlib
 import hmac
 import os
@@ -17,6 +19,7 @@ from typing import Any, Dict, Iterable, List, Optional
 
 from fastapi import HTTPException
 
+from backend.firebaseDB.storage_service import is_gcs_path
 from backend.firebaseDB.template_database import TemplateRecord
 from backend.services.fill_link_download_service import materialize_fill_link_response_download
 from backend.services.mapping_service import normalize_data_key
@@ -31,6 +34,8 @@ TEMPLATE_API_SECRET_HASH_SCHEME = "pbkdf2_sha256"
 TEMPLATE_API_SECRET_HASH_ITERATIONS = 200_000
 _BOOLEAN_TRUE = {"1", "true", "yes", "y", "on", "checked", "x"}
 _BOOLEAN_FALSE = {"0", "false", "no", "n", "off", "unchecked"}
+_MAX_TEMPLATE_API_ERROR_ITEMS = 25
+_MAX_TEMPLATE_API_ERROR_DETAIL_CHARS = 1024
 
 
 def _coerce_dict_list(value: Any) -> List[Dict[str, Any]]:
@@ -144,6 +149,109 @@ def _resolve_option_alias(
     return aliases.get(normalized_value)
 
 
+def _truncate_template_api_error_detail(detail: str) -> str:
+    normalized = str(detail or "").strip()
+    if len(normalized) <= _MAX_TEMPLATE_API_ERROR_DETAIL_CHARS:
+        return normalized
+    return normalized[: _MAX_TEMPLATE_API_ERROR_DETAIL_CHARS - 3].rstrip() + "..."
+
+
+def _format_unknown_template_api_keys(keys: Iterable[str]) -> str:
+    normalized = sorted({str(key or "").strip() for key in keys if str(key or "").strip()})
+    preview = normalized[:_MAX_TEMPLATE_API_ERROR_ITEMS]
+    suffix = f" (+{len(normalized) - len(preview)} more)" if len(normalized) > len(preview) else ""
+    return f"Unknown API Fill keys: {', '.join(preview)}{suffix}."
+
+
+def _format_ambiguous_template_api_keys(collisions: Dict[str, Iterable[str]]) -> str:
+    formatted: List[str] = []
+    for normalized_key in sorted(collisions):
+        raw_keys = sorted({str(key or "").strip() for key in collisions[normalized_key] if str(key or "").strip()})
+        if raw_keys:
+            formatted.append(f"{normalized_key} [{', '.join(raw_keys)}]")
+        else:
+            formatted.append(normalized_key)
+    preview = formatted[:_MAX_TEMPLATE_API_ERROR_ITEMS]
+    suffix = f" (+{len(formatted) - len(preview)} more)" if len(formatted) > len(preview) else ""
+    return (
+        "Ambiguous API Fill keys after normalization: "
+        f"{', '.join(preview)}{suffix}. Use exactly one spelling per key."
+    )
+
+
+def _format_conflicting_template_api_schema_keys(collisions: Dict[str, Iterable[str]]) -> str:
+    formatted: List[str] = []
+    for normalized_key in sorted(collisions):
+        source_counts = Counter(
+            str(source or "").strip()
+            for source in collisions[normalized_key]
+            if str(source or "").strip()
+        )
+        rendered_sources = [
+            f"{source} x{count}" if count > 1 else source
+            for source, count in sorted(source_counts.items())
+        ]
+        if rendered_sources:
+            formatted.append(f"{normalized_key} [{', '.join(rendered_sources)}]")
+        else:
+            formatted.append(normalized_key)
+    preview = formatted[:_MAX_TEMPLATE_API_ERROR_ITEMS]
+    suffix = f" (+{len(formatted) - len(preview)} more)" if len(formatted) > len(preview) else ""
+    return (
+        "Published API Fill schema has conflicting keys after normalization: "
+        f"{', '.join(preview)}{suffix}. Rename one of the overlapping fields/groups and republish."
+    )
+
+
+def _record_public_key_source(
+    sources: Dict[str, str],
+    collisions: Dict[str, set[str]],
+    *,
+    normalized_key: str,
+    source_label: str,
+) -> bool:
+    existing_source = sources.get(normalized_key)
+    if existing_source is None:
+        sources[normalized_key] = source_label
+        return False
+    if existing_source != source_label:
+        collisions.setdefault(normalized_key, {existing_source}).add(source_label)
+    return True
+
+
+def _raise_if_conflicting_public_schema_keys(
+    *,
+    scalar_fields: Iterable[Dict[str, Any]],
+    checkbox_fields: Iterable[Dict[str, Any]],
+    checkbox_rule_groups: Iterable[Dict[str, Any]],
+    radio_groups: Iterable[Dict[str, Any]],
+) -> None:
+    key_sources: Dict[str, List[str]] = {}
+
+    def _register(raw_key: Any, source_label: str) -> None:
+        normalized_key = str(raw_key or "").strip()
+        if not normalized_key:
+            return
+        key_sources.setdefault(normalized_key, []).append(source_label)
+
+    for entry in scalar_fields:
+        _register(entry.get("key"), "field")
+    for entry in checkbox_fields:
+        _register(entry.get("key"), "checkbox field")
+    for entry in checkbox_rule_groups:
+        _register(entry.get("key"), "checkbox group")
+    for entry in radio_groups:
+        _register(entry.get("groupKey"), "radio group")
+
+    collisions = {
+        normalized_key: sources
+        for normalized_key, sources in key_sources.items()
+        if len(sources) > 1
+    }
+    if collisions:
+        raise ValueError(_format_conflicting_template_api_schema_keys(collisions))
+
+
 def _resolve_checkbox_rule_value(
     key: str,
     raw_value: Any,
@@ -217,12 +325,14 @@ def build_template_api_snapshot(
 ) -> Dict[str, Any]:
     if not template or not getattr(template, "pdf_bucket_path", None):
         raise ValueError("Saved form PDF is required for API Fill publishing.")
+    if not is_gcs_path(template.pdf_bucket_path):
+        raise ValueError("Saved form PDF storage path is invalid for API Fill publishing.")
     editor_snapshot = load_saved_form_editor_snapshot(template.metadata if isinstance(template.metadata, dict) else None)
     if not editor_snapshot:
         raise ValueError("Saved form needs an editor snapshot before API Fill can be published.")
     fields = _normalize_field_snapshot(editor_snapshot.get("fields") or [])
     fill_rules = _resolve_saved_form_fill_rules(template.metadata if isinstance(template.metadata, dict) else None)
-    return {
+    snapshot = {
         "version": TEMPLATE_API_SNAPSHOT_VERSION,
         "templateId": template.id,
         "templateName": template.name or "Saved form",
@@ -236,6 +346,10 @@ def build_template_api_snapshot(
         "defaultExportMode": _normalize_export_mode(export_mode),
         "publishedAt": now_iso(),
     }
+    # Validate the public API surface before publish so owners cannot create an
+    # endpoint whose normalized keys shadow each other at request time.
+    build_template_api_schema(snapshot)
+    return snapshot
 
 
 def generate_template_api_secret() -> str:
@@ -297,11 +411,18 @@ def parse_template_api_basic_secret(authorization: Optional[str]) -> Optional[st
     if not token:
         return None
     try:
-        decoded = base64.b64decode(token).decode("utf-8")
-    except Exception:
+        decoded = base64.b64decode(token, validate=True).decode("utf-8")
+    except (binascii.Error, UnicodeDecodeError):
         return None
-    username, _, _password = decoded.partition(":")
-    return username.strip() or None
+    username, separator, password = decoded.partition(":")
+    if separator != ":" or password != "":
+        return None
+    normalized_username = username.strip()
+    if not normalized_username or normalized_username != username:
+        return None
+    if not normalized_username.startswith(TEMPLATE_API_SECRET_PREFIX):
+        return None
+    return normalized_username
 
 
 def build_template_api_schema(snapshot: Dict[str, Any]) -> Dict[str, Any]:
@@ -309,7 +430,8 @@ def build_template_api_schema(snapshot: Dict[str, Any]) -> Dict[str, Any]:
     checkbox_rules = _coerce_dict_list(snapshot.get("checkboxRules"))
     radio_groups = _coerce_dict_list(snapshot.get("radioGroups"))
 
-    seen_field_names: set[str] = set()
+    field_key_sources: Dict[str, str] = {}
+    field_key_collisions: Dict[str, set[str]] = {}
     scalar_fields: List[Dict[str, Any]] = []
     checkbox_fields: List[Dict[str, Any]] = []
     checkbox_groups: Dict[str, Dict[str, Any]] = {}
@@ -319,6 +441,12 @@ def build_template_api_schema(snapshot: Dict[str, Any]) -> Dict[str, Any]:
         field_name = str(field.get("name") or "").strip()
         field_type = str(field.get("type") or "text").strip().lower()
         normalized_field_name = normalize_data_key(field_name)
+        if field_type == "signature":
+            # Signature widgets are reserved for the signing workflow. The API
+            # Fill contract should not advertise them as writable scalar inputs
+            # because the PDF fill engine does not materialize arbitrary text
+            # into signature widgets the way it does for text/date fields.
+            continue
         if field_type == "checkbox":
             group_key = normalize_data_key(str(field.get("groupKey") or field_name))
             option_key = normalize_data_key(str(field.get("optionKey") or field_name))
@@ -334,9 +462,15 @@ def build_template_api_schema(snapshot: Dict[str, Any]) -> Dict[str, Any]:
                 )
                 group["options"].append(option_payload)
                 continue
-            if not normalized_field_name or normalized_field_name in seen_field_names:
+            if not normalized_field_name:
                 continue
-            seen_field_names.add(normalized_field_name)
+            if _record_public_key_source(
+                field_key_sources,
+                field_key_collisions,
+                normalized_key=normalized_field_name,
+                source_label=f"checkbox field: {field_name or normalized_field_name}",
+            ):
+                continue
             checkbox_fields.append(
                 {
                     "key": normalized_field_name,
@@ -362,9 +496,15 @@ def build_template_api_schema(snapshot: Dict[str, Any]) -> Dict[str, Any]:
             )
             group["options"].append(option_payload)
             continue
-        if not normalized_field_name or normalized_field_name in seen_field_names:
+        if not normalized_field_name:
             continue
-        seen_field_names.add(normalized_field_name)
+        if _record_public_key_source(
+            field_key_sources,
+            field_key_collisions,
+            normalized_key=normalized_field_name,
+            source_label=f"field: {field_name or normalized_field_name}",
+        ):
+            continue
         scalar_fields.append(
             {
                 "key": normalized_field_name,
@@ -374,8 +514,12 @@ def build_template_api_schema(snapshot: Dict[str, Any]) -> Dict[str, Any]:
             }
         )
 
+    if field_key_collisions:
+        raise ValueError(_format_conflicting_template_api_schema_keys(field_key_collisions))
+
     checkbox_rule_groups: List[Dict[str, Any]] = []
     example_data: Dict[str, Any] = {}
+    explicit_checkbox_group_keys: set[str] = set()
 
     for entry in scalar_fields:
         example_data.setdefault(entry["key"], f"<{entry['key']}>")
@@ -407,6 +551,7 @@ def build_template_api_schema(snapshot: Dict[str, Any]) -> Dict[str, Any]:
         group_key = normalize_data_key(str(rule.get("groupKey") or ""))
         if not database_field or not group_key:
             continue
+        explicit_checkbox_group_keys.add(group_key)
         operation = normalize_data_key(str(rule.get("operation") or "yes_no")) or "yes_no"
         group = checkbox_groups.get(group_key) or {"groupKey": group_key, "type": "checkbox_group", "options": []}
         checkbox_rule_groups.append(
@@ -431,6 +576,34 @@ def build_template_api_schema(snapshot: Dict[str, Any]) -> Dict[str, Any]:
         else:
             example_data.setdefault(database_field, True)
 
+    for group_key, group in sorted(checkbox_groups.items()):
+        if group_key in explicit_checkbox_group_keys:
+            continue
+        options = list(group.get("options") or [])
+        if not options:
+            continue
+        checkbox_rule_groups.append(
+            {
+                "key": group_key,
+                "groupKey": group_key,
+                "type": "checkbox_rule",
+                "operation": "list",
+                "options": options,
+                "trueOption": None,
+                "falseOption": None,
+                "valueMap": None,
+            }
+        )
+        first_option = options[0]
+        example_data.setdefault(group_key, [first_option.get("optionKey")] if first_option else [])
+
+    _raise_if_conflicting_public_schema_keys(
+        scalar_fields=scalar_fields,
+        checkbox_fields=checkbox_fields,
+        checkbox_rule_groups=checkbox_rule_groups,
+        radio_groups=direct_radio_groups.values(),
+    )
+
     return {
         "snapshotVersion": int(snapshot.get("version") or TEMPLATE_API_SNAPSHOT_VERSION),
         "defaultExportMode": _normalize_export_mode(snapshot.get("defaultExportMode")),
@@ -451,7 +624,10 @@ def resolve_template_api_request_data(
     if not isinstance(data, dict):
         raise HTTPException(status_code=400, detail="API Fill data must be a JSON object.")
 
-    schema = build_template_api_schema(snapshot)
+    try:
+        schema = build_template_api_schema(snapshot)
+    except ValueError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
     scalar_keys = {str(entry.get("key") or "") for entry in schema.get("fields") or [] if isinstance(entry, dict)}
     checkbox_field_map = {
         str(entry.get("key") or ""): dict(entry)
@@ -468,17 +644,30 @@ def resolve_template_api_request_data(
         for entry in schema.get("radioGroups") or []
         if isinstance(entry, dict) and str(entry.get("groupKey") or "").strip()
     }
+    known_keys = (
+        set(scalar_keys)
+        | set(checkbox_field_map.keys())
+        | set(checkbox_group_map.keys())
+        | set(radio_group_map.keys())
+    )
 
     resolved: Dict[str, Any] = {}
     errors: List[str] = []
     unknown_keys: List[str] = []
+    seen_input_keys: Dict[str, str] = {}
+    ambiguous_keys: Dict[str, set[str]] = {}
 
     for key, raw_value in data.items():
-        normalized_key = normalize_data_key(str(key or ""))
+        raw_key = str(key or "").strip()
+        normalized_key = normalize_data_key(raw_key)
         if not normalized_key or raw_value is None:
             continue
-        if isinstance(raw_value, str) and not raw_value.strip():
+        existing_raw_key = seen_input_keys.get(normalized_key)
+        if existing_raw_key and existing_raw_key != raw_key:
+            if strict or normalized_key in known_keys:
+                ambiguous_keys.setdefault(normalized_key, {existing_raw_key}).add(raw_key)
             continue
+        seen_input_keys[normalized_key] = raw_key or normalized_key
         if normalized_key in scalar_keys:
             if isinstance(raw_value, (dict, list)):
                 errors.append(f"{normalized_key} expects a scalar value.")
@@ -515,11 +704,12 @@ def resolve_template_api_request_data(
         if strict:
             unknown_keys.append(normalized_key)
 
+    if ambiguous_keys:
+        errors.append(_format_ambiguous_template_api_keys(ambiguous_keys))
     if unknown_keys:
-        unknown_label = ", ".join(sorted(unknown_keys))
-        errors.append(f"Unknown API Fill keys: {unknown_label}.")
+        errors.append(_format_unknown_template_api_keys(unknown_keys))
     if errors:
-        raise HTTPException(status_code=400, detail=" ".join(errors))
+        raise HTTPException(status_code=400, detail=_truncate_template_api_error_detail(" ".join(errors)))
     return resolved
 
 

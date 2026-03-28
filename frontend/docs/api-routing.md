@@ -61,12 +61,18 @@ These calls are made with relative `/api/...` paths:
 - `GET /api/signing/requests/{requestId}/artifacts`
 - `GET /api/signing/requests/{requestId}/artifacts/{artifactKey}`
 - `POST /api/signing/requests/{requestId}/send`
+- `POST /api/signing/requests/{requestId}/revoke`
+- `POST /api/signing/requests/{requestId}/reissue`
 - `GET /api/signing/public/{token}`
+- `GET /api/signing/public/validation/{token}`
 - `POST /api/signing/public/{token}/bootstrap`
+- `GET /api/signing/public/{token}/consumer-access-pdf`
 - `GET /api/signing/public/{token}/document`
-- `GET /api/signing/public/{token}/artifacts/{artifactKey}`
+- `POST /api/signing/public/{token}/artifacts/{artifactKey}/issue`
+- `GET /api/signing/public/artifacts/{artifactToken}`
 - `POST /api/signing/public/{token}/review`
 - `POST /api/signing/public/{token}/consent`
+- `POST /api/signing/public/{token}/withdraw-consent`
 - `POST /api/signing/public/{token}/manual-fallback`
 - `POST /api/signing/public/{token}/adopt-signature`
 - `POST /api/signing/public/{token}/complete`
@@ -79,10 +85,15 @@ These calls are made with relative `/api/...` paths:
 Signing-specific payload notes:
 
 - `POST /api/signing/requests` now carries source provenance fields such as `sourceType`, `sourceId`, `sourceLinkId`, and `sourceRecordLabel` so `Fill and Sign` drafts can tie a frozen PDF back to a reviewed workspace fill or a stored Fill By Link response.
+- Owner and public signing payloads now also carry `signerContactMethod`, `signerAuthMethod`, and `validationPath` so the UI can explain the active signer channel/auth gate and link completed requests to the retained-record validation page.
 - `POST /api/signing/requests/{requestId}/send` uploads the immutable source PDF as `multipart/form-data` and may include `ownerReviewConfirmed=true` for `fill_and_sign` requests. The backend rejects `Fill and Sign` sends unless that explicit owner review confirmation is present.
+- `POST /api/signing/requests/{requestId}/revoke` lets the owner cancel a draft or kill an already-sent signer link from the workspace without waiting for request expiry.
+- `POST /api/signing/requests/{requestId}/reissue` rotates the signer token version, invalidates the previous public link, and keeps the same immutable source record.
+- Public signing request payloads now include `expiresAt` / `isExpired` plus a structured `disclosure` block. Consumer-mode document access stays blocked until `/consent` succeeds, `/consumer-access-pdf` provides the access-check PDF used for consumer consent, `/consent` now requires an `accessCode`, `/withdraw-consent` halts the electronic ceremony before completion, and public ceremony actions reject a session token that moves to a different client fingerprint.
+- `GET /api/signing/public/validation/{token}` validates one completed signing record from retained artifacts only; it is the JSON endpoint behind the public `/verify-signing/:token` page and the QR-backed audit receipt link.
 - `POST /api/fill-links` and `PATCH /api/fill-links/{linkId}` now accept an optional `signingConfig` for template links. When `enabled=true`, the config maps the signer name/email questions, declares the signature mode/category/manual-fallback policy, and tells the backend to exclude signing-managed questions from the published public form.
-- `POST /api/fill-links/public/{token}/submit` may return `signing.enabled` and `signing.publicPath`. When present, the respondent success state should hand off into `/sign/:token` instead of ending at the normal Fill By Link completion screen.
-- `POST /api/fill-links/public/{token}/retry-signing` lets the respondent recover from a transient signing-handoff failure by retrying against the already stored response record instead of resubmitting the web form.
+- `POST /api/fill-links/public/{token}/submit` may return `signing.enabled` plus delivery-state fields such as `deliveryStatus`, `emailHint`, `canResend`, and `resendAvailableAt`. The respondent success state should stay on the Fill By Link completion screen and instruct the signer to use the emailed `/sign/:token` link instead of returning that live URL to the submitting browser. Transient backend failures can still return `signing.enabled=true`, `available=false`, and `canResend=true` so the completion screen keeps a retry button visible after the response itself was already saved.
+- `POST /api/fill-links/public/{token}/retry-signing` now resends the signing email against the already stored response record instead of recreating the response or handing the current browser a direct signer URL.
 
 ## Direct backend endpoints used by the frontend
 
@@ -100,7 +111,7 @@ These calls are made with absolute URLs (via `buildApiUrl(...)` or detection bas
 
 ## Production behavior
 
-Production frontend builds resolve backend traffic against the current site origin instead of a direct Cloud Run hostname. `firebase.json` therefore rewrites the backend-owned same-origin families to Cloud Run for `/api/**` and `/detect-fields/**` (plus their exact-root variants), while only the known SPA-owned browser routes (`/upload`, `/ui`, `/ui/profile`, `/ui/forms/:formId`, `/ui/groups/:groupId`, `/respond/:token`, `/sign/:token`, and the account-action handlers) are rewritten to `index.html`. There is intentionally no catch-all `** -> /index.html` rewrite, because unknown public URLs must fall through to Hosting `404.html` instead of becoming soft 404 homepage responses. The new Fill By Link -> Sign handoff stays within that same route pair: respondents begin on `/respond/:token`, then continue into `/sign/:token` only after the backend has stored the response and created the immutable signing request.
+Production frontend builds resolve backend traffic against the current site origin instead of a direct Cloud Run hostname. `firebase.json` therefore rewrites the backend-owned same-origin families to Cloud Run for `/api/**` and `/detect-fields/**` (plus their exact-root variants), while only the known SPA-owned browser routes (`/upload`, `/ui`, `/ui/profile`, `/ui/forms/:formId`, `/ui/groups/:groupId`, `/respond/:token`, `/sign/:token`, and the account-action handlers) are rewritten to `index.html`. There is intentionally no catch-all `** -> /index.html` rewrite, because unknown public URLs must fall through to Hosting `404.html` instead of becoming soft 404 homepage responses. The Fill By Link -> Sign relationship still uses that same route pair, but the transition is now email-based: respondents begin on `/respond/:token`, the backend stores the response and emails the signer, and the signer later opens `/sign/:token` from the mailbox they control.
 
 Public token routes also get Hosting-level `Cache-Control: no-store,max-age=0` headers for `/respond/**` and `/sign/**` so emailed bearer-style links are not cached after a signer or respondent opens them in the browser.
 

@@ -11,6 +11,6 @@
 - `usage-docs.md` - Public `/usage-docs/*` information architecture and page layout notes.
 - `seo-operations.md` - Weekly SEO operations, query tuning, and authority growth workflow.
 
-Customer-facing pricing or limit changes should also update the homepage copy, `routeSeo.ts`, `intentPages.ts`, usage docs content, and root/frontend README surfaces in the same branch.
+Customer-facing pricing or limit changes should also update the homepage copy, `publicRouteSeoData.mjs`, `intentPages.ts`, usage docs content, and root/frontend README surfaces in the same branch.
 Public plan-route changes should stay aligned across `/free-features`, `/premium-features`, homepage quick-info links, route SEO, and build-time static route generation.
-Customer-facing feature launches should keep public docs aligned across `/usage-docs/*`, intent pages, and any static route mirrors in `scripts/seo-route-data.mjs`.
+Customer-facing feature launches should keep public docs aligned across `/usage-docs/*`, intent pages, and the shared public route SEO source in `frontend/src/config/publicRouteSeoData.mjs`. `scripts/seo-route-data.mjs` is only a build-time bridge.

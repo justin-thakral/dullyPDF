@@ -94,10 +94,12 @@ def test_profile_response_shape_for_base_and_god(
             "templateApiActiveMax": 1,
             "templateApiRequestsMonthlyMax": 250,
             "templateApiMaxPages": 25,
+            "signingRequestsPerDocumentMax": 10,
         },
     )
     response = client.get("/api/profile", headers=auth_headers)
     assert response.status_code == 200
+    assert response.headers["cache-control"] == "private, no-store"
     assert response.json()["creditsRemaining"] == 7
     assert response.json()["availableCredits"] == 7
     assert response.json()["monthlyCreditsRemaining"] is None
@@ -107,6 +109,7 @@ def test_profile_response_shape_for_base_and_god(
     assert response.json()["limits"]["fillLinksActiveMax"] == 1
     assert response.json()["limits"]["fillLinkResponsesMax"] == 5
     assert response.json()["limits"]["templateApiActiveMax"] == 1
+    assert response.json()["limits"]["signingRequestsPerDocumentMax"] == 10
     assert response.json()["retention"]["status"] == "grace_period"
     assert response.json()["retention"]["pendingDeleteTemplateIds"] == ["tpl-9"]
     assert response.json()["billing"] == {
@@ -135,6 +138,7 @@ def test_profile_response_shape_for_base_and_god(
     )
     response = client.get("/api/profile", headers=auth_headers)
     assert response.status_code == 200
+    assert response.headers["cache-control"] == "private, no-store"
     assert response.json()["creditsRemaining"] is None
     assert response.json()["availableCredits"] is None
     assert response.json()["monthlyCreditsRemaining"] is None

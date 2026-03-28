@@ -203,7 +203,10 @@ async def download_session_pdf(
         include_checkbox_rules=False,
     )
     filename = safe_pdf_download_filename(entry.get("source_pdf") or "document")
-    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+    headers = {
+        "Content-Disposition": f'attachment; filename="{filename}"',
+        "Cache-Control": "private, no-store",
+    }
     pdf_bytes = entry.get("pdf_bytes")
     if pdf_bytes:
         stream = io.BytesIO(pdf_bytes)

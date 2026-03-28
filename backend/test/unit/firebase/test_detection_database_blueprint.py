@@ -38,6 +38,10 @@ def test_record_detection_request_writes_payload_with_optional_fields(mocker) ->
         "session_id": "sess-1",
         "user_id": "user-1",
         "status": "queued",
+        "dispatch_lane": None,
+        "detection_profile": None,
+        "detection_queue": None,
+        "detection_service_url": None,
         "page_count": 5,
         "error": None,
         "created_at": "created-ts",
@@ -61,6 +65,10 @@ def test_record_detection_request_omits_expires_at_when_ttl_disabled(mocker) -> 
 
     payload = client.collection(ddb.DETECTION_REQUESTS_COLLECTION).document("req-1").get().to_dict()
     assert "expires_at" not in payload
+    assert payload["dispatch_lane"] is None
+    assert payload["detection_profile"] is None
+    assert payload["detection_queue"] is None
+    assert payload["detection_service_url"] is None
     assert payload["page_count"] is None
     assert payload["error"] is None
 
@@ -175,3 +183,60 @@ def test_update_detection_request_stores_truthy_error_string(mocker) -> None:
     assert stored["error"] == "timeout exceeded"
     assert stored["status"] == "failed"
     assert stored["updated_at"] == "updated-ts"
+
+
+def test_detection_lane_busy_uses_dispatch_lane_and_active_window(mocker) -> None:
+    client = FakeFirestoreClient()
+    recent_timestamp = datetime.now(timezone.utc).isoformat()
+    stale_timestamp = "2000-01-01T00:00:00+00:00"
+    collection = client.collection(ddb.DETECTION_REQUESTS_COLLECTION)
+    collection.document("gpu-queued").seed(
+        {
+            "request_id": "gpu-queued",
+            "status": "queued",
+            "dispatch_lane": "gpu",
+            "created_at": recent_timestamp,
+            "updated_at": recent_timestamp,
+        }
+    )
+    collection.document("cpu-running").seed(
+        {
+            "request_id": "cpu-running",
+            "status": "running",
+            "dispatch_lane": "cpu",
+            "created_at": recent_timestamp,
+            "updated_at": recent_timestamp,
+        }
+    )
+    collection.document("gpu-stale").seed(
+        {
+            "request_id": "gpu-stale",
+            "status": "running",
+            "dispatch_lane": "gpu",
+            "created_at": stale_timestamp,
+            "updated_at": stale_timestamp,
+        }
+    )
+    mocker.patch("backend.firebaseDB.detection_database.get_firestore_client", return_value=client)
+
+    assert ddb.detection_lane_busy("gpu", active_window_seconds=60) is True
+    assert ddb.detection_lane_busy("cpu", active_window_seconds=60) is True
+    assert ddb.detection_lane_busy("gpu", active_window_seconds=3600) is True
+
+
+def test_detection_lane_busy_returns_false_for_blank_lane_or_only_stale_docs(mocker) -> None:
+    client = FakeFirestoreClient()
+    collection = client.collection(ddb.DETECTION_REQUESTS_COLLECTION)
+    collection.document("gpu-stale").seed(
+        {
+            "request_id": "gpu-stale",
+            "status": "queued",
+            "dispatch_lane": "gpu",
+            "created_at": "2000-01-01T00:00:00+00:00",
+            "updated_at": "2000-01-01T00:00:00+00:00",
+        }
+    )
+    mocker.patch("backend.firebaseDB.detection_database.get_firestore_client", return_value=client)
+
+    assert ddb.detection_lane_busy("") is False
+    assert ddb.detection_lane_busy("gpu", active_window_seconds=60) is False

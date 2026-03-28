@@ -16,7 +16,8 @@ serviceAccounts
 env
 docs
 config
-scripts
+scripts/*
+!scripts/cleanup_sessions.py
 package.json
 package-lock.json
 backend/.venv

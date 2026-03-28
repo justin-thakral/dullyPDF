@@ -24,6 +24,7 @@ const LegalPage = lazy(() => import('./components/pages/LegalPage'));
 const PublicNotFoundPage = lazy(() => import('./components/pages/PublicNotFoundPage'));
 const FillLinkPublicPage = lazy(() => import('./components/pages/FillLinkPublicPage'));
 const PublicSigningPage = lazy(() => import('./components/pages/PublicSigningPage'));
+const PublicSigningValidationPage = lazy(() => import('./components/pages/PublicSigningValidationPage'));
 const AccountActionPage = lazy(() => import('./components/pages/AccountActionPage'));
 const UsageDocsPage = lazy(() => import('./components/pages/UsageDocsPage'));
 const UsageDocsNotFoundPage = lazy(() => import('./components/pages/UsageDocsNotFoundPage'));
@@ -38,6 +39,7 @@ type AppRoute =
   | { kind: 'legal'; legalKind: LegalPageKind }
   | { kind: 'fill-link-public'; token: string }
   | { kind: 'signing-public'; token: string }
+  | { kind: 'signing-validation'; token: string }
   | { kind: 'intent'; intentKey: IntentPageKey }
   | { kind: 'intent-hub'; hubKey: 'workflows' | 'industries' }
   | { kind: 'feature-plan'; planKey: FeaturePlanPageKey }
@@ -96,6 +98,13 @@ const resolveRoute = (): AppRoute => {
     if (token && !token.includes('/')) {
       if (path !== normalizedPath) replaceBrowserPath(normalizedPath);
       return { kind: 'signing-public', token };
+    }
+  }
+  if (normalizedPath.startsWith('/verify-signing/')) {
+    const token = normalizedPath.slice('/verify-signing/'.length);
+    if (token && !token.includes('/')) {
+      if (path !== normalizedPath) replaceBrowserPath(normalizedPath);
+      return { kind: 'signing-validation', token };
     }
   }
 
@@ -173,6 +182,8 @@ const renderRoute = (route: AppRoute) => {
       return <FillLinkPublicPage token={route.token} />;
     case 'signing-public':
       return <PublicSigningPage token={route.token} />;
+    case 'signing-validation':
+      return <PublicSigningValidationPage token={route.token} />;
     case 'account-action':
       return <AccountActionPage />;
     case 'intent-hub':

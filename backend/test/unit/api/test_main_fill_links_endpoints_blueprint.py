@@ -6,7 +6,9 @@ from backend.firebaseDB.fill_link_database import (
 from backend.firebaseDB.group_database import TemplateGroupRecord
 from backend.firebaseDB.signing_database import SigningRequestRecord
 from backend.firebaseDB.template_database import TemplateRecord
+from backend.services.fill_link_signing_service import FillLinkSigningRequestMaterialization
 from backend.services.fill_links_service import build_fill_link_public_token
+from backend.services.signing_request_limit_service import SigningRequestDocumentLimitError
 
 
 def _patch_auth(mocker, app_main, user) -> None:
@@ -135,6 +137,7 @@ def _signing_request_record(
     *,
     request_id: str = "sign-1",
     status: str = "completed",
+    invite_last_attempt_at: str | None = "2024-02-01T00:00:00+00:00",
 ) -> SigningRequestRecord:
     return SigningRequestRecord(
         id=request_id,
@@ -153,16 +156,44 @@ def _signing_request_record(
         source_pdf_bucket_path="gs://bucket/source.pdf",
         source_version="workspace:tpl-1:v1",
         document_category="client_intake_form",
+        esign_eligibility_confirmed_at="2024-02-01T00:00:00+00:00",
+        esign_eligibility_confirmed_source="owner_request_create",
         manual_fallback_enabled=True,
         signer_name="Ada Lovelace",
         signer_email="ada@example.com",
+        signer_contact_method="email",
+        signer_auth_method="email_otp",
+        sender_display_name="Owner Example",
+        sender_email="owner@example.com",
+        sender_contact_email="owner@example.com",
+        consumer_paper_copy_procedure=None,
+        consumer_paper_copy_fee_description=None,
+        consumer_withdrawal_procedure=None,
+        consumer_withdrawal_consequences=None,
+        consumer_contact_update_procedure=None,
+        consumer_consent_scope_override=None,
+        invite_method="email",
+        invite_provider="gmail_api",
         invite_delivery_status="sent",
-        invite_last_attempt_at="2024-02-01T00:00:00+00:00",
+        invite_last_attempt_at=invite_last_attempt_at,
         invite_sent_at="2024-02-01T00:00:00+00:00",
         invite_delivery_error=None,
+        invite_delivery_error_code=None,
+        invite_message_id="gmail-message-1",
+        manual_link_shared_at=None,
+        verification_required=False,
+        verification_method=None,
+        verification_completed_at=None,
         status=status,
         anchors=[],
         disclosure_version="v1",
+        consumer_disclosure_version=None,
+        consumer_disclosure_payload=None,
+        consumer_disclosure_sha256=None,
+        consumer_disclosure_presented_at=None,
+        consumer_consent_scope=None,
+        consumer_access_demonstrated_at=None,
+        consumer_access_demonstration_method=None,
         created_at="2024-02-01T00:00:00+00:00",
         updated_at="2024-02-01T00:00:00+00:00",
         owner_review_confirmed_at="2024-02-01T00:00:00+00:00",
@@ -172,14 +203,34 @@ def _signing_request_record(
         consented_at="2024-02-01T00:07:00+00:00",
         signature_adopted_at="2024-02-01T00:08:00+00:00",
         signature_adopted_name="Ada Lovelace",
+        signature_adopted_mode="typed",
+        signature_adopted_image_data_url=None,
+        signature_adopted_image_sha256=None,
         manual_fallback_requested_at=None,
         manual_fallback_note=None,
+        consent_withdrawn_at=None,
         completed_at="2024-02-01T00:10:00+00:00" if status == "completed" else None,
         completed_session_id="sess-1" if status == "completed" else None,
         completed_ip_address="198.51.100.10" if status == "completed" else None,
         completed_user_agent="Mozilla/5.0" if status == "completed" else None,
+        completed_verification_method=None,
+        completed_verification_completed_at=None,
+        completed_verification_session_id=None,
         signed_pdf_bucket_path="gs://bucket/signed.pdf" if status == "completed" else None,
         signed_pdf_sha256="def456" if status == "completed" else None,
+        signed_pdf_digital_signature_method="dev_pem" if status == "completed" else None,
+        signed_pdf_digital_signature_algorithm="rsa_sha256" if status == "completed" else None,
+        signed_pdf_digital_signature_field_name="DullyPDFDigitalSignature" if status == "completed" else None,
+        signed_pdf_digital_signature_subfilter="/ETSI.CAdES.detached" if status == "completed" else None,
+        signed_pdf_digital_signature_timestamped=False,
+        signed_pdf_digital_certificate_subject=(
+            "CN=DullyPDF Development PDF Signer" if status == "completed" else None
+        ),
+        signed_pdf_digital_certificate_issuer=(
+            "CN=DullyPDF Development PDF Signer" if status == "completed" else None
+        ),
+        signed_pdf_digital_certificate_serial_number="01" if status == "completed" else None,
+        signed_pdf_digital_certificate_fingerprint_sha256="f" * 64 if status == "completed" else None,
         audit_manifest_bucket_path="gs://bucket/audit.json" if status == "completed" else None,
         audit_manifest_sha256="ghi789" if status == "completed" else None,
         audit_receipt_bucket_path="gs://bucket/audit-receipt.pdf" if status == "completed" else None,
@@ -190,6 +241,10 @@ def _signing_request_record(
         audit_kms_key_version_name="projects/test/locations/global/keyRings/test/cryptoKeys/test/cryptoKeyVersions/1" if status == "completed" else None,
         artifacts_generated_at="2024-02-01T00:10:05+00:00" if status == "completed" else None,
         retention_until=None,
+        expires_at=None,
+        public_link_version=1,
+        public_link_revoked_at=None,
+        public_link_last_reissued_at=None,
         invalidated_at=None,
         invalidation_reason=None,
     )
@@ -449,6 +504,9 @@ def test_fill_links_create_accepts_template_post_submit_signing_config(
                 "signature_mode": "consumer",
                 "document_category": "client_intake_form",
                 "document_category_label": "Client intake form",
+                "esign_eligibility_confirmed": True,
+                "esign_eligibility_confirmed_at": "2024-02-01T00:00:00+00:00",
+                "esign_eligibility_confirmed_source": "fill_link_publish",
                 "manual_fallback_enabled": True,
                 "signer_name_question_key": "full_name",
                 "signer_email_question_key": "email",
@@ -477,7 +535,13 @@ def test_fill_links_create_accepts_template_post_submit_signing_config(
                 "enabled": True,
                 "signatureMode": "consumer",
                 "documentCategory": "client_intake_form",
+                "esignEligibilityConfirmed": True,
                 "manualFallbackEnabled": True,
+                "consumerPaperCopyProcedure": "Email owner@example.com to request paper delivery for this response.",
+                "consumerPaperCopyFeeDescription": "No paper-copy fee is charged.",
+                "consumerWithdrawalProcedure": "Use the withdraw option or email owner@example.com before signing completes.",
+                "consumerWithdrawalConsequences": "Withdrawing consent ends the electronic process for this response.",
+                "consumerContactUpdateProcedure": "Email owner@example.com if the signer contact details change before completion.",
                 "signerNameQuestionKey": "full_name",
                 "signerEmailQuestionKey": "email",
             },
@@ -488,6 +552,7 @@ def test_fill_links_create_accepts_template_post_submit_signing_config(
     assert response.status_code == 200
     assert response.json()["link"]["signingConfig"]["enabled"] is True
     assert response.json()["link"]["signingConfig"]["signatureMode"] == "consumer"
+    assert response.json()["link"]["signingConfig"]["esignEligibilityConfirmed"] is True
     create_mock.assert_called_once()
     assert app_main._build_template_web_form_schema.call_args.kwargs["exclude_signing_questions"] is True
     assert create_mock.call_args.kwargs["signing_config"] == {
@@ -495,7 +560,18 @@ def test_fill_links_create_accepts_template_post_submit_signing_config(
         "signature_mode": "consumer",
         "document_category": "client_intake_form",
         "document_category_label": "Client intake form",
+        "esign_eligibility_confirmed": True,
+        "esign_eligibility_confirmed_at": mocker.ANY,
+        "esign_eligibility_confirmed_source": "fill_link_publish",
         "manual_fallback_enabled": True,
+        "sender_display_name": "Base User",
+        "sender_contact_email": "base@example.com",
+        "consumer_paper_copy_procedure": "Email owner@example.com to request paper delivery for this response.",
+        "consumer_paper_copy_fee_description": "No paper-copy fee is charged.",
+        "consumer_withdrawal_procedure": "Use the withdraw option or email owner@example.com before signing completes.",
+        "consumer_withdrawal_consequences": "Withdrawing consent ends the electronic process for this response.",
+        "consumer_contact_update_procedure": "Email owner@example.com if the signer contact details change before completion.",
+        "consumer_consent_scope_override": "This consent applies only to this signing request and its related electronic records.",
         "signer_name_question_key": "full_name",
         "signer_email_question_key": "email",
     }
@@ -569,6 +645,9 @@ def test_fill_links_create_forces_respondent_downloads_flat_when_post_submit_sig
                 "signature_mode": "business",
                 "document_category": "ordinary_business_form",
                 "document_category_label": "Ordinary business form",
+                "esign_eligibility_confirmed": True,
+                "esign_eligibility_confirmed_at": "2024-02-01T00:00:00+00:00",
+                "esign_eligibility_confirmed_source": "fill_link_publish",
                 "manual_fallback_enabled": True,
                 "signer_name_question_key": "full_name",
                 "signer_email_question_key": "email",
@@ -592,6 +671,7 @@ def test_fill_links_create_forces_respondent_downloads_flat_when_post_submit_sig
                 "enabled": True,
                 "signatureMode": "business",
                 "documentCategory": "ordinary_business_form",
+                "esignEligibilityConfirmed": True,
                 "manualFallbackEnabled": True,
                 "signerNameQuestionKey": "full_name",
                 "signerEmailQuestionKey": "email",
@@ -602,8 +682,67 @@ def test_fill_links_create_forces_respondent_downloads_flat_when_post_submit_sig
 
     assert response.status_code == 200
     assert response.json()["link"]["respondentPdfEditableEnabled"] is False
+    assert response.json()["link"]["signingConfig"]["esignEligibilityConfirmed"] is True
     snapshot_mock.assert_called_once_with(template=mocker.ANY, fields=mocker.ANY, export_mode="flat")
     assert create_mock.call_args.kwargs["respondent_pdf_snapshot"]["downloadMode"] == "flat"
+
+
+def test_fill_links_create_rejects_post_submit_signing_without_esign_attestation(
+    client,
+    app_main,
+    base_user,
+    mocker,
+    auth_headers,
+) -> None:
+    _patch_auth(mocker, app_main, base_user)
+    mocker.patch.object(app_main, "get_template", return_value=_template_record())
+    mocker.patch.object(app_main, "get_fill_link_for_template", return_value=None)
+    mocker.patch.object(app_main, "_resolve_fill_links_active_limit", return_value=1)
+    mocker.patch.object(app_main, "_resolve_fill_link_response_limit", return_value=5)
+    mocker.patch.object(app_main, "sync_user_downgrade_retention", return_value=None)
+    mocker.patch.object(app_main, "list_fill_links", return_value=[])
+    mocker.patch.object(
+        app_main,
+        "_build_template_web_form_schema",
+        return_value=(
+            {
+                "schemaVersion": 2,
+                "questions": [
+                    {"key": "full_name", "label": "Full Name", "type": "text", "visible": True},
+                    {"key": "email", "label": "Email", "type": "email", "visible": True},
+                ],
+            },
+            [
+                {"key": "full_name", "label": "Full Name", "type": "text", "visible": True},
+                {"key": "email", "label": "Email", "type": "email", "visible": True},
+            ],
+        ),
+    )
+
+    response = client.post(
+        "/api/fill-links",
+        json={
+            "templateId": "tpl-1",
+            "templateName": "Template One",
+            "title": "Template One Intake",
+            "fields": [
+                {"name": "Signer", "type": "signature", "page": 1, "rect": {"x": 1, "y": 2, "width": 3, "height": 1}},
+                {"name": "full_name", "type": "text", "page": 1, "rect": {"x": 1, "y": 3, "width": 3, "height": 1}},
+            ],
+            "signingConfig": {
+                "enabled": True,
+                "signatureMode": "business",
+                "documentCategory": "ordinary_business_form",
+                "manualFallbackEnabled": True,
+                "signerNameQuestionKey": "full_name",
+                "signerEmailQuestionKey": "email",
+            },
+        },
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 400
+    assert "eligible for dullypdf" in response.json()["detail"].lower()
 
 
 def test_fill_links_owner_responses_include_linked_signing_summary_for_signed_responses(
@@ -940,6 +1079,9 @@ def test_fill_links_public_submit_returns_signing_handoff_when_enabled(client, a
             "signature_mode": "consumer",
             "document_category": "client_intake_form",
             "document_category_label": "Client intake form",
+            "esign_eligibility_confirmed": True,
+            "esign_eligibility_confirmed_at": "2024-02-01T00:00:00+00:00",
+            "esign_eligibility_confirmed_source": "fill_link_publish",
             "manual_fallback_enabled": True,
             "signer_name_question_key": "full_name",
             "signer_email_question_key": "email",
@@ -996,12 +1138,33 @@ def test_fill_links_public_submit_returns_signing_handoff_when_enabled(client, a
         "materialize_fill_link_response_download",
         return_value=(output_path, ["tmp-path"], "template-one-response.pdf"),
     )
+    signing_record = _signing_request_record(request_id="sign-1", status="sent", invite_last_attempt_at=None)
     ensure_signing_mock = mocker.patch.object(
         app_main,
         "ensure_fill_link_response_signing_request",
-        return_value=mocker.Mock(id="sign-1", status="sent"),
+        return_value=FillLinkSigningRequestMaterialization(
+            record=signing_record,
+            created_now=False,
+            sent_now=False,
+        ),
     )
-    build_public_path_mock = mocker.patch.object(app_main, "build_signing_public_path", return_value="/sign/public-token")
+    mocker.patch.object(app_main, "get_user_profile", return_value=mocker.Mock(email="owner@example.com"))
+    mocker.patch.object(app_main, "persist_consumer_disclosure_artifact", return_value=None)
+    mocker.patch.object(app_main, "record_signing_provenance_event", return_value=None)
+    deliver_invite_mock = mocker.patch.object(
+        app_main,
+        "deliver_signing_invite_for_request",
+        return_value=mocker.Mock(
+            record=mocker.Mock(
+                id="sign-1",
+                status="sent",
+                invite_last_attempt_at="2099-01-01T00:05:00+00:00",
+                invite_delivery_status="sent",
+                signer_email="ada@example.com",
+            ),
+            delivery=mocker.Mock(delivery_status="sent"),
+        ),
+    )
     cleanup_mock = mocker.patch.object(app_main, "cleanup_paths")
 
     response = client.post(
@@ -1016,7 +1179,12 @@ def test_fill_links_public_submit_returns_signing_handoff_when_enabled(client, a
         "available": True,
         "requestId": "sign-1",
         "status": "sent",
-        "publicPath": "/sign/public-token",
+        "deliveryStatus": "sent",
+        "emailHint": "a***@example.com",
+        "canResend": False,
+        "resendAvailableAt": "2099-01-01T00:10:00+00:00",
+        "message": "We emailed the signing link for this response.",
+        "errorMessage": None,
     }
     materialize_mock.assert_called_once_with(
         record.respondent_pdf_snapshot,
@@ -1024,8 +1192,198 @@ def test_fill_links_public_submit_returns_signing_handoff_when_enabled(client, a
         export_mode="flat",
     )
     ensure_signing_mock.assert_called_once()
-    build_public_path_mock.assert_called_once_with("sign-1")
+    deliver_invite_mock.assert_called_once()
     cleanup_mock.assert_called_once_with(["tmp-path"])
+
+
+def test_fill_links_public_submit_returns_non_retryable_signing_limit_error(client, app_main, mocker, tmp_path) -> None:
+    record = _fill_link_record(
+        questions=[
+            {"key": "full_name", "label": "Full Name", "type": "text", "visible": True},
+            {"key": "email", "label": "Email", "type": "email", "visible": True},
+        ],
+        signing_config={
+            "enabled": True,
+            "signature_mode": "consumer",
+            "document_category": "client_intake_form",
+            "document_category_label": "Client intake form",
+            "manual_fallback_enabled": True,
+            "signer_name_question_key": "full_name",
+            "signer_email_question_key": "email",
+        },
+        respondent_pdf_snapshot={
+            "version": 1,
+            "sourcePdfPath": "gs://forms/template.pdf",
+            "filename": "template-one-response.pdf",
+            "fields": [
+                {"name": "Signer", "type": "signature", "page": 1, "rect": {"x": 1, "y": 2, "width": 3, "height": 1}},
+                {"name": "full_name", "type": "text", "page": 1, "rect": {"x": 1, "y": 3, "width": 3, "height": 1}},
+            ],
+        },
+    )
+    response_record = FillLinkResponseRecord(
+        id="resp-1",
+        link_id="link-1",
+        user_id="user_base",
+        scope_type="template",
+        template_id="tpl-1",
+        group_id=None,
+        attempt_id=None,
+        respondent_label="Ada Lovelace",
+        respondent_secondary_label="ada@example.com",
+        answers={"full_name": "Ada Lovelace", "email": "ada@example.com"},
+        search_text="ada lovelace ada@example.com",
+        submitted_at="2024-02-01T00:00:00+00:00",
+        respondent_pdf_snapshot=record.respondent_pdf_snapshot,
+    )
+    mocker.patch.object(app_main, "get_fill_link_by_public_token", return_value=record)
+    mocker.patch.object(app_main, "get_template", return_value=_template_record())
+    mocker.patch.object(app_main, "_resolve_fill_link_submit_rate_limits", return_value=(300, 10, 0))
+    mocker.patch.object(app_main, "_resolve_client_ip", return_value="198.51.100.10")
+    mocker.patch.object(app_main, "check_rate_limit", return_value=True)
+    mocker.patch.object(app_main, "_verify_recaptcha_token", return_value=None)
+    mocker.patch.object(app_main, "_resolve_fill_link_recaptcha_action", return_value="fill_link_submit")
+    mocker.patch.object(app_main, "_recaptcha_required_for_fill_link", return_value=False)
+    mocker.patch.object(
+        app_main,
+        "coerce_fill_link_answers",
+        return_value={"full_name": "Ada Lovelace", "email": "ada@example.com"},
+    )
+    mocker.patch.object(app_main, "derive_fill_link_respondent_label", return_value=("Ada Lovelace", "ada@example.com"))
+    mocker.patch.object(app_main, "build_fill_link_search_text", return_value="ada lovelace ada@example.com")
+    mocker.patch.object(
+        app_main,
+        "submit_fill_link_response",
+        return_value=FillLinkSubmissionResult(status="accepted", link=record, response=response_record),
+    )
+    output_path = tmp_path / "submitted-fill-link-signing-limit.pdf"
+    output_path.write_bytes(b"%PDF-1.4\n%stub\n")
+    mocker.patch.object(
+        app_main,
+        "materialize_fill_link_response_download",
+        return_value=(output_path, ["tmp-path"], "template-one-response.pdf"),
+    )
+    ensure_signing_mock = mocker.patch.object(
+        app_main,
+        "ensure_fill_link_response_signing_request",
+        side_effect=SigningRequestDocumentLimitError(limit=10, source_document_name="Template One"),
+    )
+    deliver_invite_mock = mocker.patch.object(app_main, "deliver_signing_invite_for_request")
+    cleanup_mock = mocker.patch.object(app_main, "cleanup_paths")
+
+    response = client.post(
+        "/api/fill-links/public/token-1/submit",
+        json={"answers": {"full_name": "Ada Lovelace", "email": "ada@example.com"}},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["signing"] == {
+        "enabled": True,
+        "available": False,
+        "requestId": None,
+        "status": None,
+        "deliveryStatus": None,
+        "emailHint": None,
+        "canResend": False,
+        "resendAvailableAt": None,
+        "message": None,
+        "errorMessage": "This submitted record has already reached the sender's signature request limit for this document. Contact the sender for an offline copy.",
+    }
+    ensure_signing_mock.assert_called_once()
+    deliver_invite_mock.assert_not_called()
+    cleanup_mock.assert_called_once_with(["tmp-path"])
+
+
+def test_fill_links_public_submit_returns_retryable_signing_error_when_email_handoff_fails(client, app_main, mocker) -> None:
+    record = _fill_link_record(
+        questions=[
+            {"key": "full_name", "label": "Full Name", "type": "text", "visible": True},
+            {"key": "email", "label": "Email", "type": "email", "visible": True},
+        ],
+        signing_config={
+            "enabled": True,
+            "signature_mode": "consumer",
+            "document_category": "client_intake_form",
+            "document_category_label": "Client intake form",
+            "esign_eligibility_confirmed": True,
+            "esign_eligibility_confirmed_at": "2024-02-01T00:00:00+00:00",
+            "esign_eligibility_confirmed_source": "fill_link_publish",
+            "manual_fallback_enabled": True,
+            "signer_name_question_key": "full_name",
+            "signer_email_question_key": "email",
+        },
+        respondent_pdf_snapshot={
+            "version": 1,
+            "sourcePdfPath": "gs://forms/template.pdf",
+            "filename": "template-one-response.pdf",
+            "fields": [
+                {"name": "Signer", "type": "signature", "page": 1, "rect": {"x": 1, "y": 2, "width": 3, "height": 1}},
+            ],
+        },
+    )
+    response_record = FillLinkResponseRecord(
+        id="resp-1",
+        link_id="link-1",
+        user_id="user_base",
+        scope_type="template",
+        template_id="tpl-1",
+        group_id=None,
+        attempt_id=None,
+        respondent_label="Ada Lovelace",
+        respondent_secondary_label="ada@example.com",
+        answers={"full_name": "Ada Lovelace", "email": "ada@example.com"},
+        search_text="ada lovelace ada@example.com",
+        submitted_at="2024-02-01T00:00:00+00:00",
+        respondent_pdf_snapshot=record.respondent_pdf_snapshot,
+    )
+    mocker.patch.object(app_main, "get_fill_link_by_public_token", return_value=record)
+    mocker.patch.object(app_main, "get_template", return_value=_template_record())
+    mocker.patch.object(app_main, "_resolve_fill_link_submit_rate_limits", return_value=(300, 10, 0))
+    mocker.patch.object(app_main, "_resolve_client_ip", return_value="198.51.100.10")
+    mocker.patch.object(app_main, "check_rate_limit", return_value=True)
+    mocker.patch.object(app_main, "_verify_recaptcha_token", return_value=None)
+    mocker.patch.object(app_main, "_resolve_fill_link_recaptcha_action", return_value="fill_link_submit")
+    mocker.patch.object(app_main, "_recaptcha_required_for_fill_link", return_value=False)
+    mocker.patch.object(
+        app_main,
+        "coerce_fill_link_answers",
+        return_value={"full_name": "Ada Lovelace", "email": "ada@example.com"},
+    )
+    mocker.patch.object(app_main, "derive_fill_link_respondent_label", return_value=("Ada Lovelace", "ada@example.com"))
+    mocker.patch.object(app_main, "build_fill_link_search_text", return_value="ada lovelace ada@example.com")
+    mocker.patch.object(
+        app_main,
+        "submit_fill_link_response",
+        return_value=FillLinkSubmissionResult(status="accepted", link=record, response=response_record),
+    )
+    mocker.patch.object(
+        app_main,
+        "materialize_fill_link_response_download",
+        side_effect=RuntimeError("storage unavailable"),
+    )
+
+    response = client.post(
+        "/api/fill-links/public/token-1/submit",
+        json={"answers": {"full_name": "Ada Lovelace", "email": "ada@example.com"}},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["success"] is True
+    assert payload["responseId"] == "resp-1"
+    assert payload["signing"] == {
+        "enabled": True,
+        "available": False,
+        "requestId": None,
+        "status": None,
+        "deliveryStatus": None,
+        "emailHint": None,
+        "canResend": True,
+        "resendAvailableAt": None,
+        "message": None,
+        "errorMessage": "Your form was submitted, but the signing email is unavailable right now. Contact the sender.",
+    }
 
 
 def test_fill_links_public_submit_rejects_invalid_signer_email_before_storing_response(client, app_main, mocker) -> None:
@@ -1039,6 +1397,9 @@ def test_fill_links_public_submit_rejects_invalid_signer_email_before_storing_re
             "signature_mode": "business",
             "document_category": "ordinary_business_form",
             "document_category_label": "Ordinary business form",
+            "esign_eligibility_confirmed": True,
+            "esign_eligibility_confirmed_at": "2024-02-01T00:00:00+00:00",
+            "esign_eligibility_confirmed_source": "fill_link_publish",
             "manual_fallback_enabled": True,
             "signer_name_question_key": "full_name",
             "signer_email_question_key": "email",
@@ -1252,6 +1613,7 @@ def test_fill_links_public_download_materializes_snapshot_for_template_links(cli
 
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/pdf"
+    assert response.headers["cache-control"] == "private, no-store"
     assert "template-one-response.pdf" in response.headers["content-disposition"]
     materialize_mock.assert_called_once_with(
         {
@@ -1302,6 +1664,7 @@ def test_fill_links_public_download_prefers_response_snapshot_for_historical_sub
     response = client.get("/api/fill-links/public/token-1/responses/resp-1/download")
 
     assert response.status_code == 200
+    assert response.headers["cache-control"] == "private, no-store"
     materialize_mock.assert_called_once_with(
         {
             "version": 1,

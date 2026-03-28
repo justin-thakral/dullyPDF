@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from backend.firebaseDB.template_api_endpoint_database import TemplateApiEndpointRecord
+from backend.firebaseDB.template_api_endpoint_database import (
+    TemplateApiActiveEndpointLimitError,
+    TemplateApiEndpointRecord,
+    TemplateApiEndpointStatusError,
+)
 from backend.firebaseDB.template_database import TemplateRecord
 
 
@@ -36,16 +40,19 @@ def _template_record() -> TemplateRecord:
 def _endpoint_record(
     *,
     endpoint_id: str = "tep-1",
+    template_id: str = "tpl-1",
     status: str = "active",
     snapshot_version: int = 1,
     key_prefix: str | None = "dpa_live_abc123",
     secret_hash: str | None = "hash",
     snapshot: dict | None = None,
+    current_usage_month: str | None = "2026-03",
+    current_month_usage_count: int = 0,
 ) -> TemplateApiEndpointRecord:
     return TemplateApiEndpointRecord(
         id=endpoint_id,
         user_id="user_base",
-        template_id="tpl-1",
+        template_id=template_id,
         template_name="Patient Intake",
         status=status,
         snapshot_version=snapshot_version,
@@ -64,10 +71,11 @@ def _endpoint_record(
         published_at="2024-01-01T00:00:00+00:00",
         last_used_at=None,
         usage_count=0,
-        current_usage_month="2026-03",
-        current_month_usage_count=0,
+        current_usage_month=current_usage_month,
+        current_month_usage_count=current_month_usage_count,
         auth_failure_count=0,
         validation_failure_count=0,
+        runtime_failure_count=0,
         suspicious_failure_count=0,
         last_failure_at=None,
         last_failure_reason=None,
@@ -89,6 +97,7 @@ def test_template_api_endpoints_list_publish_rotate_revoke_and_schema(
     mocker.patch.object(app_main, "list_template_api_endpoints", return_value=[_endpoint_record()])
     response = client.get("/api/template-api-endpoints", headers=auth_headers)
     assert response.status_code == 200
+    assert response.headers["cache-control"] == "private, no-store"
     assert response.json()["endpoints"] == [
         {
             "id": "tep-1",
@@ -106,6 +115,7 @@ def test_template_api_endpoints_list_publish_rotate_revoke_and_schema(
             "currentMonthUsageCount": 0,
             "authFailureCount": 0,
             "validationFailureCount": 0,
+            "runtimeFailureCount": 0,
             "suspiciousFailureCount": 0,
             "lastFailureAt": None,
             "lastFailureReason": None,
@@ -119,12 +129,15 @@ def test_template_api_endpoints_list_publish_rotate_revoke_and_schema(
     mocker.patch.object(app_main, "get_template", return_value=_template_record())
     mocker.patch.object(app_main, "build_template_api_snapshot", return_value={"version": 1, "defaultExportMode": "flat", "pageCount": 1})
     mocker.patch.object(app_main, "build_template_api_schema", return_value={"fields": [], "checkboxGroups": [], "radioGroups": []})
-    mocker.patch.object(app_main, "get_active_template_api_endpoint_for_template", return_value=None)
     mocker.patch.object(app_main, "generate_template_api_secret", return_value="dpa_live_secret")
     mocker.patch.object(app_main, "build_template_api_key_prefix", return_value="dpa_live_secret")
     mocker.patch.object(app_main, "hash_template_api_secret", return_value="hashed-secret")
     created_record = _endpoint_record(key_prefix="dpa_live_secret")
-    create_mock = mocker.patch.object(app_main, "create_template_api_endpoint", return_value=created_record)
+    publish_mock = mocker.patch.object(
+        app_main,
+        "publish_or_republish_template_api_endpoint",
+        return_value=(created_record, True),
+    )
     mocker.patch.object(app_main, "get_template_api_endpoint", return_value=created_record)
 
     create_response = client.post(
@@ -134,13 +147,15 @@ def test_template_api_endpoints_list_publish_rotate_revoke_and_schema(
     )
 
     assert create_response.status_code == 200
+    assert create_response.headers["cache-control"] == "private, no-store"
     assert create_response.json()["created"] is True
     assert create_response.json()["secret"] == "dpa_live_secret"
     assert create_response.json()["limits"]["maxPagesPerRequest"] == 25
-    create_mock.assert_called_once_with(
+    publish_mock.assert_called_once_with(
         user_id="user_base",
         template_id="tpl-1",
         template_name="Patient Intake",
+        active_limit=1,
         key_prefix="dpa_live_secret",
         secret_hash="hashed-secret",
         snapshot={"version": 1, "defaultExportMode": "flat", "pageCount": 1},
@@ -149,7 +164,7 @@ def test_template_api_endpoints_list_publish_rotate_revoke_and_schema(
     mocker.patch.object(app_main, "get_template_api_endpoint", return_value=_endpoint_record())
     update_rotate_mock = mocker.patch.object(
         app_main,
-        "update_template_api_endpoint",
+        "rotate_template_api_endpoint_secret_atomic",
         return_value=_endpoint_record(key_prefix="dpa_live_rotated"),
     )
     mocker.patch.object(app_main, "generate_template_api_secret", return_value="dpa_live_rotated")
@@ -158,6 +173,7 @@ def test_template_api_endpoints_list_publish_rotate_revoke_and_schema(
 
     rotate_response = client.post("/api/template-api-endpoints/tep-1/rotate", headers=auth_headers)
     assert rotate_response.status_code == 200
+    assert rotate_response.headers["cache-control"] == "private, no-store"
     assert rotate_response.json()["secret"] == "dpa_live_rotated"
     update_rotate_mock.assert_called_once_with(
         "tep-1",
@@ -166,9 +182,9 @@ def test_template_api_endpoints_list_publish_rotate_revoke_and_schema(
         secret_hash="hashed-rotated",
     )
 
-    update_revoke_mock = mocker.patch.object(
+    revoke_mock = mocker.patch.object(
         app_main,
-        "update_template_api_endpoint",
+        "revoke_template_api_endpoint_atomic",
         return_value=_endpoint_record(status="revoked"),
     )
     mocker.patch.object(
@@ -178,13 +194,231 @@ def test_template_api_endpoints_list_publish_rotate_revoke_and_schema(
     )
     revoke_response = client.post("/api/template-api-endpoints/tep-1/revoke", headers=auth_headers)
     assert revoke_response.status_code == 200
+    assert revoke_response.headers["cache-control"] == "private, no-store"
     assert revoke_response.json()["endpoint"]["status"] == "revoked"
-    update_revoke_mock.assert_called_once_with("tep-1", "user_base", status="revoked")
+    revoke_mock.assert_called_once_with("tep-1", "user_base")
 
     mocker.patch.object(app_main, "get_template_api_endpoint", return_value=_endpoint_record(status="revoked"))
     schema_response = client.get("/api/template-api-endpoints/tep-1/schema", headers=auth_headers)
     assert schema_response.status_code == 200
+    assert schema_response.headers["cache-control"] == "private, no-store"
     assert schema_response.json()["schema"] == {"fields": [], "checkboxGroups": [], "radioGroups": []}
+
+
+def test_template_api_owner_lifecycle_ignores_event_logging_failures(
+    client,
+    app_main,
+    base_user,
+    mocker,
+    auth_headers,
+) -> None:
+    _patch_auth(mocker, app_main, base_user)
+    _patch_limits(mocker, app_main)
+    mocker.patch.object(app_main, "create_template_api_endpoint_event", side_effect=RuntimeError("firestore unavailable"))
+    mocker.patch.object(app_main, "count_active_template_api_endpoints", return_value=0)
+
+    mocker.patch.object(app_main, "get_template", return_value=_template_record())
+    mocker.patch.object(app_main, "build_template_api_snapshot", return_value={"version": 1, "defaultExportMode": "flat", "pageCount": 1})
+    mocker.patch.object(app_main, "build_template_api_schema", return_value={"fields": [], "checkboxGroups": [], "radioGroups": []})
+    mocker.patch.object(app_main, "generate_template_api_secret", return_value="dpa_live_secret")
+    mocker.patch.object(app_main, "build_template_api_key_prefix", return_value="dpa_live_secret")
+    mocker.patch.object(app_main, "hash_template_api_secret", return_value="hashed-secret")
+    created_record = _endpoint_record(key_prefix="dpa_live_secret")
+    mocker.patch.object(
+        app_main,
+        "publish_or_republish_template_api_endpoint",
+        return_value=(created_record, True),
+    )
+    mocker.patch.object(app_main, "get_template_api_endpoint", return_value=created_record)
+
+    create_response = client.post(
+        "/api/template-api-endpoints",
+        json={"templateId": "tpl-1", "exportMode": "flat"},
+        headers=auth_headers,
+    )
+
+    assert create_response.status_code == 200
+    assert create_response.json()["secret"] == "dpa_live_secret"
+
+    mocker.patch.object(app_main, "get_template_api_endpoint", return_value=_endpoint_record())
+    mocker.patch.object(
+        app_main,
+        "rotate_template_api_endpoint_secret_atomic",
+        return_value=_endpoint_record(key_prefix="dpa_live_rotated"),
+    )
+    mocker.patch.object(app_main, "generate_template_api_secret", return_value="dpa_live_rotated")
+    mocker.patch.object(app_main, "build_template_api_key_prefix", return_value="dpa_live_rotated")
+    mocker.patch.object(app_main, "hash_template_api_secret", return_value="hashed-rotated")
+
+    rotate_response = client.post("/api/template-api-endpoints/tep-1/rotate", headers=auth_headers)
+
+    assert rotate_response.status_code == 200
+    assert rotate_response.json()["secret"] == "dpa_live_rotated"
+
+    mocker.patch.object(
+        app_main,
+        "revoke_template_api_endpoint_atomic",
+        return_value=_endpoint_record(status="revoked"),
+    )
+    mocker.patch.object(
+        app_main,
+        "get_template_api_endpoint",
+        side_effect=[_endpoint_record(), _endpoint_record(status="revoked")],
+    )
+
+    revoke_response = client.post("/api/template-api-endpoints/tep-1/revoke", headers=auth_headers)
+
+    assert revoke_response.status_code == 200
+    assert revoke_response.json()["endpoint"]["status"] == "revoked"
+
+
+def test_template_api_publish_returns_secret_when_owner_detail_reads_fail(
+    client,
+    app_main,
+    base_user,
+    mocker,
+    auth_headers,
+) -> None:
+    _patch_auth(mocker, app_main, base_user)
+    _patch_limits(mocker, app_main)
+    mocker.patch.object(app_main, "count_active_template_api_endpoints", return_value=0)
+    mocker.patch.object(app_main, "get_template", return_value=_template_record())
+    mocker.patch.object(app_main, "build_template_api_snapshot", return_value={"version": 1, "defaultExportMode": "flat", "pageCount": 1})
+    mocker.patch.object(app_main, "build_template_api_schema", return_value={"fields": [], "checkboxFields": [], "checkboxGroups": [], "radioGroups": []})
+    mocker.patch.object(app_main, "generate_template_api_secret", return_value="dpa_live_secret")
+    mocker.patch.object(app_main, "build_template_api_key_prefix", return_value="dpa_live_secret")
+    mocker.patch.object(app_main, "hash_template_api_secret", return_value="hashed-secret")
+    mocker.patch.object(
+        app_main,
+        "publish_or_republish_template_api_endpoint",
+        return_value=(_endpoint_record(key_prefix="dpa_live_secret"), True),
+    )
+    mocker.patch.object(app_main, "_build_owner_limit_summary", side_effect=RuntimeError("firestore unavailable"))
+    mocker.patch.object(app_main, "list_template_api_endpoint_events", side_effect=RuntimeError("firestore unavailable"))
+    get_endpoint_mock = mocker.patch.object(
+        app_main,
+        "get_template_api_endpoint",
+        side_effect=AssertionError("publish should not refetch the endpoint after mutation"),
+    )
+
+    response = client.post(
+        "/api/template-api-endpoints",
+        json={"templateId": "tpl-1", "exportMode": "flat"},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["secret"] == "dpa_live_secret"
+    assert response.json()["recentEvents"] == []
+    assert response.json()["limits"]["activeEndpointsMax"] == 1
+    assert response.json()["schema"] == {
+        "fields": [],
+        "checkboxFields": [],
+        "checkboxGroups": [],
+        "radioGroups": [],
+    }
+    get_endpoint_mock.assert_not_called()
+
+
+def test_template_api_rotate_and_revoke_skip_post_mutation_refetch_when_owner_detail_reads_fail(
+    client,
+    app_main,
+    base_user,
+    mocker,
+    auth_headers,
+) -> None:
+    _patch_auth(mocker, app_main, base_user)
+    _patch_limits(mocker, app_main)
+    mocker.patch.object(app_main, "_build_owner_limit_summary", side_effect=RuntimeError("firestore unavailable"))
+    mocker.patch.object(app_main, "list_template_api_endpoint_events", side_effect=RuntimeError("firestore unavailable"))
+
+    get_endpoint_rotate_mock = mocker.patch.object(
+        app_main,
+        "get_template_api_endpoint",
+        side_effect=[_endpoint_record(), AssertionError("rotate should not refetch the endpoint after mutation")],
+    )
+    mocker.patch.object(
+        app_main,
+        "rotate_template_api_endpoint_secret_atomic",
+        return_value=_endpoint_record(key_prefix="dpa_live_rotated"),
+    )
+    mocker.patch.object(app_main, "generate_template_api_secret", return_value="dpa_live_rotated")
+    mocker.patch.object(app_main, "build_template_api_key_prefix", return_value="dpa_live_rotated")
+    mocker.patch.object(app_main, "hash_template_api_secret", return_value="hashed-rotated")
+
+    rotate_response = client.post("/api/template-api-endpoints/tep-1/rotate", headers=auth_headers)
+
+    assert rotate_response.status_code == 200
+    assert rotate_response.json()["secret"] == "dpa_live_rotated"
+    assert rotate_response.json()["recentEvents"] == []
+    assert get_endpoint_rotate_mock.call_count == 1
+
+    get_endpoint_revoke_mock = mocker.patch.object(
+        app_main,
+        "get_template_api_endpoint",
+        side_effect=[_endpoint_record(), AssertionError("revoke should not refetch the endpoint after mutation")],
+    )
+    mocker.patch.object(
+        app_main,
+        "revoke_template_api_endpoint_atomic",
+        return_value=_endpoint_record(status="revoked"),
+    )
+
+    revoke_response = client.post("/api/template-api-endpoints/tep-1/revoke", headers=auth_headers)
+
+    assert revoke_response.status_code == 200
+    assert revoke_response.json()["endpoint"]["status"] == "revoked"
+    assert revoke_response.json()["recentEvents"] == []
+    assert get_endpoint_revoke_mock.call_count == 1
+
+
+def test_template_api_owner_read_routes_degrade_when_limit_and_event_reads_fail(
+    client,
+    app_main,
+    base_user,
+    mocker,
+    auth_headers,
+) -> None:
+    _patch_auth(mocker, app_main, base_user)
+    primary_endpoint = _endpoint_record(current_usage_month=None)
+    sibling_endpoint = _endpoint_record(endpoint_id="tep-2", template_id="tpl-2", current_usage_month="2026-04")
+
+    def _list_endpoints(user_id: str, template_id: str | None = None):
+        assert user_id == "user_base"
+        return [primary_endpoint] if template_id == "tpl-1" else [primary_endpoint, sibling_endpoint]
+
+    mocker.patch.object(app_main, "get_user_profile", return_value=None)
+    mocker.patch.object(app_main, "normalize_role", return_value="base")
+    mocker.patch.object(app_main, "resolve_template_api_active_limit", return_value=1)
+    mocker.patch.object(app_main, "resolve_template_api_requests_monthly_limit", return_value=250)
+    mocker.patch.object(app_main, "resolve_template_api_max_pages", return_value=25)
+    mocker.patch.object(app_main, "list_template_api_endpoints", side_effect=_list_endpoints)
+    mocker.patch.object(app_main, "get_template_api_monthly_usage", side_effect=RuntimeError("firestore unavailable"))
+    mocker.patch.object(app_main, "count_active_template_api_endpoints", side_effect=RuntimeError("firestore unavailable"))
+    mocker.patch.object(app_main, "get_template_api_endpoint", return_value=primary_endpoint)
+    mocker.patch.object(app_main, "list_template_api_endpoint_events", side_effect=RuntimeError("firestore unavailable"))
+    mocker.patch.object(
+        app_main,
+        "build_template_api_schema",
+        return_value={"fields": [], "checkboxFields": [], "checkboxGroups": [], "radioGroups": []},
+    )
+
+    list_response = client.get("/api/template-api-endpoints?templateId=tpl-1", headers=auth_headers)
+
+    assert list_response.status_code == 200
+    assert list_response.json()["limits"]["activeEndpointsMax"] == 1
+    assert list_response.json()["limits"]["activeEndpointsUsed"] == 2
+    assert list_response.json()["limits"]["requestsThisMonth"] == 0
+    assert list_response.json()["limits"]["requestUsageMonth"] == "2026-04"
+
+    schema_response = client.get("/api/template-api-endpoints/tep-1/schema", headers=auth_headers)
+
+    assert schema_response.status_code == 200
+    assert schema_response.json()["recentEvents"] == []
+    assert schema_response.json()["limits"]["activeEndpointsMax"] == 1
+    assert schema_response.json()["limits"]["activeEndpointsUsed"] == 2
+    assert schema_response.json()["limits"]["requestsThisMonth"] == 0
+    assert schema_response.json()["limits"]["requestUsageMonth"] == "2026-04"
 
 
 def test_template_api_publish_reuses_existing_active_endpoint_without_rotating_secret(
@@ -199,14 +433,15 @@ def test_template_api_publish_reuses_existing_active_endpoint_without_rotating_s
     mocker.patch.object(app_main, "get_template", return_value=_template_record())
     mocker.patch.object(app_main, "build_template_api_snapshot", return_value={"version": 1, "defaultExportMode": "editable", "pageCount": 1})
     mocker.patch.object(app_main, "build_template_api_schema", return_value={"fields": [{"key": "full_name"}]})
-    mocker.patch.object(app_main, "get_active_template_api_endpoint_for_template", return_value=_endpoint_record(snapshot_version=3))
+    mocker.patch.object(app_main, "generate_template_api_secret", return_value="dpa_live_secret")
+    mocker.patch.object(app_main, "build_template_api_key_prefix", return_value="dpa_live_secret")
+    mocker.patch.object(app_main, "hash_template_api_secret", return_value="hashed-secret")
     mocker.patch.object(app_main, "get_template_api_endpoint", return_value=_endpoint_record(snapshot_version=4))
-    update_mock = mocker.patch.object(
+    publish_mock = mocker.patch.object(
         app_main,
-        "update_template_api_endpoint",
-        return_value=_endpoint_record(snapshot_version=4),
+        "publish_or_republish_template_api_endpoint",
+        return_value=(_endpoint_record(snapshot_version=4), False),
     )
-    now_iso_mock = mocker.patch.object(app_main, "now_iso", return_value="2024-02-01T00:00:00+00:00")
 
     response = client.post(
         "/api/template-api-endpoints",
@@ -217,16 +452,15 @@ def test_template_api_publish_reuses_existing_active_endpoint_without_rotating_s
     assert response.status_code == 200
     assert response.json()["created"] is False
     assert response.json()["secret"] is None
-    update_mock.assert_called_once_with(
-        "tep-1",
-        "user_base",
+    publish_mock.assert_called_once_with(
+        user_id="user_base",
+        template_id="tpl-1",
         template_name="Patient Intake",
+        active_limit=1,
+        key_prefix="dpa_live_secret",
+        secret_hash="hashed-secret",
         snapshot={"version": 1, "defaultExportMode": "editable", "pageCount": 1},
-        snapshot_version=4,
-        published_at="2024-02-01T00:00:00+00:00",
-        status="active",
     )
-    now_iso_mock.assert_called_once_with()
 
 
 def test_template_api_publish_returns_404_when_template_missing(client, app_main, base_user, mocker, auth_headers) -> None:
@@ -242,6 +476,27 @@ def test_template_api_publish_returns_404_when_template_missing(client, app_main
 
     assert response.status_code == 404
     assert response.json() == {"detail": "Saved form not found"}
+
+
+def test_template_api_publish_rejects_unknown_top_level_fields(
+    client,
+    app_main,
+    base_user,
+    mocker,
+    auth_headers,
+) -> None:
+    _patch_auth(mocker, app_main, base_user)
+    get_template_mock = mocker.patch.object(app_main, "get_template")
+
+    response = client.post(
+        "/api/template-api-endpoints",
+        json={"templateId": "tpl-1", "export_mode": "editable"},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"][0]["loc"] == ["body", "export_mode"]
+    get_template_mock.assert_not_called()
 
 
 def test_template_api_publish_returns_400_when_snapshot_build_fails(
@@ -282,13 +537,42 @@ def test_template_api_rotate_requires_active_endpoint(client, app_main, base_use
     assert "active" in response.json()["detail"].lower()
 
 
+def test_template_api_rotate_surfaces_atomic_status_conflicts(
+    client,
+    app_main,
+    base_user,
+    mocker,
+    auth_headers,
+) -> None:
+    _patch_auth(mocker, app_main, base_user)
+    _patch_limits(mocker, app_main)
+    mocker.patch.object(app_main, "get_template_api_endpoint", return_value=_endpoint_record())
+    mocker.patch.object(app_main, "generate_template_api_secret", return_value="dpa_live_rotated")
+    mocker.patch.object(app_main, "build_template_api_key_prefix", return_value="dpa_live_rotated")
+    mocker.patch.object(app_main, "hash_template_api_secret", return_value="hashed-rotated")
+    mocker.patch.object(
+        app_main,
+        "rotate_template_api_endpoint_secret_atomic",
+        side_effect=TemplateApiEndpointStatusError("Only active API Fill endpoints can rotate keys."),
+    )
+
+    response = client.post("/api/template-api-endpoints/tep-1/rotate", headers=auth_headers)
+
+    assert response.status_code == 409
+    assert "active" in response.json()["detail"].lower()
+
+
 def test_template_api_publish_enforces_active_endpoint_limit(client, app_main, base_user, mocker, auth_headers) -> None:
     _patch_auth(mocker, app_main, base_user)
     _patch_limits(mocker, app_main)
     mocker.patch.object(app_main, "resolve_template_api_active_limit", return_value=1)
-    mocker.patch.object(app_main, "count_active_template_api_endpoints", return_value=1)
     mocker.patch.object(app_main, "get_template", return_value=_template_record())
-    mocker.patch.object(app_main, "get_active_template_api_endpoint_for_template", return_value=None)
+    mocker.patch.object(app_main, "build_template_api_snapshot", return_value={"version": 1, "defaultExportMode": "flat", "pageCount": 1})
+    mocker.patch.object(
+        app_main,
+        "publish_or_republish_template_api_endpoint",
+        side_effect=TemplateApiActiveEndpointLimitError("Your plan allows up to 1 active API Fill endpoints."),
+    )
 
     response = client.post(
         "/api/template-api-endpoints",
@@ -303,9 +587,7 @@ def test_template_api_publish_enforces_active_endpoint_limit(client, app_main, b
 def test_template_api_publish_enforces_page_limit(client, app_main, base_user, mocker, auth_headers) -> None:
     _patch_auth(mocker, app_main, base_user)
     _patch_limits(mocker, app_main)
-    mocker.patch.object(app_main, "count_active_template_api_endpoints", return_value=0)
     mocker.patch.object(app_main, "get_template", return_value=_template_record())
-    mocker.patch.object(app_main, "get_active_template_api_endpoint_for_template", return_value=None)
     mocker.patch.object(
         app_main,
         "build_template_api_snapshot",

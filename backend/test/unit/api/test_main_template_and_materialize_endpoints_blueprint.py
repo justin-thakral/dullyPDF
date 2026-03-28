@@ -156,6 +156,7 @@ def test_materialize_empty_fields_fast_path_and_invalid_upload(
     assert response.status_code == 200
     assert "filename=\"x.pdf\"" in response.headers["content-disposition"]
     assert response.headers["access-control-allow-origin"] == "https://app.example.com"
+    assert response.headers["cache-control"] == "private, no-store"
 
     # Invalid PDF upload path triggers cleanup + 400.
     mocker.patch.object(app_main.fitz, "open", side_effect=RuntimeError("bad pdf"))
@@ -198,6 +199,7 @@ def test_materialize_inject_fields_path_and_filename_sanitization(
     assert response.status_code == 200
     assert "-fillable" in response.headers["content-disposition"]
     assert "\r" not in response.headers["content-disposition"]
+    assert response.headers["cache-control"] == "private, no-store"
 
 
 def test_materialize_flat_mode_flattens_generated_output(
@@ -233,6 +235,7 @@ def test_materialize_flat_mode_flattens_generated_output(
 
     assert response.status_code == 200
     assert "-flat" in response.headers["content-disposition"]
+    assert response.headers["cache-control"] == "private, no-store"
     flatten_mock.assert_called_once_with(b"%PDF-1.4\nfilled")
 
 
@@ -405,6 +408,7 @@ def test_legacy_download_stream_headers_and_missing_pdf_path(
     )
     assert response.status_code == 200
     assert "saved.pdf" in response.headers["content-disposition"]
+    assert response.headers["cache-control"] == "private, no-store"
 
     mocker.patch.object(
         app_main,

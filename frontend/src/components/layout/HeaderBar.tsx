@@ -742,9 +742,9 @@ export function HeaderBar({
                     onOpenFillLink();
                   }}
                   disabled={disableFillLink}
-                  title={canFillLink ? 'Publish or manage a DullyPDF web form link.' : 'Load a saved template to use Fill By Web Form Link.'}
+                  title={canFillLink ? 'Publish or manage a DullyPDF web form link.' : 'Load a saved template to use Fill By Web Form Link + Sign.'}
                 >
-                  Fill By Web Form Link
+                  Fill By Web Form Link + Sign
                 </button>
               ) : null}
               {onOpenSignatureRequest ? (

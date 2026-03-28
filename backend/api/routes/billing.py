@@ -635,8 +635,8 @@ async def create_checkout(
         "checkout_kind": checkout_kind,
         "customer_id": billing_record.customer_id if billing_record else None,
     }
-    if payload.attempt_id:
-        create_kwargs["checkout_attempt_id"] = payload.attempt_id
+    if payload.attemptId:
+        create_kwargs["checkout_attempt_id"] = payload.attemptId
 
     try:
         session = create_checkout_session(**create_kwargs)
@@ -722,8 +722,8 @@ async def reconcile_recent_checkout_events(
         _enforce_billing_route_rate_limit(scope="reconcile", user_id=user.app_user_id)
 
     if not can_reconcile_all_users:
-        normalized_session_id = (payload.session_id or "").strip()
-        normalized_attempt_id = (payload.attempt_id or "").strip() or None
+        normalized_session_id = (payload.sessionId or "").strip()
+        normalized_attempt_id = (payload.attemptId or "").strip() or None
         if not normalized_session_id:
             raise HTTPException(
                 status_code=400,
@@ -771,7 +771,7 @@ async def reconcile_recent_checkout_events(
 
         if is_candidate and existing_status != "processed":
             pending_reconciliation = 1
-            if not payload.dry_run:
+            if not payload.dryRun:
                 reconcile_status = _reconcile_checkout_session_object(
                     session_obj=session_obj,
                     processing_key=processing_key,
@@ -794,7 +794,7 @@ async def reconcile_recent_checkout_events(
 
         return {
             "success": True,
-            "dryRun": bool(payload.dry_run),
+            "dryRun": bool(payload.dryRun),
             "scope": "self",
             "auditedEventCount": 1,
             "candidateEventCount": candidate_event_count,
@@ -810,13 +810,13 @@ async def reconcile_recent_checkout_events(
         }
 
     now_unix = int(time.time())
-    lookback_seconds = max(3600, int(payload.lookback_hours) * 3600)
+    lookback_seconds = max(3600, int(payload.lookbackHours) * 3600)
     created_gte = now_unix - lookback_seconds
 
     try:
         events = list_recent_checkout_completion_events(
             created_gte=created_gte,
-            limit=payload.max_events,
+            limit=payload.maxEvents,
         )
     except BillingConfigError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
@@ -870,7 +870,7 @@ async def reconcile_recent_checkout_events(
 
         pending_reconciliation += 1
         candidates.append(candidate_row)
-        if payload.dry_run:
+        if payload.dryRun:
             continue
 
         reconcile_status = _reconcile_checkout_event(event_payload=event_payload)
@@ -889,7 +889,7 @@ async def reconcile_recent_checkout_events(
 
     return {
         "success": True,
-        "dryRun": bool(payload.dry_run),
+        "dryRun": bool(payload.dryRun),
         "scope": "all_users" if can_reconcile_all_users else "self",
         "auditedEventCount": len(events) if can_reconcile_all_users else scoped_audited_event_count,
         "candidateEventCount": len(candidates),

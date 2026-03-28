@@ -244,6 +244,7 @@ describe('main entrypoint', () => {
     ['/pdf-to-database-template', 'pdf-to-database-template'],
     ['/fill-pdf-from-csv', 'fill-pdf-from-csv'],
     ['/pdf-fill-api', 'pdf-fill-api'],
+    ['/esign-ueta-pdf-workflow', 'esign-ueta-pdf-workflow'],
     ['/pdf-radio-button-editor', 'pdf-radio-button-editor'],
     ['/fill-information-in-pdf', 'fill-information-in-pdf'],
     ['/fillable-form-field-name', 'fillable-form-field-name'],

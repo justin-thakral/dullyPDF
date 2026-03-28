@@ -6,13 +6,21 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
+from firebase_admin import firestore as firebase_firestore
+
 from backend.logging_config import get_logger
 from backend.services.signing_service import (
     SIGNING_STATUS_COMPLETED,
     SIGNING_STATUS_DRAFT,
     SIGNING_STATUS_INVALIDATED,
     SIGNING_STATUS_SENT,
-    parse_signing_public_token,
+    normalize_signing_public_link_version,
+    parse_signing_public_token_payload,
+    parse_signing_validation_token,
+    resolve_signing_retention_until,
+    resolve_signing_signer_transport,
+    resolve_signing_verification_policy,
+    resolve_signing_request_expires_at,
 )
 from backend.time_utils import now_iso
 from .firebase_service import get_firestore_client
@@ -24,6 +32,15 @@ logger = get_logger(__name__)
 SIGNING_REQUESTS_COLLECTION = "signing_requests"
 SIGNING_EVENTS_COLLECTION = "signing_events"
 SIGNING_SESSIONS_COLLECTION = "signing_sessions"
+
+
+def _supports_firestore_transaction(transaction: Any) -> bool:
+    """Return True when the object looks like a real Firestore transaction."""
+
+    return all(
+        hasattr(transaction, attr)
+        for attr in ("_read_only", "_commit", "_rollback", "_max_attempts")
+    )
 
 
 @dataclass(frozen=True)
@@ -44,16 +61,44 @@ class SigningRequestRecord:
     source_pdf_bucket_path: Optional[str]
     source_version: Optional[str]
     document_category: str
+    esign_eligibility_confirmed_at: Optional[str]
+    esign_eligibility_confirmed_source: Optional[str]
     manual_fallback_enabled: bool
     signer_name: str
     signer_email: str
+    signer_contact_method: Optional[str]
+    signer_auth_method: Optional[str]
+    sender_display_name: Optional[str]
+    sender_email: Optional[str]
+    sender_contact_email: Optional[str]
+    consumer_paper_copy_procedure: Optional[str]
+    consumer_paper_copy_fee_description: Optional[str]
+    consumer_withdrawal_procedure: Optional[str]
+    consumer_withdrawal_consequences: Optional[str]
+    consumer_contact_update_procedure: Optional[str]
+    consumer_consent_scope_override: Optional[str]
+    invite_method: Optional[str]
+    invite_provider: Optional[str]
     invite_delivery_status: Optional[str]
     invite_last_attempt_at: Optional[str]
     invite_sent_at: Optional[str]
     invite_delivery_error: Optional[str]
+    invite_delivery_error_code: Optional[str]
+    invite_message_id: Optional[str]
+    manual_link_shared_at: Optional[str]
+    verification_required: bool
+    verification_method: Optional[str]
+    verification_completed_at: Optional[str]
     status: str
     anchors: List[Dict[str, Any]]
     disclosure_version: str
+    consumer_disclosure_version: Optional[str]
+    consumer_disclosure_payload: Optional[Dict[str, Any]]
+    consumer_disclosure_sha256: Optional[str]
+    consumer_disclosure_presented_at: Optional[str]
+    consumer_consent_scope: Optional[str]
+    consumer_access_demonstrated_at: Optional[str]
+    consumer_access_demonstration_method: Optional[str]
     created_at: Optional[str]
     updated_at: Optional[str]
     owner_review_confirmed_at: Optional[str]
@@ -63,14 +108,30 @@ class SigningRequestRecord:
     consented_at: Optional[str]
     signature_adopted_at: Optional[str]
     signature_adopted_name: Optional[str]
+    signature_adopted_mode: Optional[str]
+    signature_adopted_image_data_url: Optional[str]
+    signature_adopted_image_sha256: Optional[str]
     manual_fallback_requested_at: Optional[str]
     manual_fallback_note: Optional[str]
+    consent_withdrawn_at: Optional[str]
     completed_at: Optional[str]
     completed_session_id: Optional[str]
     completed_ip_address: Optional[str]
     completed_user_agent: Optional[str]
+    completed_verification_method: Optional[str]
+    completed_verification_completed_at: Optional[str]
+    completed_verification_session_id: Optional[str]
     signed_pdf_bucket_path: Optional[str]
     signed_pdf_sha256: Optional[str]
+    signed_pdf_digital_signature_method: Optional[str]
+    signed_pdf_digital_signature_algorithm: Optional[str]
+    signed_pdf_digital_signature_field_name: Optional[str]
+    signed_pdf_digital_signature_subfilter: Optional[str]
+    signed_pdf_digital_signature_timestamped: bool
+    signed_pdf_digital_certificate_subject: Optional[str]
+    signed_pdf_digital_certificate_issuer: Optional[str]
+    signed_pdf_digital_certificate_serial_number: Optional[str]
+    signed_pdf_digital_certificate_fingerprint_sha256: Optional[str]
     audit_manifest_bucket_path: Optional[str]
     audit_manifest_sha256: Optional[str]
     audit_receipt_bucket_path: Optional[str]
@@ -81,6 +142,10 @@ class SigningRequestRecord:
     audit_kms_key_version_name: Optional[str]
     artifacts_generated_at: Optional[str]
     retention_until: Optional[str]
+    expires_at: Optional[str]
+    public_link_version: int
+    public_link_revoked_at: Optional[str]
+    public_link_last_reissued_at: Optional[str]
     invalidated_at: Optional[str]
     invalidation_reason: Optional[str]
 
@@ -105,10 +170,20 @@ class SigningSessionRecord:
     link_token_id: Optional[str]
     client_ip: Optional[str]
     user_agent: Optional[str]
+    binding_ip_scope: Optional[str]
+    binding_user_agent_hash: Optional[str]
     created_at: Optional[str]
     updated_at: Optional[str]
     expires_at: Optional[str]
     completed_at: Optional[str]
+    verification_code_hash: Optional[str]
+    verification_sent_at: Optional[str]
+    verification_expires_at: Optional[str]
+    verification_attempt_count: int
+    verification_resend_count: int
+    verification_completed_at: Optional[str]
+    verification_message_id: Optional[str]
+    consumer_access_attempt_count: int
 
 
 def _coerce_optional_text(value: Any) -> Optional[str]:
@@ -116,10 +191,36 @@ def _coerce_optional_text(value: Any) -> Optional[str]:
     return normalized or None
 
 
+def _coerce_nonnegative_int(value: Any) -> int:
+    try:
+        normalized = int(value)
+    except (TypeError, ValueError):
+        return 0
+    return max(0, normalized)
+
+
+def _has_field_value(value: Any) -> bool:
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, (list, tuple, set, dict)):
+        return bool(value)
+    return value is not None
+
+
 def _coerce_dict_list(value: Any) -> List[Dict[str, Any]]:
     if not isinstance(value, list):
         return []
     return [dict(entry) for entry in value if isinstance(entry, dict)]
+
+
+def _coerce_optional_dict(value: Any) -> Optional[Dict[str, Any]]:
+    if not isinstance(value, dict):
+        return None
+    return dict(value)
+
+
+def _coerce_public_link_version(value: Any) -> int:
+    return normalize_signing_public_link_version(value)
 
 
 def _serialize_signing_request(doc) -> SigningRequestRecord:
@@ -141,16 +242,44 @@ def _serialize_signing_request(doc) -> SigningRequestRecord:
         source_pdf_bucket_path=_coerce_optional_text(data.get("source_pdf_bucket_path")),
         source_version=_coerce_optional_text(data.get("source_version")),
         document_category=str(data.get("document_category") or "").strip(),
+        esign_eligibility_confirmed_at=_coerce_optional_text(data.get("esign_eligibility_confirmed_at")),
+        esign_eligibility_confirmed_source=_coerce_optional_text(data.get("esign_eligibility_confirmed_source")),
         manual_fallback_enabled=bool(data.get("manual_fallback_enabled")),
         signer_name=str(data.get("signer_name") or "").strip(),
         signer_email=str(data.get("signer_email") or "").strip(),
+        signer_contact_method=_coerce_optional_text(data.get("signer_contact_method")),
+        signer_auth_method=_coerce_optional_text(data.get("signer_auth_method")),
+        sender_display_name=_coerce_optional_text(data.get("sender_display_name")),
+        sender_email=_coerce_optional_text(data.get("sender_email")),
+        sender_contact_email=_coerce_optional_text(data.get("sender_contact_email")),
+        consumer_paper_copy_procedure=_coerce_optional_text(data.get("consumer_paper_copy_procedure")),
+        consumer_paper_copy_fee_description=_coerce_optional_text(data.get("consumer_paper_copy_fee_description")),
+        consumer_withdrawal_procedure=_coerce_optional_text(data.get("consumer_withdrawal_procedure")),
+        consumer_withdrawal_consequences=_coerce_optional_text(data.get("consumer_withdrawal_consequences")),
+        consumer_contact_update_procedure=_coerce_optional_text(data.get("consumer_contact_update_procedure")),
+        consumer_consent_scope_override=_coerce_optional_text(data.get("consumer_consent_scope_override")),
+        invite_method=_coerce_optional_text(data.get("invite_method")),
+        invite_provider=_coerce_optional_text(data.get("invite_provider")),
         invite_delivery_status=_coerce_optional_text(data.get("invite_delivery_status")),
         invite_last_attempt_at=_coerce_optional_text(data.get("invite_last_attempt_at")),
         invite_sent_at=_coerce_optional_text(data.get("invite_sent_at")),
         invite_delivery_error=_coerce_optional_text(data.get("invite_delivery_error")),
+        invite_delivery_error_code=_coerce_optional_text(data.get("invite_delivery_error_code")),
+        invite_message_id=_coerce_optional_text(data.get("invite_message_id")),
+        manual_link_shared_at=_coerce_optional_text(data.get("manual_link_shared_at")),
+        verification_required=bool(data.get("verification_required")),
+        verification_method=_coerce_optional_text(data.get("verification_method")),
+        verification_completed_at=_coerce_optional_text(data.get("verification_completed_at")),
         status=str(data.get("status") or SIGNING_STATUS_DRAFT).strip() or SIGNING_STATUS_DRAFT,
         anchors=_coerce_dict_list(data.get("anchors")),
         disclosure_version=str(data.get("disclosure_version") or "").strip(),
+        consumer_disclosure_version=_coerce_optional_text(data.get("consumer_disclosure_version")),
+        consumer_disclosure_payload=_coerce_optional_dict(data.get("consumer_disclosure_payload")),
+        consumer_disclosure_sha256=_coerce_optional_text(data.get("consumer_disclosure_sha256")),
+        consumer_disclosure_presented_at=_coerce_optional_text(data.get("consumer_disclosure_presented_at")),
+        consumer_consent_scope=_coerce_optional_text(data.get("consumer_consent_scope")),
+        consumer_access_demonstrated_at=_coerce_optional_text(data.get("consumer_access_demonstrated_at")),
+        consumer_access_demonstration_method=_coerce_optional_text(data.get("consumer_access_demonstration_method")),
         created_at=_coerce_optional_text(data.get("created_at")),
         updated_at=_coerce_optional_text(data.get("updated_at")),
         owner_review_confirmed_at=_coerce_optional_text(data.get("owner_review_confirmed_at")),
@@ -160,14 +289,30 @@ def _serialize_signing_request(doc) -> SigningRequestRecord:
         consented_at=_coerce_optional_text(data.get("consented_at")),
         signature_adopted_at=_coerce_optional_text(data.get("signature_adopted_at")),
         signature_adopted_name=_coerce_optional_text(data.get("signature_adopted_name")),
+        signature_adopted_mode=_coerce_optional_text(data.get("signature_adopted_mode")),
+        signature_adopted_image_data_url=_coerce_optional_text(data.get("signature_adopted_image_data_url")),
+        signature_adopted_image_sha256=_coerce_optional_text(data.get("signature_adopted_image_sha256")),
         manual_fallback_requested_at=_coerce_optional_text(data.get("manual_fallback_requested_at")),
         manual_fallback_note=_coerce_optional_text(data.get("manual_fallback_note")),
+        consent_withdrawn_at=_coerce_optional_text(data.get("consent_withdrawn_at")),
         completed_at=_coerce_optional_text(data.get("completed_at")),
         completed_session_id=_coerce_optional_text(data.get("completed_session_id")),
         completed_ip_address=_coerce_optional_text(data.get("completed_ip_address")),
         completed_user_agent=_coerce_optional_text(data.get("completed_user_agent")),
+        completed_verification_method=_coerce_optional_text(data.get("completed_verification_method")),
+        completed_verification_completed_at=_coerce_optional_text(data.get("completed_verification_completed_at")),
+        completed_verification_session_id=_coerce_optional_text(data.get("completed_verification_session_id")),
         signed_pdf_bucket_path=_coerce_optional_text(data.get("signed_pdf_bucket_path")),
         signed_pdf_sha256=_coerce_optional_text(data.get("signed_pdf_sha256")),
+        signed_pdf_digital_signature_method=_coerce_optional_text(data.get("signed_pdf_digital_signature_method")),
+        signed_pdf_digital_signature_algorithm=_coerce_optional_text(data.get("signed_pdf_digital_signature_algorithm")),
+        signed_pdf_digital_signature_field_name=_coerce_optional_text(data.get("signed_pdf_digital_signature_field_name")),
+        signed_pdf_digital_signature_subfilter=_coerce_optional_text(data.get("signed_pdf_digital_signature_subfilter")),
+        signed_pdf_digital_signature_timestamped=bool(data.get("signed_pdf_digital_signature_timestamped")),
+        signed_pdf_digital_certificate_subject=_coerce_optional_text(data.get("signed_pdf_digital_certificate_subject")),
+        signed_pdf_digital_certificate_issuer=_coerce_optional_text(data.get("signed_pdf_digital_certificate_issuer")),
+        signed_pdf_digital_certificate_serial_number=_coerce_optional_text(data.get("signed_pdf_digital_certificate_serial_number")),
+        signed_pdf_digital_certificate_fingerprint_sha256=_coerce_optional_text(data.get("signed_pdf_digital_certificate_fingerprint_sha256")),
         audit_manifest_bucket_path=_coerce_optional_text(data.get("audit_manifest_bucket_path")),
         audit_manifest_sha256=_coerce_optional_text(data.get("audit_manifest_sha256")),
         audit_receipt_bucket_path=_coerce_optional_text(data.get("audit_receipt_bucket_path")),
@@ -178,6 +323,10 @@ def _serialize_signing_request(doc) -> SigningRequestRecord:
         audit_kms_key_version_name=_coerce_optional_text(data.get("audit_kms_key_version_name")),
         artifacts_generated_at=_coerce_optional_text(data.get("artifacts_generated_at")),
         retention_until=_coerce_optional_text(data.get("retention_until")),
+        expires_at=_coerce_optional_text(data.get("expires_at")),
+        public_link_version=_coerce_public_link_version(data.get("public_link_version")),
+        public_link_revoked_at=_coerce_optional_text(data.get("public_link_revoked_at")),
+        public_link_last_reissued_at=_coerce_optional_text(data.get("public_link_last_reissued_at")),
         invalidated_at=_coerce_optional_text(data.get("invalidated_at")),
         invalidation_reason=_coerce_optional_text(data.get("invalidation_reason")),
     )
@@ -206,11 +355,36 @@ def _serialize_signing_session(doc) -> SigningSessionRecord:
         link_token_id=_coerce_optional_text(data.get("link_token_id")),
         client_ip=_coerce_optional_text(data.get("client_ip")),
         user_agent=_coerce_optional_text(data.get("user_agent")),
+        binding_ip_scope=_coerce_optional_text(data.get("binding_ip_scope")),
+        binding_user_agent_hash=_coerce_optional_text(data.get("binding_user_agent_hash")),
         created_at=_coerce_optional_text(data.get("created_at")),
         updated_at=_coerce_optional_text(data.get("updated_at")),
         expires_at=_coerce_optional_text(data.get("expires_at")),
         completed_at=_coerce_optional_text(data.get("completed_at")),
+        verification_code_hash=_coerce_optional_text(data.get("verification_code_hash")),
+        verification_sent_at=_coerce_optional_text(data.get("verification_sent_at")),
+        verification_expires_at=_coerce_optional_text(data.get("verification_expires_at")),
+        verification_attempt_count=_coerce_nonnegative_int(data.get("verification_attempt_count")),
+        verification_resend_count=_coerce_nonnegative_int(data.get("verification_resend_count")),
+        verification_completed_at=_coerce_optional_text(data.get("verification_completed_at")),
+        verification_message_id=_coerce_optional_text(data.get("verification_message_id")),
+        consumer_access_attempt_count=_coerce_nonnegative_int(data.get("consumer_access_attempt_count")),
     )
+
+
+class _MergedSnapshot:
+    """Lightweight stand-in that satisfies _serialize_signing_request(doc)."""
+
+    def __init__(self, doc_id: str, merged_data: Dict[str, Any]):
+        self.id = doc_id
+        self._data = merged_data
+
+    def to_dict(self):
+        return self._data
+
+
+def _serialize_merged_signing_request(snapshot, merged_data: Dict[str, Any]) -> SigningRequestRecord:
+    return _serialize_signing_request(_MergedSnapshot(snapshot.id, merged_data))
 
 
 def create_signing_request(
@@ -234,11 +408,24 @@ def create_signing_request(
     signer_email: str,
     anchors: List[Dict[str, Any]],
     disclosure_version: str,
+    sender_display_name: Optional[str] = None,
+    esign_eligibility_confirmed_at: Optional[str] = None,
+    esign_eligibility_confirmed_source: Optional[str] = None,
+    sender_email: Optional[str] = None,
+    sender_contact_email: Optional[str] = None,
+    consumer_paper_copy_procedure: Optional[str] = None,
+    consumer_paper_copy_fee_description: Optional[str] = None,
+    consumer_withdrawal_procedure: Optional[str] = None,
+    consumer_withdrawal_consequences: Optional[str] = None,
+    consumer_contact_update_procedure: Optional[str] = None,
+    consumer_consent_scope_override: Optional[str] = None,
+    invite_method: Optional[str] = None,
     client=None,
 ) -> SigningRequestRecord:
     firestore_client = client or get_firestore_client()
     now_value = now_iso()
     request_id = uuid4().hex
+    transport = resolve_signing_signer_transport(source_type)
     payload = {
         "user_id": str(user_id or "").strip(),
         "title": title,
@@ -255,16 +442,44 @@ def create_signing_request(
         "source_pdf_bucket_path": None,
         "source_version": source_version,
         "document_category": document_category,
+        "esign_eligibility_confirmed_at": _coerce_optional_text(esign_eligibility_confirmed_at) or now_value,
+        "esign_eligibility_confirmed_source": _coerce_optional_text(esign_eligibility_confirmed_source),
         "manual_fallback_enabled": bool(manual_fallback_enabled),
         "signer_name": signer_name,
         "signer_email": signer_email,
+        "signer_contact_method": transport.signer_contact_method,
+        "signer_auth_method": transport.signer_auth_method,
+        "sender_display_name": _coerce_optional_text(sender_display_name),
+        "sender_email": _coerce_optional_text(sender_email),
+        "sender_contact_email": _coerce_optional_text(sender_contact_email),
+        "consumer_paper_copy_procedure": _coerce_optional_text(consumer_paper_copy_procedure),
+        "consumer_paper_copy_fee_description": _coerce_optional_text(consumer_paper_copy_fee_description),
+        "consumer_withdrawal_procedure": _coerce_optional_text(consumer_withdrawal_procedure),
+        "consumer_withdrawal_consequences": _coerce_optional_text(consumer_withdrawal_consequences),
+        "consumer_contact_update_procedure": _coerce_optional_text(consumer_contact_update_procedure),
+        "consumer_consent_scope_override": _coerce_optional_text(consumer_consent_scope_override),
+        "invite_method": _coerce_optional_text(invite_method),
+        "invite_provider": None,
         "invite_delivery_status": None,
         "invite_last_attempt_at": None,
         "invite_sent_at": None,
         "invite_delivery_error": None,
+        "invite_delivery_error_code": None,
+        "invite_message_id": None,
+        "manual_link_shared_at": None,
+        "verification_required": transport.verification_required,
+        "verification_method": transport.verification_method,
+        "verification_completed_at": None,
         "status": SIGNING_STATUS_DRAFT,
         "anchors": list(anchors or []),
         "disclosure_version": disclosure_version,
+        "consumer_disclosure_version": None,
+        "consumer_disclosure_payload": None,
+        "consumer_disclosure_sha256": None,
+        "consumer_disclosure_presented_at": None,
+        "consumer_consent_scope": None,
+        "consumer_access_demonstrated_at": None,
+        "consumer_access_demonstration_method": None,
         "created_at": now_value,
         "updated_at": now_value,
         "owner_review_confirmed_at": None,
@@ -274,14 +489,30 @@ def create_signing_request(
         "consented_at": None,
         "signature_adopted_at": None,
         "signature_adopted_name": None,
+        "signature_adopted_mode": None,
+        "signature_adopted_image_data_url": None,
+        "signature_adopted_image_sha256": None,
         "manual_fallback_requested_at": None,
         "manual_fallback_note": None,
+        "consent_withdrawn_at": None,
         "completed_at": None,
         "completed_session_id": None,
         "completed_ip_address": None,
         "completed_user_agent": None,
+        "completed_verification_method": None,
+        "completed_verification_completed_at": None,
+        "completed_verification_session_id": None,
         "signed_pdf_bucket_path": None,
         "signed_pdf_sha256": None,
+        "signed_pdf_digital_signature_method": None,
+        "signed_pdf_digital_signature_algorithm": None,
+        "signed_pdf_digital_signature_field_name": None,
+        "signed_pdf_digital_signature_subfilter": None,
+        "signed_pdf_digital_signature_timestamped": False,
+        "signed_pdf_digital_certificate_subject": None,
+        "signed_pdf_digital_certificate_issuer": None,
+        "signed_pdf_digital_certificate_serial_number": None,
+        "signed_pdf_digital_certificate_fingerprint_sha256": None,
         "audit_manifest_bucket_path": None,
         "audit_manifest_sha256": None,
         "audit_receipt_bucket_path": None,
@@ -292,6 +523,10 @@ def create_signing_request(
         "audit_kms_key_version_name": None,
         "artifacts_generated_at": None,
         "retention_until": None,
+        "expires_at": None,
+        "public_link_version": 1,
+        "public_link_revoked_at": None,
+        "public_link_last_reissued_at": None,
         "invalidated_at": None,
         "invalidation_reason": None,
     }
@@ -318,6 +553,42 @@ def list_signing_requests(user_id: str, *, client=None) -> List[SigningRequestRe
     )
 
 
+def _signing_request_counts_against_document_limit(record: SigningRequestRecord) -> bool:
+    if _coerce_optional_text(record.sent_at):
+        return True
+    return record.status in {
+        SIGNING_STATUS_DRAFT,
+        SIGNING_STATUS_SENT,
+        SIGNING_STATUS_COMPLETED,
+    }
+
+
+def count_signing_request_limit_usage_for_source_version(
+    user_id: str,
+    source_version: str,
+    *,
+    client=None,
+) -> int:
+    normalized_user_id = str(user_id or "").strip()
+    normalized_source_version = str(source_version or "").strip()
+    if not normalized_user_id or not normalized_source_version:
+        return 0
+    firestore_client = client or get_firestore_client()
+    snapshot = where_equals(
+        firestore_client.collection(SIGNING_REQUESTS_COLLECTION),
+        "user_id",
+        normalized_user_id,
+    ).get()
+    total = 0
+    for doc in snapshot:
+        record = _serialize_signing_request(doc)
+        if record.source_version != normalized_source_version:
+            continue
+        if _signing_request_counts_against_document_limit(record):
+            total += 1
+    return total
+
+
 def get_signing_request(request_id: str, *, client=None) -> Optional[SigningRequestRecord]:
     normalized_request_id = str(request_id or "").strip()
     if not normalized_request_id:
@@ -337,7 +608,20 @@ def get_signing_request_for_user(request_id: str, user_id: str, *, client=None) 
 
 
 def get_signing_request_by_public_token(token: str, *, client=None) -> Optional[SigningRequestRecord]:
-    request_id = parse_signing_public_token(token)
+    parsed = parse_signing_public_token_payload(token)
+    if not parsed:
+        return None
+    request_id, public_link_version = parsed
+    record = get_signing_request(request_id, client=client)
+    if record is None:
+        return None
+    if _coerce_public_link_version(record.public_link_version) != public_link_version:
+        return None
+    return record
+
+
+def get_signing_request_by_validation_token(token: str, *, client=None) -> Optional[SigningRequestRecord]:
+    request_id = parse_signing_validation_token(token)
     if not request_id:
         return None
     return get_signing_request(request_id, client=client)
@@ -367,6 +651,8 @@ def create_signing_session(
     link_token_id: Optional[str],
     client_ip: Optional[str],
     user_agent: Optional[str],
+    binding_ip_scope: Optional[str],
+    binding_user_agent_hash: Optional[str],
     expires_at: str,
     client=None,
 ) -> SigningSessionRecord:
@@ -380,10 +666,20 @@ def create_signing_session(
             "link_token_id": _coerce_optional_text(link_token_id),
             "client_ip": _coerce_optional_text(client_ip),
             "user_agent": _coerce_optional_text(user_agent),
+            "binding_ip_scope": _coerce_optional_text(binding_ip_scope),
+            "binding_user_agent_hash": _coerce_optional_text(binding_user_agent_hash),
             "created_at": now_value,
             "updated_at": now_value,
             "expires_at": _coerce_optional_text(expires_at),
             "completed_at": None,
+            "verification_code_hash": None,
+            "verification_sent_at": None,
+            "verification_expires_at": None,
+            "verification_attempt_count": 0,
+            "verification_resend_count": 0,
+            "verification_completed_at": None,
+            "verification_message_id": None,
+            "consumer_access_attempt_count": 0,
         }
     )
     return _serialize_signing_session(doc_ref.get())
@@ -414,6 +710,183 @@ def touch_signing_session(
     if completed:
         payload["completed_at"] = now_value
     doc_ref.set(payload, merge=True)
+    return _serialize_signing_session(doc_ref.get())
+
+
+def set_signing_session_verification_challenge(
+    session_id: str,
+    request_id: str,
+    *,
+    code_hash: str,
+    sent_at: Optional[str],
+    expires_at: Optional[str],
+    verification_message_id: Optional[str] = None,
+    client=None,
+) -> Optional[SigningSessionRecord]:
+    normalized_session_id = str(session_id or "").strip()
+    normalized_request_id = str(request_id or "").strip()
+    if not normalized_session_id or not normalized_request_id:
+        return None
+    firestore_client = client or get_firestore_client()
+    doc_ref = firestore_client.collection(SIGNING_SESSIONS_COLLECTION).document(normalized_session_id)
+    snapshot = doc_ref.get()
+    if not snapshot.exists:
+        return None
+    data = snapshot.to_dict() or {}
+    if str(data.get("request_id") or "").strip() != normalized_request_id:
+        return None
+    now_value = now_iso()
+    next_resend_count = _coerce_nonnegative_int(data.get("verification_resend_count")) + 1
+    doc_ref.set(
+        {
+            "verification_code_hash": _coerce_optional_text(code_hash),
+            "verification_sent_at": _coerce_optional_text(sent_at) or now_value,
+            "verification_expires_at": _coerce_optional_text(expires_at),
+            "verification_attempt_count": 0,
+            "verification_resend_count": next_resend_count,
+            "verification_completed_at": None,
+            "verification_message_id": _coerce_optional_text(verification_message_id),
+            "updated_at": now_value,
+        },
+        merge=True,
+    )
+    return _serialize_signing_session(doc_ref.get())
+
+
+def increment_signing_session_verification_attempt(
+    session_id: str,
+    request_id: str,
+    *,
+    client=None,
+) -> Optional[SigningSessionRecord]:
+    normalized_session_id = str(session_id or "").strip()
+    normalized_request_id = str(request_id or "").strip()
+    if not normalized_session_id or not normalized_request_id:
+        return None
+    firestore_client = client or get_firestore_client()
+    doc_ref = firestore_client.collection(SIGNING_SESSIONS_COLLECTION).document(normalized_session_id)
+    snapshot = doc_ref.get()
+    if not snapshot.exists:
+        return None
+    data = snapshot.to_dict() or {}
+    if str(data.get("request_id") or "").strip() != normalized_request_id:
+        return None
+    doc_ref.set(
+        {
+            "verification_attempt_count": _coerce_nonnegative_int(data.get("verification_attempt_count")) + 1,
+            "updated_at": now_iso(),
+        },
+        merge=True,
+    )
+    return _serialize_signing_session(doc_ref.get())
+
+
+def mark_signing_session_verified(
+    session_id: str,
+    request_id: str,
+    *,
+    verification_method: Optional[str],
+    verified_at: Optional[str] = None,
+    client=None,
+) -> Optional[SigningSessionRecord]:
+    normalized_session_id = str(session_id or "").strip()
+    normalized_request_id = str(request_id or "").strip()
+    if not normalized_session_id or not normalized_request_id:
+        return None
+    firestore_client = client or get_firestore_client()
+    session_ref = firestore_client.collection(SIGNING_SESSIONS_COLLECTION).document(normalized_session_id)
+    snapshot = session_ref.get()
+    if not snapshot.exists:
+        return None
+    data = snapshot.to_dict() or {}
+    if str(data.get("request_id") or "").strip() != normalized_request_id:
+        return None
+    now_value = _coerce_optional_text(verified_at) or now_iso()
+    session_ref.set(
+        {
+            "verification_code_hash": None,
+            "verification_sent_at": None,
+            "verification_expires_at": None,
+            "verification_attempt_count": 0,
+            "verification_resend_count": 0,
+            "verification_completed_at": now_value,
+            "verification_message_id": None,
+            "updated_at": now_value,
+        },
+        merge=True,
+    )
+    request_ref = firestore_client.collection(SIGNING_REQUESTS_COLLECTION).document(normalized_request_id)
+    request_snapshot = request_ref.get()
+    if request_snapshot.exists:
+        request_data = request_snapshot.to_dict() or {}
+        if (
+            not _coerce_optional_text(request_data.get("verification_completed_at"))
+            and str(request_data.get("status") or "").strip() != SIGNING_STATUS_COMPLETED
+        ):
+            request_ref.set(
+                {
+                    "verification_method": _coerce_optional_text(verification_method),
+                    "verification_completed_at": now_value,
+                    "updated_at": now_value,
+                },
+                merge=True,
+            )
+    return _serialize_signing_session(session_ref.get())
+
+
+def increment_signing_session_consumer_access_attempt(
+    session_id: str,
+    request_id: str,
+    *,
+    client=None,
+) -> Optional[SigningSessionRecord]:
+    normalized_session_id = str(session_id or "").strip()
+    normalized_request_id = str(request_id or "").strip()
+    if not normalized_session_id or not normalized_request_id:
+        return None
+    firestore_client = client or get_firestore_client()
+    doc_ref = firestore_client.collection(SIGNING_SESSIONS_COLLECTION).document(normalized_session_id)
+    snapshot = doc_ref.get()
+    if not snapshot.exists:
+        return None
+    data = snapshot.to_dict() or {}
+    if str(data.get("request_id") or "").strip() != normalized_request_id:
+        return None
+    doc_ref.set(
+        {
+            "consumer_access_attempt_count": _coerce_nonnegative_int(data.get("consumer_access_attempt_count")) + 1,
+            "updated_at": now_iso(),
+        },
+        merge=True,
+    )
+    return _serialize_signing_session(doc_ref.get())
+
+
+def reset_signing_session_consumer_access_attempts(
+    session_id: str,
+    request_id: str,
+    *,
+    client=None,
+) -> Optional[SigningSessionRecord]:
+    normalized_session_id = str(session_id or "").strip()
+    normalized_request_id = str(request_id or "").strip()
+    if not normalized_session_id or not normalized_request_id:
+        return None
+    firestore_client = client or get_firestore_client()
+    doc_ref = firestore_client.collection(SIGNING_SESSIONS_COLLECTION).document(normalized_session_id)
+    snapshot = doc_ref.get()
+    if not snapshot.exists:
+        return None
+    data = snapshot.to_dict() or {}
+    if str(data.get("request_id") or "").strip() != normalized_request_id:
+        return None
+    doc_ref.set(
+        {
+            "consumer_access_attempt_count": 0,
+            "updated_at": now_iso(),
+        },
+        merge=True,
+    )
     return _serialize_signing_session(doc_ref.get())
 
 
@@ -466,6 +939,8 @@ def _update_public_signing_request(
     request_id: str,
     *,
     allowed_statuses: Optional[set[str]] = None,
+    required_present_fields: tuple[str, ...] = (),
+    required_absent_fields: tuple[str, ...] = (),
     updates: Dict[str, Any],
     client=None,
 ) -> Optional[SigningRequestRecord]:
@@ -474,15 +949,43 @@ def _update_public_signing_request(
         return None
     firestore_client = client or get_firestore_client()
     doc_ref = firestore_client.collection(SIGNING_REQUESTS_COLLECTION).document(normalized_request_id)
+    payload = dict(updates or {})
+    payload["updated_at"] = _coerce_optional_text(payload.get("updated_at")) or now_iso()
+
+    def _preconditions_met(data: Dict[str, Any], *, current_status: str) -> bool:
+        if allowed_statuses and current_status not in allowed_statuses:
+            return False
+        if any(not _has_field_value(data.get(field_name)) for field_name in required_present_fields):
+            return False
+        if any(_has_field_value(data.get(field_name)) for field_name in required_absent_fields):
+            return False
+        return True
+
+    transaction = firestore_client.transaction()
+    if _supports_firestore_transaction(transaction):
+        @firebase_firestore.transactional
+        def _run(txn):
+            snapshot = doc_ref.get(transaction=txn)
+            if not snapshot.exists:
+                return None
+            data = snapshot.to_dict() or {}
+            current_status = str(data.get("status") or "").strip()
+            if not _preconditions_met(data, current_status=current_status):
+                return _serialize_signing_request(snapshot)
+            txn.set(doc_ref, payload, merge=True)
+            merged = dict(data)
+            merged.update(payload)
+            return _serialize_merged_signing_request(snapshot, merged)
+
+        return _run(transaction)
+
     snapshot = doc_ref.get()
     if not snapshot.exists:
         return None
     data = snapshot.to_dict() or {}
     current_status = str(data.get("status") or "").strip()
-    if allowed_statuses and current_status not in allowed_statuses:
+    if not _preconditions_met(data, current_status=current_status):
         return _serialize_signing_request(snapshot)
-    payload = dict(updates or {})
-    payload["updated_at"] = now_iso()
     doc_ref.set(payload, merge=True)
     return _serialize_signing_request(doc_ref.get())
 
@@ -513,31 +1016,68 @@ def mark_signing_request_sent(
     if current_status != SIGNING_STATUS_DRAFT:
         return _serialize_signing_request(snapshot)
     now_value = now_iso()
+    request_expires_at = resolve_signing_request_expires_at(sent_at=now_value)
+    retention_until = _coerce_optional_text(data.get("retention_until")) or resolve_signing_retention_until(now_value)
+    transport = resolve_signing_signer_transport(
+        _coerce_optional_text(data.get("source_type")) or "workspace",
+        signer_contact_method=_coerce_optional_text(data.get("signer_contact_method")),
+    )
     doc_ref.set(
         {
             "status": SIGNING_STATUS_SENT,
             "source_pdf_bucket_path": str(source_pdf_bucket_path or "").strip() or None,
             "source_pdf_sha256": str(source_pdf_sha256 or "").strip() or None,
             "source_version": str(source_version or "").strip() or None,
+            "signer_contact_method": transport.signer_contact_method,
+            "signer_auth_method": transport.signer_auth_method,
             "invite_delivery_status": "pending",
             "invite_last_attempt_at": None,
             "invite_sent_at": None,
             "invite_delivery_error": None,
+            "invite_delivery_error_code": None,
+            "invite_provider": None,
+            "invite_message_id": None,
+            "verification_required": transport.verification_required,
+            "verification_method": transport.verification_method,
+            "verification_completed_at": None,
             "owner_review_confirmed_at": _coerce_optional_text(owner_review_confirmed_at),
             "sent_at": now_value,
+            "consumer_disclosure_version": None,
+            "consumer_disclosure_payload": None,
+            "consumer_disclosure_sha256": None,
+            "consumer_disclosure_presented_at": None,
+            "consumer_consent_scope": None,
+            "consumer_access_demonstrated_at": None,
+            "consumer_access_demonstration_method": None,
             "opened_at": None,
             "reviewed_at": None,
             "consented_at": None,
             "signature_adopted_at": None,
             "signature_adopted_name": None,
+            "signature_adopted_mode": None,
+            "signature_adopted_image_data_url": None,
+            "signature_adopted_image_sha256": None,
             "manual_fallback_requested_at": None,
             "manual_fallback_note": None,
+            "consent_withdrawn_at": None,
             "completed_at": None,
             "completed_session_id": None,
             "completed_ip_address": None,
             "completed_user_agent": None,
+            "completed_verification_method": None,
+            "completed_verification_completed_at": None,
+            "completed_verification_session_id": None,
             "signed_pdf_bucket_path": None,
             "signed_pdf_sha256": None,
+            "signed_pdf_digital_signature_method": None,
+            "signed_pdf_digital_signature_algorithm": None,
+            "signed_pdf_digital_signature_field_name": None,
+            "signed_pdf_digital_signature_subfilter": None,
+            "signed_pdf_digital_signature_timestamped": False,
+            "signed_pdf_digital_certificate_subject": None,
+            "signed_pdf_digital_certificate_issuer": None,
+            "signed_pdf_digital_certificate_serial_number": None,
+            "signed_pdf_digital_certificate_fingerprint_sha256": None,
             "audit_manifest_bucket_path": None,
             "audit_manifest_sha256": None,
             "audit_receipt_bucket_path": None,
@@ -547,7 +1087,11 @@ def mark_signing_request_sent(
             "audit_kms_key_resource_name": None,
             "audit_kms_key_version_name": None,
             "artifacts_generated_at": None,
-            "retention_until": None,
+            "retention_until": retention_until,
+            "expires_at": request_expires_at,
+            "public_link_version": _coerce_public_link_version(data.get("public_link_version")),
+            "public_link_revoked_at": None,
+            "public_link_last_reissued_at": None,
             "invalidated_at": None,
             "invalidation_reason": None,
             "updated_at": now_value,
@@ -557,14 +1101,80 @@ def mark_signing_request_sent(
     return _serialize_signing_request(doc_ref.get())
 
 
+def store_signing_request_consumer_disclosure(
+    request_id: str,
+    *,
+    disclosure_version: Optional[str],
+    disclosure_payload: Dict[str, Any],
+    disclosure_sha256: Optional[str],
+    consent_scope: Optional[str],
+    reset_ceremony_progress: bool = False,
+    client=None,
+) -> Optional[SigningRequestRecord]:
+    normalized_request_id = str(request_id or "").strip()
+    if not normalized_request_id:
+        return None
+    updates = {
+        "consumer_disclosure_version": _coerce_optional_text(disclosure_version),
+        "consumer_disclosure_payload": dict(disclosure_payload or {}),
+        "consumer_disclosure_sha256": _coerce_optional_text(disclosure_sha256),
+        "consumer_consent_scope": _coerce_optional_text(consent_scope),
+    }
+    if reset_ceremony_progress:
+        updates.update(
+            {
+                "consumer_disclosure_presented_at": None,
+                "consented_at": None,
+                "consumer_access_demonstrated_at": None,
+                "consumer_access_demonstration_method": None,
+                "reviewed_at": None,
+                "signature_adopted_at": None,
+                "signature_adopted_name": None,
+                "signature_adopted_mode": None,
+                "signature_adopted_image_data_url": None,
+                "signature_adopted_image_sha256": None,
+            }
+        )
+    return _update_public_signing_request(
+        normalized_request_id,
+        allowed_statuses={SIGNING_STATUS_SENT},
+        updates=updates,
+        client=client,
+    )
+
+
+def mark_signing_request_consumer_disclosure_presented(
+    request_id: str,
+    *,
+    presented_at: Optional[str] = None,
+    client=None,
+) -> Optional[SigningRequestRecord]:
+    now_value = _coerce_optional_text(presented_at) or now_iso()
+    return _update_public_signing_request(
+        request_id,
+        allowed_statuses={SIGNING_STATUS_SENT},
+        required_absent_fields=("consumer_disclosure_presented_at",),
+        updates={
+            "consumer_disclosure_presented_at": now_value,
+            "updated_at": now_value,
+        },
+        client=client,
+    )
+
+
 def mark_signing_request_invite_delivery(
     request_id: str,
     user_id: str,
     *,
     delivery_status: str,
+    sender_email: Optional[str] = None,
+    invite_method: Optional[str] = None,
+    invite_provider: Optional[str] = None,
     attempted_at: Optional[str] = None,
     sent_at: Optional[str] = None,
     delivery_error: Optional[str] = None,
+    delivery_error_code: Optional[str] = None,
+    invite_message_id: Optional[str] = None,
     client=None,
 ) -> Optional[SigningRequestRecord]:
     normalized_request_id = str(request_id or "").strip()
@@ -583,10 +1193,48 @@ def mark_signing_request_invite_delivery(
     now_value = now_iso()
     doc_ref.set(
         {
+            "sender_email": _coerce_optional_text(sender_email),
+            "invite_method": _coerce_optional_text(invite_method),
+            "invite_provider": _coerce_optional_text(invite_provider),
             "invite_delivery_status": normalized_status,
             "invite_last_attempt_at": _coerce_optional_text(attempted_at) or now_value,
             "invite_sent_at": _coerce_optional_text(sent_at),
             "invite_delivery_error": _coerce_optional_text(delivery_error),
+            "invite_delivery_error_code": _coerce_optional_text(delivery_error_code),
+            "invite_message_id": _coerce_optional_text(invite_message_id),
+            "updated_at": now_value,
+        },
+        merge=True,
+    )
+    return _serialize_signing_request(doc_ref.get())
+
+
+def mark_signing_request_manual_link_shared(
+    request_id: str,
+    user_id: str,
+    *,
+    sender_email: Optional[str] = None,
+    shared_at: Optional[str] = None,
+    client=None,
+) -> Optional[SigningRequestRecord]:
+    normalized_request_id = str(request_id or "").strip()
+    normalized_user_id = str(user_id or "").strip()
+    if not normalized_request_id or not normalized_user_id:
+        return None
+    firestore_client = client or get_firestore_client()
+    doc_ref = firestore_client.collection(SIGNING_REQUESTS_COLLECTION).document(normalized_request_id)
+    snapshot = doc_ref.get()
+    if not snapshot.exists:
+        return None
+    data = snapshot.to_dict() or {}
+    if str(data.get("user_id") or "").strip() != normalized_user_id:
+        return None
+    now_value = _coerce_optional_text(shared_at) or now_iso()
+    doc_ref.set(
+        {
+            "sender_email": _coerce_optional_text(sender_email),
+            "invite_method": "manual_link",
+            "manual_link_shared_at": now_value,
             "updated_at": now_value,
         },
         merge=True,
@@ -622,17 +1270,20 @@ def mark_signing_request_reviewed(
     session_id: str,
     client_ip: Optional[str],
     user_agent: Optional[str],
+    reviewed_at: Optional[str] = None,
     client=None,
 ) -> Optional[SigningRequestRecord]:
-    now_value = now_iso()
+    now_value = _coerce_optional_text(reviewed_at) or now_iso()
     return _update_public_signing_request(
         request_id,
         allowed_statuses={SIGNING_STATUS_SENT},
+        required_absent_fields=("manual_fallback_requested_at", "consent_withdrawn_at", "reviewed_at"),
         updates={
             "reviewed_at": now_value,
             "last_public_session_id": _coerce_optional_text(session_id),
             "last_public_ip": _coerce_optional_text(client_ip),
             "last_public_user_agent": _coerce_optional_text(user_agent),
+            "updated_at": now_value,
         },
         client=client,
     )
@@ -644,17 +1295,24 @@ def mark_signing_request_consented(
     session_id: str,
     client_ip: Optional[str],
     user_agent: Optional[str],
+    consented_at: Optional[str] = None,
+    consumer_access_demonstrated_at: Optional[str] = None,
+    consumer_access_demonstration_method: Optional[str] = None,
     client=None,
 ) -> Optional[SigningRequestRecord]:
-    now_value = now_iso()
+    now_value = _coerce_optional_text(consented_at) or now_iso()
     return _update_public_signing_request(
         request_id,
         allowed_statuses={SIGNING_STATUS_SENT},
+        required_absent_fields=("manual_fallback_requested_at", "consent_withdrawn_at", "consented_at"),
         updates={
             "consented_at": now_value,
+            "consumer_access_demonstrated_at": _coerce_optional_text(consumer_access_demonstrated_at) or now_value,
+            "consumer_access_demonstration_method": _coerce_optional_text(consumer_access_demonstration_method),
             "last_public_session_id": _coerce_optional_text(session_id),
             "last_public_ip": _coerce_optional_text(client_ip),
             "last_public_user_agent": _coerce_optional_text(user_agent),
+            "updated_at": now_value,
         },
         client=client,
     )
@@ -665,20 +1323,30 @@ def mark_signing_request_signature_adopted(
     *,
     session_id: str,
     adopted_name: str,
+    adopted_mode: Optional[str],
+    signature_image_data_url: Optional[str],
+    signature_image_sha256: Optional[str],
     client_ip: Optional[str],
     user_agent: Optional[str],
+    signature_adopted_at: Optional[str] = None,
     client=None,
 ) -> Optional[SigningRequestRecord]:
-    now_value = now_iso()
+    now_value = _coerce_optional_text(signature_adopted_at) or now_iso()
     return _update_public_signing_request(
         request_id,
         allowed_statuses={SIGNING_STATUS_SENT},
+        required_present_fields=("reviewed_at",),
+        required_absent_fields=("manual_fallback_requested_at", "consent_withdrawn_at", "signature_adopted_at"),
         updates={
             "signature_adopted_at": now_value,
             "signature_adopted_name": _coerce_optional_text(adopted_name),
+            "signature_adopted_mode": _coerce_optional_text(adopted_mode),
+            "signature_adopted_image_data_url": _coerce_optional_text(signature_image_data_url),
+            "signature_adopted_image_sha256": _coerce_optional_text(signature_image_sha256),
             "last_public_session_id": _coerce_optional_text(session_id),
             "last_public_ip": _coerce_optional_text(client_ip),
             "last_public_user_agent": _coerce_optional_text(user_agent),
+            "updated_at": now_value,
         },
         client=client,
     )
@@ -691,18 +1359,21 @@ def mark_signing_request_manual_fallback_requested(
     note: Optional[str],
     client_ip: Optional[str],
     user_agent: Optional[str],
+    requested_at: Optional[str] = None,
     client=None,
 ) -> Optional[SigningRequestRecord]:
-    now_value = now_iso()
+    now_value = _coerce_optional_text(requested_at) or now_iso()
     return _update_public_signing_request(
         request_id,
         allowed_statuses={SIGNING_STATUS_SENT},
+        required_absent_fields=("manual_fallback_requested_at", "consent_withdrawn_at"),
         updates={
             "manual_fallback_requested_at": now_value,
             "manual_fallback_note": _coerce_optional_text(note),
             "last_public_session_id": _coerce_optional_text(session_id),
             "last_public_ip": _coerce_optional_text(client_ip),
             "last_public_user_agent": _coerce_optional_text(user_agent),
+            "updated_at": now_value,
         },
         client=client,
     )
@@ -716,6 +1387,8 @@ def complete_signing_request(
     user_agent: Optional[str],
     completed_at: Optional[str] = None,
     artifact_updates: Optional[Dict[str, Any]] = None,
+    required_present_fields: tuple[str, ...] = (),
+    required_absent_fields: tuple[str, ...] = (),
     client=None,
 ) -> Optional[SigningRequestRecord]:
     now_value = _coerce_optional_text(completed_at) or now_iso()
@@ -723,6 +1396,8 @@ def complete_signing_request(
     return _update_public_signing_request(
         request_id,
         allowed_statuses={SIGNING_STATUS_SENT},
+        required_present_fields=required_present_fields,
+        required_absent_fields=required_absent_fields,
         updates={
             "status": SIGNING_STATUS_COMPLETED,
             "completed_at": now_value,
@@ -735,11 +1410,229 @@ def complete_signing_request(
     )
 
 
+def complete_signing_request_transactional(
+    request_id: str,
+    *,
+    session_id: str,
+    client_ip: Optional[str],
+    user_agent: Optional[str],
+    completed_at: Optional[str] = None,
+    artifact_updates: Optional[Dict[str, Any]] = None,
+    required_present_fields: tuple[str, ...] = (),
+    required_absent_fields: tuple[str, ...] = (),
+    client=None,
+) -> Optional[SigningRequestRecord]:
+    """Atomically transition a signing request from sent to completed using a Firestore transaction.
+
+    Returns the updated record on success, or the current record (without modifications) if the
+    status precondition is not met (e.g. another request already completed it).
+    """
+
+    normalized_request_id = str(request_id or "").strip()
+    if not normalized_request_id:
+        return None
+    now_value = _coerce_optional_text(completed_at) or now_iso()
+    normalized_artifact_updates = dict(artifact_updates or {})
+    firestore_client = client or get_firestore_client()
+    doc_ref = firestore_client.collection(SIGNING_REQUESTS_COLLECTION).document(normalized_request_id)
+    transaction = firestore_client.transaction()
+    if not _supports_firestore_transaction(transaction):
+        return complete_signing_request(
+            normalized_request_id,
+            session_id=session_id,
+            client_ip=client_ip,
+            user_agent=user_agent,
+            completed_at=now_value,
+            artifact_updates=normalized_artifact_updates,
+            required_present_fields=required_present_fields,
+            required_absent_fields=required_absent_fields,
+            client=firestore_client,
+        )
+
+    @firebase_firestore.transactional
+    def _run(txn):
+        snapshot = doc_ref.get(transaction=txn)
+        if not snapshot.exists:
+            return None
+        data = snapshot.to_dict() or {}
+        current_status = str(data.get("status") or "").strip()
+        if current_status != SIGNING_STATUS_SENT:
+            return _serialize_signing_request(snapshot)
+        if any(not _has_field_value(data.get(field_name)) for field_name in required_present_fields):
+            return _serialize_signing_request(snapshot)
+        if any(_has_field_value(data.get(field_name)) for field_name in required_absent_fields):
+            return _serialize_signing_request(snapshot)
+        payload = {
+            "status": SIGNING_STATUS_COMPLETED,
+            "completed_at": now_value,
+            "completed_session_id": _coerce_optional_text(session_id),
+            "completed_ip_address": _coerce_optional_text(client_ip),
+            "completed_user_agent": _coerce_optional_text(user_agent),
+            "updated_at": now_value,
+            **normalized_artifact_updates,
+        }
+        txn.set(doc_ref, payload, merge=True)
+        merged = dict(data)
+        merged.update(payload)
+        return _serialize_merged_signing_request(snapshot, merged)
+
+    return _run(transaction)
+
+
+def rollback_completed_signing_request_transactional(
+    request_id: str,
+    *,
+    session_id: Optional[str],
+    completed_at: Optional[str] = None,
+    client=None,
+) -> Optional[SigningRequestRecord]:
+    """Revert a just-completed request back to sent when artifact finalization fails.
+
+    This helper is intentionally narrow: it only clears completion/artifact
+    fields when the request is still marked completed for the same session and
+    completion timestamp. That keeps the rollback O(1) and avoids clobbering a
+    later successful completion attempt from another concurrent request.
+    """
+
+    normalized_request_id = str(request_id or "").strip()
+    expected_session_id = _coerce_optional_text(session_id)
+    expected_completed_at = _coerce_optional_text(completed_at)
+    if not normalized_request_id:
+        return None
+    firestore_client = client or get_firestore_client()
+    doc_ref = firestore_client.collection(SIGNING_REQUESTS_COLLECTION).document(normalized_request_id)
+    transaction = firestore_client.transaction()
+    if not _supports_firestore_transaction(transaction):
+        snapshot = doc_ref.get()
+        if not snapshot.exists:
+            return None
+        data = snapshot.to_dict() or {}
+        if str(data.get("status") or "").strip() != SIGNING_STATUS_COMPLETED:
+            return _serialize_signing_request(snapshot)
+        if expected_session_id and _coerce_optional_text(data.get("completed_session_id")) != expected_session_id:
+            return _serialize_signing_request(snapshot)
+        if expected_completed_at and _coerce_optional_text(data.get("completed_at")) != expected_completed_at:
+            return _serialize_signing_request(snapshot)
+        payload = {
+            "status": SIGNING_STATUS_SENT,
+            "completed_at": None,
+            "completed_session_id": None,
+            "completed_ip_address": None,
+            "completed_user_agent": None,
+            "completed_verification_method": None,
+            "completed_verification_completed_at": None,
+            "completed_verification_session_id": None,
+            "signed_pdf_bucket_path": None,
+            "signed_pdf_sha256": None,
+            "signed_pdf_digital_signature_method": None,
+            "signed_pdf_digital_signature_algorithm": None,
+            "signed_pdf_digital_signature_field_name": None,
+            "signed_pdf_digital_signature_subfilter": None,
+            "signed_pdf_digital_signature_timestamped": False,
+            "signed_pdf_digital_certificate_subject": None,
+            "signed_pdf_digital_certificate_issuer": None,
+            "signed_pdf_digital_certificate_serial_number": None,
+            "signed_pdf_digital_certificate_fingerprint_sha256": None,
+            "audit_manifest_bucket_path": None,
+            "audit_manifest_sha256": None,
+            "audit_receipt_bucket_path": None,
+            "audit_receipt_sha256": None,
+            "audit_signature_method": None,
+            "audit_signature_algorithm": None,
+            "audit_kms_key_resource_name": None,
+            "audit_kms_key_version_name": None,
+            "artifacts_generated_at": None,
+            "updated_at": now_iso(),
+        }
+        doc_ref.set(payload, merge=True)
+        merged = dict(data)
+        merged.update(payload)
+        return _serialize_merged_signing_request(snapshot, merged)
+
+    @firebase_firestore.transactional
+    def _run(txn):
+        snapshot = doc_ref.get(transaction=txn)
+        if not snapshot.exists:
+            return None
+        data = snapshot.to_dict() or {}
+        if str(data.get("status") or "").strip() != SIGNING_STATUS_COMPLETED:
+            return _serialize_signing_request(snapshot)
+        if expected_session_id and _coerce_optional_text(data.get("completed_session_id")) != expected_session_id:
+            return _serialize_signing_request(snapshot)
+        if expected_completed_at and _coerce_optional_text(data.get("completed_at")) != expected_completed_at:
+            return _serialize_signing_request(snapshot)
+
+        payload = {
+            "status": SIGNING_STATUS_SENT,
+            "completed_at": None,
+            "completed_session_id": None,
+            "completed_ip_address": None,
+            "completed_user_agent": None,
+            "completed_verification_method": None,
+            "completed_verification_completed_at": None,
+            "completed_verification_session_id": None,
+            "signed_pdf_bucket_path": None,
+            "signed_pdf_sha256": None,
+            "signed_pdf_digital_signature_method": None,
+            "signed_pdf_digital_signature_algorithm": None,
+            "signed_pdf_digital_signature_field_name": None,
+            "signed_pdf_digital_signature_subfilter": None,
+            "signed_pdf_digital_signature_timestamped": False,
+            "signed_pdf_digital_certificate_subject": None,
+            "signed_pdf_digital_certificate_issuer": None,
+            "signed_pdf_digital_certificate_serial_number": None,
+            "signed_pdf_digital_certificate_fingerprint_sha256": None,
+            "audit_manifest_bucket_path": None,
+            "audit_manifest_sha256": None,
+            "audit_receipt_bucket_path": None,
+            "audit_receipt_sha256": None,
+            "audit_signature_method": None,
+            "audit_signature_algorithm": None,
+            "audit_kms_key_resource_name": None,
+            "audit_kms_key_version_name": None,
+            "artifacts_generated_at": None,
+            "updated_at": now_iso(),
+        }
+        txn.set(doc_ref, payload, merge=True)
+        merged = dict(data)
+        merged.update(payload)
+        return _serialize_merged_signing_request(snapshot, merged)
+
+    return _run(transaction)
+
+
+def mark_signing_request_consent_withdrawn(
+    request_id: str,
+    *,
+    session_id: str,
+    client_ip: Optional[str],
+    user_agent: Optional[str],
+    withdrawn_at: Optional[str] = None,
+    client=None,
+) -> Optional[SigningRequestRecord]:
+    now_value = _coerce_optional_text(withdrawn_at) or now_iso()
+    return _update_public_signing_request(
+        request_id,
+        allowed_statuses={SIGNING_STATUS_SENT},
+        required_present_fields=("consented_at",),
+        required_absent_fields=("manual_fallback_requested_at", "consent_withdrawn_at"),
+        updates={
+            "consent_withdrawn_at": now_value,
+            "last_public_session_id": _coerce_optional_text(session_id),
+            "last_public_ip": _coerce_optional_text(client_ip),
+            "last_public_user_agent": _coerce_optional_text(user_agent),
+            "updated_at": now_value,
+        },
+        client=client,
+    )
+
+
 def invalidate_signing_request(
     request_id: str,
     user_id: str,
     *,
     reason: str,
+    mark_public_link_revoked: bool = False,
     client=None,
 ) -> Optional[SigningRequestRecord]:
     normalized_request_id = str(request_id or "").strip()
@@ -756,11 +1649,123 @@ def invalidate_signing_request(
     if str(data.get("user_id") or "").strip() != normalized_user_id:
         return None
     now_value = now_iso()
+    payload = {
+        "status": SIGNING_STATUS_INVALIDATED,
+        "invalidated_at": now_value,
+        "invalidation_reason": normalized_reason,
+        "updated_at": now_value,
+    }
+    if mark_public_link_revoked:
+        payload["public_link_revoked_at"] = now_value
+    doc_ref.set(payload, merge=True)
+    return _serialize_signing_request(doc_ref.get())
+
+
+def reissue_signing_request(
+    request_id: str,
+    user_id: str,
+    *,
+    client=None,
+) -> Optional[SigningRequestRecord]:
+    normalized_request_id = str(request_id or "").strip()
+    normalized_user_id = str(user_id or "").strip()
+    if not normalized_request_id or not normalized_user_id:
+        return None
+    firestore_client = client or get_firestore_client()
+    doc_ref = firestore_client.collection(SIGNING_REQUESTS_COLLECTION).document(normalized_request_id)
+    snapshot = doc_ref.get()
+    if not snapshot.exists:
+        return None
+    data = snapshot.to_dict() or {}
+    if str(data.get("user_id") or "").strip() != normalized_user_id:
+        return None
+    current_status = str(data.get("status") or "").strip()
+    current_revoked_at = _coerce_optional_text(data.get("public_link_revoked_at"))
+    source_pdf_bucket_path = _coerce_optional_text(data.get("source_pdf_bucket_path"))
+    if not source_pdf_bucket_path:
+        return _serialize_signing_request(snapshot)
+    if current_status == SIGNING_STATUS_INVALIDATED and not current_revoked_at:
+        return _serialize_signing_request(snapshot)
+    if current_status not in {SIGNING_STATUS_SENT, SIGNING_STATUS_INVALIDATED}:
+        return _serialize_signing_request(snapshot)
+
+    now_value = now_iso()
+    request_expires_at = resolve_signing_request_expires_at(sent_at=now_value)
+    retention_until = _coerce_optional_text(data.get("retention_until")) or resolve_signing_retention_until(now_value)
+    next_public_link_version = _coerce_public_link_version(data.get("public_link_version")) + 1
+    transport = resolve_signing_signer_transport(
+        _coerce_optional_text(data.get("source_type")) or "workspace",
+        signer_contact_method=_coerce_optional_text(data.get("signer_contact_method")),
+    )
     doc_ref.set(
         {
-            "status": SIGNING_STATUS_INVALIDATED,
-            "invalidated_at": now_value,
-            "invalidation_reason": normalized_reason,
+            "status": SIGNING_STATUS_SENT,
+            "public_link_version": next_public_link_version,
+            "public_link_revoked_at": None,
+            "public_link_last_reissued_at": now_value,
+            "signer_contact_method": transport.signer_contact_method,
+            "signer_auth_method": transport.signer_auth_method,
+            "invite_delivery_status": "pending",
+            "invite_last_attempt_at": None,
+            "invite_sent_at": None,
+            "invite_delivery_error": None,
+            "invite_delivery_error_code": None,
+            "invite_provider": None,
+            "invite_message_id": None,
+            "manual_link_shared_at": None,
+            "verification_required": transport.verification_required,
+            "verification_method": transport.verification_method,
+            "verification_completed_at": None,
+            "sent_at": now_value,
+            "opened_at": None,
+            "reviewed_at": None,
+            "consented_at": None,
+            "consumer_disclosure_version": None,
+            "consumer_disclosure_payload": None,
+            "consumer_disclosure_sha256": None,
+            "consumer_disclosure_presented_at": None,
+            "consumer_consent_scope": None,
+            "consumer_access_demonstrated_at": None,
+            "consumer_access_demonstration_method": None,
+            "signature_adopted_at": None,
+            "signature_adopted_name": None,
+            "signature_adopted_mode": None,
+            "signature_adopted_image_data_url": None,
+            "signature_adopted_image_sha256": None,
+            "manual_fallback_requested_at": None,
+            "manual_fallback_note": None,
+            "consent_withdrawn_at": None,
+            "completed_at": None,
+            "completed_session_id": None,
+            "completed_ip_address": None,
+            "completed_user_agent": None,
+            "completed_verification_method": None,
+            "completed_verification_completed_at": None,
+            "completed_verification_session_id": None,
+            "signed_pdf_bucket_path": None,
+            "signed_pdf_sha256": None,
+            "signed_pdf_digital_signature_method": None,
+            "signed_pdf_digital_signature_algorithm": None,
+            "signed_pdf_digital_signature_field_name": None,
+            "signed_pdf_digital_signature_subfilter": None,
+            "signed_pdf_digital_signature_timestamped": False,
+            "signed_pdf_digital_certificate_subject": None,
+            "signed_pdf_digital_certificate_issuer": None,
+            "signed_pdf_digital_certificate_serial_number": None,
+            "signed_pdf_digital_certificate_fingerprint_sha256": None,
+            "audit_manifest_bucket_path": None,
+            "audit_manifest_sha256": None,
+            "audit_receipt_bucket_path": None,
+            "audit_receipt_sha256": None,
+            "audit_signature_method": None,
+            "audit_signature_algorithm": None,
+            "audit_kms_key_resource_name": None,
+            "audit_kms_key_version_name": None,
+            "artifacts_generated_at": None,
+            "retention_until": retention_until,
+            "expires_at": request_expires_at,
+            "invalidated_at": None,
+            "invalidation_reason": None,
             "updated_at": now_value,
         },
         merge=True,

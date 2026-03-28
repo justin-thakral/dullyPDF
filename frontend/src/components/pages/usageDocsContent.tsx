@@ -1,4 +1,6 @@
 import type { ReactNode } from 'react';
+import { USAGE_DOCS_PAGES as SHARED_USAGE_DOCS_PAGES } from '../../config/publicRouteSeoData.mjs';
+import type { IntentPageKey } from '../../config/intentPages';
 
 export type UsageDocsPageKey =
   | 'index'
@@ -26,6 +28,7 @@ export type UsageDocsPage = {
   navLabel: string;
   title: string;
   summary: string;
+  relatedWorkflowKeys?: IntentPageKey[];
   sections: UsageDocsSection[];
 };
 
@@ -34,14 +37,43 @@ export type ResolvedUsageDocsPath =
   | { kind: 'redirect'; targetPath: string }
   | { kind: 'not-found'; requestedPath: string };
 
+type SharedUsageDocsPage = {
+  key: UsageDocsPageKey;
+  slug: string;
+  path: string;
+  navLabel: string;
+  title: string;
+  summary: string;
+  relatedWorkflowKeys?: IntentPageKey[];
+  sectionTitles: string[];
+};
+
+const USAGE_DOCS_PAGE_METADATA = SHARED_USAGE_DOCS_PAGES as SharedUsageDocsPage[];
+const USAGE_DOCS_PAGE_METADATA_BY_KEY = new Map<UsageDocsPageKey, SharedUsageDocsPage>(
+  USAGE_DOCS_PAGE_METADATA.map((page) => [page.key, page]),
+);
+
+const getUsageDocsPageMetadata = (
+  pageKey: UsageDocsPageKey,
+): Pick<UsageDocsPage, 'key' | 'slug' | 'navLabel' | 'title' | 'summary' | 'relatedWorkflowKeys'> => {
+  const page = USAGE_DOCS_PAGE_METADATA_BY_KEY.get(pageKey);
+  if (!page) {
+    throw new Error(`Unknown usage docs page key: ${pageKey}`);
+  }
+
+  return {
+    key: page.key,
+    slug: page.slug,
+    navLabel: page.navLabel,
+    title: page.title,
+    summary: page.summary,
+    relatedWorkflowKeys: page.relatedWorkflowKeys,
+  };
+};
+
 const USAGE_DOCS_PAGES: UsageDocsPage[] = [
   {
-    key: 'index',
-    slug: '',
-    navLabel: 'Overview',
-    title: 'DullyPDF Usage Docs',
-    summary:
-      'Implementation-level guide for the full DullyPDF workflow, including concrete limits, matching rules, radio groups, API Fill, and signing behavior.',
+    ...getUsageDocsPageMetadata('index'),
     sections: [
       {
         id: 'pipeline-overview',
@@ -113,6 +145,48 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
         ),
       },
       {
+        id: 'public-routes-vs-docs',
+        title: 'Public routes versus docs',
+        body: (
+          <>
+            <p>
+              The workflow and industry landing pages are meant to explain why a route exists and what kind of problem
+              it solves. The usage docs are where the implementation details live. If a search-intent page answers the
+              strategic question and you are ready to build, come back here for the exact runtime behavior.
+            </p>
+            <p>
+              That split is deliberate. It keeps commercial pages focused on the document problem and keeps the docs
+              focused on operator behavior, guardrails, limits, and validation steps. The safest path is usually:
+              choose the right route first, then use the matching docs page to validate one representative workflow.
+            </p>
+          </>
+        ),
+      },
+      {
+        id: 'three-fastest-starting-paths',
+        title: 'Three fastest starting paths',
+        body: (
+          <ul>
+            <li>Template setup: start with <a href="/usage-docs/getting-started">Getting Started</a> when you need one recurring PDF to reach its first safe fill quickly.</li>
+            <li>Row-based filling: start with <a href="/usage-docs/search-fill">Search &amp; Fill</a> when the record already exists in CSV, XLSX, JSON, or a stored respondent submission.</li>
+            <li>Respondent collection: start with <a href="/usage-docs/fill-by-link">Fill By Link</a> when the row does not exist yet and someone must submit it first.</li>
+          </ul>
+        ),
+      },
+      {
+        id: 'first-validation-loop',
+        title: 'First validation loop',
+        body: (
+          <ol>
+            <li>Choose one recurring document, not every possible packet variation.</li>
+            <li>Run detection and review low-confidence items first.</li>
+            <li>Normalize names and mappings before you worry about volume.</li>
+            <li>Fill one representative record and inspect the output PDF carefully.</li>
+            <li>Only after that should you publish a Fill By Link, group the template, or expose an API endpoint.</li>
+          </ol>
+        ),
+      },
+      {
         id: 'hard-numbers',
         title: 'Hard numbers used by the app',
         body: (
@@ -129,12 +203,7 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
     ],
   },
   {
-    key: 'getting-started',
-    slug: 'getting-started',
-    navLabel: 'Getting Started',
-    title: 'Getting Started',
-    summary:
-      'A practical quick-start from upload to filled output, including when to pause, publish a Fill By Link, and review results.',
+    ...getUsageDocsPageMetadata('getting-started'),
     sections: [
       {
         id: 'quick-start-path',
@@ -184,6 +253,31 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
         ),
       },
       {
+        id: 'first-30-minutes',
+        title: 'First 30 minutes',
+        body: (
+          <ol>
+            <li>Pick one recurring PDF instead of a full packet.</li>
+            <li>Run detection and clean the low-confidence items immediately.</li>
+            <li>Rename or map only after the field geometry is believable.</li>
+            <li>Fill one realistic record, inspect the PDF, clear it, and fill again.</li>
+            <li>Only after that should you publish a Fill By Link, save packet groups, or expose API Fill.</li>
+          </ol>
+        ),
+      },
+      {
+        id: 'common-first-run-mistakes',
+        title: 'Most common first-run mistakes',
+        body: (
+          <ul>
+            <li>Uploading several document variations before one canonical template is stable.</li>
+            <li>Running mapping before low-confidence geometry and checkbox cleanup are reviewed.</li>
+            <li>Judging the workflow from field detection alone instead of from one full fill cycle.</li>
+            <li>Publishing links or sharing templates before date, checkbox, and repeated-name fields are tested with a real record.</li>
+          </ul>
+        ),
+      },
+      {
         id: 'what-good-looks-like',
         title: 'What good output looks like',
         body: (
@@ -200,12 +294,7 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
     ],
   },
   {
-    key: 'detection',
-    slug: 'detection',
-    navLabel: 'Detection',
-    title: 'Detection',
-    summary:
-      'How CommonForms detection works, how confidence levels are used, and what to adjust when candidates look wrong.',
+    ...getUsageDocsPageMetadata('detection'),
     sections: [
       {
         id: 'what-detection-returns',
@@ -255,6 +344,29 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
         ),
       },
       {
+        id: 'pdf-quality-rubric',
+        title: 'PDF quality rubric',
+        body: (
+          <ul>
+            <li>Best: native PDFs with high contrast, clear form lines, and predictable spacing.</li>
+            <li>Usable with review: scans that are readable but have light skew, compression noise, or inconsistent line weight.</li>
+            <li>High-risk: faint scans, dense tables, decorative borders, or layouts where fields are packed tightly together.</li>
+            <li>The dirtier the PDF, the more important it is to review low-confidence candidates before rename or mapping.</li>
+          </ul>
+        ),
+      },
+      {
+        id: 'redraw-vs-resize',
+        title: 'When to redraw instead of resize',
+        body: (
+          <ul>
+            <li>Resize when the candidate is fundamentally the right field but the geometry is slightly off.</li>
+            <li>Redraw when a decorative box was mistaken for a field or when the detection captures the wrong label/line pair entirely.</li>
+            <li>Delete and recreate when the current candidate would require several compensating edits that are harder to audit later.</li>
+          </ul>
+        ),
+      },
+      {
         id: 'geometry-values',
         title: 'Geometry values and editor constraints',
         body: (
@@ -268,12 +380,7 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
     ],
   },
   {
-    key: 'rename-mapping',
-    slug: 'rename-mapping',
-    navLabel: 'Rename + Mapping',
-    title: 'Rename + Mapping',
-    summary:
-      'How to choose Rename, Map, or Rename + Map and how OpenAI outputs appear in the editor.',
+    ...getUsageDocsPageMetadata('rename-mapping'),
     sections: [
       {
         id: 'when-to-run-each',
@@ -324,6 +431,17 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
         ),
       },
       {
+        id: 'concrete-mapping-examples',
+        title: 'Concrete mapping examples',
+        body: (
+          <ul>
+            <li>Text field: map <code>insured_name</code> or <code>employee_first_name</code> directly to a stable string column.</li>
+            <li>Checkbox enum: map one group to values like <code>single</code>, <code>married</code>, or other categorical tokens via <code>enum</code> rules.</li>
+            <li>Radio group: keep one explicit group key and distinct option keys so a single selected value does not drift into multi-select behavior later.</li>
+          </ul>
+        ),
+      },
+      {
         id: 'checkbox-rules-and-precedence',
         title: 'Checkbox rules and precedence',
         body: (
@@ -365,6 +483,18 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
         ),
       },
       {
+        id: 'schema-hygiene-anti-patterns',
+        title: 'Schema hygiene anti-patterns',
+        body: (
+          <ul>
+            <li>Headers that change spelling or casing between exports.</li>
+            <li>Multiple columns that mean the same thing but are not normalized intentionally.</li>
+            <li>Boolean or checkbox values that mix <code>yes/no</code>, <code>1/0</code>, blanks, and custom tokens without a documented rule.</li>
+            <li>Mapping directly from vague field names such as <code>Text1</code> or duplicated labels when Rename should have run first.</li>
+          </ul>
+        ),
+      },
+      {
         id: 'rename-only-warning',
         title: 'Rename-only warning',
         body: (
@@ -377,12 +507,7 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
     ],
   },
   {
-    key: 'editor-workflow',
-    slug: 'editor-workflow',
-    navLabel: 'Editor Workflow',
-    title: 'Editor Workflow',
-    summary:
-      'How to use overlay, field list, and inspector together for fast, high-confidence template cleanup.',
+    ...getUsageDocsPageMetadata('editor-workflow'),
     sections: [
       {
         id: 'three-panel-model',
@@ -423,6 +548,18 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
             <li>Geometry is clamped to page bounds and type-based minimum sizes.</li>
             <li>If a selected field is hidden by active filters, use <code>Reveal selected</code> in the list panel.</li>
           </ul>
+        ),
+      },
+      {
+        id: 'ten-minute-cleanup-order',
+        title: 'Ten-minute cleanup order',
+        body: (
+          <ol>
+            <li>Review low-confidence detections and obvious false positives first.</li>
+            <li>Fix page assignment, geometry, and field type mistakes before naming cleanup.</li>
+            <li>Normalize names and group metadata once the field set is visually stable.</li>
+            <li>Run one Search &amp; Fill validation pass before deciding the template is done.</li>
+          </ol>
         ),
       },
       {
@@ -472,12 +609,7 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
     ],
   },
   {
-    key: 'search-fill',
-    slug: 'search-fill',
-    navLabel: 'Search & Fill',
-    title: 'Search & Fill',
-    summary:
-      'Connect local data sources or Fill By Link respondent records, search a record, and populate mapped fields with predictable behavior.',
+    ...getUsageDocsPageMetadata('search-fill'),
     sections: [
       {
         id: 'data-source-support',
@@ -521,6 +653,17 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
         ),
       },
       {
+        id: 'search-vs-link-vs-api',
+        title: 'Search & Fill versus Fill By Link versus API Fill',
+        body: (
+          <ul>
+            <li>Use Search &amp; Fill when an operator is choosing one record inside the workspace.</li>
+            <li>Use Fill By Link when the record still needs to be collected from a respondent first.</li>
+            <li>Use API Fill when another system already has the record and needs a hosted JSON-to-PDF endpoint.</li>
+          </ul>
+        ),
+      },
+      {
         id: 'field-resolution-heuristics',
         title: 'Field resolution heuristics (non-checkbox)',
         body: (
@@ -551,15 +694,22 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
           </>
         ),
       },
+      {
+        id: 'why-partial-fills-happen',
+        title: 'Why partial fills happen',
+        body: (
+          <ul>
+            <li>Some fields are still unmapped or mapped to unstable source headers.</li>
+            <li>Date or checkbox values need normalization rules that the current row does not satisfy.</li>
+            <li>The template was updated but the operator is still validating stale output without clearing and refilling.</li>
+            <li>Alias fallbacks help, but they do not replace explicit mapping on important production templates.</li>
+          </ul>
+        ),
+      },
     ],
   },
   {
-    key: 'fill-by-link',
-    slug: 'fill-by-link',
-    navLabel: 'Fill By Link',
-    title: 'Fill By Link',
-    summary:
-      'Publish a DullyPDF-hosted form from a saved template or open group, share the generated link, and turn stored respondent answers into PDFs when needed, with optional post-submit downloads for template respondents.',
+    ...getUsageDocsPageMetadata('fill-by-link'),
     sections: [
       {
         id: 'what-gets-published',
@@ -644,12 +794,7 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
     ],
   },
   {
-    key: 'signature-workflow',
-    slug: 'signature-workflow',
-    navLabel: 'Signature Workflow',
-    title: 'Signature Workflow',
-    summary:
-      'How DullyPDF freezes immutable PDFs for signature, supports both email-based and web-form-to-sign flows, and keeps signed artifacts available to owners later.',
+    ...getUsageDocsPageMetadata('signature-workflow'),
     sections: [
       {
         id: 'two-entry-paths',
@@ -658,7 +803,7 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
           <ul>
             <li><code>Send PDF for Signature by email</code> starts from the current PDF and freezes that exact record before send.</li>
             <li><code>Require signature after submit</code> starts from a template Fill By Web Form Link, stores the respondent answers, materializes the filled PDF, then hands the signer into the same ceremony.</li>
-            <li>Both paths converge on the same immutable PDF boundary before the signer sees the document.</li>
+            <li>Both paths converge on the same immutable PDF boundary before the signer sees the document, and both now begin with email verification on the public signing page.</li>
             <li>The owner workflow remains one request per signer, even when the UI saves recipient batches from pasted or uploaded TXT/CSV data.</li>
           </ul>
         ),
@@ -669,7 +814,8 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
         body: (
           <ol>
             <li>The signer opens the public <code>/sign/:token</code> route.</li>
-            <li>Business requests go through review -&gt; adopt signature -&gt; explicit finish-sign.</li>
+            <li>Email verification unlocks the immutable PDF for every emailed signing request.</li>
+            <li>Business requests then go through review -&gt; adopt signature -&gt; explicit finish-sign.</li>
             <li>Consumer requests add a separate electronic-record consent step before review can continue.</li>
             <li>Manual fallback can pause the electronic ceremony and switch the request into owner follow-up instead of forcing e-signing.</li>
           </ol>
@@ -684,6 +830,7 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
             <li>The owner `Responses` tab in the signing dialog surfaces waiting vs signed requests plus signed-form and audit-receipt downloads.</li>
             <li>Template Fill By Web Form Link responses also surface linked signing status so the owner can download the finished signed copy from the response row later.</li>
             <li>Signed PDFs are flattened before delivery so normal PDF viewers do not keep the underlying form widgets editable.</li>
+            <li>Per-document signer-request caps are enforced server-side across both email and Fill By Web Form signing entry paths.</li>
           </ul>
         ),
       },
@@ -702,18 +849,18 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
               marketed as a notary, qualified-signature, or regulated-signature system unless that scope is added
               deliberately later.
             </p>
+            <p>
+              Consumer-mode support is stronger than it was before the remediation work, but it is still not a blanket
+              promise that every U.S. consumer document type or jurisdiction-specific rule is covered automatically.
+              Teams still need document-type and policy review before turning on sensitive or excluded use cases.
+            </p>
           </>
         ),
       },
     ],
   },
   {
-    key: 'api-fill',
-    slug: 'api-fill',
-    navLabel: 'API Fill',
-    title: 'API Fill',
-    summary:
-      'How DullyPDF publishes frozen JSON-to-PDF endpoints from saved templates, enforces hosted limits, and keeps API Fill distinct from browser-local Search & Fill.',
+    ...getUsageDocsPageMetadata('api-fill'),
     sections: [
       {
         id: 'what-api-fill-is',
@@ -733,7 +880,7 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
           <ol>
             <li>Open a saved template in the workspace.</li>
             <li>Click <code>API Fill</code> to open the endpoint manager.</li>
-            <li>Create the endpoint from the current saved-template snapshot, then copy the schema URL, POST example, and active key.</li>
+            <li>Create the endpoint from the current saved-template snapshot, then copy the fill URL, public schema URL, POST example, and active key.</li>
             <li>Rotate or revoke keys from the same manager when credentials need to change.</li>
           </ol>
         ),
@@ -744,6 +891,9 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
         body: (
           <ul>
             <li>The public schema exposes field names, types, transforms, checkbox rules, and radio group expectations for the frozen template snapshot.</li>
+            <li>Public requests must send a top-level <code>data</code> object. Misspelled top-level keys like <code>fields</code> or <code>stict</code> are rejected instead of being ignored.</li>
+            <li>The manager examples use <code>strict=true</code> so integration smoke tests fail closed when a caller sends unknown keys.</li>
+            <li>Blank strings remain valid scalar values, so callers can intentionally clear a text or date-style field instead of leaving the published default in place.</li>
             <li>Radio groups are resolved deterministically as one selected option key, not as a legacy checkbox-hint side channel.</li>
             <li>API Fill does not reuse the generic workspace materialize endpoint. It is its own hosted path with explicit auth, limits, and audit activity.</li>
             <li>The backend is designed not to store raw submitted record values by default unless a separate operational need is added later.</li>
@@ -770,12 +920,7 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
     ],
   },
   {
-    key: 'create-group',
-    slug: 'create-group',
-    navLabel: 'Create Group',
-    title: 'Create Group and Group Workflows',
-    summary:
-      'Use groups to organize multi-document packets, switch between saved templates quickly, and run full document workflows across the group.',
+    ...getUsageDocsPageMetadata('create-group'),
     sections: [
       {
         id: 'what-a-group-is',
@@ -823,6 +968,17 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
         ),
       },
       {
+        id: 'packet-design-rules',
+        title: 'Packet design rules',
+        body: (
+          <ul>
+            <li>Keep one canonical template per recurring document type instead of several near-duplicates.</li>
+            <li>Use a group when the documents truly belong to one packet or respondent journey, not just because they are all PDFs.</li>
+            <li>Validate one representative record across the whole packet before publishing a group link or running batch Rename + Map.</li>
+          </ul>
+        ),
+      },
+      {
         id: 'group-fill-by-link',
         title: 'Group Fill By Link and packet publishing',
         body: (
@@ -836,12 +992,7 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
     ],
   },
   {
-    key: 'save-download-profile',
-    slug: 'save-download-profile',
-    navLabel: 'Save / Download',
-    title: 'Save, Download, and Profile',
-    summary:
-      'Understand when to download immediately versus saving templates to your profile for reuse, Fill By Link publishing, and respondent management.',
+    ...getUsageDocsPageMetadata('save-download-profile'),
     sections: [
       {
         id: 'download-vs-save',
@@ -870,6 +1021,17 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
               group. Respondent records stay attached to the owner account and the published template/group snapshot.
             </p>
           </>
+        ),
+      },
+      {
+        id: 'must-save-before-publish',
+        title: 'What must be saved before publishing or API use',
+        body: (
+          <ul>
+            <li>Fill By Link requires a saved template or open saved group because the public form belongs to that saved snapshot.</li>
+            <li>API Fill publishes one saved-template snapshot, not the unsaved working state in the editor.</li>
+            <li>Signature workflows are safest after the template and current record state are both intentionally frozen.</li>
+          </ul>
         ),
       },
       {
@@ -908,6 +1070,10 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
               Fill By Link tier limits are separate from credits: free includes 1 active published link with 5 accepted
               responses, while premium supports a shareable link on every saved template with up to 10,000 accepted
               responses per link.
+            </p>
+            <p>
+              Signing limits are separate from OpenAI credits too: by default free allows 10 signer requests for one
+              immutable document version, while Pro allows 1,000.
             </p>
             <p>
               API Fill is a hosted backend runtime, not a browser-local tool. Published API endpoints are scoped to one
@@ -960,13 +1126,21 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
     ],
   },
   {
-    key: 'troubleshooting',
-    slug: 'troubleshooting',
-    navLabel: 'Troubleshooting',
-    title: 'Troubleshooting',
-    summary:
-      'Systematic checks for detection quality, OpenAI steps, mapping mismatches, and fill output issues.',
+    ...getUsageDocsPageMetadata('troubleshooting'),
     sections: [
+      {
+        id: 'troubleshoot-by-stage',
+        title: 'Troubleshoot by stage',
+        body: (
+          <ol>
+            <li>Upload: confirm the file is a real PDF, under 50MB, and not encrypted.</li>
+            <li>Detect: review low-confidence items and obvious false positives before moving on.</li>
+            <li>Rename or map: confirm the schema is loaded, credits are available, and checkbox or radio metadata still make sense.</li>
+            <li>Fill: clear the output, refill from one representative record, and inspect the risky fields first.</li>
+            <li>Publish: confirm you are working from the intended saved template or group snapshot before sharing a link or API endpoint.</li>
+          </ol>
+        ),
+      },
       {
         id: 'detection-issues',
         title: 'Detection issues',
@@ -1015,6 +1189,18 @@ const USAGE_DOCS_PAGES: UsageDocsPage[] = [
             <li>`OpenAI credits exhausted (remaining=X, required=Y)`</li>
             <li>`Upload a schema file before running mapping.`</li>
             <li>`Template session is not ready yet. Try again in a moment.`</li>
+          </ul>
+        ),
+      },
+      {
+        id: 'capture-before-support',
+        title: 'What to capture before support',
+        body: (
+          <ul>
+            <li>The exact route or page you were on when the issue happened.</li>
+            <li>The action order that led to the failure: upload, detect, rename, map, fill, publish, or sign.</li>
+            <li>One screenshot that shows the state of the template or error message clearly.</li>
+            <li>The exact validation or runtime message if one was shown.</li>
           </ul>
         ),
       },

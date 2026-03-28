@@ -9,6 +9,7 @@ describe('BlogPostPage', () => {
     expect(screen.getByRole('heading', { name: 'How to Auto-Fill PDF Forms From a Spreadsheet (CSV or Excel)' })).toBeTruthy();
     expect(screen.getByText('Published')).toBeTruthy();
     expect(screen.getByText('Last updated')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'How to validate this workflow in DullyPDF' })).toBeTruthy();
     expect(screen.getAllByRole('link', { name: 'Fill PDF From CSV' }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole('link', { name: 'Search & Fill' }).length).toBeGreaterThan(0);
     expect(

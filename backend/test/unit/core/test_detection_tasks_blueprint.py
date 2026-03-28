@@ -18,19 +18,42 @@ def _clear_detector_task_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "DETECTOR_TASKS_LOCATION",
         "DETECTOR_TASKS_SERVICE_ACCOUNT",
         "DETECTOR_TASKS_QUEUE",
+        "DETECTOR_TASKS_QUEUE_CPU",
+        "DETECTOR_TASKS_QUEUE_GPU",
         "DETECTOR_TASKS_QUEUE_LIGHT",
         "DETECTOR_TASKS_QUEUE_HEAVY",
+        "DETECTOR_TASKS_QUEUE_LIGHT_CPU",
+        "DETECTOR_TASKS_QUEUE_HEAVY_CPU",
+        "DETECTOR_TASKS_QUEUE_LIGHT_GPU",
+        "DETECTOR_TASKS_QUEUE_HEAVY_GPU",
         "DETECTOR_SERVICE_URL",
+        "DETECTOR_SERVICE_URL_CPU",
+        "DETECTOR_SERVICE_URL_GPU",
         "DETECTOR_SERVICE_URL_LIGHT",
         "DETECTOR_SERVICE_URL_HEAVY",
+        "DETECTOR_SERVICE_URL_LIGHT_CPU",
+        "DETECTOR_SERVICE_URL_HEAVY_CPU",
+        "DETECTOR_SERVICE_URL_LIGHT_GPU",
+        "DETECTOR_SERVICE_URL_HEAVY_GPU",
         "DETECTOR_TASKS_AUDIENCE",
+        "DETECTOR_TASKS_AUDIENCE_CPU",
+        "DETECTOR_TASKS_AUDIENCE_GPU",
         "DETECTOR_TASKS_AUDIENCE_LIGHT",
         "DETECTOR_TASKS_AUDIENCE_HEAVY",
+        "DETECTOR_TASKS_AUDIENCE_LIGHT_CPU",
+        "DETECTOR_TASKS_AUDIENCE_HEAVY_CPU",
+        "DETECTOR_TASKS_AUDIENCE_LIGHT_GPU",
+        "DETECTOR_TASKS_AUDIENCE_HEAVY_GPU",
         "DETECTOR_TASKS_HEAVY_PAGE_THRESHOLD",
         "DETECTOR_TASKS_DISPATCH_DEADLINE_SECONDS",
         "DETECTOR_TASKS_DISPATCH_DEADLINE_SECONDS_LIGHT",
         "DETECTOR_TASKS_DISPATCH_DEADLINE_SECONDS_HEAVY",
         "DETECTOR_TASKS_FORCE_IMMEDIATE",
+        "DETECTOR_ROUTING_MODE",
+        "DETECTOR_SERIALIZE_GPU_TASKS",
+        "DETECTOR_GPU_BUSY_FALLBACK_TO_CPU",
+        "DETECTOR_GPU_BUSY_FALLBACK_PAGE_THRESHOLD",
+        "DETECTOR_GPU_BUSY_ACTIVE_WINDOW_SECONDS",
     ]:
         monkeypatch.delenv(key, raising=False)
 
@@ -102,6 +125,121 @@ def test_resolve_task_config_applies_profile_overrides_and_trims_service_url(
     assert config["profile"] == detection_tasks.DETECTOR_PROFILE_HEAVY
 
 
+def test_resolve_task_config_serializes_gpu_tasks_onto_shared_queue_and_shared_service(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DETECTOR_ROUTING_MODE", "gpu")
+    monkeypatch.setenv("DETECTOR_SERIALIZE_GPU_TASKS", "true")
+    monkeypatch.setenv("DETECTOR_TASKS_PROJECT", "project-a")
+    monkeypatch.setenv("DETECTOR_TASKS_LOCATION", "us-central1")
+    monkeypatch.setenv("DETECTOR_TASKS_SERVICE_ACCOUNT", "svc@example.com")
+    monkeypatch.setenv("DETECTOR_TASKS_QUEUE", "shared-queue")
+    monkeypatch.setenv("DETECTOR_TASKS_QUEUE_HEAVY", "heavy-queue")
+    monkeypatch.setenv("DETECTOR_SERVICE_URL", "https://default.example.com/")
+    monkeypatch.setenv("DETECTOR_SERVICE_URL_HEAVY", "https://heavy.example.com/")
+
+    config = detection_tasks.resolve_task_config(detection_tasks.DETECTOR_PROFILE_HEAVY)
+
+    assert config["queue"] == "shared-queue"
+    assert config["service_url"] == "https://default.example.com"
+    assert config["profile"] == detection_tasks.DETECTOR_PROFILE_HEAVY
+
+
+def test_resolve_task_config_serialized_single_gpu_mode_reuses_light_gpu_service(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DETECTOR_ROUTING_MODE", "gpu")
+    monkeypatch.setenv("DETECTOR_SERIALIZE_GPU_TASKS", "true")
+    monkeypatch.setenv("DETECTOR_TASKS_PROJECT", "project-a")
+    monkeypatch.setenv("DETECTOR_TASKS_LOCATION", "us-central1")
+    monkeypatch.setenv("DETECTOR_TASKS_SERVICE_ACCOUNT", "svc@example.com")
+    monkeypatch.setenv("DETECTOR_TASKS_QUEUE", "shared-queue")
+    monkeypatch.setenv("DETECTOR_SERVICE_URL_LIGHT_GPU", "https://gpu-light.example.com/")
+    monkeypatch.setenv("DETECTOR_SERVICE_URL_HEAVY_GPU", "https://gpu-heavy.example.com/")
+    monkeypatch.setenv("DETECTOR_TASKS_AUDIENCE_LIGHT_GPU", "gpu-light-audience")
+    monkeypatch.setenv("DETECTOR_TASKS_AUDIENCE_HEAVY_GPU", "gpu-heavy-audience")
+
+    config = detection_tasks.resolve_task_config(detection_tasks.DETECTOR_PROFILE_HEAVY)
+
+    assert config["queue"] == "shared-queue"
+    assert config["service_url"] == "https://gpu-light.example.com"
+    assert config["audience"] == "gpu-light-audience"
+    assert config["profile"] == detection_tasks.DETECTOR_PROFILE_HEAVY
+
+
+def test_resolve_detector_target_uses_cpu_fallback_for_small_pdfs_when_gpu_lane_is_busy(
+    monkeypatch: pytest.MonkeyPatch,
+    mocker,
+) -> None:
+    monkeypatch.setenv("DETECTOR_ROUTING_MODE", "gpu")
+    monkeypatch.setenv("DETECTOR_GPU_BUSY_FALLBACK_TO_CPU", "true")
+    monkeypatch.setenv("DETECTOR_GPU_BUSY_FALLBACK_PAGE_THRESHOLD", "5")
+    monkeypatch.setenv("DETECTOR_TASKS_QUEUE_LIGHT_CPU", "cpu-light")
+    monkeypatch.setenv("DETECTOR_SERVICE_URL_LIGHT_CPU", "https://cpu.example.com")
+    lane_busy_mock = mocker.patch.object(detection_tasks, "detection_lane_busy", return_value=True)
+
+    target = detection_tasks.resolve_detector_target(detection_tasks.DETECTOR_PROFILE_LIGHT, page_count=4)
+
+    assert target == detection_tasks.DETECTOR_TARGET_CPU
+    lane_busy_mock.assert_called_once_with(detection_tasks.DETECTOR_TARGET_GPU, active_window_seconds=1800)
+
+
+def test_resolve_detector_target_keeps_gpu_for_five_page_pdf_even_when_gpu_lane_is_busy(
+    monkeypatch: pytest.MonkeyPatch,
+    mocker,
+) -> None:
+    monkeypatch.setenv("DETECTOR_ROUTING_MODE", "gpu")
+    monkeypatch.setenv("DETECTOR_GPU_BUSY_FALLBACK_TO_CPU", "true")
+    monkeypatch.setenv("DETECTOR_GPU_BUSY_FALLBACK_PAGE_THRESHOLD", "5")
+    monkeypatch.setenv("DETECTOR_TASKS_QUEUE_LIGHT_CPU", "cpu-light")
+    monkeypatch.setenv("DETECTOR_SERVICE_URL_LIGHT_CPU", "https://cpu.example.com")
+    lane_busy_mock = mocker.patch.object(detection_tasks, "detection_lane_busy", return_value=True)
+
+    target = detection_tasks.resolve_detector_target(detection_tasks.DETECTOR_PROFILE_LIGHT, page_count=5)
+
+    assert target == detection_tasks.DETECTOR_TARGET_GPU
+    lane_busy_mock.assert_not_called()
+
+
+def test_resolve_detector_target_defaults_to_gpu_when_lane_probe_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    mocker,
+) -> None:
+    monkeypatch.setenv("DETECTOR_ROUTING_MODE", "gpu")
+    monkeypatch.setenv("DETECTOR_GPU_BUSY_FALLBACK_TO_CPU", "true")
+    monkeypatch.setenv("DETECTOR_TASKS_QUEUE_LIGHT_CPU", "cpu-light")
+    monkeypatch.setenv("DETECTOR_SERVICE_URL_LIGHT_CPU", "https://cpu.example.com")
+    mocker.patch.object(detection_tasks, "detection_lane_busy", side_effect=RuntimeError("firestore down"))
+
+    target = detection_tasks.resolve_detector_target(detection_tasks.DETECTOR_PROFILE_LIGHT, page_count=2)
+
+    assert target == detection_tasks.DETECTOR_TARGET_GPU
+
+
+def test_resolve_task_config_uses_explicit_cpu_target_overrides(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DETECTOR_ROUTING_MODE", "gpu")
+    monkeypatch.setenv("DETECTOR_TASKS_PROJECT", "project-a")
+    monkeypatch.setenv("DETECTOR_TASKS_LOCATION", "us-central1")
+    monkeypatch.setenv("DETECTOR_TASKS_SERVICE_ACCOUNT", "svc@example.com")
+    monkeypatch.setenv("DETECTOR_TASKS_QUEUE_LIGHT", "gpu-light")
+    monkeypatch.setenv("DETECTOR_SERVICE_URL_LIGHT", "https://gpu.example.com")
+    monkeypatch.setenv("DETECTOR_TASKS_QUEUE_LIGHT_CPU", "cpu-light")
+    monkeypatch.setenv("DETECTOR_SERVICE_URL_LIGHT_CPU", "https://cpu.example.com/")
+    monkeypatch.setenv("DETECTOR_TASKS_AUDIENCE_LIGHT_CPU", "cpu-aud")
+
+    config = detection_tasks.resolve_task_config(
+        detection_tasks.DETECTOR_PROFILE_LIGHT,
+        target=detection_tasks.DETECTOR_TARGET_CPU,
+    )
+
+    assert config["queue"] == "cpu-light"
+    assert config["service_url"] == "https://cpu.example.com"
+    assert config["audience"] == "cpu-aud"
+    assert config["target"] == detection_tasks.DETECTOR_TARGET_CPU
+
+
 def test_resolve_task_config_raises_with_missing_required_values() -> None:
     with pytest.raises(RuntimeError, match="Missing detector task config:") as excinfo:
         detection_tasks.resolve_task_config(None)
@@ -110,8 +248,8 @@ def test_resolve_task_config_raises_with_missing_required_values() -> None:
     assert "DETECTOR_TASKS_PROJECT" in message
     assert "DETECTOR_TASKS_LOCATION" in message
     assert "DETECTOR_TASKS_SERVICE_ACCOUNT" in message
-    assert "DETECTOR_TASKS_QUEUE_LIGHT or DETECTOR_TASKS_QUEUE" in message
-    assert "DETECTOR_SERVICE_URL_LIGHT or DETECTOR_SERVICE_URL" in message
+    assert "DETECTOR_TASKS_QUEUE_LIGHT_CPU or DETECTOR_TASKS_QUEUE_CPU or DETECTOR_TASKS_QUEUE_LIGHT or DETECTOR_TASKS_QUEUE" in message
+    assert "DETECTOR_SERVICE_URL_LIGHT_CPU or DETECTOR_SERVICE_URL_CPU or DETECTOR_SERVICE_URL_LIGHT or DETECTOR_SERVICE_URL" in message
 
 
 def test_enqueue_detection_task_builds_expected_cloud_tasks_request(

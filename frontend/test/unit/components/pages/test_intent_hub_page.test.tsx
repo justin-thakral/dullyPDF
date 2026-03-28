@@ -7,7 +7,9 @@ describe('IntentHubPage', () => {
     render(<IntentHubPage hubKey="workflows" />);
 
     expect(screen.getByRole('heading', { level: 1, name: 'Workflow Library for PDF Automation' })).toBeTruthy();
+    expect(screen.getByRole('heading', { level: 2, name: 'How to use this library' })).toBeTruthy();
     expect(screen.getByRole('link', { name: 'PDF to Fillable Form' }).getAttribute('href')).toBe('/pdf-to-fillable-form');
+    expect(screen.getByRole('link', { name: 'Usage Docs Overview' }).getAttribute('href')).toBe('/usage-docs');
   });
 
   it('renders industry hub copy and links', () => {

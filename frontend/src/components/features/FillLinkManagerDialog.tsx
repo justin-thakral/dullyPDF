@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Dialog } from '../ui/Dialog';
 import { ApiService } from '../../services/api';
 import type {
@@ -123,6 +123,9 @@ function resolveResponseSigningLabel(response: FillLinkResponse): string | null 
   if (!linked?.status) return null;
   if (linked.manualFallbackRequestedAt) return 'Manual fallback';
   if (linked.status === 'completed') return 'Signed';
+  if (linked.inviteDeliveryStatus === 'failed') return 'Signing email failed';
+  if (linked.inviteDeliveryStatus === 'skipped') return 'Signing email unavailable';
+  if (linked.inviteDeliveryStatus === 'sent') return 'Invite emailed';
   if (linked.status === 'sent') return 'Waiting for signature';
   if (linked.status === 'invalidated') return 'Signing invalidated';
   return 'Signing prepared';
@@ -293,25 +296,28 @@ function ResponsesPanel({
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [downloadingPath, setDownloadingPath] = useState<string | null>(null);
   const previousQueryRef = useRef('');
-  const refreshResponses = useEffectEvent((search?: string) => {
-    if (typeof search === 'undefined') {
-      onRefresh();
-      return;
-    }
-    onRefresh(search);
-  });
-  const searchResponses = useEffectEvent((search: string) => {
-    onSearchResponses(search);
-  });
+  const skipNextQueryEffectRef = useRef(false);
+  const onRefreshRef = useRef(onRefresh);
+  const onSearchResponsesRef = useRef(onSearchResponses);
+
+  useEffect(() => {
+    onRefreshRef.current = onRefresh;
+  }, [onRefresh]);
+
+  useEffect(() => {
+    onSearchResponsesRef.current = onSearchResponses;
+  }, [onSearchResponses]);
 
   useEffect(() => {
     if (!open) {
+      skipNextQueryEffectRef.current = true;
       setQuery('');
       setDownloadError(null);
       setDownloadingPath(null);
       previousQueryRef.current = '';
       return;
     }
+    skipNextQueryEffectRef.current = true;
     previousQueryRef.current = '';
     setQuery('');
   }, [link?.id, open]);
@@ -334,18 +340,23 @@ function ResponsesPanel({
       return;
     }
     const trimmedQuery = query.trim();
+    if (skipNextQueryEffectRef.current) {
+      skipNextQueryEffectRef.current = false;
+      previousQueryRef.current = trimmedQuery;
+      return;
+    }
     const previousQuery = previousQueryRef.current;
     previousQueryRef.current = trimmedQuery;
     if (!trimmedQuery && !previousQuery) return;
     const timeoutId = window.setTimeout(() => {
       if (trimmedQuery) {
-        searchResponses(trimmedQuery);
+        onSearchResponsesRef.current(trimmedQuery);
         return;
       }
-      refreshResponses();
+      onRefreshRef.current();
     }, 250);
     return () => window.clearTimeout(timeoutId);
-  }, [open, query, refreshResponses, searchResponses]);
+  }, [open, query]);
 
   return (
     <div className="fill-link-dialog__responses-panel">
@@ -412,10 +423,17 @@ function ResponsesPanel({
                       <span className="fill-link-dialog__response-badge fill-link-dialog__response-badge--muted">
                         {formatDateLabel(response.linkedSigning.completedAt)}
                       </span>
+                    ) : response.linkedSigning?.inviteSentAt ? (
+                      <span className="fill-link-dialog__response-badge fill-link-dialog__response-badge--muted">
+                        {formatDateLabel(response.linkedSigning.inviteSentAt)}
+                      </span>
                     ) : null}
                   </div>
                 ) : null}
               </div>
+              {response.linkedSigning?.inviteDeliveryError && response.linkedSigning?.status !== 'completed' ? (
+                <p className="fill-link-dialog__loading">{response.linkedSigning.inviteDeliveryError}</p>
+              ) : null}
               <div className="fill-link-dialog__response-actions">
                 {response.linkedSigning?.artifacts?.signedPdf?.downloadPath ? (
                   <button
@@ -504,7 +522,14 @@ function FillLinkScopePanel({
   const [signAfterSubmitEnabled, setSignAfterSubmitEnabled] = useState(false);
   const [signatureMode, setSignatureMode] = useState<NonNullable<FillLinkSigningConfig['signatureMode']>>('business');
   const [documentCategory, setDocumentCategory] = useState('ordinary_business_form');
+  const [esignEligibilityConfirmed, setEsignEligibilityConfirmed] = useState(false);
   const [manualFallbackEnabled, setManualFallbackEnabled] = useState(true);
+  const [consumerPaperCopyProcedure, setConsumerPaperCopyProcedure] = useState('');
+  const [consumerPaperCopyFeeDescription, setConsumerPaperCopyFeeDescription] = useState('');
+  const [consumerWithdrawalProcedure, setConsumerWithdrawalProcedure] = useState('');
+  const [consumerWithdrawalConsequences, setConsumerWithdrawalConsequences] = useState('');
+  const [consumerContactUpdateProcedure, setConsumerContactUpdateProcedure] = useState('');
+  const [consumerConsentScopeDescription, setConsumerConsentScopeDescription] = useState('');
   const [signerNameQuestionKey, setSignerNameQuestionKey] = useState('');
   const [signerEmailQuestionKey, setSignerEmailQuestionKey] = useState('');
   const [questions, setQuestions] = useState<FillLinkQuestion[]>([]);
@@ -590,6 +615,16 @@ function FillLinkScopePanel({
     sourceLoading,
     sourceQuestions.length,
   ]);
+  const resetState = useMemo(() => JSON.parse(stateSignature) as {
+    title: string;
+    introText: string;
+    defaultTextMaxLength: number | null;
+    requireAllFields: boolean;
+    allowRespondentPdfDownload: boolean;
+    allowRespondentEditablePdfDownload: boolean;
+    signingConfig: FillLinkSigningConfig | null;
+    questions: FillLinkQuestion[];
+  }, [stateSignature]);
 
   useEffect(() => {
     if (!open) {
@@ -598,25 +633,38 @@ function FillLinkScopePanel({
       setBuilderFilter('all');
       return;
     }
-    setTitle(initialTitle);
-    setIntroText(baseConfig.introText || '');
-    setDefaultTextMaxLength(baseConfig.defaultTextMaxLength ? String(baseConfig.defaultTextMaxLength) : '');
-    setRequireAllFields(Boolean(link?.requireAllFields));
-    setAllowRespondentPdfDownload(fillLinkRespondentPdfDownloadEnabled(link));
-    setAllowRespondentEditablePdfDownload(fillLinkRespondentPdfEditableEnabled(link));
-    setSignAfterSubmitEnabled(Boolean(link?.signingConfig?.enabled));
-    setSignatureMode(link?.signingConfig?.signatureMode === 'consumer' ? 'consumer' : 'business');
-    setDocumentCategory(link?.signingConfig?.documentCategory || 'ordinary_business_form');
-    setManualFallbackEnabled(link?.signingConfig?.manualFallbackEnabled ?? true);
-    setSignerNameQuestionKey(link?.signingConfig?.signerNameQuestionKey || '');
-    setSignerEmailQuestionKey(link?.signingConfig?.signerEmailQuestionKey || '');
-    const nextQuestions = sortFillLinkQuestions((baseConfig.questions || []).map(normalizeBuilderQuestion));
+    setTitle(resetState.title);
+    setIntroText(resetState.introText || '');
+    setDefaultTextMaxLength(
+      resetState.defaultTextMaxLength ? String(resetState.defaultTextMaxLength) : '',
+    );
+    setRequireAllFields(Boolean(resetState.requireAllFields));
+    setAllowRespondentPdfDownload(Boolean(resetState.allowRespondentPdfDownload));
+    setAllowRespondentEditablePdfDownload(Boolean(resetState.allowRespondentEditablePdfDownload));
+    setSignAfterSubmitEnabled(Boolean(resetState.signingConfig?.enabled));
+    setSignatureMode(resetState.signingConfig?.signatureMode === 'consumer' ? 'consumer' : 'business');
+    setDocumentCategory(resetState.signingConfig?.documentCategory || 'ordinary_business_form');
+    setEsignEligibilityConfirmed(
+      Boolean(
+        resetState.signingConfig?.esignEligibilityConfirmed
+        || resetState.signingConfig?.esignEligibilityConfirmedAt,
+      ),
+    );
+    setManualFallbackEnabled(resetState.signingConfig?.manualFallbackEnabled ?? true);
+    setConsumerPaperCopyProcedure(resetState.signingConfig?.consumerPaperCopyProcedure || '');
+    setConsumerPaperCopyFeeDescription(resetState.signingConfig?.consumerPaperCopyFeeDescription || '');
+    setConsumerWithdrawalProcedure(resetState.signingConfig?.consumerWithdrawalProcedure || '');
+    setConsumerWithdrawalConsequences(resetState.signingConfig?.consumerWithdrawalConsequences || '');
+    setConsumerContactUpdateProcedure(resetState.signingConfig?.consumerContactUpdateProcedure || '');
+    setConsumerConsentScopeDescription(resetState.signingConfig?.consumerConsentScopeDescription || '');
+    setSignerNameQuestionKey(resetState.signingConfig?.signerNameQuestionKey || '');
+    setSignerEmailQuestionKey(resetState.signingConfig?.signerEmailQuestionKey || '');
+    const nextQuestions = sortFillLinkQuestions((resetState.questions || []).map(normalizeBuilderQuestion));
     setQuestions(nextQuestions);
     setSelectedQuestionId(nextQuestions[0]?.id || nextQuestions[0]?.key || null);
     setBuilderSearch('');
     setBuilderFilter('all');
-    setActiveTab('builder');
-  }, [baseConfig, initialTitle, link, open, stateSignature]);
+  }, [open, resetState]);
 
   const orderedQuestions = useMemo(() => sortFillLinkQuestions(questions), [questions]);
   const currentConfig = useMemo<FillLinkWebFormConfig>(() => ({
@@ -648,6 +696,23 @@ function FillLinkScopePanel({
     () => visibleSigningQuestions.filter((question) => fillLinkQuestionLooksLikeEmail(question)),
     [visibleSigningQuestions],
   );
+  const consumerDisclosureError = useMemo(() => {
+    if (!signAfterSubmitEnabled || signatureMode !== 'consumer') return null;
+    if (!consumerPaperCopyProcedure.trim()) return 'Consumer post-submit signing requires a paper-copy or offline procedure.';
+    if (!consumerPaperCopyFeeDescription.trim()) return 'Consumer post-submit signing requires a paper-copy fee disclosure.';
+    if (!consumerWithdrawalProcedure.trim()) return 'Consumer post-submit signing requires a withdrawal procedure.';
+    if (!consumerWithdrawalConsequences.trim()) return 'Consumer post-submit signing requires withdrawal consequences.';
+    if (!consumerContactUpdateProcedure.trim()) return 'Consumer post-submit signing requires contact-update instructions.';
+    return null;
+  }, [
+    consumerContactUpdateProcedure,
+    consumerPaperCopyFeeDescription,
+    consumerPaperCopyProcedure,
+    consumerWithdrawalConsequences,
+    consumerWithdrawalProcedure,
+    signAfterSubmitEnabled,
+    signatureMode,
+  ]);
   const signingConfigError = useMemo(() => {
     if (!signAfterSubmitEnabled) return null;
     if (!visibleSigningQuestions.length) {
@@ -655,6 +720,12 @@ function FillLinkScopePanel({
     }
     if (!emailSigningQuestions.length) {
       return 'Add a visible email question before enabling post-submit signing.';
+    }
+    if (!esignEligibilityConfirmed) {
+      if (link?.id) {
+        return 'This signing-enabled link needs a U.S. e-sign eligibility confirmation before you can update it.';
+      }
+      return 'Confirm the document is eligible for DullyPDF’s U.S. e-sign flow before enabling post-submit signing.';
     }
     if (!signerNameQuestionKey) {
       return 'Choose which visible question supplies the signer name.';
@@ -665,9 +736,15 @@ function FillLinkScopePanel({
     if (!emailSigningQuestions.some((question) => question.key === signerEmailQuestionKey)) {
       return 'Choose a visible email question for the signer email mapping.';
     }
+    if (consumerDisclosureError) {
+      return consumerDisclosureError;
+    }
     return null;
   }, [
+    consumerDisclosureError,
     emailSigningQuestions,
+    esignEligibilityConfirmed,
+    link?.id,
     signAfterSubmitEnabled,
     signerEmailQuestionKey,
     signerNameQuestionKey,
@@ -845,7 +922,14 @@ function FillLinkScopePanel({
           enabled: true,
           signatureMode,
           documentCategory,
+          esignEligibilityConfirmed,
           manualFallbackEnabled,
+          consumerPaperCopyProcedure: consumerPaperCopyProcedure.trim() || undefined,
+          consumerPaperCopyFeeDescription: consumerPaperCopyFeeDescription.trim() || undefined,
+          consumerWithdrawalProcedure: consumerWithdrawalProcedure.trim() || undefined,
+          consumerWithdrawalConsequences: consumerWithdrawalConsequences.trim() || undefined,
+          consumerContactUpdateProcedure: consumerContactUpdateProcedure.trim() || undefined,
+          consumerConsentScopeDescription: consumerConsentScopeDescription.trim() || undefined,
           signerNameQuestionKey,
           signerEmailQuestionKey,
         }
@@ -1090,7 +1174,7 @@ function FillLinkScopePanel({
     <section className="fill-link-dialog__scope">
       <div className="fill-link-dialog__topbar">
         <div className="fill-link-dialog__headline">
-          <strong className="fill-link-dialog__headline-title">Fill By Web Form Link:</strong>
+          <strong className="fill-link-dialog__headline-title">Fill By Web Form Link + Sign:</strong>
           <span className="fill-link-dialog__headline-copy">
             Build a DullyPDF-hosted web form, collect respondent answers, and optionally route them into signature.
           </span>
@@ -1142,7 +1226,14 @@ function FillLinkScopePanel({
                   enabled: true,
                   signatureMode,
                   documentCategory,
+                  esignEligibilityConfirmed,
                   manualFallbackEnabled,
+                  consumerPaperCopyProcedure: consumerPaperCopyProcedure.trim() || undefined,
+                  consumerPaperCopyFeeDescription: consumerPaperCopyFeeDescription.trim() || undefined,
+                  consumerWithdrawalProcedure: consumerWithdrawalProcedure.trim() || undefined,
+                  consumerWithdrawalConsequences: consumerWithdrawalConsequences.trim() || undefined,
+                  consumerContactUpdateProcedure: consumerContactUpdateProcedure.trim() || undefined,
+                  consumerConsentScopeDescription: consumerConsentScopeDescription.trim() || undefined,
                   signerNameQuestionKey,
                   signerEmailQuestionKey,
                 }
@@ -1171,13 +1262,14 @@ function FillLinkScopePanel({
           type="button"
           className="fill-link-dialog__close-button"
           onClick={onClose}
-          aria-label="Close Fill By Web Form Link"
+          aria-label="Close Fill By Web Form Link + Sign"
         >
           ×
         </button>
       </div>
 
       {error ? <p className="fill-link-dialog__error">{error}</p> : null}
+      {publishError ? <p className="fill-link-dialog__error fill-link-dialog__error--topbar">{publishError}</p> : null}
 
       {activeTab === 'responses' ? (
         <section className="fill-link-dialog__section fill-link-dialog__section--surface fill-link-dialog__section--responses">
@@ -1367,6 +1459,18 @@ function FillLinkScopePanel({
                       </select>
                     </label>
 
+                    <label className="fill-link-dialog__toggle fill-link-dialog__field--full">
+                      <input
+                        type="checkbox"
+                        checked={esignEligibilityConfirmed}
+                        onChange={(event) => setEsignEligibilityConfirmed(event.target.checked)}
+                      />
+                      <div>
+                        <strong>Confirm U.S. e-sign eligibility</strong>
+                        <p>I reviewed the blocked-category list, including court, family-law, UCC-excluded, recall/safety, and primary-residence notice categories, and confirm this document is eligible for DullyPDF&apos;s U.S. e-sign flow.</p>
+                      </div>
+                    </label>
+
                     <label className="fill-link-dialog__field">
                       <span>Signer name question</span>
                       <select
@@ -1409,12 +1513,62 @@ function FillLinkScopePanel({
                         <p>Respondents can opt out of e-signing and ask the sender for an offline copy.</p>
                       </div>
                     </label>
+                    {signatureMode === 'consumer' ? (
+                      <>
+                        <label className="fill-link-dialog__field fill-link-dialog__field--full">
+                          <span>Paper-copy or offline procedure</span>
+                          <textarea
+                            value={consumerPaperCopyProcedure}
+                            onChange={(event) => setConsumerPaperCopyProcedure(event.target.value)}
+                            placeholder="Explain exactly how the respondent requests paper delivery or offline processing."
+                          />
+                        </label>
+                        <label className="fill-link-dialog__field fill-link-dialog__field--full">
+                          <span>Paper-copy fee disclosure</span>
+                          <textarea
+                            value={consumerPaperCopyFeeDescription}
+                            onChange={(event) => setConsumerPaperCopyFeeDescription(event.target.value)}
+                            placeholder="State any paper-copy, courier, or handling fee, or say no fee is charged."
+                          />
+                        </label>
+                        <label className="fill-link-dialog__field fill-link-dialog__field--full">
+                          <span>Withdrawal procedure</span>
+                          <textarea
+                            value={consumerWithdrawalProcedure}
+                            onChange={(event) => setConsumerWithdrawalProcedure(event.target.value)}
+                            placeholder="Explain how the respondent withdraws e-consent before signing completes."
+                          />
+                        </label>
+                        <label className="fill-link-dialog__field fill-link-dialog__field--full">
+                          <span>Withdrawal consequences</span>
+                          <textarea
+                            value={consumerWithdrawalConsequences}
+                            onChange={(event) => setConsumerWithdrawalConsequences(event.target.value)}
+                            placeholder="Explain what happens to this response after consent is withdrawn."
+                          />
+                        </label>
+                        <label className="fill-link-dialog__field fill-link-dialog__field--full">
+                          <span>Contact-update procedure</span>
+                          <textarea
+                            value={consumerContactUpdateProcedure}
+                            onChange={(event) => setConsumerContactUpdateProcedure(event.target.value)}
+                            placeholder="Explain how the respondent updates email or contact information before completion."
+                          />
+                        </label>
+                        <label className="fill-link-dialog__field fill-link-dialog__field--full">
+                          <span>Consent scope override (optional)</span>
+                          <textarea
+                            value={consumerConsentScopeDescription}
+                            onChange={(event) => setConsumerConsentScopeDescription(event.target.value)}
+                            placeholder="Leave blank to scope consent to this signing request only."
+                          />
+                        </label>
+                      </>
+                    ) : null}
                   </div>
                 </div>
               ) : null}
             </div>
-
-            {publishError ? <p className="fill-link-dialog__error">{publishError}</p> : null}
           </section>
 
           <section className="fill-link-dialog__section fill-link-dialog__section--surface fill-link-dialog__section--questions">
@@ -1538,7 +1692,7 @@ export function FillLinkManagerDialog({
     <Dialog
       open={open}
       onClose={onClose}
-      title="Fill By Web Form Link"
+      title="Fill By Web Form Link + Sign"
       description={(
         <span className="fill-link-dialog__intro">
           Build a DullyPDF-hosted web form, collect respondent answers, and optionally route them into signature.
@@ -1549,7 +1703,7 @@ export function FillLinkManagerDialog({
       <div className="fill-link-dialog__body">
         {!availableScopes.length ? (
           <div className="fill-link-dialog__empty">
-            <p>Load a saved template or open a group in the workspace, then publish Fill By Web Form Link from here.</p>
+            <p>Load a saved template or open a group in the workspace, then publish Fill By Web Form Link + Sign from here.</p>
           </div>
         ) : null}
 

@@ -9,6 +9,7 @@ handles the filled-PDF generation.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from backend.firebaseDB.fill_link_database import (
@@ -16,30 +17,55 @@ from backend.firebaseDB.fill_link_database import (
     FillLinkResponseRecord,
     attach_fill_link_response_signing_request,
 )
+from backend.firebaseDB.user_database import get_user_profile
 from backend.firebaseDB.signing_database import (
     SigningRequestRecord,
     create_signing_request,
     get_signing_request_for_user,
-    mark_signing_request_invite_delivery,
     mark_signing_request_sent,
 )
-from backend.firebaseDB.storage_service import upload_signing_pdf_bytes
-from backend.firebaseDB.storage_service import delete_storage_object
-from backend.services.signing_invite_service import SIGNING_INVITE_DELIVERY_REDIRECTED
+from backend.firebaseDB.storage_service import build_signing_bucket_uri, delete_storage_object
+from backend.logging_config import get_logger
+from backend.services.signing_request_limit_service import ensure_signing_request_limit_available
+from backend.services.signing_storage_service import (
+    ensure_signing_storage_configuration,
+    promote_signing_staged_object,
+    resolve_signing_stage_bucket_path,
+    upload_signing_staging_pdf_bytes_for_final,
+)
 from backend.services.signing_service import (
+    SIGNING_INVITE_METHOD_EMAIL,
     SIGNING_MODE_FILL_AND_SIGN,
     build_signing_source_pdf_object_path,
     build_signing_source_version,
     normalize_optional_text,
     normalize_signature_mode,
     resolve_document_category_label,
+    resolve_signing_consumer_disclosure_fields,
     resolve_signing_disclosure_version,
     sha256_hex_for_bytes,
     validate_document_category,
+    validate_esign_eligibility_confirmation,
     validate_signer_email,
     validate_signer_name,
 )
 from backend.time_utils import now_iso
+
+
+logger = get_logger(__name__)
+
+
+@dataclass(frozen=True)
+class FillLinkSigningRequestMaterialization:
+    record: SigningRequestRecord
+    created_now: bool
+    sent_now: bool
+
+
+def upload_signing_pdf_bytes(pdf_bytes: bytes, destination_path: str) -> str:
+    """Compatibility wrapper that stages bytes but returns the final signing URI."""
+    upload_signing_staging_pdf_bytes_for_final(pdf_bytes, destination_path)
+    return build_signing_bucket_uri(destination_path)
 
 
 def _looks_like_signed_date_field(field_name: str, field_type: str) -> bool:
@@ -138,6 +164,8 @@ def normalize_fill_link_signing_config(
     scope_type: str,
     questions: Iterable[Dict[str, Any]],
     fields: Iterable[Dict[str, Any]],
+    sender_display_name: Optional[str] = None,
+    sender_email: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     if not isinstance(config, dict):
         return None
@@ -176,12 +204,37 @@ def normalize_fill_link_signing_config(
 
     signature_mode = normalize_signature_mode(config.get("signatureMode"))
     document_category = validate_document_category(config.get("documentCategory"))
+    validate_esign_eligibility_confirmation(config.get("esignEligibilityConfirmed"))
+    consumer_disclosure_fields = resolve_signing_consumer_disclosure_fields(
+        signature_mode=signature_mode,
+        sender_display_name=sender_display_name,
+        sender_email=sender_email,
+        paper_copy_procedure=config.get("consumerPaperCopyProcedure"),
+        paper_copy_fee_description=config.get("consumerPaperCopyFeeDescription"),
+        withdrawal_procedure=config.get("consumerWithdrawalProcedure"),
+        withdrawal_consequences=config.get("consumerWithdrawalConsequences"),
+        contact_update_procedure=config.get("consumerContactUpdateProcedure"),
+        consent_scope_description=config.get("consumerConsentScopeDescription"),
+        require_complete=True,
+    )
+    attested_at = now_iso()
     return {
         "enabled": True,
         "signature_mode": signature_mode,
         "document_category": document_category,
         "document_category_label": resolve_document_category_label(document_category),
+        "esign_eligibility_confirmed": True,
+        "esign_eligibility_confirmed_at": attested_at,
+        "esign_eligibility_confirmed_source": "fill_link_publish",
         "manual_fallback_enabled": bool(config.get("manualFallbackEnabled", True)),
+        "sender_display_name": consumer_disclosure_fields["sender_display_name"],
+        "sender_contact_email": consumer_disclosure_fields["sender_contact_email"],
+        "consumer_paper_copy_procedure": consumer_disclosure_fields["paper_copy_procedure"],
+        "consumer_paper_copy_fee_description": consumer_disclosure_fields["paper_copy_fee_description"],
+        "consumer_withdrawal_procedure": consumer_disclosure_fields["withdrawal_procedure"],
+        "consumer_withdrawal_consequences": consumer_disclosure_fields["withdrawal_consequences"],
+        "consumer_contact_update_procedure": consumer_disclosure_fields["contact_update_procedure"],
+        "consumer_consent_scope_override": consumer_disclosure_fields["consent_scope_description"],
         "signer_name_question_key": signer_name_question_key,
         "signer_email_question_key": signer_email_question_key,
     }
@@ -199,7 +252,15 @@ def serialize_fill_link_signing_config(config: Any) -> Optional[Dict[str, Any]]:
             str(config.get("document_category_label") or "").strip()
             or resolve_document_category_label(document_category)
         ),
+        "esignEligibilityConfirmed": bool(config.get("esign_eligibility_confirmed")),
+        "esignEligibilityConfirmedAt": str(config.get("esign_eligibility_confirmed_at") or "").strip() or None,
         "manualFallbackEnabled": bool(config.get("manual_fallback_enabled", True)),
+        "consumerPaperCopyProcedure": str(config.get("consumer_paper_copy_procedure") or "").strip() or None,
+        "consumerPaperCopyFeeDescription": str(config.get("consumer_paper_copy_fee_description") or "").strip() or None,
+        "consumerWithdrawalProcedure": str(config.get("consumer_withdrawal_procedure") or "").strip() or None,
+        "consumerWithdrawalConsequences": str(config.get("consumer_withdrawal_consequences") or "").strip() or None,
+        "consumerContactUpdateProcedure": str(config.get("consumer_contact_update_procedure") or "").strip() or None,
+        "consumerConsentScopeDescription": str(config.get("consumer_consent_scope_override") or "").strip() or None,
         "signerNameQuestionKey": str(config.get("signer_name_question_key") or "").strip(),
         "signerEmailQuestionKey": str(config.get("signer_email_question_key") or "").strip(),
     }
@@ -229,7 +290,10 @@ def ensure_fill_link_response_signing_request(
     response: FillLinkResponseRecord,
     source_pdf_bytes: bytes,
     signing_config: Dict[str, Any],
-) -> SigningRequestRecord:
+    sender_email: Optional[str] = None,
+    sender_display_name: Optional[str] = None,
+) -> FillLinkSigningRequestMaterialization:
+    ensure_signing_storage_configuration(validate_remote=False)
     response_snapshot = (
         response.respondent_pdf_snapshot
         if isinstance(response.respondent_pdf_snapshot, dict)
@@ -244,6 +308,32 @@ def ensure_fill_link_response_signing_request(
     anchors = build_fill_link_signing_anchors(response_snapshot.get("fields") or [])
     if not anchors:
         raise ValueError("No usable signature anchors were found for this template.")
+    document_category = validate_document_category(
+        str(signing_config.get("document_category") or "ordinary_business_form")
+    )
+    if not bool(signing_config.get("esign_eligibility_confirmed")):
+        raise ValueError(
+            "Republish the Fill By Link signing settings after confirming the document is eligible for DullyPDF's U.S. e-sign flow."
+        )
+    consumer_disclosure_fields = resolve_signing_consumer_disclosure_fields(
+        signature_mode=str(signing_config.get("signature_mode") or "business"),
+        sender_display_name=normalize_optional_text(
+            signing_config.get("sender_display_name"),
+            maximum_length=200,
+        ) or normalize_optional_text(sender_display_name, maximum_length=200),
+        sender_email=sender_email,
+        sender_contact_email=normalize_optional_text(
+            signing_config.get("sender_contact_email"),
+            maximum_length=200,
+        ),
+        paper_copy_procedure=signing_config.get("consumer_paper_copy_procedure"),
+        paper_copy_fee_description=signing_config.get("consumer_paper_copy_fee_description"),
+        withdrawal_procedure=signing_config.get("consumer_withdrawal_procedure"),
+        withdrawal_consequences=signing_config.get("consumer_withdrawal_consequences"),
+        contact_update_procedure=signing_config.get("consumer_contact_update_procedure"),
+        consent_scope_description=signing_config.get("consumer_consent_scope_override"),
+        require_complete=True,
+    )
 
     existing_request: Optional[SigningRequestRecord] = None
     if response.signing_request_id:
@@ -258,7 +348,21 @@ def ensure_fill_link_response_signing_request(
     )
 
     request_record = existing_request
+    created_now = False
     if request_record is None:
+        source_version = build_signing_source_version(
+            source_type="fill_link_response",
+            source_id=response.id,
+            source_template_id=link.template_id,
+            source_pdf_sha256=current_sha256,
+        )
+        owner_profile = get_user_profile(link.user_id)
+        ensure_signing_request_limit_available(
+            user_id=link.user_id,
+            role=owner_profile.role if owner_profile else None,
+            source_version=source_version,
+            source_document_name=source_document_name,
+        )
         disclosure_version = resolve_signing_disclosure_version(str(signing_config.get("signature_mode") or "business"))
         request_record = create_signing_request(
             user_id=link.user_id,
@@ -273,19 +377,33 @@ def ensure_fill_link_response_signing_request(
             source_template_id=link.template_id,
             source_template_name=link.template_name,
             source_pdf_sha256=current_sha256,
-            source_version=build_signing_source_version(
-                source_type="fill_link_response",
-                source_id=response.id,
-                source_template_id=link.template_id,
-                source_pdf_sha256=current_sha256,
-            ),
-            document_category=str(signing_config.get("document_category") or "ordinary_business_form"),
+            source_version=source_version,
+            document_category=document_category,
             manual_fallback_enabled=bool(signing_config.get("manual_fallback_enabled", True)),
             signer_name=signer_name,
             signer_email=signer_email,
             anchors=anchors,
             disclosure_version=disclosure_version,
+            sender_display_name=consumer_disclosure_fields["sender_display_name"],
+            esign_eligibility_confirmed_at=normalize_optional_text(
+                signing_config.get("esign_eligibility_confirmed_at"),
+                maximum_length=80,
+            ) or now_iso(),
+            esign_eligibility_confirmed_source=normalize_optional_text(
+                signing_config.get("esign_eligibility_confirmed_source"),
+                maximum_length=80,
+            ) or "fill_link_publish",
+            sender_email=sender_email,
+            sender_contact_email=consumer_disclosure_fields["sender_contact_email"],
+            consumer_paper_copy_procedure=consumer_disclosure_fields["paper_copy_procedure"],
+            consumer_paper_copy_fee_description=consumer_disclosure_fields["paper_copy_fee_description"],
+            consumer_withdrawal_procedure=consumer_disclosure_fields["withdrawal_procedure"],
+            consumer_withdrawal_consequences=consumer_disclosure_fields["withdrawal_consequences"],
+            consumer_contact_update_procedure=consumer_disclosure_fields["contact_update_procedure"],
+            consumer_consent_scope_override=consumer_disclosure_fields["consent_scope_description"],
+            invite_method=SIGNING_INVITE_METHOD_EMAIL,
         )
+        created_now = True
         attach_fill_link_response_signing_request(
             response.id,
             link.id,
@@ -294,14 +412,21 @@ def ensure_fill_link_response_signing_request(
         )
 
     if request_record.status in {"sent", "completed"}:
-        return request_record
+        return FillLinkSigningRequestMaterialization(record=request_record, created_now=created_now, sent_now=False)
 
     source_pdf_object_path = build_signing_source_pdf_object_path(
         user_id=link.user_id,
         request_id=request_record.id,
         source_document_name=source_document_name,
     )
-    source_pdf_bucket_path = upload_signing_pdf_bytes(source_pdf_bytes, source_pdf_object_path)
+    source_pdf_bucket_path = upload_signing_pdf_bytes(
+        source_pdf_bytes,
+        source_pdf_object_path,
+    )
+    try:
+        staged_source_pdf_bucket_path = resolve_signing_stage_bucket_path(source_pdf_bucket_path)
+    except ValueError:
+        staged_source_pdf_bucket_path = source_pdf_bucket_path
     sent_record = mark_signing_request_sent(
         request_record.id,
         link.user_id,
@@ -316,18 +441,21 @@ def ensure_fill_link_response_signing_request(
         owner_review_confirmed_at=now_iso(),
     )
     if sent_record is None:
-        delete_storage_object(source_pdf_bucket_path)
+        delete_storage_object(staged_source_pdf_bucket_path)
         raise ValueError("Failed to create the signing request from this Fill By Link response.")
     if sent_record.status != "sent" or sent_record.source_pdf_bucket_path != source_pdf_bucket_path:
-        delete_storage_object(source_pdf_bucket_path)
+        delete_storage_object(staged_source_pdf_bucket_path)
         raise ValueError("This signing request changed before the Fill By Link handoff could be sent.")
+    try:
+        promote_signing_staged_object(
+            source_pdf_bucket_path,
+            retain_until=sent_record.retention_until,
+        )
+    except Exception as exc:
+        logger.warning(
+            "Fill By Link source PDF promotion to finalized signing storage failed for request %s: %s",
+            request_record.id,
+            exc,
+        )
 
-    redirected_record = mark_signing_request_invite_delivery(
-        sent_record.id,
-        link.user_id,
-        delivery_status=SIGNING_INVITE_DELIVERY_REDIRECTED,
-        attempted_at=now_iso(),
-        sent_at=None,
-        delivery_error=None,
-    )
-    return redirected_record or sent_record
+    return FillLinkSigningRequestMaterialization(record=sent_record, created_now=created_now, sent_now=True)

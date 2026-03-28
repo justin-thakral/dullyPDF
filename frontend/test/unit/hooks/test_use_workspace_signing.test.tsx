@@ -5,16 +5,22 @@ import { useWorkspaceSigning, type UseWorkspaceSigningDeps } from '../../../src/
 import type { ReviewedFillContext } from '../../../src/utils/signing';
 
 const getSigningOptionsMock = vi.hoisted(() => vi.fn());
+const getSigningRequestsMock = vi.hoisted(() => vi.fn());
 const createSigningRequestMock = vi.hoisted(() => vi.fn());
 const sendSigningRequestMock = vi.hoisted(() => vi.fn());
 const getSigningRequestMock = vi.hoisted(() => vi.fn());
+const revokeSigningRequestMock = vi.hoisted(() => vi.fn());
+const reissueSigningRequestMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../../../src/services/api', () => ({
   ApiService: {
     getSigningOptions: getSigningOptionsMock,
+    getSigningRequests: getSigningRequestsMock,
     createSigningRequest: createSigningRequestMock,
     sendSigningRequest: sendSigningRequestMock,
     getSigningRequest: getSigningRequestMock,
+    revokeSigningRequest: revokeSigningRequestMock,
+    reissueSigningRequest: reissueSigningRequestMock,
   },
 }));
 
@@ -73,9 +79,13 @@ function renderHookHarness(deps: UseWorkspaceSigningDeps, options?: { strictMode
 describe('useWorkspaceSigning', () => {
   beforeEach(() => {
     getSigningOptionsMock.mockReset();
+    getSigningRequestsMock.mockReset();
     createSigningRequestMock.mockReset();
     sendSigningRequestMock.mockReset();
     getSigningRequestMock.mockReset();
+    revokeSigningRequestMock.mockReset();
+    reissueSigningRequestMock.mockReset();
+    getSigningRequestsMock.mockResolvedValue([]);
   });
 
   it('loads signing options when the owner opens the dialog and derives signing anchors from fields', async () => {
@@ -536,5 +546,222 @@ describe('useWorkspaceSigning', () => {
       status: 'sent',
       ownerReviewConfirmedAt: '2026-03-24T21:10:00Z',
     }));
+  });
+
+  it('revokes a saved signing request and refreshes the owner response list', async () => {
+    getSigningOptionsMock.mockResolvedValue({
+      modes: [{ key: 'sign', label: 'Sign' }],
+      signatureModes: [{ key: 'business', label: 'Business' }],
+      categories: [{ key: 'ordinary_business_form', label: 'Ordinary business form', blocked: false }],
+    });
+    getSigningRequestsMock
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          id: 'req-1',
+          sourceDocumentName: 'Bravo Packet',
+          publicPath: '/sign/token-1',
+          anchors: [],
+          documentCategory: 'ordinary_business_form',
+          documentCategoryLabel: 'Ordinary business form',
+          disclosureVersion: 'us-esign-business-v1',
+          manualFallbackEnabled: true,
+          mode: 'sign',
+          signatureMode: 'business',
+          signerEmail: 'alex@example.com',
+          signerName: 'Alex Signer',
+          sourceType: 'workspace',
+          status: 'invalidated',
+          invalidationReason: 'This signing draft was canceled by the sender.',
+        },
+      ]);
+    createSigningRequestMock.mockResolvedValue({
+      id: 'req-1',
+      sourceDocumentName: 'Bravo Packet',
+      publicPath: '/sign/token-1',
+      anchors: [],
+      documentCategory: 'ordinary_business_form',
+      documentCategoryLabel: 'Ordinary business form',
+      disclosureVersion: 'us-esign-business-v1',
+      manualFallbackEnabled: true,
+      mode: 'sign',
+      signatureMode: 'business',
+      signerEmail: 'alex@example.com',
+      signerName: 'Alex Signer',
+      sourceType: 'workspace',
+      status: 'draft',
+    });
+    revokeSigningRequestMock.mockResolvedValue({
+      id: 'req-1',
+      sourceDocumentName: 'Bravo Packet',
+      publicPath: '/sign/token-1',
+      anchors: [],
+      documentCategory: 'ordinary_business_form',
+      documentCategoryLabel: 'Ordinary business form',
+      disclosureVersion: 'us-esign-business-v1',
+      manualFallbackEnabled: true,
+      mode: 'sign',
+      signatureMode: 'business',
+      signerEmail: 'alex@example.com',
+      signerName: 'Alex Signer',
+      sourceType: 'workspace',
+      status: 'invalidated',
+      invalidationReason: 'This signing draft was canceled by the sender.',
+    });
+
+    const hook = renderHookHarness(createDeps());
+
+    act(() => {
+      hook.current.openDialog();
+    });
+    await waitFor(() => expect(getSigningOptionsMock).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      await hook.current.dialogProps.onCreateDraft({
+        title: 'Bravo Packet Signature Request',
+        mode: 'sign',
+        signatureMode: 'business',
+        sourceType: 'workspace',
+        sourceId: 'form-1',
+        sourceDocumentName: 'Bravo Packet',
+        sourceTemplateId: 'form-1',
+        sourceTemplateName: 'Bravo Packet',
+        documentCategory: 'ordinary_business_form',
+        manualFallbackEnabled: true,
+        signerName: 'Alex Signer',
+        signerEmail: 'alex@example.com',
+        anchors: [],
+      });
+    });
+
+    await act(async () => {
+      await hook.current.dialogProps.onRevokeRequest?.('req-1');
+    });
+
+    expect(revokeSigningRequestMock).toHaveBeenCalledWith('req-1');
+    expect(getSigningRequestsMock).toHaveBeenCalledTimes(3);
+    expect(hook.current.dialogProps.createdRequest).toEqual(expect.objectContaining({
+      status: 'invalidated',
+      invalidationReason: 'This signing draft was canceled by the sender.',
+    }));
+    expect(hook.current.dialogProps.notice).toBe('Signing draft canceled.');
+  });
+
+  it('reissues a signer link and refreshes the owner response list', async () => {
+    getSigningOptionsMock.mockResolvedValue({
+      modes: [{ key: 'sign', label: 'Sign' }],
+      signatureModes: [{ key: 'business', label: 'Business' }],
+      categories: [{ key: 'ordinary_business_form', label: 'Ordinary business form', blocked: false }],
+    });
+    getSigningRequestsMock
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          id: 'req-1',
+          sourceDocumentName: 'Bravo Packet',
+          publicPath: '/sign/token-2',
+          publicLinkVersion: 2,
+          publicLinkLastReissuedAt: '2026-03-24T21:15:00Z',
+          anchors: [],
+          documentCategory: 'ordinary_business_form',
+          documentCategoryLabel: 'Ordinary business form',
+          disclosureVersion: 'us-esign-business-v1',
+          manualFallbackEnabled: true,
+          mode: 'sign',
+          signatureMode: 'business',
+          signerEmail: 'alex@example.com',
+          signerName: 'Alex Signer',
+          sourceType: 'workspace',
+          status: 'sent',
+          artifacts: {
+            sourcePdf: { available: true },
+            signedPdf: { available: false },
+            auditReceipt: { available: false },
+          },
+        },
+      ]);
+    createSigningRequestMock.mockResolvedValue({
+      id: 'req-1',
+      sourceDocumentName: 'Bravo Packet',
+      publicPath: '/sign/token-1',
+      publicLinkVersion: 1,
+      anchors: [],
+      documentCategory: 'ordinary_business_form',
+      documentCategoryLabel: 'Ordinary business form',
+      disclosureVersion: 'us-esign-business-v1',
+      manualFallbackEnabled: true,
+      mode: 'sign',
+      signatureMode: 'business',
+      signerEmail: 'alex@example.com',
+      signerName: 'Alex Signer',
+      sourceType: 'workspace',
+      status: 'draft',
+      artifacts: {
+        sourcePdf: { available: false },
+        signedPdf: { available: false },
+        auditReceipt: { available: false },
+      },
+    });
+    reissueSigningRequestMock.mockResolvedValue({
+      id: 'req-1',
+      sourceDocumentName: 'Bravo Packet',
+      publicPath: '/sign/token-2',
+      publicLinkVersion: 2,
+      publicLinkLastReissuedAt: '2026-03-24T21:15:00Z',
+      anchors: [],
+      documentCategory: 'ordinary_business_form',
+      documentCategoryLabel: 'Ordinary business form',
+      disclosureVersion: 'us-esign-business-v1',
+      manualFallbackEnabled: true,
+      mode: 'sign',
+      signatureMode: 'business',
+      signerEmail: 'alex@example.com',
+      signerName: 'Alex Signer',
+      sourceType: 'workspace',
+      status: 'sent',
+      artifacts: {
+        sourcePdf: { available: true },
+        signedPdf: { available: false },
+        auditReceipt: { available: false },
+      },
+    });
+
+    const hook = renderHookHarness(createDeps());
+
+    act(() => {
+      hook.current.openDialog();
+    });
+    await waitFor(() => expect(getSigningOptionsMock).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      await hook.current.dialogProps.onCreateDraft({
+        title: 'Bravo Packet Signature Request',
+        mode: 'sign',
+        signatureMode: 'business',
+        sourceType: 'workspace',
+        sourceId: 'form-1',
+        sourceDocumentName: 'Bravo Packet',
+        sourceTemplateId: 'form-1',
+        sourceTemplateName: 'Bravo Packet',
+        documentCategory: 'ordinary_business_form',
+        manualFallbackEnabled: true,
+        signerName: 'Alex Signer',
+        signerEmail: 'alex@example.com',
+        anchors: [],
+      });
+    });
+
+    await act(async () => {
+      await hook.current.dialogProps.onReissueRequest?.('req-1');
+    });
+
+    expect(reissueSigningRequestMock).toHaveBeenCalledWith('req-1');
+    expect(getSigningRequestsMock).toHaveBeenCalledTimes(3);
+    expect(hook.current.dialogProps.createdRequest).toEqual(expect.objectContaining({
+      status: 'sent',
+      publicLinkVersion: 2,
+      publicPath: '/sign/token-2',
+    }));
+    expect(hook.current.dialogProps.notice).toBe('Replacement signer link issued. Previous links are now inactive.');
   });
 });

@@ -1728,7 +1728,7 @@ def test_billing_reconcile_returns_processed_events_for_frontend_matching(
 def test_billing_webhook_rejects_invalid_signature(client, app_main, mocker) -> None:
     mocker.patch.object(app_main, "construct_webhook_event", side_effect=ValueError("Missing Stripe-Signature header."))
 
-    response = client.post("/api/billing/webhook", data=b"{}")
+    response = client.post("/api/billing/webhook", content=b"{}")
 
     assert response.status_code == 400
     assert "Missing Stripe-Signature header." in response.text
@@ -1738,7 +1738,7 @@ def test_billing_webhook_trailing_slash_remains_public(client, app_main, mocker)
     verify_mock = mocker.patch.object(app_main, "_verify_token")
     mocker.patch.object(app_main, "construct_webhook_event", side_effect=ValueError("Missing Stripe-Signature header."))
 
-    response = client.post("/api/billing/webhook/", data=b"{}", follow_redirects=True)
+    response = client.post("/api/billing/webhook/", content=b"{}", follow_redirects=True)
 
     assert response.status_code == 400
     assert "Missing Stripe-Signature header." in response.text
@@ -1758,7 +1758,7 @@ def test_billing_webhook_rejects_missing_event_id_or_type(client, app_main, mock
 
     response = client.post(
         "/api/billing/webhook",
-        data=b"{}",
+        content=b"{}",
         headers={"Stripe-Signature": "sig"},
     )
 
@@ -1781,7 +1781,7 @@ def test_billing_webhook_short_circuits_duplicate_events(client, app_main, mocke
 
     response = client.post(
         "/api/billing/webhook",
-        data=b"{}",
+        content=b"{}",
         headers={"Stripe-Signature": "sig"},
     )
 
@@ -1809,7 +1809,7 @@ def test_billing_webhook_returns_503_when_event_is_already_processing(client, ap
 
     response = client.post(
         "/api/billing/webhook",
-        data=b"{}",
+        content=b"{}",
         headers={"Stripe-Signature": "sig"},
     )
 
@@ -1833,7 +1833,7 @@ def test_billing_webhook_unknown_event_type_is_noop_and_completes(client, app_ma
 
     response = client.post(
         "/api/billing/webhook",
-        data=b"{}",
+        content=b"{}",
         headers={"Stripe-Signature": "sig"},
     )
 
@@ -1889,7 +1889,7 @@ def test_billing_webhook_applies_refill_and_marks_complete(client, app_main, moc
 
     response = client.post(
         "/api/billing/webhook",
-        data=b"{}",
+        content=b"{}",
         headers={"Stripe-Signature": "sig"},
     )
 
@@ -1945,7 +1945,7 @@ def test_billing_webhook_refill_ineligible_returns_retryable_and_does_not_comple
 
     response = client.post(
         "/api/billing/webhook",
-        data=b"{}",
+        content=b"{}",
         headers={"Stripe-Signature": "sig"},
     )
 
@@ -2003,7 +2003,7 @@ def test_billing_webhook_refill_uses_line_items_price_fallback_when_metadata_lac
 
     response = client.post(
         "/api/billing/webhook",
-        data=b"{}",
+        content=b"{}",
         headers={"Stripe-Signature": "sig"},
     )
 
@@ -2064,7 +2064,7 @@ def test_billing_webhook_refill_checkout_skips_on_credit_metadata_mismatch(clien
 
     response = client.post(
         "/api/billing/webhook",
-        data=b"{}",
+        content=b"{}",
         headers={"Stripe-Signature": "sig"},
     )
 
@@ -2124,7 +2124,7 @@ def test_billing_webhook_refill_checkout_skips_when_credit_mapping_is_missing(cl
 
     response = client.post(
         "/api/billing/webhook",
-        data=b"{}",
+        content=b"{}",
         headers={"Stripe-Signature": "sig"},
     )
 
@@ -2203,7 +2203,7 @@ def test_billing_webhook_refill_card_outcomes_only_fulfill_paid_sessions(
 
     response = client.post(
         "/api/billing/webhook",
-        data=b"{}",
+        content=b"{}",
         headers={"Stripe-Signature": "sig"},
     )
 
@@ -2252,7 +2252,7 @@ def test_billing_webhook_refill_checkout_skips_fulfillment_when_user_is_not_pro(
 
     response = client.post(
         "/api/billing/webhook",
-        data=b"{}",
+        content=b"{}",
         headers={"Stripe-Signature": "sig"},
     )
 
@@ -2306,7 +2306,7 @@ def test_billing_webhook_refill_checkout_skips_when_subscription_is_inactive(cli
 
     response = client.post(
         "/api/billing/webhook",
-        data=b"{}",
+        content=b"{}",
         headers={"Stripe-Signature": "sig"},
     )
 
@@ -2367,7 +2367,7 @@ def test_billing_webhook_pro_checkout_card_outcomes_only_promote_paid_sessions(
 
     response = client.post(
         "/api/billing/webhook",
-        data=b"{}",
+        content=b"{}",
         headers={"Stripe-Signature": "sig"},
     )
 
@@ -2418,7 +2418,7 @@ def test_billing_webhook_pro_checkout_uses_client_reference_user_when_metadata_m
 
     response = client.post(
         "/api/billing/webhook",
-        data=b"{}",
+        content=b"{}",
         headers={"Stripe-Signature": "sig"},
     )
 
@@ -2469,7 +2469,7 @@ def test_billing_webhook_subscription_deletion_downgrades_to_base(client, app_ma
 
     response = client.post(
         "/api/billing/webhook",
-        data=b"{}",
+        content=b"{}",
         headers={"Stripe-Signature": "sig"},
     )
 
@@ -2509,7 +2509,7 @@ def test_billing_webhook_subscription_updated_cancel_at_period_end_keeps_pro_rol
 
     response = client.post(
         "/api/billing/webhook",
-        data=b"{}",
+        content=b"{}",
         headers={"Stripe-Signature": "sig"},
     )
 
@@ -2553,7 +2553,7 @@ def test_billing_webhook_subscription_lifecycle_ignores_non_pro_subscription_eve
 
     response = client.post(
         "/api/billing/webhook",
-        data=b"{}",
+        content=b"{}",
         headers={"Stripe-Signature": "sig"},
     )
 
@@ -2612,7 +2612,7 @@ def test_billing_webhook_subscription_lifecycle_uses_stored_pro_record_when_even
 
     response = client.post(
         "/api/billing/webhook",
-        data=b"{}",
+        content=b"{}",
         headers={"Stripe-Signature": "sig"},
     )
 
@@ -2654,7 +2654,7 @@ def test_billing_webhook_subscription_lifecycle_missing_user_returns_retryable(c
 
     response = client.post(
         "/api/billing/webhook",
-        data=b"{}",
+        content=b"{}",
         headers={"Stripe-Signature": "sig"},
     )
 
@@ -2697,7 +2697,7 @@ def test_billing_webhook_retryable_failure_deletes_lock_when_clear_fails(client,
 
     response = client.post(
         "/api/billing/webhook",
-        data=b"{}",
+        content=b"{}",
         headers={"Stripe-Signature": "sig"},
     )
 
@@ -2731,7 +2731,7 @@ def test_billing_webhook_processing_failure_deletes_lock_when_clear_fails(client
 
     response = client.post(
         "/api/billing/webhook",
-        data=b"{}",
+        content=b"{}",
         headers={"Stripe-Signature": "sig"},
     )
 
@@ -2767,7 +2767,7 @@ def test_billing_webhook_subscription_lifecycle_non_pro_missing_user_is_noop(cli
 
     response = client.post(
         "/api/billing/webhook",
-        data=b"{}",
+        content=b"{}",
         headers={"Stripe-Signature": "sig"},
     )
 
@@ -2809,7 +2809,7 @@ def test_billing_webhook_invoice_paid_resets_pro_monthly_pool(client, app_main, 
 
     response = client.post(
         "/api/billing/webhook",
-        data=b"{}",
+        content=b"{}",
         headers={"Stripe-Signature": "sig"},
     )
 
@@ -2860,7 +2860,7 @@ def test_billing_webhook_invoice_paid_missing_prices_is_noop(client, app_main, m
 
     response = client.post(
         "/api/billing/webhook",
-        data=b"{}",
+        content=b"{}",
         headers={"Stripe-Signature": "sig"},
     )
 
@@ -2912,7 +2912,7 @@ def test_billing_webhook_invoice_paid_uses_stored_pro_price_when_lines_missing(c
 
     response = client.post(
         "/api/billing/webhook",
-        data=b"{}",
+        content=b"{}",
         headers={"Stripe-Signature": "sig"},
     )
 
@@ -2955,7 +2955,7 @@ def test_billing_webhook_invoice_paid_selects_pro_price_from_mixed_invoice_lines
 
     response = client.post(
         "/api/billing/webhook",
-        data=b"{}",
+        content=b"{}",
         headers={"Stripe-Signature": "sig"},
     )
 
@@ -2997,7 +2997,7 @@ def test_billing_webhook_invoice_paid_missing_user_returns_retryable(client, app
 
     response = client.post(
         "/api/billing/webhook",
-        data=b"{}",
+        content=b"{}",
         headers={"Stripe-Signature": "sig"},
     )
 
@@ -3053,7 +3053,7 @@ def test_billing_webhook_processing_failure_clears_event_lock(client, app_main, 
 
     response = client.post(
         "/api/billing/webhook",
-        data=b"{}",
+        content=b"{}",
         headers={"Stripe-Signature": "sig"},
     )
 

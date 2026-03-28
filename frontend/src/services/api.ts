@@ -191,6 +191,7 @@ export type TemplateApiEndpointSummary = {
   currentMonthUsageCount?: number;
   authFailureCount?: number;
   validationFailureCount?: number;
+  runtimeFailureCount?: number;
   suspiciousFailureCount?: number;
   lastFailureAt?: string | null;
   lastFailureReason?: string | null;
@@ -287,6 +288,7 @@ export type ProfileLimits = {
   templateApiActiveMax?: number;
   templateApiRequestsMonthlyMax?: number;
   templateApiMaxPages?: number;
+  signingRequestsPerDocumentMax?: number;
 };
 
 export type BillingCheckoutKind = 'pro_monthly' | 'pro_yearly' | 'refill_500';
@@ -390,6 +392,7 @@ export type UserProfile = {
 export type SigningRequestMode = 'sign' | 'fill_and_sign';
 export type SigningRequestSignatureMode = 'business' | 'consumer';
 export type SigningRequestSourceType = 'workspace' | 'fill_link_response' | 'uploaded_pdf';
+export type SigningAdoptedMode = 'default' | 'typed' | 'drawn' | 'uploaded';
 
 export type SigningAnchorPayload = {
   kind: 'signature' | 'signed_date' | 'initials';
@@ -423,6 +426,18 @@ export type SigningArtifactDescriptor = {
   signatureAlgorithm?: string | null;
   kmsKeyResourceName?: string | null;
   kmsKeyVersionName?: string | null;
+  digitalSignature?: {
+    available: boolean;
+    method?: string | null;
+    algorithm?: string | null;
+    fieldName?: string | null;
+    subfilter?: string | null;
+    timestamped?: boolean;
+    certificateSubject?: string | null;
+    certificateIssuer?: string | null;
+    certificateSerialNumber?: string | null;
+    certificateFingerprintSha256?: string | null;
+  } | null;
 };
 
 export type SigningArtifactCollection = {
@@ -449,13 +464,32 @@ export type SigningRequestSummary = {
   sourceVersion?: string | null;
   documentCategory: string;
   documentCategoryLabel: string;
+  esignEligibilityConfirmedAt?: string | null;
+  esignEligibilityConfirmedSource?: string | null;
   manualFallbackEnabled: boolean;
   signerName: string;
   signerEmail: string;
+  signerContactMethod?: string | null;
+  signerAuthMethod?: string | null;
+  ownerUserId?: string | null;
+  senderDisplayName?: string | null;
+  senderEmail?: string | null;
+  senderContactEmail?: string | null;
+  consumerPaperCopyProcedure?: string | null;
+  consumerPaperCopyFeeDescription?: string | null;
+  consumerWithdrawalProcedure?: string | null;
+  consumerWithdrawalConsequences?: string | null;
+  consumerContactUpdateProcedure?: string | null;
+  consumerConsentScopeDescription?: string | null;
+  inviteMethod?: string | null;
+  inviteProvider?: string | null;
+  inviteProviderMessageId?: string | null;
   inviteDeliveryStatus?: string | null;
   inviteLastAttemptAt?: string | null;
   inviteSentAt?: string | null;
   inviteDeliveryError?: string | null;
+  inviteDeliveryErrorCode?: string | null;
+  manualLinkSharedAt?: string | null;
   status: string;
   anchors: SigningAnchorPayload[];
   disclosureVersion: string;
@@ -466,12 +500,25 @@ export type SigningRequestSummary = {
   ownerReviewConfirmedAt?: string | null;
   sentAt?: string | null;
   completedAt?: string | null;
+  expiresAt?: string | null;
+  isExpired?: boolean;
+  publicLinkVersion?: number;
+  publicLinkRevokedAt?: string | null;
+  publicLinkLastReissuedAt?: string | null;
+  validationPath?: string | null;
   retentionUntil?: string | null;
   openedAt?: string | null;
   reviewedAt?: string | null;
   consentedAt?: string | null;
+  consumerDisclosurePresentedAt?: string | null;
+  consumerConsentScope?: string | null;
+  consumerAccessDemonstratedAt?: string | null;
+  consumerAccessDemonstrationMethod?: string | null;
+  consentWithdrawnAt?: string | null;
   signatureAdoptedAt?: string | null;
   signatureAdoptedName?: string | null;
+  signatureAdoptedMode?: SigningAdoptedMode | null;
+  signatureAdoptedImageDataUrl?: string | null;
   manualFallbackRequestedAt?: string | null;
   invalidatedAt?: string | null;
   invalidationReason?: string | null;
@@ -491,19 +538,70 @@ export type PublicSigningRequest = {
   documentCategory: string;
   documentCategoryLabel: string;
   manualFallbackEnabled: boolean;
+  senderDisplayName?: string | null;
+  senderContactEmail?: string | null;
   signerName: string;
+  signerEmailHint?: string | null;
+  signerContactMethod?: string | null;
+  signerAuthMethod?: string | null;
   anchors: SigningAnchorPayload[];
   disclosureVersion: string;
+  disclosure?: {
+    version?: string;
+    sha256?: string | null;
+    presentedAt?: string | null;
+    acceptedAt?: string | null;
+    consentScope?: string | null;
+    accessDemonstratedAt?: string | null;
+    accessDemonstrationMethod?: string | null;
+    summaryLines?: string[];
+    sender?: {
+      displayName?: string | null;
+      contactEmail?: string | null;
+    } | null;
+    paperOption?: {
+      instructions?: string;
+      fees?: string;
+    } | null;
+    withdrawal?: {
+      instructions?: string;
+      consequences?: string;
+    } | null;
+    scope?: string | null;
+    contactUpdates?: string | null;
+    paperCopy?: string | null;
+    hardwareSoftware?: string[];
+    accessCheck?: {
+      required?: boolean;
+      format?: string | null;
+      instructions?: string | null;
+      codeLength?: number | null;
+      accessPath?: string | null;
+    } | null;
+  } | null;
   documentPath: string;
   artifacts: Pick<SigningArtifactCollection, 'signedPdf' | 'auditReceipt'>;
   createdAt?: string | null;
   sentAt?: string | null;
   completedAt?: string | null;
+  validationPath?: string | null;
+  expiresAt?: string | null;
+  isExpired?: boolean;
+  verificationRequired?: boolean;
+  verificationMethod?: string | null;
+  verificationCompletedAt?: string | null;
   openedAt?: string | null;
   reviewedAt?: string | null;
   consentedAt?: string | null;
+  consumerDisclosurePresentedAt?: string | null;
+  consumerConsentScope?: string | null;
+  consumerAccessDemonstratedAt?: string | null;
+  consumerAccessDemonstrationMethod?: string | null;
+  consentWithdrawnAt?: string | null;
   signatureAdoptedAt?: string | null;
   signatureAdoptedName?: string | null;
+  signatureAdoptedMode?: SigningAdoptedMode | null;
+  signatureAdoptedImageDataUrl?: string | null;
   manualFallbackRequestedAt?: string | null;
   invalidatedAt?: string | null;
   invalidationReason?: string | null;
@@ -513,11 +611,80 @@ export type PublicSigningSession = {
   id: string;
   token: string;
   expiresAt?: string | null;
+  verifiedAt?: string | null;
+  verificationSentAt?: string | null;
+  verificationExpiresAt?: string | null;
+  verificationAttemptCount?: number;
+  verificationResendCount?: number;
+  verificationResendAvailableAt?: string | null;
 };
 
 export type PublicSigningBootstrap = {
   request: PublicSigningRequest;
   session?: PublicSigningSession | null;
+};
+
+export type PublicSigningAdoptPayload = {
+  signatureType: SigningAdoptedMode;
+  adoptedName?: string | null;
+  signatureImageDataUrl?: string | null;
+};
+
+export type PublicSigningValidationCheck = {
+  key: string;
+  label: string;
+  passed: boolean;
+};
+
+export type PublicSigningValidation = {
+  available: boolean;
+  valid: boolean;
+  status: 'valid' | 'invalid' | 'unavailable' | string;
+  statusMessage: string;
+  validatedAt: string;
+  requestId: string;
+  title?: string | null;
+  sourceDocumentName: string;
+  sourceVersion?: string | null;
+  documentCategory: string;
+  documentCategoryLabel: string;
+  completedAt?: string | null;
+  retentionUntil?: string | null;
+  sender?: {
+    displayName?: string | null;
+    contactEmail?: string | null;
+  } | null;
+  signer?: {
+    name?: string | null;
+    adoptedName?: string | null;
+  } | null;
+  validationPath: string;
+  validationUrl: string;
+  sourcePdfSha256?: string | null;
+  signedPdfSha256?: string | null;
+  auditManifestSha256?: string | null;
+  auditReceiptSha256?: string | null;
+  checks: PublicSigningValidationCheck[];
+  eventCount?: number | null;
+  signature?: {
+    method?: string | null;
+    algorithm?: string | null;
+    keyVersionName?: string | null;
+    digestSha256?: string | null;
+  } | null;
+};
+
+export type PublicSigningFileResult = {
+  blob: Blob;
+  filename: string | null;
+  contentType: string | null;
+};
+
+export type PublicSigningArtifactIssueResult = {
+  artifactKey: string;
+  downloadPath: string;
+  expiresAt?: string | null;
+  mediaType?: string | null;
 };
 
 export type SigningRequestArtifactsResponse = {
@@ -539,7 +706,14 @@ export type CreateSigningRequestPayload = {
   sourceTemplateName?: string;
   sourcePdfSha256?: string;
   documentCategory: string;
+  esignEligibilityConfirmed?: boolean;
   manualFallbackEnabled: boolean;
+  consumerPaperCopyProcedure?: string;
+  consumerPaperCopyFeeDescription?: string;
+  consumerWithdrawalProcedure?: string;
+  consumerWithdrawalConsequences?: string;
+  consumerContactUpdateProcedure?: string;
+  consumerConsentScopeDescription?: string;
   signerName: string;
   signerEmail: string;
   anchors: SigningAnchorPayload[];
@@ -686,7 +860,14 @@ export class ApiService {
         sourceTemplateName: payload.sourceTemplateName,
         sourcePdfSha256: payload.sourcePdfSha256,
         documentCategory: payload.documentCategory,
+        esignEligibilityConfirmed: Boolean(payload.esignEligibilityConfirmed),
         manualFallbackEnabled: payload.manualFallbackEnabled,
+        consumerPaperCopyProcedure: payload.consumerPaperCopyProcedure,
+        consumerPaperCopyFeeDescription: payload.consumerPaperCopyFeeDescription,
+        consumerWithdrawalProcedure: payload.consumerWithdrawalProcedure,
+        consumerWithdrawalConsequences: payload.consumerWithdrawalConsequences,
+        consumerContactUpdateProcedure: payload.consumerContactUpdateProcedure,
+        consumerConsentScopeDescription: payload.consumerConsentScopeDescription,
         signerName: payload.signerName,
         signerEmail: payload.signerEmail,
         anchors: payload.anchors,
@@ -747,6 +928,24 @@ export class ApiService {
     return result.request;
   }
 
+  static async revokeSigningRequest(requestId: string): Promise<SigningRequestSummary> {
+    const response = await apiFetch('POST', `/api/signing/requests/${encodeURIComponent(requestId)}/revoke`);
+    const payload = await apiJsonFetch<{ request: SigningRequestSummary }>(response);
+    return payload.request;
+  }
+
+  static async reissueSigningRequest(requestId: string): Promise<SigningRequestSummary> {
+    const response = await apiFetch('POST', `/api/signing/requests/${encodeURIComponent(requestId)}/reissue`);
+    const payload = await apiJsonFetch<{ request: SigningRequestSummary }>(response);
+    return payload.request;
+  }
+
+  static async recordSigningManualShare(requestId: string): Promise<SigningRequestSummary> {
+    const response = await apiFetch('POST', `/api/signing/requests/${encodeURIComponent(requestId)}/manual-share`);
+    const payload = await apiJsonFetch<{ request: SigningRequestSummary }>(response);
+    return payload.request;
+  }
+
   static async getPublicSigningRequest(token: string): Promise<PublicSigningRequest> {
     const response = await apiFetch('GET', `/api/signing/public/${encodeURIComponent(token)}`, {
       authMode: 'anonymous',
@@ -755,11 +954,99 @@ export class ApiService {
     return payload.request;
   }
 
+  static async getPublicSigningValidation(token: string): Promise<PublicSigningValidation> {
+    const response = await apiFetch('GET', `/api/signing/public/validation/${encodeURIComponent(token)}`, {
+      authMode: 'anonymous',
+    });
+    const payload = await apiJsonFetch<{ validation: PublicSigningValidation }>(response);
+    return payload.validation;
+  }
+
   static async startPublicSigningSession(token: string): Promise<PublicSigningBootstrap> {
     const response = await apiFetch('POST', `/api/signing/public/${encodeURIComponent(token)}/bootstrap`, {
       authMode: 'anonymous',
     });
     return apiJsonFetch(response);
+  }
+
+  static async sendPublicSigningVerificationCode(
+    token: string,
+    sessionToken: string,
+  ): Promise<PublicSigningBootstrap> {
+    const response = await apiFetch('POST', `/api/signing/public/${encodeURIComponent(token)}/verification/send`, {
+      authMode: 'anonymous',
+      headers: {
+        'X-Signing-Session': sessionToken,
+      },
+    });
+    return apiJsonFetch(response);
+  }
+
+  static async verifyPublicSigningVerificationCode(
+    token: string,
+    sessionToken: string,
+    code: string,
+  ): Promise<PublicSigningBootstrap> {
+    const response = await apiFetch('POST', `/api/signing/public/${encodeURIComponent(token)}/verification/verify`, {
+      authMode: 'anonymous',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Signing-Session': sessionToken,
+      },
+      body: JSON.stringify({ code }),
+    });
+    return apiJsonFetch(response);
+  }
+
+  private static async fetchPublicSigningFile(
+    requestPath: string,
+    sessionToken: string,
+  ): Promise<PublicSigningFileResult> {
+    const response = await apiFetch('GET', requestPath, {
+      authMode: 'anonymous',
+      headers: {
+        'X-Signing-Session': sessionToken,
+      },
+    });
+    const blob = await response.blob();
+    return {
+      blob,
+      filename: parseDownloadFilename(response.headers.get('content-disposition')),
+      contentType: response.headers.get('content-type'),
+    };
+  }
+
+  static async getPublicSigningDocumentBlob(
+    token: string,
+    sessionToken: string,
+  ): Promise<PublicSigningFileResult> {
+    return ApiService.fetchPublicSigningFile(
+      `/api/signing/public/${encodeURIComponent(token)}/document`,
+      sessionToken,
+    );
+  }
+
+  static async issuePublicSigningArtifactDownload(
+    token: string,
+    sessionToken: string,
+    artifactKey: 'signed_pdf' | 'audit_receipt',
+  ): Promise<PublicSigningArtifactIssueResult> {
+    const response = await apiFetch('POST', `/api/signing/public/${encodeURIComponent(token)}/artifacts/${encodeURIComponent(artifactKey)}/issue`, {
+      authMode: 'anonymous',
+      headers: {
+        'X-Signing-Session': sessionToken,
+      },
+    });
+    return apiJsonFetch(response);
+  }
+
+  static async downloadPublicSigningFile(
+    requestPath: string,
+    sessionToken: string,
+    fallbackFilename: string,
+  ): Promise<void> {
+    const file = await ApiService.fetchPublicSigningFile(requestPath, sessionToken);
+    triggerBrowserDownload(file.blob, file.filename || fallbackFilename);
   }
 
   static async reviewPublicSigningRequest(token: string, sessionToken: string): Promise<PublicSigningRequest> {
@@ -775,14 +1062,34 @@ export class ApiService {
     return payload.request;
   }
 
-  static async consentPublicSigningRequest(token: string, sessionToken: string): Promise<PublicSigningRequest> {
+  static async consentPublicSigningRequest(
+    token: string,
+    sessionToken: string,
+    input?: { accessCode?: string },
+  ): Promise<PublicSigningRequest> {
     const response = await apiFetch('POST', `/api/signing/public/${encodeURIComponent(token)}/consent`, {
       authMode: 'anonymous',
       headers: {
         'Content-Type': 'application/json',
         'X-Signing-Session': sessionToken,
       },
-      body: JSON.stringify({ accepted: true }),
+      body: JSON.stringify({ accepted: true, accessCode: input?.accessCode }),
+    });
+    const payload = await apiJsonFetch<{ request: PublicSigningRequest }>(response);
+    return payload.request;
+  }
+
+  static async withdrawPublicSigningConsent(
+    token: string,
+    sessionToken: string,
+  ): Promise<PublicSigningRequest> {
+    const response = await apiFetch('POST', `/api/signing/public/${encodeURIComponent(token)}/withdraw-consent`, {
+      authMode: 'anonymous',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Signing-Session': sessionToken,
+      },
+      body: JSON.stringify({ confirmed: true }),
     });
     const payload = await apiJsonFetch<{ request: PublicSigningRequest }>(response);
     return payload.request;
@@ -808,7 +1115,7 @@ export class ApiService {
   static async adoptPublicSigningSignature(
     token: string,
     sessionToken: string,
-    adoptedName: string,
+    payload: PublicSigningAdoptPayload,
   ): Promise<PublicSigningRequest> {
     const response = await apiFetch('POST', `/api/signing/public/${encodeURIComponent(token)}/adopt-signature`, {
       authMode: 'anonymous',
@@ -816,10 +1123,10 @@ export class ApiService {
         'Content-Type': 'application/json',
         'X-Signing-Session': sessionToken,
       },
-      body: JSON.stringify({ adoptedName }),
+      body: JSON.stringify(payload),
     });
-    const payload = await apiJsonFetch<{ request: PublicSigningRequest }>(response);
-    return payload.request;
+    const result = await apiJsonFetch<{ request: PublicSigningRequest }>(response);
+    return result.request;
   }
 
   static async completePublicSigningRequest(token: string, sessionToken: string): Promise<PublicSigningRequest> {
@@ -831,8 +1138,8 @@ export class ApiService {
       },
       body: JSON.stringify({ intentConfirmed: true }),
     });
-    const payload = await apiJsonFetch<{ request: PublicSigningRequest }>(response);
-    return payload.request;
+    const responsePayload = await apiJsonFetch<{ request: PublicSigningRequest }>(response);
+    return responsePayload.request;
   }
 
   /**

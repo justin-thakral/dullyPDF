@@ -1,3 +1,4 @@
+import io
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -147,6 +148,29 @@ def test_saved_form_download_requires_gcs_path(client, app_main, base_user, mock
     response = client.get("/api/saved-forms/tpl-1/download", headers=auth_headers)
     assert response.status_code == 404
     assert "not found in storage" in response.text
+
+
+def test_saved_form_download_success_sets_private_no_store(
+    client,
+    app_main,
+    base_user,
+    mocker,
+    auth_headers,
+) -> None:
+    _patch_auth(mocker, app_main, base_user)
+    mocker.patch.object(app_main, "get_template", return_value=_template_record(pdf_path="gs://forms/saved.pdf"))
+    mocker.patch.object(app_main, "is_gcs_path", return_value=True)
+    mocker.patch.object(app_main, "stream_pdf", return_value=io.BytesIO(b"%PDF-1.4\n"))
+    mocker.patch.object(app_main, "_resolve_stream_cors_headers", return_value={"Access-Control-Allow-Origin": "https://app.example.com"})
+
+    response = client.get(
+        "/api/saved-forms/tpl-1/download",
+        headers={**auth_headers, "Origin": "https://app.example.com"},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "private, no-store"
+    assert response.headers["access-control-allow-origin"] == "https://app.example.com"
 
 
 def test_saved_form_download_missing_storage_blob_returns_404(

@@ -24,8 +24,8 @@ def _reload_debug_flags(
         else:
             monkeypatch.setenv(key, value)
 
-    module = importlib.import_module(_MODULE_PATH)
-    return importlib.reload(module)
+    sys.modules.pop(_MODULE_PATH, None)
+    return importlib.import_module(_MODULE_PATH)
 
 
 def test_debug_flag_detection_and_argv_mutation(monkeypatch: pytest.MonkeyPatch) -> None:

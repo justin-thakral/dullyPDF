@@ -50,6 +50,7 @@ describe('SignatureRequestDialog', () => {
 
     await user.type(screen.getByLabelText('Signer name'), 'Alex Signer');
     await user.type(screen.getByLabelText('Signer email'), 'alex@example.com');
+    await user.click(screen.getByRole('checkbox', { name: /eligible for dullypdf/i }));
     await user.click(screen.getByRole('button', { name: 'Save Signing Draft' }));
 
     expect(onCreateDraft).toHaveBeenCalledTimes(1);
@@ -65,6 +66,7 @@ describe('SignatureRequestDialog', () => {
       sourceTemplateId: 'form-1',
       sourceTemplateName: 'Bravo Packet',
       documentCategory: 'ordinary_business_form',
+      esignEligibilityConfirmed: true,
       manualFallbackEnabled: true,
       signerName: 'Alex Signer',
       signerEmail: 'alex@example.com',
@@ -214,6 +216,7 @@ describe('SignatureRequestDialog', () => {
     await user.click(screen.getByRole('button', { name: 'Fill and Sign' }));
     await user.type(screen.getByLabelText('Signer name'), 'Alex Signer');
     await user.type(screen.getByLabelText('Signer email'), 'alex@example.com');
+    await user.click(screen.getByRole('checkbox', { name: /eligible for dullypdf/i }));
     await user.click(screen.getByRole('button', { name: 'Save Signing Draft' }));
 
     expect(onCreateDraft).toHaveBeenCalledWith(expect.objectContaining({
@@ -222,6 +225,7 @@ describe('SignatureRequestDialog', () => {
       sourceId: 'resp-42',
       sourceLinkId: 'link-7',
       sourceRecordLabel: 'Ada Lovelace',
+      esignEligibilityConfirmed: true,
     }));
 
     const sendButton = screen.getByRole('button', { name: 'Review and Send' }) as HTMLButtonElement;

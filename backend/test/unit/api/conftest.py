@@ -22,6 +22,8 @@ import backend.api.routes.public as public_routes
 import backend.api.routes.saved_forms as saved_forms_routes
 import backend.api.routes.schemas as schemas_routes
 import backend.api.routes.sessions as sessions_routes
+import backend.api.routes.signing as signing_routes
+import backend.api.routes.signing_public as signing_public_routes
 import backend.api.routes.template_api as template_api_routes
 import backend.api.routes.template_api_public as template_api_public_routes
 import backend.services.app_config as app_config_service
@@ -130,6 +132,8 @@ def app_main():
         saved_forms_routes,
         schemas_routes,
         sessions_routes,
+        signing_routes,
+        signing_public_routes,
         template_api_routes,
         template_api_public_routes,
         app_config_service,

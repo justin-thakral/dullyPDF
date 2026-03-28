@@ -172,7 +172,10 @@ async def download_saved_form(
             raise HTTPException(status_code=404, detail="Form PDF not found in storage") from exc
         raise HTTPException(status_code=500, detail="Failed to load saved form PDF") from exc
     filename = safe_pdf_download_filename(template.name or template.pdf_bucket_path or "form", "form")
-    headers = {"Content-Disposition": f'inline; filename="{filename}"'}
+    headers = {
+        "Content-Disposition": f'inline; filename="{filename}"',
+        "Cache-Control": "private, no-store",
+    }
     headers.update(resolve_stream_cors_headers(request.headers.get("origin")))
     return StreamingResponse(stream, media_type="application/pdf", headers=headers)
 

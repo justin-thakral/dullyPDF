@@ -23,30 +23,21 @@ const HEADER_LINKS = [
   { label: 'Terms', href: '/terms' },
 ];
 
-const RELATED_INTENT_PAGES: Record<string, IntentPageKey[]> = {
-  'getting-started': ['pdf-to-fillable-form', 'fill-pdf-from-csv'],
-  detection: ['pdf-to-fillable-form', 'healthcare-pdf-automation'],
-  'rename-mapping': ['pdf-to-database-template', 'fillable-form-field-name'],
-  'search-fill': ['fill-pdf-from-csv', 'fill-information-in-pdf'],
-  'fill-by-link': ['fill-pdf-by-link', 'fill-information-in-pdf'],
-  'create-group': ['pdf-to-fillable-form', 'pdf-to-database-template'],
-  'save-download-profile': ['pdf-to-fillable-form'],
-  troubleshooting: [],
-  'editor-workflow': ['pdf-to-fillable-form'],
-  index: [],
-};
-
 const UsageDocsPage = ({ pageKey }: UsageDocsPageProps) => {
   const page = getUsageDocsPage(pageKey);
   const pages = getUsageDocsPages();
 
   const relatedWorkflows = useMemo(() => {
-    const keys = RELATED_INTENT_PAGES[pageKey] || [];
+    const keys: IntentPageKey[] = page.relatedWorkflowKeys ?? [];
     return keys.map((key) => {
       const p = getIntentPage(key);
       return { label: p.navLabel, href: p.path };
     });
-  }, [pageKey]);
+  }, [page.relatedWorkflowKeys]);
+  const adjacentDocs = useMemo(() => {
+    const currentIndex = pages.findIndex((entry) => entry.key === pageKey);
+    return pages.filter((entry, index) => entry.key !== pageKey && Math.abs(index - currentIndex) <= 2);
+  }, [pageKey, pages]);
 
   useEffect(() => {
     applyRouteSeo({ kind: 'usage-docs', pageKey });
@@ -124,6 +115,20 @@ const UsageDocsPage = ({ pageKey }: UsageDocsPageProps) => {
           </aside>
 
           <main className="usage-docs-content">
+            <section className="usage-docs-section">
+              <h2>How to use this docs page</h2>
+              <p>
+                This page is meant to answer one operational stage of the DullyPDF workflow well enough that you can
+                run a controlled test without guessing. Read the sections below, validate the behavior against one
+                representative document, and only then move to the next linked page.
+              </p>
+              <p>
+                That order matters because most setup failures come from mixing detection, mapping, fill validation,
+                and sharing into one unstructured pass. A narrower review loop keeps troubleshooting faster and makes
+                the template easier to trust once you save it for reuse.
+              </p>
+            </section>
+
             {page.sections.map((section) => (
               <section key={section.id} id={section.id} className="usage-docs-section">
                 <h2>{section.title}</h2>
@@ -131,9 +136,30 @@ const UsageDocsPage = ({ pageKey }: UsageDocsPageProps) => {
               </section>
             ))}
 
+            {adjacentDocs.length > 0 && (
+              <section className="usage-docs-section usage-docs-section--related">
+                <h2>Continue through the docs</h2>
+                <p>
+                  Move to the next closest docs page instead of skipping ahead to unrelated features. That keeps the
+                  rollout sequence easier to validate and reduces setup drift between templates.
+                </p>
+                <ul>
+                  {adjacentDocs.map((entry) => (
+                    <li key={entry.key}>
+                      <a href={usageDocsHref(entry.key)}>{entry.title}</a>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+
             {relatedWorkflows.length > 0 && (
               <section className="usage-docs-section usage-docs-section--related">
                 <h2>Related workflows</h2>
+                <p>
+                  These workflow pages explain the public search-intent side of the same feature area, which is useful
+                  when you need a higher-level route summary before returning to the operational docs.
+                </p>
                 <ul>
                   {relatedWorkflows.map((link) => (
                     <li key={link.href}>

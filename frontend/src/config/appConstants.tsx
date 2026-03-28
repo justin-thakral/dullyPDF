@@ -115,4 +115,5 @@ export const DEFAULT_PROFILE_LIMITS: ProfileLimits = {
   templateApiActiveMax: 1,
   templateApiRequestsMonthlyMax: 250,
   templateApiMaxPages: 25,
+  signingRequestsPerDocumentMax: 10,
 };

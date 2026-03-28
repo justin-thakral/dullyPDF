@@ -66,6 +66,7 @@ def test_require_prod_env_reports_missing_keys(app_main, mocker) -> None:
     assert "Missing required prod env vars" in message
     assert "SANDBOX_CORS_ORIGINS" in message
     assert "SANDBOX_TRUSTED_HOSTS" in message
+    assert "SANDBOX_TRUST_PROXY_HEADERS=true" in message
     assert "FIREBASE_USE_ADC=true" in message
     assert "RECAPTCHA_ALLOWED_HOSTNAMES" in message
     assert "STRIPE_SECRET_KEY" in message

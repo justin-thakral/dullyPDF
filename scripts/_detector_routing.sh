@@ -40,6 +40,15 @@ detector_normalize_routing_mode() {
   esac
 }
 
+detector_share_single_gpu_service() {
+  local routing_mode
+  routing_mode="$(detector_normalize_routing_mode "${1:-${DETECTOR_ROUTING_MODE:-}}")"
+  if [[ "$routing_mode" == "gpu" ]] && detector_is_truthy "${DETECTOR_SERIALIZE_GPU_TASKS:-false}"; then
+    return 0
+  fi
+  return 1
+}
+
 detector_target_for_profile() {
   local routing_mode="$1"
   local profile="$2"
@@ -64,7 +73,7 @@ detector_target_for_profile() {
 }
 
 detector_cpu_region() {
-  printf '%s\n' "${DETECTOR_SERVICE_REGION:-${REGION:-${DETECTOR_TASKS_LOCATION:-us-central1}}}"
+  printf '%s\n' "${DETECTOR_SERVICE_REGION:-${REGION:-${DETECTOR_TASKS_LOCATION:-us-east4}}}"
 }
 
 detector_gpu_region() {
@@ -230,4 +239,11 @@ detector_set_active_routing_vars() {
       "heavy" \
       "$DETECTOR_SERVICE_URL_HEAVY_ACTIVE"
   )"
+
+  if detector_share_single_gpu_service "$DETECTOR_ROUTING_MODE_RESOLVED"; then
+    DETECTOR_SERVICE_NAME_HEAVY_ACTIVE="$DETECTOR_SERVICE_NAME_LIGHT_ACTIVE"
+    DETECTOR_SERVICE_REGION_HEAVY_ACTIVE="$DETECTOR_SERVICE_REGION_LIGHT_ACTIVE"
+    DETECTOR_SERVICE_URL_HEAVY_ACTIVE="$DETECTOR_SERVICE_URL_LIGHT_ACTIVE"
+    DETECTOR_TASKS_AUDIENCE_HEAVY_ACTIVE="$DETECTOR_TASKS_AUDIENCE_LIGHT_ACTIVE"
+  fi
 }

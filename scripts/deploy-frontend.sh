@@ -90,6 +90,46 @@ check_remote_content_type() {
   fi
 }
 
+check_remote_status() {
+  local url="$1"
+  local expected_status="$2"
+  local status
+  status="$(curl -s -o /dev/null -w '%{http_code}' "$url")"
+  if [[ "$status" != "$expected_status" ]]; then
+    echo "Unexpected HTTP status for $url: $status (expected $expected_status)." >&2
+    exit 1
+  fi
+}
+
+check_remote_status_not() {
+  local url="$1"
+  local disallowed_status="$2"
+  local status
+  status="$(curl -s -o /dev/null -w '%{http_code}' "$url")"
+  if [[ "$status" == "$disallowed_status" ]]; then
+    echo "Unexpected HTTP status for $url: $status is disallowed." >&2
+    exit 1
+  fi
+}
+
+check_remote_body_contains() {
+  local url="$1"
+  local needle="$2"
+  if ! curl -fsSL "$url" | grep -Fq "$needle"; then
+    echo "Expected $url body to contain: $needle" >&2
+    exit 1
+  fi
+}
+
+check_remote_body_not_contains() {
+  local url="$1"
+  local needle="$2"
+  if curl -fsSL "$url" | grep -Fq "$needle"; then
+    echo "Expected $url body to not contain: $needle" >&2
+    exit 1
+  fi
+}
+
 require_nonempty VITE_API_URL
 require_nonempty VITE_DETECTION_API_URL
 require_nonempty VITE_FIREBASE_PROJECT_ID
@@ -167,5 +207,10 @@ LIVE_BASE_URL="https://${PROJECT_ID}.web.app"
 for asset_path in "${CRITICAL_WEBP_ASSETS[@]}"; do
   check_remote_content_type "${LIVE_BASE_URL}${asset_path}" "image/webp"
 done
+
+check_remote_status "${LIVE_BASE_URL}/fill-pdf-from-csv/" "301"
+check_remote_body_contains "${LIVE_BASE_URL}/fill-pdf-from-csv" 'data-seo-shell-visible="true"'
+check_remote_body_not_contains "${LIVE_BASE_URL}/fill-pdf-from-csv" 'display:none'
+check_remote_status_not "${LIVE_BASE_URL}/this-path-should-not-exist" "200"
 
 echo "Frontend deploy checks passed: critical WebP assets are present locally and served remotely as image/webp."

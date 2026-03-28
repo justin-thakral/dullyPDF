@@ -105,7 +105,7 @@ describe('FillLinkPublicPage', () => {
     expect(await screen.findByText('Thanks, Ada Lovelace. Your response was submitted.')).toBeTruthy();
   });
 
-  it('continues into signing when the public submit returns a signing handoff', async () => {
+  it('shows signing email delivery state when the public submit returns a signing result', async () => {
     const user = userEvent.setup();
     apiMocks.getPublicFillLink.mockResolvedValue({
       status: 'active',
@@ -124,7 +124,11 @@ describe('FillLinkPublicPage', () => {
         available: true,
         requestId: 'sign-1',
         status: 'sent',
-        publicPath: '/sign/sign-1',
+        deliveryStatus: 'sent',
+        emailHint: 'a***@example.com',
+        canResend: false,
+        resendAvailableAt: '2099-01-01T00:10:00+00:00',
+        message: 'We emailed the signing link for this response.',
       },
       link: {
         status: 'active',
@@ -138,12 +142,14 @@ describe('FillLinkPublicPage', () => {
 
     render(<FillLinkPublicPage token="token-1" />);
 
-    expect(await screen.findByText('Review and sign after submit')).toBeTruthy();
+    expect(await screen.findByText('Signing link emailed after submit')).toBeTruthy();
     await user.type(screen.getByLabelText('Full Name'), 'Ada Lovelace');
     await user.click(screen.getByRole('button', { name: 'Submit response' }));
 
-    expect(await screen.findByText('Thanks, Ada Lovelace. Your form is ready for signature.')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Continue to review and sign' })).toBeTruthy();
+    expect(await screen.findByText('Thanks, Ada Lovelace. Your response was submitted.')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Signing email prepared' })).toBeTruthy();
+    expect(screen.getByText('We emailed the signing link for this response.')).toBeTruthy();
+    expect(screen.getByText('The signing email destination is a***@example.com.')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Download submitted PDF' })).toBeNull();
   });
 
@@ -219,7 +225,8 @@ describe('FillLinkPublicPage', () => {
       signing: {
         enabled: true,
         available: false,
-        errorMessage: 'Your form was submitted, but the signing handoff is unavailable right now. Contact the sender.',
+        canResend: true,
+        errorMessage: 'Your form was submitted, but the signing email is unavailable right now. Contact the sender.',
       },
       link: {
         status: 'active',
@@ -246,7 +253,11 @@ describe('FillLinkPublicPage', () => {
         available: true,
         requestId: 'sign-88',
         status: 'sent',
-        publicPath: '/sign/sign-88',
+        deliveryStatus: 'sent',
+        emailHint: 'a***@example.com',
+        canResend: false,
+        resendAvailableAt: '2099-01-01T00:10:00+00:00',
+        message: 'We emailed the signing link for this response.',
       },
     });
 
@@ -256,14 +267,16 @@ describe('FillLinkPublicPage', () => {
     await user.type(screen.getByLabelText('Full Name'), 'Ada Lovelace');
     await user.click(screen.getByRole('button', { name: 'Submit response' }));
 
-    expect(await screen.findByText('Signing is temporarily unavailable')).toBeTruthy();
-    await user.click(screen.getByRole('button', { name: 'Retry signing handoff' }));
+    expect(await screen.findByRole('heading', { name: 'Signing email unavailable' })).toBeTruthy();
+    expect(screen.getByText('Your form was submitted, but the signing email is unavailable right now. Contact the sender.')).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Retry signing email' }));
 
     await waitFor(() => {
       expect(apiMocks.retryPublicFillLinkSigning).toHaveBeenCalledWith('token-1', { responseId: 'resp-88' });
     });
-    expect(await screen.findByText('Your form is ready for signature.')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Continue to review and sign' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Signing email prepared' })).toBeTruthy();
+    expect(screen.getByText('We emailed the signing link for this response.')).toBeTruthy();
+    expect(screen.getByText('The signing email destination is a***@example.com.')).toBeTruthy();
   });
 
   it('blocks submission client-side when all fields are required and a question is blank', async () => {

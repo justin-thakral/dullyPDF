@@ -9,23 +9,44 @@ the overlay builder normalizes that translation in one place.
 
 from __future__ import annotations
 
+import base64
+import binascii
 from dataclasses import dataclass
 from datetime import datetime
+import hashlib
 from io import BytesIO
-from typing import Any, Dict, Iterable, List
+from typing import Any, Dict, Iterable, List, Optional
 
 from pypdf import PdfReader, PdfWriter
 from reportlab.lib.colors import Color
+from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfgen import canvas
+from PIL import Image, ImageChops, ImageOps, UnidentifiedImageError
 
 from backend.services.pdf_export_service import flatten_pdf_form_widgets
+from backend.services.signing_service import (
+    SIGNATURE_ADOPTED_MODE_DRAWN,
+    SIGNATURE_ADOPTED_MODE_UPLOADED,
+    normalize_signature_adopted_mode,
+)
 
 
 SIGNATURE_FONT = "Helvetica-Oblique"
 BODY_FONT = "Helvetica"
 SIGNATURE_COLOR = Color(0.07, 0.16, 0.32)
 BODY_COLOR = Color(0.12, 0.12, 0.12)
+SIGNATURE_IMAGE_MAX_INPUT_BYTES = 512_000
+SIGNATURE_IMAGE_MAX_OUTPUT_BYTES = 256_000
+SIGNATURE_IMAGE_MAX_DIMENSIONS = (1200, 400)
+
+
+@dataclass(frozen=True)
+class NormalizedSignatureImage:
+    data_url: str
+    sha256: str
+    width: int
+    height: int
 
 
 @dataclass(frozen=True)
@@ -87,6 +108,98 @@ def _draw_text_within_rect(pdf_canvas: canvas.Canvas, *, text: str, rect: Dict[s
     pdf_canvas.drawString(rect["x"] + padding, baseline_y, safe_text)
 
 
+def _decode_signature_image_payload(value: str) -> bytes:
+    normalized = str(value or "").strip()
+    if not normalized.startswith("data:image/") or ";base64," not in normalized:
+        raise ValueError("Signature image must be a PNG or JPEG data URL.")
+    header, encoded = normalized.split(",", 1)
+    media_type = header[5:].split(";", 1)[0].strip().lower()
+    if media_type not in {"image/png", "image/jpeg"}:
+        raise ValueError("Signature image must be a PNG or JPEG data URL.")
+    try:
+        raw_bytes = base64.b64decode(encoded, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise ValueError("Signature image data URL contains invalid base64 content.") from exc
+    if not raw_bytes:
+        raise ValueError("Signature image data URL is empty.")
+    if len(raw_bytes) > SIGNATURE_IMAGE_MAX_INPUT_BYTES:
+        raise ValueError("Signature image is too large. Keep uploaded or drawn signatures under 512 KB.")
+    return raw_bytes
+
+
+def _crop_signature_image(image: Image.Image) -> Image.Image:
+    alpha_bbox = image.getchannel("A").getbbox() if "A" in image.getbands() else None
+    if alpha_bbox:
+        return image.crop(alpha_bbox)
+    white_background = Image.new("RGB", image.size, "white")
+    difference_bbox = ImageChops.difference(image.convert("RGB"), white_background).getbbox()
+    if difference_bbox:
+        return image.crop(difference_bbox)
+    raise ValueError("Draw or upload a visible signature mark before continuing.")
+
+
+def normalize_signature_image_data_url(value: Optional[str]) -> NormalizedSignatureImage:
+    raw_bytes = _decode_signature_image_payload(str(value or ""))
+    try:
+        with Image.open(BytesIO(raw_bytes)) as opened_image:
+            normalized_image = ImageOps.exif_transpose(opened_image).convert("RGBA")
+            cropped_image = _crop_signature_image(normalized_image)
+            cropped_image.thumbnail(SIGNATURE_IMAGE_MAX_DIMENSIONS, Image.Resampling.LANCZOS)
+            output = BytesIO()
+            cropped_image.save(output, format="PNG", optimize=True)
+    except (UnidentifiedImageError, OSError, ValueError) as exc:
+        if isinstance(exc, ValueError):
+            raise
+        raise ValueError("Signature image could not be decoded as a supported PNG or JPEG file.") from exc
+    png_bytes = output.getvalue()
+    if not png_bytes:
+        raise ValueError("Signature image normalization produced an empty PNG.")
+    if len(png_bytes) > SIGNATURE_IMAGE_MAX_OUTPUT_BYTES:
+        raise ValueError("Signature image is too large after normalization. Use a tighter crop or smaller upload.")
+    return NormalizedSignatureImage(
+        data_url="data:image/png;base64," + base64.b64encode(png_bytes).decode("ascii"),
+        sha256=hashlib.sha256(png_bytes).hexdigest(),
+        width=cropped_image.width,
+        height=cropped_image.height,
+    )
+
+
+def _draw_image_within_rect(
+    pdf_canvas: canvas.Canvas,
+    *,
+    image: NormalizedSignatureImage,
+    rect: Dict[str, float],
+    page_height: float,
+) -> None:
+    png_bytes = _decode_signature_image_payload(image.data_url)
+    image_reader = ImageReader(BytesIO(png_bytes))
+    padding = max(min(rect["height"] * 0.14, 6.0), 2.0)
+    available_width = max(rect["width"] - padding * 2.0, 6.0)
+    available_height = max(rect["height"] - padding * 2.0, 6.0)
+    width_scale = available_width / max(float(image.width), 1.0)
+    height_scale = available_height / max(float(image.height), 1.0)
+    scale = min(width_scale, height_scale)
+    draw_width = max(image.width * scale, 1.0)
+    draw_height = max(image.height * scale, 1.0)
+    left = rect["x"] + padding + max((available_width - draw_width) / 2.0, 0.0)
+    bottom = (
+        page_height
+        - rect["y"]
+        - rect["height"]
+        + padding
+        + max((available_height - draw_height) / 2.0, 0.0)
+    )
+    pdf_canvas.drawImage(
+        image_reader,
+        left,
+        bottom,
+        width=draw_width,
+        height=draw_height,
+        preserveAspectRatio=True,
+        mask="auto",
+    )
+
+
 def _normalize_signed_date(value: str | None) -> str:
     raw = str(value or "").strip()
     if not raw:
@@ -124,6 +237,8 @@ def build_signed_pdf(
     anchors: Iterable[Dict[str, Any]],
     adopted_name: str,
     completed_at: str | None,
+    signature_adopted_mode: str | None = None,
+    signature_image_data_url: str | None = None,
 ) -> SigningPdfRenderResult:
     """Stamp the signer-adopted values into the immutable source PDF."""
 
@@ -132,6 +247,12 @@ def build_signed_pdf(
     grouped_anchors = _group_anchors_by_page(anchors, page_count=len(reader.pages))
     signed_date = _normalize_signed_date(completed_at)
     initials = _resolve_initials(adopted_name)
+    normalized_adopted_mode = normalize_signature_adopted_mode(signature_adopted_mode)
+    normalized_signature_image = normalize_signature_image_data_url(signature_image_data_url) if signature_image_data_url else None
+    signature_uses_image = normalized_adopted_mode in {
+        SIGNATURE_ADOPTED_MODE_DRAWN,
+        SIGNATURE_ADOPTED_MODE_UPLOADED,
+    } and normalized_signature_image is not None
     applied_anchor_count = 0
 
     for page_index, page in enumerate(reader.pages, start=1):
@@ -149,6 +270,15 @@ def build_signed_pdf(
                 text = ""
                 font_name = BODY_FONT
                 if kind == "signature":
+                    if signature_uses_image:
+                        _draw_image_within_rect(
+                            overlay_canvas,
+                            image=normalized_signature_image,
+                            rect=rect,
+                            page_height=page_height,
+                        )
+                        applied_anchor_count += 1
+                        continue
                     text = adopted_name
                     font_name = SIGNATURE_FONT
                 elif kind == "signed_date":

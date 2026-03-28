@@ -332,6 +332,14 @@ export function buildApiUrl(...segments: Array<string>): string {
   return path ? `${base}/${path}` : base;
 }
 
+export function resolveApiUrl(pathOrUrl: string): string {
+  const normalized = pathOrUrl.trim();
+  if (!normalized) {
+    return '';
+  }
+  return new URL(normalized, `${getApiBaseUrl()}/`).toString();
+}
+
 export interface ApiFetchOptions extends RequestInit {
   allowStatuses?: number[];
   authMode?: 'default' | 'anonymous';

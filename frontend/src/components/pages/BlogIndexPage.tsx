@@ -4,6 +4,7 @@ import { BLOG_INDEX_SEO } from '../../config/blogSeo';
 import { applySeoMetadata } from '../../utils/seo';
 import { Breadcrumbs } from '../ui/Breadcrumbs';
 import { SiteFooter } from '../ui/SiteFooter';
+import { resolveRouteSeoBodyContent } from '../../config/routeSeo';
 import './BlogIndexPage.css';
 
 const HEADER_LINKS = [
@@ -14,6 +15,7 @@ const HEADER_LINKS = [
 
 const BlogIndexPage = () => {
   const posts = getBlogPosts();
+  const bodyContent = resolveRouteSeoBodyContent({ kind: 'blog-index' });
 
   useEffect(() => {
     applySeoMetadata(BLOG_INDEX_SEO);
@@ -49,12 +51,29 @@ const BlogIndexPage = () => {
         <main className="blog-index__content">
           <Breadcrumbs items={[{ label: 'Home', href: '/' }, { label: 'Blog' }]} />
           <section className="blog-index__hero">
-            <p className="blog-index__kicker">Blog</p>
-            <h1>PDF Automation Guides & Tutorials</h1>
-            <p>
-              Practical guides for converting PDFs to fillable forms, mapping fields to databases,
-              and automating repetitive form-filling workflows.
-            </p>
+            <p className="blog-index__kicker">{bodyContent?.heroKicker ?? 'Blog'}</p>
+            <h1>{bodyContent?.heading ?? 'PDF Automation Guides & Tutorials'}</h1>
+            <p>{bodyContent?.paragraphs?.[0] ?? 'Practical guides for converting PDFs to fillable forms, mapping fields to databases, and automating repetitive form-filling workflows.'}</p>
+          </section>
+
+          <section className="blog-index__support">
+            {(bodyContent?.supportSections ?? []).map((section) => (
+              <article key={section.title} className="blog-index__support-card">
+                <h2>{section.title}</h2>
+                {section.paragraphs?.map((paragraph) => (
+                  <p key={paragraph}>{paragraph}</p>
+                ))}
+                {section.links?.length ? (
+                  <ul>
+                    {section.links.map((link) => (
+                      <li key={link.href}>
+                        <a href={link.href}>{link.label}</a>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </article>
+            ))}
           </section>
 
           <div className="blog-index__grid">

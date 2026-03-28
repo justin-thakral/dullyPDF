@@ -134,6 +134,8 @@ def require_prod_env() -> None:
     """Fail fast when production environment variables are missing."""
     if not is_prod():
         return
+    from backend.services.signing_invite_service import resolve_signing_invite_origin
+
     missing = []
     if not _env_value("SANDBOX_CORS_ORIGINS"):
         missing.append("SANDBOX_CORS_ORIGINS")
@@ -144,6 +146,8 @@ def require_prod_env() -> None:
         missing.append("SANDBOX_TRUSTED_HOSTS")
     elif trusted_hosts_raw.strip() == "*":
         missing.append("SANDBOX_TRUSTED_HOSTS (cannot be '*')")
+    if not _env_truthy("SANDBOX_TRUST_PROXY_HEADERS"):
+        missing.append("SANDBOX_TRUST_PROXY_HEADERS=true")
     if not _env_value("FIREBASE_PROJECT_ID"):
         missing.append("FIREBASE_PROJECT_ID")
     if not _env_truthy("FIREBASE_USE_ADC"):
@@ -165,6 +169,10 @@ def require_prod_env() -> None:
         missing.append("CONTACT_TO_EMAIL")
     if not _env_value("CONTACT_FROM_EMAIL"):
         missing.append("CONTACT_FROM_EMAIL")
+    try:
+        resolve_signing_invite_origin()
+    except RuntimeError as exc:
+        missing.append(str(exc))
     if not _env_value("GMAIL_CLIENT_ID"):
         missing.append("GMAIL_CLIENT_ID")
     if not _env_value("GMAIL_CLIENT_SECRET"):

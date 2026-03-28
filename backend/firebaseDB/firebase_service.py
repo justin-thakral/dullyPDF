@@ -8,7 +8,7 @@ from typing import Any, Dict, Optional, Tuple
 
 import jwt
 from firebase_admin import auth as firebase_auth
-from firebase_admin import credentials, firestore, initialize_app, storage
+from firebase_admin import credentials, firestore, get_app, initialize_app, storage
 
 from backend.logging_config import DEBUG_MODE, get_logger
 
@@ -98,13 +98,42 @@ def _validate_prod_firebase_auth_mode() -> None:
         )
 
 
+def _attach_existing_default_app() -> bool:
+    """Reuse an already-initialized default Firebase app when present.
+
+    Broad test suites and some integration helpers can initialize Firebase
+    outside this module. Reattaching here keeps initialization idempotent
+    instead of turning that perfectly valid state into a cached startup error.
+    """
+
+    global _firebase_app
+    global _firebase_init_error
+
+    try:
+        app = get_app()
+    except Exception:
+        return False
+    _firebase_app = app
+    _firebase_init_error = None
+    return True
+
+
+def _is_duplicate_default_app_error(exc: Exception) -> bool:
+    message = str(exc or "")
+    return isinstance(exc, ValueError) and "default Firebase app already exists" in message
+
+
 def init_firebase() -> None:
     """Initialize Firebase Admin once and cache failures.
     """
     global _firebase_app
     global _firebase_init_error
     global _firebase_project_id
-    if _firebase_app or _firebase_init_error:
+    if _firebase_app:
+        return
+    if _attach_existing_default_app():
+        return
+    if _firebase_init_error:
         return
     try:
         _validate_prod_firebase_auth_mode()
@@ -125,6 +154,9 @@ def init_firebase() -> None:
         _firebase_project_id = project_id
         logger.info("Firebase Admin initialized (project=%s)", project_id or "default")
     except Exception as exc:
+        if _is_duplicate_default_app_error(exc) and _attach_existing_default_app():
+            logger.info("Reused existing default Firebase app after duplicate initialization attempt.")
+            return
         _firebase_init_error = exc
         logger.exception("Firebase Admin initialization failed: %s", exc)
 

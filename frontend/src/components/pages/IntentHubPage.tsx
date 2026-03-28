@@ -1,6 +1,8 @@
-import { useEffect, useMemo } from 'react';
-import { getIntentPages, type IntentPageCategory } from '../../config/intentPages';
-import { applyRouteSeo } from '../../utils/seo';
+import { useEffect } from 'react';
+import {
+  applyRouteSeo,
+} from '../../utils/seo';
+import { resolveRouteSeoBodyContent, type RouteBodySection } from '../../config/routeSeo';
 import { IntentPageShell } from './IntentPageShell';
 
 type IntentHubKey = 'workflows' | 'industries';
@@ -9,47 +11,14 @@ type IntentHubPageProps = {
   hubKey: IntentHubKey;
 };
 
-type HubConfig = {
-  category: IntentPageCategory;
-  breadcrumbLabel: string;
-  kicker: string;
-  title: string;
-  summary: string;
-  panelTitle: string;
-  panelDescription: string;
-};
-
-const HUB_CONFIG: Record<IntentHubKey, HubConfig> = {
-  workflows: {
-    category: 'workflow',
-    breadcrumbLabel: 'Workflows',
-    kicker: 'Workflow hub',
-    title: 'Workflow Library for PDF Automation',
-    summary:
-      'Browse high-intent workflow pages for converting PDFs to fillable templates, mapping fields, and auto-filling from structured data.',
-    panelTitle: 'All workflow pages',
-    panelDescription:
-      'These pages are organized for users searching by action (convert, map, fill, rename). Start with the workflow closest to your immediate task.',
-  },
-  industries: {
-    category: 'industry',
-    breadcrumbLabel: 'Industries',
-    kicker: 'Industry hub',
-    title: 'Industry Solutions for Repeat PDF Workflows',
-    summary:
-      'Browse industry-specific pages for healthcare, insurance, legal, HR, finance, and other document-heavy operations.',
-    panelTitle: 'All industry pages',
-    panelDescription:
-      'These pages are organized for teams searching by vertical. Choose your industry route to see targeted implementation guidance and examples.',
-  },
+const HUB_BREADCRUMB_LABEL: Record<IntentHubKey, string> = {
+  workflows: 'Workflows',
+  industries: 'Industries',
 };
 
 const IntentHubPage = ({ hubKey }: IntentHubPageProps) => {
-  const hub = HUB_CONFIG[hubKey];
-  const pages = useMemo(
-    () => getIntentPages().filter((page) => page.category === hub.category),
-    [hub.category],
-  );
+  const bodyContent = resolveRouteSeoBodyContent({ kind: 'intent-hub', hubKey });
+  const pageSections = (bodyContent?.sections ?? []) as RouteBodySection[];
 
   useEffect(() => {
     applyRouteSeo({ kind: 'intent-hub', hubKey });
@@ -57,22 +26,47 @@ const IntentHubPage = ({ hubKey }: IntentHubPageProps) => {
 
   return (
     <IntentPageShell
-      breadcrumbItems={[{ label: 'Home', href: '/' }, { label: hub.breadcrumbLabel }]}
-      heroKicker={hub.kicker}
-      heroTitle={hub.title}
-      heroSummary={hub.summary}
+      breadcrumbItems={[{ label: 'Home', href: '/' }, { label: HUB_BREADCRUMB_LABEL[hubKey] }]}
+      heroKicker={bodyContent?.heroKicker ?? 'Hub'}
+      heroTitle={bodyContent?.heading ?? 'Public route library'}
+      heroSummary={bodyContent?.paragraphs?.[0] ?? ''}
     >
       <section className="intent-page__panel">
-        <h2>{hub.panelTitle}</h2>
-        <p>{hub.panelDescription}</p>
+        <h2>{bodyContent?.panelTitle ?? 'Pages'}</h2>
+        <p>{bodyContent?.panelDescription ?? ''}</p>
         <div className="intent-page__related-links">
-          {pages.map((page) => (
-            <a key={page.key} href={page.path} className="intent-page__related-link">
-              {page.navLabel}
+          {pageSections.map((section) => (
+            <a key={section.href ?? section.title} href={section.href ?? '#'} className="intent-page__related-link">
+              {section.title}
             </a>
           ))}
         </div>
       </section>
+
+      {(bodyContent?.supportSections ?? []).map((section) => (
+        <section
+          key={section.title}
+          className={section.paragraphs?.length ? 'intent-page__panel intent-page__panel--article' : 'intent-page__panel'}
+        >
+          <h2>{section.title}</h2>
+          {section.paragraphs?.length ? (
+            <div className="intent-page__article-copy">
+              {section.paragraphs.map((paragraph) => (
+                <p key={paragraph}>{paragraph}</p>
+              ))}
+            </div>
+          ) : null}
+          {section.links?.length ? (
+            <div className="intent-page__related-links">
+              {section.links.map((link) => (
+                <a key={link.href} href={link.href} className="intent-page__related-link">
+                  {link.label}
+                </a>
+              ))}
+            </div>
+          ) : null}
+        </section>
+      ))}
     </IntentPageShell>
   );
 };

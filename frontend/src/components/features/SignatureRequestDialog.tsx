@@ -33,6 +33,8 @@ type SignatureRequestDialogProps = {
   responsesLoading?: boolean;
   saving?: boolean;
   sending?: boolean;
+  revokingRequestId?: string | null;
+  reissuingRequestId?: string | null;
   error?: string | null;
   notice?: string | null;
   createdRequest?: SigningRequestSummary | null;
@@ -45,6 +47,8 @@ type SignatureRequestDialogProps = {
   onCreateDrafts: (payload: WorkspaceSigningDraftPayload) => Promise<void> | void;
   onSendRequest?: (options?: { ownerReviewConfirmed?: boolean }) => Promise<void> | void;
   onSendRequests?: (options?: { ownerReviewConfirmed?: boolean }) => Promise<void> | void;
+  onRevokeRequest?: (requestId: string) => Promise<void> | void;
+  onReissueRequest?: (requestId: string) => Promise<void> | void;
   onRefreshResponses?: () => Promise<void> | void;
 };
 
@@ -115,6 +119,8 @@ export function SignatureRequestDialog({
   responsesLoading = false,
   saving = false,
   sending = false,
+  revokingRequestId = null,
+  reissuingRequestId = null,
   error = null,
   notice = null,
   createdRequest = null,
@@ -127,6 +133,8 @@ export function SignatureRequestDialog({
   onCreateDrafts,
   onSendRequest,
   onSendRequests,
+  onRevokeRequest,
+  onReissueRequest,
   onRefreshResponses,
 }: SignatureRequestDialogProps) {
   const stableCreatedRequests = createdRequests;
@@ -134,7 +142,14 @@ export function SignatureRequestDialog({
   const [mode, setMode] = useState<WorkspaceSigningDraftPayload['mode']>(DEFAULT_MODE);
   const [signatureMode, setSignatureMode] = useState<WorkspaceSigningDraftPayload['signatureMode']>(DEFAULT_SIGNATURE_MODE);
   const [documentCategory, setDocumentCategory] = useState<string>(firstAllowedCategory(options));
+  const [esignEligibilityConfirmed, setEsignEligibilityConfirmed] = useState(false);
   const [manualFallbackEnabled, setManualFallbackEnabled] = useState(true);
+  const [consumerPaperCopyProcedure, setConsumerPaperCopyProcedure] = useState('');
+  const [consumerPaperCopyFeeDescription, setConsumerPaperCopyFeeDescription] = useState('');
+  const [consumerWithdrawalProcedure, setConsumerWithdrawalProcedure] = useState('');
+  const [consumerWithdrawalConsequences, setConsumerWithdrawalConsequences] = useState('');
+  const [consumerContactUpdateProcedure, setConsumerContactUpdateProcedure] = useState('');
+  const [consumerConsentScopeDescription, setConsumerConsentScopeDescription] = useState('');
   const [draftSignerName, setDraftSignerName] = useState('');
   const [draftSignerEmail, setDraftSignerEmail] = useState('');
   const [recipientImportText, setRecipientImportText] = useState('');
@@ -152,7 +167,14 @@ export function SignatureRequestDialog({
     setActiveTab('prepare');
     setMode(DEFAULT_MODE);
     setSignatureMode(DEFAULT_SIGNATURE_MODE);
+    setEsignEligibilityConfirmed(false);
     setManualFallbackEnabled(true);
+    setConsumerPaperCopyProcedure('');
+    setConsumerPaperCopyFeeDescription('');
+    setConsumerWithdrawalProcedure('');
+    setConsumerWithdrawalConsequences('');
+    setConsumerContactUpdateProcedure('');
+    setConsumerConsentScopeDescription('');
     setDraftSignerName('');
     setDraftSignerEmail('');
     setRecipientImportText('');
@@ -189,6 +211,22 @@ export function SignatureRequestDialog({
     [documentCategory, options],
   );
   const blockedCategory = Boolean(selectedCategory?.blocked);
+  const consumerDisclosureError = useMemo(() => {
+    if (signatureMode !== 'consumer') return null;
+    if (!consumerPaperCopyProcedure.trim()) return 'Consumer signing requires a paper-copy or offline procedure.';
+    if (!consumerPaperCopyFeeDescription.trim()) return 'Consumer signing requires a paper-copy fee disclosure.';
+    if (!consumerWithdrawalProcedure.trim()) return 'Consumer signing requires a withdrawal procedure.';
+    if (!consumerWithdrawalConsequences.trim()) return 'Consumer signing requires withdrawal consequences.';
+    if (!consumerContactUpdateProcedure.trim()) return 'Consumer signing requires contact-update instructions.';
+    return null;
+  }, [
+    consumerContactUpdateProcedure,
+    consumerPaperCopyFeeDescription,
+    consumerPaperCopyProcedure,
+    consumerWithdrawalConsequences,
+    consumerWithdrawalProcedure,
+    signatureMode,
+  ]);
   const fillAndSignNeedsValues = mode === 'fill_and_sign' && !hasMeaningfulFillValues;
   const anchorCount = defaultAnchors.length;
   const workflowLabel = mode === 'fill_and_sign' ? 'Fill and Sign' : 'Sign';
@@ -211,6 +249,10 @@ export function SignatureRequestDialog({
     { label: 'PDF loaded', ready: hasDocument },
     { label: 'Recipients queued', ready: recipients.length > 0 || Boolean(pendingManualRecipient) },
     { label: 'Allowed category', ready: Boolean(documentCategory && !blockedCategory) },
+    { label: 'Eligibility attested', ready: esignEligibilityConfirmed },
+    ...(signatureMode === 'consumer'
+      ? [{ label: 'Consumer disclosures', ready: !consumerDisclosureError }]
+      : []),
     {
       label: mode === 'fill_and_sign' ? 'Reviewed fill values' : 'Signature anchors',
       ready: mode === 'fill_and_sign' ? !fillAndSignNeedsValues : anchorCount > 0,
@@ -223,6 +265,8 @@ export function SignatureRequestDialog({
     && plannedRecipientCount > 0
     && documentCategory
     && !blockedCategory
+    && esignEligibilityConfirmed
+    && !consumerDisclosureError
     && !fillAndSignNeedsValues
     && !optionsLoading
     && options,
@@ -288,7 +332,14 @@ export function SignatureRequestDialog({
         sourceTemplateId: sourceTemplateId || undefined,
         sourceTemplateName: sourceTemplateName || undefined,
         documentCategory,
+        esignEligibilityConfirmed,
         manualFallbackEnabled,
+        consumerPaperCopyProcedure: consumerPaperCopyProcedure.trim() || undefined,
+        consumerPaperCopyFeeDescription: consumerPaperCopyFeeDescription.trim() || undefined,
+        consumerWithdrawalProcedure: consumerWithdrawalProcedure.trim() || undefined,
+        consumerWithdrawalConsequences: consumerWithdrawalConsequences.trim() || undefined,
+        consumerContactUpdateProcedure: consumerContactUpdateProcedure.trim() || undefined,
+        consumerConsentScopeDescription: consumerConsentScopeDescription.trim() || undefined,
         signerName: recipient.name,
         signerEmail: recipient.email,
         anchors: defaultAnchors,
@@ -309,7 +360,14 @@ export function SignatureRequestDialog({
       sourceTemplateId: sourceTemplateId || undefined,
       sourceTemplateName: sourceTemplateName || undefined,
       documentCategory,
+      esignEligibilityConfirmed,
       manualFallbackEnabled,
+      consumerPaperCopyProcedure: consumerPaperCopyProcedure.trim() || undefined,
+      consumerPaperCopyFeeDescription: consumerPaperCopyFeeDescription.trim() || undefined,
+      consumerWithdrawalProcedure: consumerWithdrawalProcedure.trim() || undefined,
+      consumerWithdrawalConsequences: consumerWithdrawalConsequences.trim() || undefined,
+      consumerContactUpdateProcedure: consumerContactUpdateProcedure.trim() || undefined,
+      consumerConsentScopeDescription: consumerConsentScopeDescription.trim() || undefined,
       anchors: defaultAnchors,
       recipients: nextRecipients,
     });
@@ -374,6 +432,10 @@ export function SignatureRequestDialog({
             loading={responsesLoading}
             sourceDocumentName={sourceDocumentName}
             sourceTemplateId={sourceTemplateId}
+            revokingRequestId={revokingRequestId}
+            reissuingRequestId={reissuingRequestId}
+            onRevoke={onRevokeRequest}
+            onReissue={onReissueRequest}
             onRefresh={onRefreshResponses}
           />
         ) : (
@@ -489,11 +551,78 @@ export function SignatureRequestDialog({
                   <label className="signature-request-dialog__checkbox">
                     <input
                       type="checkbox"
+                      checked={esignEligibilityConfirmed}
+                      onChange={(event) => setEsignEligibilityConfirmed(event.target.checked)}
+                    />
+                    <span>
+                      I reviewed the blocked-category list, including court, family-law, UCC-excluded, recall/safety, and primary-residence notice categories, and confirm this document is eligible for DullyPDF&apos;s U.S. e-sign flow.
+                    </span>
+                  </label>
+                  <label className="signature-request-dialog__checkbox">
+                    <input
+                      type="checkbox"
                       checked={manualFallbackEnabled}
                       onChange={(event) => setManualFallbackEnabled(event.target.checked)}
                     />
                     <span>Allow a paper/manual fallback path for this request</span>
                   </label>
+                  {signatureMode === 'consumer' ? (
+                    <>
+                      {consumerDisclosureError ? (
+                        <Alert tone="warning" variant="inline" message={consumerDisclosureError} />
+                      ) : null}
+                      <div className="signature-request-dialog__field-grid">
+                        <label className="signature-request-dialog__field signature-request-dialog__field--textarea">
+                          <span>Paper-copy or offline procedure</span>
+                          <textarea
+                            value={consumerPaperCopyProcedure}
+                            onChange={(event) => setConsumerPaperCopyProcedure(event.target.value)}
+                            placeholder="Explain exactly how the signer can request paper delivery or offline processing for this request."
+                          />
+                        </label>
+                        <label className="signature-request-dialog__field signature-request-dialog__field--textarea">
+                          <span>Paper-copy fee disclosure</span>
+                          <textarea
+                            value={consumerPaperCopyFeeDescription}
+                            onChange={(event) => setConsumerPaperCopyFeeDescription(event.target.value)}
+                            placeholder="State any paper-copy, courier, or handling fee, or say no fee is charged."
+                          />
+                        </label>
+                        <label className="signature-request-dialog__field signature-request-dialog__field--textarea">
+                          <span>Withdrawal procedure</span>
+                          <textarea
+                            value={consumerWithdrawalProcedure}
+                            onChange={(event) => setConsumerWithdrawalProcedure(event.target.value)}
+                            placeholder="Explain how the signer withdraws e-consent before completion."
+                          />
+                        </label>
+                        <label className="signature-request-dialog__field signature-request-dialog__field--textarea">
+                          <span>Withdrawal consequences</span>
+                          <textarea
+                            value={consumerWithdrawalConsequences}
+                            onChange={(event) => setConsumerWithdrawalConsequences(event.target.value)}
+                            placeholder="Explain what happens to this request after consent is withdrawn."
+                          />
+                        </label>
+                        <label className="signature-request-dialog__field signature-request-dialog__field--textarea">
+                          <span>Contact-update procedure</span>
+                          <textarea
+                            value={consumerContactUpdateProcedure}
+                            onChange={(event) => setConsumerContactUpdateProcedure(event.target.value)}
+                            placeholder="Explain how the signer updates email or contact information before completion."
+                          />
+                        </label>
+                        <label className="signature-request-dialog__field signature-request-dialog__field--textarea">
+                          <span>Consent scope override (optional)</span>
+                          <textarea
+                            value={consumerConsentScopeDescription}
+                            onChange={(event) => setConsumerConsentScopeDescription(event.target.value)}
+                            placeholder="Leave blank to scope consent to this signing request only."
+                          />
+                        </label>
+                      </div>
+                    </>
+                  ) : null}
                 </section>
 
                 <section className="signature-request-dialog__section">

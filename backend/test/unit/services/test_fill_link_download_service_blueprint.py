@@ -161,6 +161,43 @@ def test_apply_fill_link_answers_to_fields_sets_direct_checkbox_and_radio_group_
     assert by_name["marital_married"]["value"] is True
 
 
+def test_apply_fill_link_answers_to_fields_sets_implicit_checkbox_group_values_without_rules() -> None:
+    fields = apply_fill_link_answers_to_fields(
+        {
+            "fields": [
+                {
+                    "id": "field-1",
+                    "name": "consent_yes",
+                    "type": "checkbox",
+                    "page": 1,
+                    "rect": [1, 2, 4, 6],
+                    "groupKey": "consent_group",
+                    "optionKey": "yes",
+                    "optionLabel": "Yes",
+                },
+                {
+                    "id": "field-2",
+                    "name": "consent_no",
+                    "type": "checkbox",
+                    "page": 1,
+                    "rect": [1, 2, 4, 6],
+                    "groupKey": "consent_group",
+                    "optionKey": "no",
+                    "optionLabel": "No",
+                },
+            ],
+            "checkboxRules": [],
+        },
+        {
+            "consent_group": ["yes"],
+        },
+    )
+
+    by_name = {str(field.get("name")): field for field in fields}
+    assert by_name["consent_yes"]["value"] is True
+    assert by_name["consent_no"]["value"] is False
+
+
 def test_build_fill_link_download_payload_returns_public_download_path() -> None:
     payload = build_fill_link_download_payload(
         type(

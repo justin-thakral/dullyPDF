@@ -32,6 +32,7 @@ def _is_prod() -> bool:
 
 
 logger = get_logger(__name__)
+_WARNED_PROD_DEFAULT_TASK_ATTEMPTS = False
 
 
 def _allow_unauthenticated() -> bool:
@@ -75,7 +76,17 @@ def _parse_retry_count(raw: Optional[str]) -> int:
 
 def _max_task_attempts() -> Optional[int]:
     value = int_env("DETECTOR_TASKS_MAX_ATTEMPTS", 0)
-    return value if value > 0 else None
+    if value > 0:
+        return value
+    if _is_prod():
+        global _WARNED_PROD_DEFAULT_TASK_ATTEMPTS
+        if not _WARNED_PROD_DEFAULT_TASK_ATTEMPTS:
+            logger.warning(
+                "DETECTOR_TASKS_MAX_ATTEMPTS is unset in prod; defaulting to 5 to match the managed queues."
+            )
+            _WARNED_PROD_DEFAULT_TASK_ATTEMPTS = True
+        return 5
+    return None
 
 
 def _should_finalize_failure(retry_count: int) -> bool:

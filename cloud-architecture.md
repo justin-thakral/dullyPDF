@@ -29,7 +29,7 @@ flowchart LR
 
     API["dullypdf-backend-east4<br/>Public API entrypoint behind Firebase Hosting rewrites<br/>Cloud Run service<br/>Python + FastAPI<br/><br/>Top endpoints<br/>GET /api/health<br/>POST /detect-fields<br/>GET /detect-fields/{sessionId}<br/>POST /api/renames/ai<br/>GET /api/profile"]
 
-    TASKS["Google Cloud Tasks API + queues<br/>Backend enqueues async jobs here<br/>CreateTask via Google client SDK<br/>Typically gRPC under the library transport<br/><br/>Active detector queues<br/>commonforms-detect-light<br/>commonforms-detect-heavy<br/><br/>OpenAI queues<br/>openai-rename-*, openai-remap-*"]
+    TASKS["Google Cloud Tasks API + queues<br/>Backend enqueues async jobs here<br/>CreateTask via Google client SDK<br/>Typically gRPC under the library transport<br/><br/>Active detector queues<br/>commonforms-detect-light<br/>commonforms-detect-light-cpu<br/><br/>OpenAI queues<br/>openai-rename-*, openai-remap-*"]
 
     subgraph WORKERS["Async Worker Microservices (Cloud Run)"]
         DETECTORS["Field detector microservice group<br/>Current services include CPU + GPU light/heavy variants<br/>Main task endpoint: POST /internal/detect<br/>Downloads PDF from GCS, runs CommonForms detection,<br/>writes fields/result artifacts, updates session state"]
@@ -80,19 +80,38 @@ flowchart LR
   saved-form metadata, schema metadata, and related workflow state.
 - GCS holds the larger binary/object artifacts: uploaded PDFs, session output
   JSON, saved templates, respondent download artifacts, and model weights.
+- Prod session cleanup currently runs every 6 hours through the `us-east4`
+  `dullypdf-session-cleanup` Cloud Scheduler -> Cloud Run Job path. The
+  dedicated session bucket should not use GCS soft delete because session data
+  is intentionally ephemeral and already governed by TTL plus scheduled cleanup.
+- The Cloud Build staging bucket keeps uploaded `source/` tarballs behind a
+  lifecycle rule so remote build uploads age out automatically instead of
+  accumulating indefinitely.
 
 ## Current Production Snapshot
 
 - Public backend entrypoint: `dullypdf-backend-east4` in `us-east4`
-- Additional direct backend deployment: `dullypdf-backend` in `us-central1`
 - Detector services:
   - `dullypdf-detector-light`
   - `dullypdf-detector-heavy`
   - `dullypdf-detector-light-gpu`
   - `dullypdf-detector-heavy-gpu`
+- OpenAI worker services:
+  - `dullypdf-openai-rename-light`
+  - `dullypdf-openai-rename-heavy`
+  - `dullypdf-openai-remap-light`
+  - `dullypdf-openai-remap-heavy`
+- Active Cloud Tasks queues in `us-east4`:
+  - `commonforms-detect-light`
+  - `commonforms-detect-light-cpu`
+  - `openai-rename-light`
+  - `openai-rename-heavy`
+  - `openai-remap-light`
+  - `openai-remap-heavy`
 - Session cleanup batch job: `dullypdf-session-cleanup`
-- Current prod backend routing is configured for GPU-backed detector URLs, while
-  Cloud Tasks detector queues still live in `us-central1`
+- Session cleanup scheduler cadence: every 6 hours
+- Current prod backend routing is configured for GPU-backed detector URLs, and
+  detector/OpenAI task queues now run in `us-east4` with the worker services.
 
 ## Related Docs
 

@@ -39,6 +39,7 @@ source "$ENV_FILE"
 set +a
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/_artifact_registry_guard.sh"
 source "${SCRIPT_DIR}/_detector_routing.sh"
 
 require_nonempty() {
@@ -69,6 +70,24 @@ require_empty() {
   fi
 }
 
+require_integer_ge() {
+  local name="$1"
+  local min_value="$2"
+  local actual="${!name:-}"
+  if [[ -z "$actual" ]]; then
+    echo "Missing required $name in $ENV_FILE (or exported env)." >&2
+    exit 1
+  fi
+  if ! [[ "$actual" =~ ^[0-9]+$ ]]; then
+    echo "Expected $name to be an integer >= ${min_value} (got '${actual}')." >&2
+    exit 1
+  fi
+  if (( actual < min_value )); then
+    echo "Expected $name to be >= ${min_value} (got '${actual}')." >&2
+    exit 1
+  fi
+}
+
 normalize_detector_deploy_variants() {
   local raw="${1:-active}"
   case "${raw,,}" in
@@ -92,10 +111,14 @@ normalize_detector_deploy_variants() {
 }
 
 PROJECT_ID="${PROJECT_ID:-${DETECTOR_TASKS_PROJECT:-${FIREBASE_PROJECT_ID:-dullypdf-dev}}}"
-REGION="${REGION:-${DETECTOR_TASKS_LOCATION:-us-central1}}"
+REGION="${REGION:-${DETECTOR_TASKS_LOCATION:-us-east4}}"
 DETECTOR_SERVICE_REGION="${DETECTOR_SERVICE_REGION:-$REGION}"
+ARTIFACT_REGISTRY_LOCATION="${ARTIFACT_REGISTRY_LOCATION:-us-east4}"
 ARTIFACT_REPO="${DETECTOR_ARTIFACT_REPO:-dullypdf-backend}"
 TAG="${DETECTOR_IMAGE_TAG:-$(date +%Y%m%d-%H%M%S)}"
+
+require_prod_artifact_registry_location "detector Artifact Registry location" "$ARTIFACT_REGISTRY_LOCATION"
+require_prod_artifact_registry_repo "DETECTOR_ARTIFACT_REPO" "$ARTIFACT_REPO"
 
 if [[ -z "${DETECTOR_ROUTING_MODE:-}" && -z "${DETECTOR_DEPLOY_VARIANTS:-}" ]] && is_truthy "${DETECTOR_GPU_ENABLED:-false}"; then
   DETECTOR_ROUTING_MODE="gpu"
@@ -162,6 +185,9 @@ if [[ "$DETECTOR_DEPLOY_PHASE" != "single" ]]; then
   cpu_heavy_name="$(detector_service_name_for_target "cpu" "heavy")"
   gpu_light_name="$(detector_service_name_for_target "gpu" "light")"
   gpu_heavy_name="$(detector_service_name_for_target "gpu" "heavy")"
+  if detector_share_single_gpu_service "$DETECTOR_ROUTING_MODE"; then
+    gpu_heavy_name=""
+  fi
 
   case "$DETECTOR_DEPLOY_VARIANTS" in
     active)
@@ -197,7 +223,8 @@ if [[ "$DETECTOR_GPU_ENABLED" == "true" ]]; then
   DEPLOY_REGION="${DETECTOR_GPU_REGION:-$REGION}"
 fi
 
-DETECTOR_IMAGE="${DETECTOR_IMAGE:-us-central1-docker.pkg.dev/${PROJECT_ID}/${ARTIFACT_REPO}/detector-service:${TAG}}"
+DETECTOR_IMAGE="${DETECTOR_IMAGE:-${ARTIFACT_REGISTRY_LOCATION}-docker.pkg.dev/${PROJECT_ID}/${ARTIFACT_REPO}/detector-service:${TAG}}"
+require_prod_artifact_registry_image "DETECTOR_IMAGE" "$DETECTOR_IMAGE" "$ARTIFACT_REPO"
 if [[ "$DETECTOR_GPU_ENABLED" == "true" ]]; then
   DETECTOR_SERVICE_LIGHT="${DETECTOR_SERVICE_NAME_LIGHT-dullypdf-detector-light-gpu}"
   DETECTOR_SERVICE_HEAVY="${DETECTOR_SERVICE_NAME_HEAVY-dullypdf-detector-heavy-gpu}"
@@ -229,6 +256,7 @@ require_nonempty FIREBASE_PROJECT_ID
 require_nonempty DETECTOR_TASKS_SERVICE_ACCOUNT
 require_nonempty RUNTIME_SA
 require_nonempty COMMONFORMS_MODEL_GCS_URI
+require_integer_ge DETECTOR_TASKS_MAX_ATTEMPTS 1
 
 if [[ "${ENV:-}" == "prod" || "${ENV:-}" == "production" ]]; then
   require_exact FIREBASE_USE_ADC "true"
@@ -535,3 +563,5 @@ for service in "$DETECTOR_SERVICE_LIGHT" "$DETECTOR_SERVICE_HEAVY"; do
     --project "$PROJECT_ID" \
     --format='yaml(bindings)'
 done
+
+bash "${SCRIPT_DIR}/sync-detector-task-queues.sh" "$ENV_FILE"

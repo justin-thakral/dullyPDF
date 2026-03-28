@@ -140,18 +140,18 @@ class TemplateApiEndpointPublishRequest(BaseModel):
     templateId: str = Field(..., min_length=1)
     exportMode: Literal["flat", "editable"] = "flat"
 
-    model_config = {"extra": "ignore"}
+    model_config = {"extra": "forbid"}
 
 
 class TemplateApiFillRequest(BaseModel):
     """Public JSON payload for a published API Fill endpoint."""
 
-    data: Dict[str, Any] = Field(default_factory=dict)
+    data: Dict[str, Any] = Field(...)
     filename: Optional[str] = Field(default=None, max_length=180)
     exportMode: Optional[Literal["flat", "editable"]] = None
     strict: bool = False
 
-    model_config = {"extra": "ignore"}
+    model_config = {"extra": "forbid"}
 
     @field_validator("filename", mode="before")
     @classmethod
@@ -251,7 +251,14 @@ class SigningRequestCreateRequest(BaseModel):
     sourceTemplateName: Optional[str] = Field(default=None, max_length=200)
     sourcePdfSha256: Optional[str] = Field(default=None, max_length=64)
     documentCategory: str = Field(..., min_length=1, max_length=160)
+    esignEligibilityConfirmed: bool = False
     manualFallbackEnabled: bool = True
+    consumerPaperCopyProcedure: Optional[str] = Field(default=None, max_length=500)
+    consumerPaperCopyFeeDescription: Optional[str] = Field(default=None, max_length=300)
+    consumerWithdrawalProcedure: Optional[str] = Field(default=None, max_length=500)
+    consumerWithdrawalConsequences: Optional[str] = Field(default=None, max_length=500)
+    consumerContactUpdateProcedure: Optional[str] = Field(default=None, max_length=500)
+    consumerConsentScopeDescription: Optional[str] = Field(default=None, max_length=500)
     signerName: str = Field(..., min_length=1, max_length=200)
     signerEmail: str = Field(..., min_length=3, max_length=200)
     anchors: List[SigningAnchorInput] = Field(default_factory=list)
@@ -268,6 +275,12 @@ class SigningRequestCreateRequest(BaseModel):
         "sourceTemplateName",
         "sourcePdfSha256",
         "documentCategory",
+        "consumerPaperCopyProcedure",
+        "consumerPaperCopyFeeDescription",
+        "consumerWithdrawalProcedure",
+        "consumerWithdrawalConsequences",
+        "consumerContactUpdateProcedure",
+        "consumerConsentScopeDescription",
         "signerName",
         "signerEmail",
         mode="before",
@@ -290,18 +303,45 @@ class PublicSigningReviewRequest(BaseModel):
     model_config = {"extra": "ignore"}
 
 
+class PublicSigningVerificationVerifyRequest(BaseModel):
+    """Verify the email OTP before the signing ceremony continues."""
+
+    code: str = Field(..., min_length=6, max_length=6)
+
+    model_config = {"extra": "ignore"}
+
+    @field_validator("code", mode="before")
+    @classmethod
+    def _trim_verification_code(cls, value: Any) -> Any:
+        if value is None:
+            return None
+        trimmed = "".join(str(value).strip().split())
+        return trimmed or None
+
+
 class PublicSigningConsentRequest(BaseModel):
     """Consumer-only electronic records consent."""
 
     accepted: bool = Field(..., description="Signer affirmatively consented to electronic records.")
+    accessCode: Optional[str] = Field(default=None, min_length=1, max_length=32)
 
     model_config = {"extra": "ignore"}
+
+    @field_validator("accessCode", mode="before")
+    @classmethod
+    def _trim_access_code(cls, value: Any) -> Any:
+        if value is None:
+            return None
+        trimmed = "".join(str(value).strip().split()).upper()
+        return trimmed or None
 
 
 class PublicSigningAdoptSignatureRequest(BaseModel):
     """Capture the signer-adopted signature name before final completion."""
 
-    adoptedName: str = Field(..., min_length=1, max_length=200)
+    signatureType: Literal["default", "typed", "drawn", "uploaded"] = Field(default="typed")
+    adoptedName: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    signatureImageDataUrl: Optional[str] = Field(default=None, max_length=400000)
 
     model_config = {"extra": "ignore"}
 
@@ -315,11 +355,29 @@ class PublicSigningAdoptSignatureRequest(BaseModel):
             return trimmed if trimmed else None
         return value
 
+    @field_validator("signatureImageDataUrl", mode="before")
+    @classmethod
+    def _trim_signature_image_data_url(cls, value: Any) -> Any:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            trimmed = value.strip()
+            return trimmed if trimmed else None
+        return value
+
 
 class PublicSigningCompleteRequest(BaseModel):
     """Final signer attestation used to complete the ceremony."""
 
     intentConfirmed: bool = Field(..., description="Signer explicitly confirmed the final sign action.")
+
+    model_config = {"extra": "ignore"}
+
+
+class PublicSigningConsentWithdrawRequest(BaseModel):
+    """Consumer signer explicitly withdraws previously given electronic consent."""
+
+    confirmed: bool = Field(..., description="Signer explicitly confirmed the consent withdrawal.")
 
     model_config = {"extra": "ignore"}
 
@@ -424,13 +482,31 @@ class FillLinkSigningConfig(BaseModel):
     enabled: bool = False
     signatureMode: Optional[Literal["business", "consumer"]] = "business"
     documentCategory: Optional[str] = Field(default=None, min_length=1, max_length=160)
+    esignEligibilityConfirmed: bool = False
     manualFallbackEnabled: bool = True
+    consumerPaperCopyProcedure: Optional[str] = Field(default=None, max_length=500)
+    consumerPaperCopyFeeDescription: Optional[str] = Field(default=None, max_length=300)
+    consumerWithdrawalProcedure: Optional[str] = Field(default=None, max_length=500)
+    consumerWithdrawalConsequences: Optional[str] = Field(default=None, max_length=500)
+    consumerContactUpdateProcedure: Optional[str] = Field(default=None, max_length=500)
+    consumerConsentScopeDescription: Optional[str] = Field(default=None, max_length=500)
     signerNameQuestionKey: Optional[str] = Field(default=None, max_length=160)
     signerEmailQuestionKey: Optional[str] = Field(default=None, max_length=160)
 
     model_config = {"extra": "ignore"}
 
-    @field_validator("documentCategory", "signerNameQuestionKey", "signerEmailQuestionKey", mode="before")
+    @field_validator(
+        "documentCategory",
+        "consumerPaperCopyProcedure",
+        "consumerPaperCopyFeeDescription",
+        "consumerWithdrawalProcedure",
+        "consumerWithdrawalConsequences",
+        "consumerContactUpdateProcedure",
+        "consumerConsentScopeDescription",
+        "signerNameQuestionKey",
+        "signerEmailQuestionKey",
+        mode="before",
+    )
     @classmethod
     def _trim_fill_link_signing_strings(cls, value: Any) -> Any:
         if value is None:
@@ -685,7 +761,7 @@ class BillingCheckoutRequest(BaseModel):
     """Create a Stripe Checkout session for a supported billing action."""
 
     kind: BillingCheckoutKind = Field(..., min_length=1, max_length=32)
-    attempt_id: Optional[str] = Field(default=None, alias="attemptId", max_length=120)
+    attemptId: Optional[str] = Field(default=None, max_length=120)
 
     model_config = {"extra": "ignore"}
 
@@ -699,7 +775,7 @@ class BillingCheckoutRequest(BaseModel):
             raise ValueError("Unsupported checkout kind")
         return resolved
 
-    @field_validator("attempt_id", mode="before")
+    @field_validator("attemptId", mode="before")
     @classmethod
     def _normalize_attempt_id(cls, value: Any) -> Optional[str]:
         if value is None:
@@ -711,15 +787,15 @@ class BillingCheckoutRequest(BaseModel):
 class BillingReconcileRequest(BaseModel):
     """Audit and optionally recover recent Stripe checkout fulfillment."""
 
-    lookback_hours: int = Field(default=72, alias="lookbackHours", ge=1, le=720)
-    max_events: int = Field(default=100, alias="maxEvents", ge=1, le=500)
-    dry_run: bool = Field(default=False, alias="dryRun")
-    session_id: Optional[str] = Field(default=None, alias="sessionId", max_length=255)
-    attempt_id: Optional[str] = Field(default=None, alias="attemptId", max_length=120)
+    lookbackHours: int = Field(default=72, ge=1, le=720)
+    maxEvents: int = Field(default=100, ge=1, le=500)
+    dryRun: bool = Field(default=False)
+    sessionId: Optional[str] = Field(default=None, max_length=255)
+    attemptId: Optional[str] = Field(default=None, max_length=120)
 
     model_config = {"extra": "ignore"}
 
-    @field_validator("session_id", "attempt_id", mode="before")
+    @field_validator("sessionId", "attemptId", mode="before")
     @classmethod
     def _normalize_optional_identifier(cls, value: Any) -> Optional[str]:
         if value is None:

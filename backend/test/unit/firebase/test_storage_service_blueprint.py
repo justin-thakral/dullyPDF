@@ -7,7 +7,18 @@ import json
 import pytest
 
 
-_ENV_KEYS = ["FORMS_BUCKET", "TEMPLATES_BUCKET", "SANDBOX_SESSION_BUCKET", "SESSION_BUCKET", "SIGNING_BUCKET"]
+_ENV_KEYS = [
+    "ENV",
+    "FIREBASE_PROJECT_ID",
+    "GOOGLE_CLOUD_PROJECT",
+    "GCP_PROJECT",
+    "FORMS_BUCKET",
+    "TEMPLATES_BUCKET",
+    "SANDBOX_SESSION_BUCKET",
+    "SESSION_BUCKET",
+    "SIGNING_BUCKET",
+    "SIGNING_STAGING_BUCKET",
+]
 
 
 def _reload_storage_service(monkeypatch, **env):
@@ -92,6 +103,18 @@ def test_parse_gs_uri_validates_format_and_bucket_allowlist(monkeypatch) -> None
 
     with pytest.raises(ValueError, match="non-allowlisted bucket"):
         ss._parse_gs_uri("gs://other/path/file.pdf")
+
+
+def test_parse_gs_uri_recomputes_allowlist_from_current_module_state(monkeypatch) -> None:
+    ss = _reload_storage_service(
+        monkeypatch,
+        ENV="test",
+        FORMS_BUCKET="forms",
+        TEMPLATES_BUCKET="templates",
+    )
+    ss.ALLOWED_BUCKETS = set()
+
+    assert ss._parse_gs_uri("gs://signing-bucket/path/file.pdf") == ("signing-bucket", "path/file.pdf")
 
 
 def test_is_gcs_path_detects_only_gs_uris(monkeypatch) -> None:
@@ -187,6 +210,80 @@ def test_build_signing_bucket_uri_uses_signing_bucket(monkeypatch) -> None:
     assert ss.build_signing_bucket_uri("artifacts/final.pdf") == "gs://signing/artifacts/final.pdf"
 
 
+def test_require_signing_bucket_config_requires_dedicated_bucket(monkeypatch) -> None:
+    monkeypatch.setenv("ENV", "dev")
+    ss = _reload_storage_service(monkeypatch, FORMS_BUCKET="forms", TEMPLATES_BUCKET="templates")
+    with pytest.raises(RuntimeError, match="SIGNING_BUCKET must be set"):
+        ss._require_signing_bucket_config()
+
+    ss = _reload_storage_service(
+        monkeypatch,
+        FORMS_BUCKET="forms",
+        TEMPLATES_BUCKET="templates",
+        SIGNING_BUCKET="forms",
+    )
+    with pytest.raises(RuntimeError, match="dedicated bucket"):
+        ss._require_signing_bucket_config()
+
+
+def test_require_signing_bucket_config_uses_nonprod_conventional_fallback(monkeypatch) -> None:
+    ss = _reload_storage_service(
+        monkeypatch,
+        ENV="dev",
+        FIREBASE_PROJECT_ID="dullypdf-dev",
+        FORMS_BUCKET="forms",
+        TEMPLATES_BUCKET="templates",
+    )
+
+    assert ss.SIGNING_BUCKET == "dullypdf-dev-signing"
+    assert ss._require_signing_bucket_config() == "dullypdf-dev-signing"
+    assert ss.build_signing_bucket_uri("artifacts/final.pdf") == "gs://dullypdf-dev-signing/artifacts/final.pdf"
+
+
+def test_require_signing_bucket_config_keeps_prod_strict_when_unset(monkeypatch) -> None:
+    ss = _reload_storage_service(
+        monkeypatch,
+        ENV="prod",
+        FIREBASE_PROJECT_ID="dullypdf",
+        FORMS_BUCKET="forms",
+        TEMPLATES_BUCKET="templates",
+    )
+
+    with pytest.raises(RuntimeError, match="SIGNING_BUCKET must be set"):
+        ss._require_signing_bucket_config()
+
+
+def test_parse_gs_uri_accepts_signing_bucket_loaded_after_module_import(monkeypatch) -> None:
+    ss = _reload_storage_service(
+        monkeypatch,
+        ENV="dev",
+        FIREBASE_PROJECT_ID="dullypdf-dev",
+        FORMS_BUCKET="forms",
+        TEMPLATES_BUCKET="templates",
+        SANDBOX_SESSION_BUCKET="sessions",
+        SIGNING_BUCKET="",
+    )
+
+    monkeypatch.setenv("SIGNING_BUCKET", "dullypdf-dev-signing")
+
+    assert ss.parse_storage_bucket_path("gs://dullypdf-dev-signing/artifacts/final.pdf") == (
+        "dullypdf-dev-signing",
+        "artifacts/final.pdf",
+    )
+
+
+def test_build_signing_staging_bucket_uri_prefers_explicit_staging_bucket(monkeypatch) -> None:
+    ss = _reload_storage_service(
+        monkeypatch,
+        FORMS_BUCKET="forms",
+        TEMPLATES_BUCKET="templates",
+        SIGNING_BUCKET="signing",
+        SIGNING_STAGING_BUCKET="signing-stage",
+    )
+
+    assert ss.build_signing_staging_bucket_uri("artifacts/final.pdf") == "gs://signing-stage/artifacts/final.pdf"
+
+
 def test_upload_signing_json_serializes_payload(monkeypatch, mocker) -> None:
     ss = _reload_storage_service(
         monkeypatch,
@@ -202,6 +299,27 @@ def test_upload_signing_json_serializes_payload(monkeypatch, mocker) -> None:
     assert uri == "gs://signing/artifacts/audit.json"
     args, kwargs = blob.upload_from_string.call_args
     assert json.loads(args[0].decode("utf-8")) == {"ok": True}
+    assert args[0] == b'{"ok":true}'
+    assert kwargs == {"content_type": "application/json"}
+
+
+def test_upload_signing_staging_json_serializes_payload(monkeypatch, mocker) -> None:
+    ss = _reload_storage_service(
+        monkeypatch,
+        FORMS_BUCKET="forms",
+        TEMPLATES_BUCKET="templates",
+        SIGNING_BUCKET="signing",
+        SIGNING_STAGING_BUCKET="signing-stage",
+    )
+    bucket, blob = _mock_bucket_and_blob(mocker)
+    mocker.patch("backend.firebaseDB.storage_service.get_storage_bucket", return_value=bucket)
+
+    uri = ss.upload_signing_staging_json({"ok": True}, "artifacts/audit.json")
+
+    assert uri == "gs://signing-stage/artifacts/audit.json"
+    args, kwargs = blob.upload_from_string.call_args
+    assert json.loads(args[0].decode("utf-8")) == {"ok": True}
+    assert args[0] == b'{"ok":true}'
     assert kwargs == {"content_type": "application/json"}
 
 

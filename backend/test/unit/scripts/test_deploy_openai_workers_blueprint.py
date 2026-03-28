@@ -14,6 +14,15 @@ def _script_text() -> str:
 
 def test_deploy_openai_workers_requires_dedicated_runtime_service_accounts_in_prod() -> None:
     text = _script_text()
+    assert 'REGION="${REGION:-${OPENAI_RENAME_TASKS_LOCATION:-${OPENAI_REMAP_TASKS_LOCATION:-us-east4}}}"' in text
+    assert 'source "${SCRIPT_DIR}/_artifact_registry_guard.sh"' in text
+    assert 'ARTIFACT_REGISTRY_LOCATION="${ARTIFACT_REGISTRY_LOCATION:-us-east4}"' in text
+    assert 'require_prod_artifact_registry_location "OpenAI worker Artifact Registry location" "$ARTIFACT_REGISTRY_LOCATION"' in text
+    assert 'require_prod_artifact_registry_repo "WORKER_ARTIFACT_REPO" "$ARTIFACT_REPO"' in text
+    assert 'RENAME_IMAGE="${OPENAI_RENAME_WORKER_IMAGE:-${ARTIFACT_REGISTRY_LOCATION}-docker.pkg.dev/${PROJECT_ID}/${ARTIFACT_REPO}/openai-rename-worker:${TAG}}"' in text
+    assert 'REMAP_IMAGE="${OPENAI_REMAP_WORKER_IMAGE:-${ARTIFACT_REGISTRY_LOCATION}-docker.pkg.dev/${PROJECT_ID}/${ARTIFACT_REPO}/openai-remap-worker:${TAG}}"' in text
+    assert 'require_prod_artifact_registry_image "OPENAI_RENAME_WORKER_IMAGE" "$RENAME_IMAGE" "$ARTIFACT_REPO"' in text
+    assert 'require_prod_artifact_registry_image "OPENAI_REMAP_WORKER_IMAGE" "$REMAP_IMAGE" "$ARTIFACT_REPO"' in text
     assert 'require_exact FIREBASE_USE_ADC "true"' in text
     assert "require_empty FIREBASE_CREDENTIALS" in text
     assert "require_empty FIREBASE_CREDENTIALS_SECRET" in text

@@ -15,6 +15,7 @@ const limits: ProfileLimits = {
   savedFormsMax: 5,
   fillLinksActiveMax: 1,
   fillLinkResponsesMax: 5,
+  signingRequestsPerDocumentMax: 12,
 };
 
 const savedForms: SavedFormSummary[] = [
@@ -116,6 +117,7 @@ describe('ProfilePage', () => {
     expect(screen.getAllByText(String(limits.savedFormsMax)).length).toBeGreaterThan(0);
     expect(screen.getAllByText(String(limits.fillLinksActiveMax)).length).toBeGreaterThan(0);
     expect(screen.getAllByText(String(limits.fillLinkResponsesMax)).length).toBeGreaterThan(0);
+    expect(screen.getByText(String(limits.signingRequestsPerDocumentMax))).toBeTruthy();
     expect(screen.getByRole('button', { name: /Upgrade to Pro Monthly/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /Upgrade to Pro Yearly/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /Refill 500 Credits/ })).toBeTruthy();

@@ -1,0 +1,126 @@
+.public-signing-validation-page {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top, rgba(11, 63, 47, 0.1), transparent 34%),
+    linear-gradient(180deg, #f7f6ef 0%, #f2efe5 100%);
+  color: #142016;
+  padding: 40px 20px 56px;
+}
+
+.public-signing-validation-page__shell {
+  max-width: 980px;
+  margin: 0 auto;
+  display: grid;
+  gap: 18px;
+}
+
+.public-signing-validation-page__hero {
+  display: grid;
+  gap: 10px;
+}
+
+.public-signing-validation-page__eyebrow {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #2f5d48;
+}
+
+.public-signing-validation-page__hero h1 {
+  margin: 0;
+  font-size: clamp(2rem, 3vw, 3rem);
+  line-height: 1.02;
+}
+
+.public-signing-validation-page__lead,
+.public-signing-validation-page__support {
+  margin: 0;
+  color: rgba(20, 32, 22, 0.78);
+  line-height: 1.6;
+}
+
+.public-signing-validation-page__card {
+  background: rgba(255, 255, 255, 0.86);
+  border: 1px solid rgba(47, 93, 72, 0.12);
+  border-radius: 24px;
+  padding: 22px;
+  box-shadow: 0 18px 40px rgba(20, 32, 22, 0.08);
+  display: grid;
+  gap: 16px;
+}
+
+.public-signing-validation-page__card h2 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.public-signing-validation-page__facts {
+  margin: 0;
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.public-signing-validation-page__facts div {
+  display: grid;
+  gap: 4px;
+}
+
+.public-signing-validation-page__fact--wide {
+  grid-column: 1 / -1;
+}
+
+.public-signing-validation-page__facts dt {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(20, 32, 22, 0.62);
+}
+
+.public-signing-validation-page__facts dd {
+  margin: 0;
+  font-size: 0.98rem;
+  line-height: 1.55;
+}
+
+.public-signing-validation-page__code {
+  font-family: 'IBM Plex Mono', 'Fira Code', monospace;
+  word-break: break-all;
+}
+
+.public-signing-validation-page__checks {
+  margin: 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 10px;
+}
+
+.public-signing-validation-page__checks li {
+  line-height: 1.55;
+}
+
+.public-signing-validation-page__checks li.is-passed strong {
+  color: #13663f;
+}
+
+.public-signing-validation-page__checks li.is-failed strong {
+  color: #8e1f1f;
+}
+
+@media (max-width: 720px) {
+  .public-signing-validation-page {
+    padding: 24px 14px 40px;
+  }
+
+  .public-signing-validation-page__card {
+    border-radius: 18px;
+    padding: 18px;
+  }
+
+  .public-signing-validation-page__facts {
+    grid-template-columns: 1fr;
+  }
+}

@@ -66,6 +66,7 @@ def _fill_link_record(
         questions=questions,
         require_all_fields=False,
         web_form_config={"schemaVersion": 2, "questions": questions},
+        signing_config=None,
         created_at="2025-01-02T00:00:00.000Z",
         updated_at="2025-01-02T00:00:00.000Z",
         published_at="2025-01-02T00:00:00.000Z",

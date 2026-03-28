@@ -338,6 +338,10 @@
   font-weight: 600;
 }
 
+.fill-link-dialog__error--topbar {
+  padding: 0 0.1rem;
+}
+
 .fill-link-dialog__builder-stack {
   display: flex;
   flex-direction: column;

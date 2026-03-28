@@ -117,6 +117,7 @@ describe('ApiFillManagerDialog', () => {
     expect(screen.getByRole('button', { name: 'Generate key' })).toBeTruthy();
     expect(screen.getByText(/This endpoint is revoked\./)).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Copy URL' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Copy schema URL' })).toBeNull();
     expect(screen.queryByText('cURL')).toBeNull();
   });
 
@@ -153,7 +154,56 @@ describe('ApiFillManagerDialog', () => {
     );
 
     expect(screen.getAllByText(/"exportMode": "editable"/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/"strict": true/).length).toBeGreaterThan(0);
     expect(screen.getByText(/exportMode: "editable"/)).toBeTruthy();
+  });
+
+  it('includes runtime failures in the tracked failure count', () => {
+    render(
+      <ApiFillManagerDialog
+        {...createProps({
+          endpoint: {
+            id: 'tep-1',
+            templateId: 'tpl-1',
+            templateName: 'Patient Intake',
+            status: 'active',
+            snapshotVersion: 3,
+            keyPrefix: 'dpa_live_abc123',
+            createdAt: '2026-03-25T12:00:00.000Z',
+            updatedAt: '2026-03-25T12:00:00.000Z',
+            publishedAt: '2026-03-25T12:00:00.000Z',
+            lastUsedAt: '2026-03-25T13:00:00.000Z',
+            usageCount: 7,
+            authFailureCount: 1,
+            validationFailureCount: 2,
+            runtimeFailureCount: 3,
+            suspiciousFailureCount: 4,
+            fillPath: '/api/v1/fill/tep-1.pdf',
+            schemaPath: '/api/template-api-endpoints/tep-1/schema',
+          },
+          schema: {
+            snapshotVersion: 3,
+            defaultExportMode: 'flat',
+            fields: [{ key: 'full_name', fieldName: 'full_name', type: 'text', page: 1 }],
+            checkboxFields: [],
+            checkboxGroups: [],
+            radioGroups: [],
+            exampleData: { full_name: 'Ada Lovelace' },
+          },
+          limits: {
+            activeEndpointsMax: 3,
+            activeEndpointsUsed: 1,
+            requestsPerMonthMax: 250,
+            requestsThisMonth: 7,
+            requestUsageMonth: '2026-03',
+            maxPagesPerRequest: 25,
+            templatePageCount: 1,
+          },
+        })}
+      />,
+    );
+
+    expect(screen.getByText('6 tracked failures')).toBeTruthy();
   });
 
   it('renders endpoint metadata, schema counts, and one-time secret details', () => {
@@ -242,8 +292,50 @@ describe('ApiFillManagerDialog', () => {
     expect(screen.getByText('Scalar fields')).toBeTruthy();
     expect(screen.getByText('Checkbox groups')).toBeTruthy();
     expect(screen.getByText('Radio groups')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Copy schema URL' })).toBeTruthy();
     expect(screen.getByText('cURL')).toBeTruthy();
     expect(screen.getByText('Node')).toBeTruthy();
     expect(screen.getByText('Python')).toBeTruthy();
+  });
+
+  it('renders Python examples with Python literals instead of raw JSON tokens', () => {
+    render(
+      <ApiFillManagerDialog
+        {...createProps({
+          endpoint: {
+            id: 'tep-1',
+            templateId: 'tpl-1',
+            templateName: 'Patient Intake',
+            status: 'active',
+            snapshotVersion: 3,
+            keyPrefix: 'dpa_live_abc123',
+            createdAt: '2026-03-25T12:00:00.000Z',
+            updatedAt: '2026-03-25T12:00:00.000Z',
+            publishedAt: '2026-03-25T12:00:00.000Z',
+            lastUsedAt: '2026-03-25T13:00:00.000Z',
+            usageCount: 7,
+            fillPath: '/api/v1/fill/tep-1.pdf',
+            schemaPath: '/api/template-api-endpoints/tep-1/schema',
+          },
+          schema: {
+            snapshotVersion: 3,
+            defaultExportMode: 'flat',
+            fields: [{ key: 'full_name', fieldName: 'full_name', type: 'text', page: 1 }],
+            checkboxFields: [{ key: 'agree_to_terms', fieldName: 'agree_to_terms', type: 'checkbox', page: 1 }],
+            checkboxGroups: [],
+            radioGroups: [],
+            exampleData: {
+              full_name: 'Ada Lovelace',
+              agree_to_terms: true,
+              middle_name: null,
+            },
+          },
+        })}
+      />,
+    );
+
+    expect(screen.getByText(/"agree_to_terms": True/)).toBeTruthy();
+    expect(screen.getByText(/"middle_name": None/)).toBeTruthy();
+    expect(screen.queryByText(/"agree_to_terms": false/)).toBeNull();
   });
 });

@@ -52,6 +52,8 @@ from backend.services.signing_service import (
     SIGNING_ARTIFACT_SIGNED_PDF,
     SIGNING_ARTIFACT_SOURCE_PDF,
     build_signing_public_path,
+    build_signing_validation_path,
+    resolve_signing_public_link_version,
 )
 
 router = APIRouter()
@@ -121,12 +123,27 @@ def _serialize_linked_signing_artifacts(record) -> Dict[str, Any]:
 
 
 def _serialize_linked_signing(record) -> Dict[str, Any]:
+    public_link_version = resolve_signing_public_link_version(record)
+    public_link_available = record.status in {"sent", "completed"}
     return {
         "requestId": record.id,
         "status": record.status,
+        "senderEmail": getattr(record, "sender_email", None),
+        "inviteMethod": getattr(record, "invite_method", None),
+        "inviteProvider": getattr(record, "invite_provider", None),
+        "inviteDeliveryStatus": record.invite_delivery_status,
+        "inviteLastAttemptAt": record.invite_last_attempt_at,
+        "inviteSentAt": record.invite_sent_at,
+        "inviteDeliveryError": record.invite_delivery_error,
+        "inviteDeliveryErrorCode": getattr(record, "invite_delivery_error_code", None),
+        "manualLinkSharedAt": getattr(record, "manual_link_shared_at", None),
         "completedAt": record.completed_at,
         "manualFallbackRequestedAt": record.manual_fallback_requested_at,
-        "publicPath": build_signing_public_path(record.id),
+        "publicLinkVersion": public_link_version,
+        "publicLinkRevokedAt": getattr(record, "public_link_revoked_at", None),
+        "publicLinkLastReissuedAt": getattr(record, "public_link_last_reissued_at", None),
+        "publicPath": build_signing_public_path(record.id, public_link_version) if public_link_available else None,
+        "validationPath": build_signing_validation_path(record.id),
         "artifacts": _serialize_linked_signing_artifacts(record),
     }
 
@@ -163,6 +180,8 @@ def _normalize_signing_config(
     scope_type: str,
     questions: List[Dict[str, Any]],
     fields: List[Dict[str, Any]],
+    sender_display_name: Optional[str] = None,
+    sender_email: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     raw_config = payload.signingConfig.model_dump(exclude_none=True) if payload.signingConfig is not None else None
     try:
@@ -171,6 +190,8 @@ def _normalize_signing_config(
             scope_type=scope_type,
             questions=questions,
             fields=fields,
+            sender_display_name=sender_display_name,
+            sender_email=sender_email,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -420,6 +441,8 @@ async def create_owner_fill_link(
             scope_type=scope_type,
             questions=questions,
             fields=[],
+            sender_display_name=user.display_name,
+            sender_email=user.email,
         )
         existing = get_fill_link_for_group(group.id, user.app_user_id)
     else:
@@ -440,6 +463,8 @@ async def create_owner_fill_link(
             scope_type=scope_type,
             questions=questions,
             fields=fields,
+            sender_display_name=user.display_name,
+            sender_email=user.email,
         )
         existing = get_fill_link_for_template(payload.templateId, user.app_user_id)
     signing_enabled = bool(isinstance(signing_config, dict) and signing_config.get("enabled"))
@@ -578,6 +603,8 @@ async def update_owner_fill_link(
                 scope_type=record.scope_type,
                 questions=next_questions,
                 fields=[],
+                sender_display_name=user.display_name,
+                sender_email=user.email,
             ) if payload.signingConfig is not None else next_signing_config
         elif payload.webFormConfig is not None:
             default_questions = (
@@ -601,6 +628,8 @@ async def update_owner_fill_link(
                 scope_type=record.scope_type,
                 questions=next_questions,
                 fields=[],
+                sender_display_name=user.display_name,
+                sender_email=user.email,
             )
     elif payload.fields is not None or payload.webFormConfig is not None:
         template = get_template(record.template_id, user.app_user_id) if record.template_id else None
@@ -638,6 +667,8 @@ async def update_owner_fill_link(
                     scope_type=record.scope_type,
                     questions=next_questions,
                     fields=next_fields,
+                    sender_display_name=user.display_name,
+                    sender_email=user.email,
                 )
         else:
             default_questions = (
@@ -671,6 +702,8 @@ async def update_owner_fill_link(
                         and isinstance(next_respondent_download_snapshot.get("fields"), list)
                         else []
                     ),
+                    sender_display_name=user.display_name,
+                    sender_email=user.email,
                 )
                 if next_signing_config and next_respondent_download_snapshot is None:
                     raise HTTPException(

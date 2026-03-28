@@ -164,6 +164,16 @@
   margin: 0;
 }
 
+.intent-page__footnote-ref {
+  margin-left: 0.1rem;
+  vertical-align: super;
+  font-size: 0.72em;
+}
+
+.intent-page__footnote-ref a {
+  text-decoration: none;
+}
+
 .intent-page__article-copy ul {
   margin-top: 0.1rem;
 }
@@ -225,6 +235,38 @@
 .intent-page__related-link:hover {
   border-color: #93c5fd;
   background: #eff6ff;
+}
+
+.intent-page__footnote-list {
+  margin: 0;
+  padding-left: 1.2rem;
+  display: grid;
+  gap: 0.65rem;
+}
+
+.intent-page__footnote-item {
+  color: #334155;
+  line-height: 1.55;
+}
+
+.intent-page__footnote-number {
+  font-weight: 700;
+  margin-right: 0.35rem;
+}
+
+.intent-page__footnote-link {
+  color: #1d4ed8;
+}
+
+.intent-page__footnote-backlink {
+  margin-left: 0.55rem;
+  color: #475569;
+  text-decoration: none;
+  font-weight: 700;
+}
+
+.intent-page__footnote-backlink:hover {
+  color: #1d4ed8;
 }
 
 @media (max-width: 980px) {

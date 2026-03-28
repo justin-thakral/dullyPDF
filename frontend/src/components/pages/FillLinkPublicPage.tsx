@@ -198,8 +198,7 @@ export default function FillLinkPublicPage({ token }: FillLinkPublicPageProps) {
   const [submittedResponseId, setSubmittedResponseId] = useState<string | null>(null);
   const [submittedDownloadPath, setSubmittedDownloadPath] = useState<string | null>(null);
   const [submittedDownloadAvailable, setSubmittedDownloadAvailable] = useState(false);
-  const [signingPath, setSigningPath] = useState<string | null>(null);
-  const [signingErrorMessage, setSigningErrorMessage] = useState<string | null>(null);
+  const [signingResult, setSigningResult] = useState<PublicFillLinkSubmitResult['signing'] | null>(null);
   const [retryingSigning, setRetryingSigning] = useState(false);
   const alertRef = useRef<HTMLDivElement | null>(null);
   const submitAttemptIdRef = useRef<string | null>(null);
@@ -216,7 +215,6 @@ export default function FillLinkPublicPage({ token }: FillLinkPublicPageProps) {
   );
   const canDownloadSubmittedPdf = Boolean(
     submittedDownloadAvailable
-    && !signingPath
     && (submittedResponseId || submittedDownloadPath),
   );
 
@@ -228,8 +226,7 @@ export default function FillLinkPublicPage({ token }: FillLinkPublicPageProps) {
     setSubmittedResponseId(null);
     setSubmittedDownloadPath(null);
     setSubmittedDownloadAvailable(false);
-    setSigningPath(null);
-    setSigningErrorMessage(null);
+    setSigningResult(null);
     setRetryingSigning(false);
     ApiService.getPublicFillLink(token)
       .then((payload) => {
@@ -268,21 +265,12 @@ export default function FillLinkPublicPage({ token }: FillLinkPublicPageProps) {
     scrollToAlert();
   }, [error, success]);
 
-  useEffect(() => {
-    if (!signingPath || typeof window === 'undefined') return;
-    const timeoutId = window.setTimeout(() => {
-      window.location.assign(signingPath);
-    }, 1500);
-    return () => window.clearTimeout(timeoutId);
-  }, [signingPath]);
-
   const clearSubmitFeedback = useCallback(() => {
     setSuccess(null);
     setSubmittedResponseId(null);
     setSubmittedDownloadPath(null);
     setSubmittedDownloadAvailable(false);
-    setSigningPath(null);
-    setSigningErrorMessage(null);
+    setSigningResult(null);
     setRetryingSigning(false);
   }, []);
 
@@ -358,23 +346,11 @@ export default function FillLinkPublicPage({ token }: FillLinkPublicPageProps) {
       setSubmittedResponseId(payload.responseId ?? null);
       setSubmittedDownloadPath(submitResult.responseDownloadPath?.trim() || null);
       setSubmittedDownloadAvailable(fillLinkResponseDownloadEnabled(submitResult));
-      const nextSigningPath = submitResult.signing?.available && submitResult.signing.publicPath
-        ? submitResult.signing.publicPath.trim()
-        : null;
-      setSigningPath(nextSigningPath || null);
-      setSigningErrorMessage(
-        submitResult.signing?.enabled && !submitResult.signing?.available
-          ? (submitResult.signing.errorMessage || 'Your form was submitted, but signing is unavailable right now.')
-          : null,
-      );
+      setSigningResult(submitResult.signing || null);
       setSuccess(
-        nextSigningPath
-          ? (payload.respondentLabel
-            ? `Thanks, ${payload.respondentLabel}. Your form is ready for signature.`
-            : 'Your form is ready for signature.')
-          : (payload.respondentLabel
-            ? `Thanks, ${payload.respondentLabel}. Your response was submitted.`
-            : 'Your response was submitted.'),
+        payload.respondentLabel
+          ? `Thanks, ${payload.respondentLabel}. Your response was submitted.`
+          : 'Your response was submitted.',
       );
     } catch (submitError) {
       if (submitError instanceof ApiError && submitError.status === 409) {
@@ -421,13 +397,6 @@ export default function FillLinkPublicPage({ token }: FillLinkPublicPageProps) {
     }
   }, [canDownloadSubmittedPdf, submittedDownloadPath, submittedResponseId, token]);
 
-  const handleContinueToSigning = useCallback(() => {
-    if (!signingPath || typeof window === 'undefined') {
-      return;
-    }
-    window.location.assign(signingPath);
-  }, [signingPath]);
-
   const handleRetrySigning = useCallback(async () => {
     if (!submittedResponseId) {
       return;
@@ -437,20 +406,9 @@ export default function FillLinkPublicPage({ token }: FillLinkPublicPageProps) {
     try {
       const payload = await ApiService.retryPublicFillLinkSigning(token, { responseId: submittedResponseId });
       setLink(payload.link);
-      const nextSigningPath = payload.signing?.available && payload.signing.publicPath
-        ? payload.signing.publicPath.trim()
-        : null;
-      setSigningPath(nextSigningPath || null);
-      setSigningErrorMessage(
-        payload.signing?.enabled && !payload.signing?.available
-          ? (payload.signing.errorMessage || 'Your form was submitted, but signing is unavailable right now.')
-          : null,
-      );
-      if (nextSigningPath) {
-        setSuccess('Your form is ready for signature.');
-      }
+      setSigningResult(payload.signing || null);
     } catch (retryError) {
-      setError(retryError instanceof Error ? retryError.message : 'Unable to retry the signing handoff.');
+      setError(retryError instanceof Error ? retryError.message : 'Unable to resend the signing email.');
     } finally {
       setRetryingSigning(false);
     }
@@ -469,7 +427,7 @@ export default function FillLinkPublicPage({ token }: FillLinkPublicPageProps) {
           </div>
           <p className="fill-link-public-page__summary">
             {link?.postSubmitSigningEnabled
-              ? 'Complete this DullyPDF-hosted form, then review the exact filled PDF and sign it on the next step.'
+              ? 'Complete this DullyPDF-hosted form. After submit, DullyPDF will email the signing link for the exact filled PDF to the signer email you entered.'
               : respondentPdfDownloadAvailable
                 ? respondentPdfEditableDownload
                   ? 'Complete this DullyPDF-hosted form. If the owner enabled it, you can download an editable PDF copy after you submit.'
@@ -484,7 +442,7 @@ export default function FillLinkPublicPage({ token }: FillLinkPublicPageProps) {
                 <span>{requiredQuestionCount} required question{requiredQuestionCount === 1 ? '' : 's'}</span>
               ) : null}
               {questionCount ? <span>{questionCount} visible question{questionCount === 1 ? '' : 's'}</span> : null}
-              {link?.postSubmitSigningEnabled ? <span>Review and sign after submit</span> : null}
+              {link?.postSubmitSigningEnabled ? <span>Signing link emailed after submit</span> : null}
               {respondentPdfDownloadAvailable ? (
                 <span>{respondentPdfEditableDownload ? 'Editable PDF copy available after submit' : 'Flat PDF copy available after submit'}</span>
               ) : null}
@@ -515,36 +473,40 @@ export default function FillLinkPublicPage({ token }: FillLinkPublicPageProps) {
             ) : null}
           </div>
 
-        {signingPath ? (
-          <section className="fill-link-public-page__post-submit" aria-label="Continue to signing">
+        {signingResult?.enabled ? (
+          <section
+            className={[
+              'fill-link-public-page__post-submit',
+              signingResult.errorMessage ? 'fill-link-public-page__post-submit--warning' : '',
+            ].filter(Boolean).join(' ')}
+            aria-label="Signing email status"
+          >
             <div className="fill-link-public-page__post-submit-copy">
-              <h2>Continue to review and sign</h2>
-              <p>DullyPDF prepared your exact filled PDF. You&apos;ll be redirected to the signing review screen automatically.</p>
+              <h2>{signingResult.errorMessage ? 'Signing email unavailable' : 'Signing email prepared'}</h2>
+              <p>
+                {signingResult.message
+                  || signingResult.errorMessage
+                  || 'DullyPDF prepared the exact filled PDF and linked it to a signing request.'}
+              </p>
+              {signingResult.emailHint ? (
+                <p>The signing email destination is {signingResult.emailHint}.</p>
+              ) : null}
+              {!signingResult.canResend && signingResult.resendAvailableAt ? (
+                <p>You can request another signing email after {new Date(signingResult.resendAvailableAt).toLocaleString()}.</p>
+              ) : null}
             </div>
-            <button
-              type="button"
-              className="ui-button ui-button--primary fill-link-public-page__download"
-              onClick={handleContinueToSigning}
-            >
-              Continue to review and sign
-            </button>
-          </section>
-        ) : null}
-
-        {!signingPath && signingErrorMessage ? (
-          <section className="fill-link-public-page__post-submit fill-link-public-page__post-submit--warning" aria-label="Signing unavailable">
-            <div className="fill-link-public-page__post-submit-copy">
-              <h2>Signing is temporarily unavailable</h2>
-              <p>{signingErrorMessage}</p>
-            </div>
-            {submittedResponseId ? (
+            {submittedResponseId && signingResult.canResend ? (
               <button
                 type="button"
                 className="ui-button ui-button--primary fill-link-public-page__download"
                 onClick={handleRetrySigning}
                 disabled={retryingSigning}
               >
-                {retryingSigning ? 'Retrying signing…' : 'Retry signing handoff'}
+                {retryingSigning
+                  ? 'Sending email…'
+                  : signingResult.available
+                    ? 'Resend signing email'
+                    : 'Retry signing email'}
               </button>
             ) : null}
           </section>

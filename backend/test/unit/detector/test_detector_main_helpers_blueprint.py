@@ -30,6 +30,7 @@ def _reset_env(monkeypatch: pytest.MonkeyPatch) -> None:
     ):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setattr(dm, "_ALLOW_UNAUTHENTICATED", False)
+    monkeypatch.setattr(dm, "_WARNED_PROD_DEFAULT_TASK_ATTEMPTS", False)
 
 
 def test_allow_unauthenticated_disabled_when_flag_is_not_truthy() -> None:
@@ -105,6 +106,21 @@ def test_max_task_attempts(
     else:
         monkeypatch.setenv("DETECTOR_TASKS_MAX_ATTEMPTS", raw)
     assert dm._max_task_attempts() == expected
+
+
+def test_max_task_attempts_defaults_to_queue_limit_in_prod_when_env_missing(
+    mocker,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ENV", "prod")
+    monkeypatch.delenv("DETECTOR_TASKS_MAX_ATTEMPTS", raising=False)
+    warning = mocker.patch.object(dm.logger, "warning")
+
+    assert dm._max_task_attempts() == 5
+    assert dm._max_task_attempts() == 5
+    warning.assert_called_once_with(
+        "DETECTOR_TASKS_MAX_ATTEMPTS is unset in prod; defaulting to 5 to match the managed queues."
+    )
 
 
 def test_should_finalize_failure_false_without_max_attempts() -> None:
