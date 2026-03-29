@@ -182,15 +182,21 @@ def test_backend_prod_env_example_documents_signing_prod_requirements() -> None:
     assert "Cloud KMS" in text
 
 
-def test_backend_prod_env_example_documents_gpu_busy_cpu_spillover_knobs() -> None:
+def test_backend_prod_env_example_documents_single_gpu_prod_knobs() -> None:
     text = _prod_env_example_text()
     assert "DETECTOR_ROUTING_MODE=gpu" in text
+    assert "DETECTOR_USE_STABLE_AUDIENCE=true" in text
     assert "DETECTOR_SERIALIZE_GPU_TASKS=true" in text
-    assert "DETECTOR_GPU_BUSY_FALLBACK_TO_CPU=true" in text
+    assert "DETECTOR_TASKS_AUDIENCE_GPU=https://dullypdf-detector-light-gpu.dullypdf.internal" in text
+    assert "DETECTOR_GPU_BUSY_FALLBACK_TO_CPU=false" in text
     assert "DETECTOR_GPU_BUSY_FALLBACK_PAGE_THRESHOLD=5" in text
     assert "DETECTOR_GPU_BUSY_ACTIVE_WINDOW_SECONDS=1800" in text
-    assert "DETECTOR_TASKS_QUEUE_LIGHT_CPU=commonforms-detect-light-cpu" in text
+    assert "DETECTOR_SERVICE_URL=" in text
+    assert "DETECTOR_SERVICE_URL_LIGHT=" in text
+    assert "DETECTOR_SERVICE_URL_HEAVY=" in text
+    assert "DETECTOR_TASKS_QUEUE_LIGHT_CPU=" in text
     assert "DETECTOR_TASKS_QUEUE_HEAVY=commonforms-detect-light" in text
+    assert "Do not configure CPU spillover for the live deploy" in text
 
 
 def test_backend_prod_env_example_documents_east4_hot_path_buckets() -> None:

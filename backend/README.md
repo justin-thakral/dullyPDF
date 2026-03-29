@@ -252,6 +252,12 @@ Detector env examples:
 - When `DETECTOR_ROUTING_MODE=gpu` but only one GPU is available for the whole detector fleet, set
   `DETECTOR_SERIALIZE_GPU_TASKS=true` so heavy jobs reuse the light/default queue plus the light GPU service and run
   `bash scripts/sync-detector-task-queues.sh <env-file>` after backend/detector deploys.
+- For prod single-GPU deploys, also set `DETECTOR_USE_STABLE_AUDIENCE=true`, use
+  `DETECTOR_TASKS_AUDIENCE_GPU=https://dullypdf-detector-light-gpu.dullypdf.internal`, leave
+  `DETECTOR_SERVICE_URL*` blank in the shared env file, and let `scripts/deploy-detector-services.sh`
+  recreate the GPU service before deploy so Cloud Run does not need a second concurrent GPU revision.
+  The detector rollout trusts the stable audience during that recreate, and the backend deploy resolves the
+  actual live `run.app` URL afterward for task routing.
 - If you want gpu-first routing but do not want short PDFs waiting behind that shared GPU lane, also set
   `DETECTOR_GPU_BUSY_FALLBACK_TO_CPU=true` plus explicit `DETECTOR_TASKS_QUEUE_LIGHT_CPU` /
   `DETECTOR_SERVICE_URL_LIGHT_CPU` values so `page_count < DETECTOR_GPU_BUSY_FALLBACK_PAGE_THRESHOLD`
@@ -361,6 +367,9 @@ If that GPU region only has one accelerator available, also set
 `DETECTOR_SERIALIZE_GPU_TASKS=true` and run
 `bash scripts/sync-detector-task-queues.sh env/backend.dev.stack.env`
 so light and heavy detection share one serialized queue.
+For prod with that same single-GPU shape, prefer `DETECTOR_USE_STABLE_AUDIENCE=true`
+plus a stable `DETECTOR_TASKS_AUDIENCE_GPU`, and leave `DETECTOR_SERVICE_URL*`
+unset so the deploy scripts resolve the live URL after recreate.
 If you still want GPU to be the first choice, add
 `DETECTOR_GPU_BUSY_FALLBACK_TO_CPU=true` plus
 `DETECTOR_TASKS_QUEUE_LIGHT_CPU` / `DETECTOR_SERVICE_URL_LIGHT_CPU`

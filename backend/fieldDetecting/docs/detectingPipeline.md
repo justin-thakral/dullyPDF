@@ -124,6 +124,11 @@ uvicorn backend.detection.detector_app:app --host 0.0.0.0 --port 8000
      reuse the light/default queue plus the light GPU service, then run
      `bash scripts/sync-detector-task-queues.sh <env-file>` to cap that shared
      queue at one in-flight task.
+   - For prod single-GPU deploys, set `DETECTOR_USE_STABLE_AUDIENCE=true`, use
+     a stable `DETECTOR_TASKS_AUDIENCE_GPU` value such as
+     `https://dullypdf-detector-light-gpu.dullypdf.internal`, and leave
+     `DETECTOR_SERVICE_URL*` blank in the shared env file so the deploy scripts
+     can recreate the GPU service and then resolve the live Cloud Run URL.
    - If you want GPU to stay the default for short PDFs but do not want those
      requests waiting behind the shared GPU lane, also set
      `DETECTOR_GPU_BUSY_FALLBACK_TO_CPU=true` and provide

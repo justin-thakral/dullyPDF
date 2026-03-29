@@ -359,6 +359,53 @@ build_stable_audience() {
   printf 'https://%s.dullypdf.internal' "$service_name"
 }
 
+delete_cloud_run_service_if_present() {
+  local service_name="$1"
+  local region="$2"
+  if ! gcloud run services describe "$service_name" \
+    --region "$region" \
+    --project "$PROJECT_ID" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  echo "Deleting ${service_name} before redeploy because single-GPU mode cannot roll a second GPU revision under quota 1."
+  gcloud run services delete "$service_name" \
+    --region "$region" \
+    --project "$PROJECT_ID" \
+    --quiet >/dev/null
+}
+
+run_detector_deploy_with_quota_retry() {
+  local service_name="$1"
+  shift
+
+  local retry_attempts="${DETECTOR_SINGLE_GPU_RETRY_ATTEMPTS:-4}"
+  local retry_wait_seconds="${DETECTOR_SINGLE_GPU_RETRY_WAIT_SECONDS:-45}"
+  local attempt=1
+  local output=""
+  local status=0
+  local quota_error="Quota exceeded for total allowable count of GPUs per project per region."
+
+  while true; do
+    set +e
+    output="$("$@" 2>&1)"
+    status=$?
+    set -e
+    printf '%s\n' "$output"
+
+    if (( status == 0 )); then
+      return 0
+    fi
+    if (( attempt >= retry_attempts )) || ! grep -Fq "$quota_error" <<<"$output"; then
+      return "$status"
+    fi
+
+    echo "Cloud Run is still releasing the prior GPU allocation for ${service_name}; retrying in ${retry_wait_seconds}s (attempt ${attempt}/${retry_attempts})." >&2
+    sleep "$retry_wait_seconds"
+    attempt=$((attempt + 1))
+  done
+}
+
 build_with_dockerfile() {
   local image="$1"
   local dockerfile="$2"
@@ -392,6 +439,8 @@ else
   build_with_dockerfile "$DETECTOR_IMAGE" "$DETECTOR_DOCKERFILE"
 fi
 echo "Deploying detector services in region ${DEPLOY_REGION}..."
+
+declare -A PREDEPLOY_DELETED_SERVICES=()
 
 deploy_detector() {
   local service_name="$1"
@@ -445,27 +494,82 @@ PY
   local profile_upper=""
   local sync_env_vars=""
   local service_env_file
+  local current_target="cpu"
+  local desired_service_url=""
+  local desired_runtime_audience=""
+  local should_sync_runtime_env="true"
   if [[ "$profile" == "heavy" ]]; then
     timeout_seconds="$DETECTOR_TIMEOUT_SECONDS_HEAVY"
     max_instances="$DETECTOR_MAX_INSTANCES_HEAVY"
     cpu_limit="$DETECTOR_CPU_HEAVY"
     memory_limit="$DETECTOR_MEMORY_HEAVY"
   fi
+  if [[ "$DETECTOR_GPU_ENABLED" == "true" ]]; then
+    current_target="gpu"
+  fi
   if [[ "$DETECTOR_USE_STABLE_AUDIENCE" == "true" ]]; then
     stable_audience="$(build_stable_audience "$service_name")"
   fi
+  if [[ "$current_target" == "gpu" ]] \
+    && detector_share_single_gpu_service "$DETECTOR_ROUTING_MODE" \
+    && [[ -z "$stable_audience" ]]; then
+    echo "Single-GPU detector deploys require DETECTOR_USE_STABLE_AUDIENCE=true so the rollout does not need a second env-sync GPU revision." >&2
+    exit 1
+  fi
+  desired_service_url="$(detector_service_url_for_target "$current_target" "$profile")"
+  desired_runtime_audience="$(
+    detector_tasks_audience_for_target \
+      "$current_target" \
+      "$profile" \
+      "$stable_audience"
+  )"
+  if [[ -n "$stable_audience" ]]; then
+    desired_runtime_audience="$stable_audience"
+  fi
   service_env_file="$(mktemp)"
   cp "$TMP_ENV_FILE" "$service_env_file"
-  python3 - <<'PY' "$service_env_file" "$stable_audience"
+  python3 - <<'PY' \
+    "$service_env_file" \
+    "$stable_audience" \
+    "$desired_service_url" \
+    "$desired_runtime_audience" \
+    "$profile"
 import json
 import sys
 
 out_path = sys.argv[1]
 stable_audience = sys.argv[2]
-with open(out_path, "a", encoding="utf-8") as handle:
-    if stable_audience:
-        handle.write(f"DETECTOR_TASKS_AUDIENCE: {json.dumps(stable_audience)}\n")
+desired_service_url = sys.argv[3]
+desired_runtime_audience = sys.argv[4]
+profile = sys.argv[5].upper()
+
+entries = {}
+with open(out_path, "r", encoding="utf-8") as handle:
+    for raw in handle:
+        line = raw.rstrip("\n")
+        if not line:
+            continue
+        key, sep, value = line.partition(":")
+        if not sep:
+            continue
+        entries[key.strip()] = value.strip()
+
+if stable_audience:
+    entries["DETECTOR_TASKS_AUDIENCE"] = json.dumps(stable_audience)
+if desired_service_url:
+    entries["DETECTOR_SERVICE_URL"] = json.dumps(desired_service_url)
+    entries[f"DETECTOR_SERVICE_URL_{profile}"] = json.dumps(desired_service_url)
+if desired_runtime_audience:
+    entries["DETECTOR_TASKS_AUDIENCE"] = json.dumps(desired_runtime_audience)
+    entries[f"DETECTOR_TASKS_AUDIENCE_{profile}"] = json.dumps(desired_runtime_audience)
+
+with open(out_path, "w", encoding="utf-8") as handle:
+    for key in sorted(entries.keys()):
+        handle.write(f"{key}: {entries[key]}\n")
 PY
+  if [[ -n "$stable_audience" ]] || [[ -n "$desired_service_url" && -n "$desired_runtime_audience" ]]; then
+    should_sync_runtime_env="false"
+  fi
 
   deploy_args+=(
     --concurrency "1"
@@ -494,22 +598,36 @@ PY
     )
   fi
 
+  if [[ "$current_target" == "gpu" ]] \
+    && detector_share_single_gpu_service "$DETECTOR_ROUTING_MODE" \
+    && [[ -z "${PREDEPLOY_DELETED_SERVICES[$service_name]:-}" ]]; then
+    delete_cloud_run_service_if_present "$service_name" "$DEPLOY_REGION"
+    PREDEPLOY_DELETED_SERVICES["$service_name"]="1"
+  fi
+
   echo "Deploying ${service_name}..."
-  gcloud run deploy "$service_name" \
-    --image "$DETECTOR_IMAGE" \
-    --region "$DEPLOY_REGION" \
-    --project "$PROJECT_ID" \
-    --quiet \
-    --service-account "$RUNTIME_SA" \
-    --env-vars-file "$service_env_file" \
+  local -a deploy_command=(
+    gcloud run deploy "$service_name"
+    --image "$DETECTOR_IMAGE"
+    --region "$DEPLOY_REGION"
+    --project "$PROJECT_ID"
+    --quiet
+    --service-account "$RUNTIME_SA"
+    --env-vars-file "$service_env_file"
     "$(
       if [[ "$DETECTOR_DEPLOY_ALLOW_UNAUTHENTICATED" == "true" ]]; then
         printf '%s' '--allow-unauthenticated'
       else
         printf '%s' '--no-allow-unauthenticated'
       fi
-    )" \
+    )"
     "${deploy_args[@]}"
+  )
+  if [[ "$current_target" == "gpu" ]] && detector_share_single_gpu_service "$DETECTOR_ROUTING_MODE"; then
+    run_detector_deploy_with_quota_retry "$service_name" "${deploy_command[@]}"
+  else
+    "${deploy_command[@]}"
+  fi
   rm -f "$service_env_file"
 
   local service_url
@@ -535,11 +653,13 @@ PY
   # DETECTOR_TASKS_AUDIENCE / DETECTOR_SERVICE_URL keys. Those must match the
   # deployed service's own URL (or stable audience), not the backend routing
   # env copied in from the shared env file.
-  gcloud run services update "$service_name" \
-    --region "$DEPLOY_REGION" \
-    --project "$PROJECT_ID" \
-    --quiet \
-    --update-env-vars "$sync_env_vars" >/dev/null
+  if [[ "$should_sync_runtime_env" == "true" ]]; then
+    gcloud run services update "$service_name" \
+      --region "$DEPLOY_REGION" \
+      --project "$PROJECT_ID" \
+      --quiet \
+      --update-env-vars "$sync_env_vars" >/dev/null
+  fi
 
   if [[ "$DETECTOR_DEPLOY_ALLOW_UNAUTHENTICATED" == "true" ]]; then
     reset_invoker_policy "allUsers"

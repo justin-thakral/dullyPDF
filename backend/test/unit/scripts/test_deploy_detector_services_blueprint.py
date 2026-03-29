@@ -14,6 +14,10 @@ def _script_text() -> str:
 
 def test_deploy_detector_services_syncs_generic_auth_env_to_service_url() -> None:
     text = _script_text()
+    assert 'desired_service_url="$(detector_service_url_for_target "$current_target" "$profile")"' in text
+    assert 'desired_runtime_audience="$(' in text
+    assert 'should_sync_runtime_env="false"' in text
+    assert 'if [[ "$should_sync_runtime_env" == "true" ]]; then' in text
     assert 'gcloud run services update "$service_name"' in text
     assert 'DETECTOR_SERVICE_URL=${service_url}' in text
     assert 'DETECTOR_TASKS_AUDIENCE=${runtime_audience}' in text
@@ -21,6 +25,8 @@ def test_deploy_detector_services_syncs_generic_auth_env_to_service_url() -> Non
 
 def test_deploy_detector_services_syncs_profile_specific_auth_env_to_service_url() -> None:
     text = _script_text()
+    assert 'entries[f"DETECTOR_SERVICE_URL_{profile}"] = json.dumps(desired_service_url)' in text
+    assert 'entries[f"DETECTOR_TASKS_AUDIENCE_{profile}"] = json.dumps(desired_runtime_audience)' in text
     assert 'profile_upper="${profile^^}"' in text
     assert 'DETECTOR_SERVICE_URL_${profile_upper}=${service_url}' in text
     assert 'DETECTOR_TASKS_AUDIENCE_${profile_upper}=${runtime_audience}' in text
@@ -30,6 +36,21 @@ def test_deploy_detector_services_documents_why_runtime_auth_sync_is_required() 
     text = _script_text()
     assert "The detector verifies its incoming OIDC token" in text
     assert "not the backend routing" in text
+
+
+def test_deploy_detector_services_recreates_single_gpu_service_instead_of_rolling_a_second_revision() -> None:
+    text = _script_text()
+    assert 'if [[ "$current_target" == "gpu" ]] \\' in text
+    assert '&& detector_share_single_gpu_service "$DETECTOR_ROUTING_MODE" \\' in text
+    assert "Single-GPU detector deploys require DETECTOR_USE_STABLE_AUDIENCE=true" in text
+    assert 'if [[ -n "$stable_audience" ]] || [[ -n "$desired_service_url" && -n "$desired_runtime_audience" ]]; then' in text
+    assert 'delete_cloud_run_service_if_present "$service_name" "$DEPLOY_REGION"' in text
+    assert 'run_detector_deploy_with_quota_retry()' in text
+    assert 'DETECTOR_SINGLE_GPU_RETRY_ATTEMPTS' in text
+    assert 'DETECTOR_SINGLE_GPU_RETRY_WAIT_SECONDS' in text
+    assert "Cloud Run is still releasing the prior GPU allocation" in text
+    assert 'run_detector_deploy_with_quota_retry "$service_name" "${deploy_command[@]}"' in text
+    assert "single-GPU mode cannot roll a second GPU revision under quota 1" in text
 
 
 def test_deploy_detector_services_requires_a_dedicated_runtime_service_account_in_prod() -> None:
