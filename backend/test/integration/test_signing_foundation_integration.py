@@ -1421,6 +1421,121 @@ def test_public_signing_completion_embeds_valid_pdf_signature(client: TestClient
     assert "TRUSTED" in validation_status.summary()
 
 
+def test_public_signing_completion_succeeds_without_pdf_signing_identity(client: TestClient, mocker, monkeypatch) -> None:
+    firestore_client = FakeFirestoreClient()
+    request_user = _signing_user()
+    source_pdf_bytes = _pdf_bytes()
+    source_sha256 = _immutable_source_pdf_sha256(source_pdf_bytes)
+    storage = InMemorySigningStorage()
+
+    _mock_signing_verification_delivery(mocker)
+    for name in (
+        "SIGNING_PDF_PKCS12_B64",
+        "SIGNING_PDF_PKCS12_PASSWORD",
+        "SIGNING_PDF_P12_BASE64",
+        "SIGNING_PDF_P12_PATH",
+        "SIGNING_PDF_P12_PASSWORD",
+        "SIGNING_PDF_CERT_PEM",
+        "SIGNING_PDF_CERT_PEM_BASE64",
+        "SIGNING_PDF_CERT_PATH",
+        "SIGNING_PDF_CERT_CHAIN_PEM",
+        "SIGNING_PDF_CERT_CHAIN_PEM_BASE64",
+        "SIGNING_PDF_CERT_CHAIN_PATH",
+        "SIGNING_PDF_KMS_KEY",
+        "SIGNING_AUDIT_KMS_KEY",
+        "SIGNING_PDF_USE_BUNDLED_DEV_CERT",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(signing_pdf_digital_service, "is_prod", lambda: True)
+    signing_pdf_digital_service._resolve_pdf_signing_identity.cache_clear()
+    mocker.patch.object(signing_database, "get_firestore_client", return_value=firestore_client)
+    patch_signing_authenticated_owner(mocker, request_user)
+    patch_signing_artifact_storage(
+        mocker,
+        storage,
+        stream_pdf_bytes=source_pdf_bytes,
+        mock_digital_signing=False,
+    )
+
+    create_response = client.post(
+        "/api/signing/requests",
+        headers=AUTH_HEADERS,
+        json={
+            "title": "Unsigned Packet",
+            "mode": "sign",
+            "signatureMode": "business",
+            "sourceType": "workspace",
+            "sourceId": "form-unsigned",
+            "sourceDocumentName": "Unsigned Packet",
+            "sourceTemplateId": "form-unsigned",
+            "sourceTemplateName": "Unsigned Packet",
+            "sourcePdfSha256": source_sha256,
+            "documentCategory": "ordinary_business_form",
+            "esignEligibilityConfirmed": True,
+            "manualFallbackEnabled": True,
+            "signerName": "Alex Signer",
+            "signerEmail": "alex@example.com",
+            "anchors": [
+                {
+                    "kind": "signature",
+                    "page": 1,
+                    "rect": {"x": 80, "y": 120, "width": 160, "height": 40},
+                }
+            ],
+        },
+    )
+    request_id = create_response.json()["request"]["id"]
+    public_token = build_signing_public_token(request_id)
+
+    send_response = client.post(
+        f"/api/signing/requests/{request_id}/send",
+        headers=AUTH_HEADERS,
+        files={"pdf": ("unsigned.pdf", source_pdf_bytes, "application/pdf")},
+        data={"sourcePdfSha256": source_sha256},
+    )
+    assert send_response.status_code == 200
+
+    session_token = _bootstrap_and_verify_public_signing_session(client, public_token)
+
+    review_response = client.post(
+        f"/api/signing/public/{public_token}/review",
+        headers={"X-Signing-Session": session_token},
+        json={"reviewConfirmed": True},
+    )
+    assert review_response.status_code == 200
+
+    adopt_response = client.post(
+        f"/api/signing/public/{public_token}/adopt-signature",
+        headers={"X-Signing-Session": session_token},
+        json={
+            "signatureType": "drawn",
+            "adoptedName": "Alex Signer",
+            "signatureImageDataUrl": _signature_image_data_url(),
+        },
+    )
+    assert adopt_response.status_code == 200
+
+    complete_response = client.post(
+        f"/api/signing/public/{public_token}/complete",
+        headers={"X-Signing-Session": session_token},
+        json={"intentConfirmed": True},
+    )
+    assert complete_response.status_code == 200
+    complete_payload = complete_response.json()["request"]
+    assert complete_payload["status"] == "completed"
+    assert complete_payload["artifacts"]["signedPdf"]["digitalSignature"]["available"] is False
+    assert complete_payload["artifacts"]["signedPdf"]["digitalSignature"]["method"] is None
+
+    owner_signed_pdf_download = client.get(
+        f"/api/signing/requests/{request_id}/artifacts/signed_pdf",
+        headers=AUTH_HEADERS,
+    )
+    assert owner_signed_pdf_download.status_code == 200
+
+    pdf_reader = PdfFileReader(BytesIO(owner_signed_pdf_download.content), strict=False)
+    assert list(pdf_reader.embedded_signatures) == []
+
+
 def test_public_signing_issued_artifact_links_require_the_same_completed_session(client: TestClient, mocker) -> None:
     firestore_client = FakeFirestoreClient()
     request_user = _signing_user()

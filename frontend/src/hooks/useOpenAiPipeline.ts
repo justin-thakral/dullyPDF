@@ -422,7 +422,7 @@ export function useOpenAiPipeline(deps: UseOpenAiPipelineDeps) {
   // ── Computed capability flags ──────────────────────────────────────
   const renameDisabledReason = useMemo(() => {
     if (renameInProgress) return 'Rename is already running.';
-    if (mappingInProgress || mapSchemaInProgress) return 'Another OpenAI action is already running.';
+    if (mappingInProgress || mapSchemaInProgress) return 'Another OpenAI action is running.';
     if (!deps.verifiedUser) return 'Sign in to run Rename.';
     if (!deps.hasDocument) return 'Upload a PDF first.';
     if (deps.fieldsCount === 0) return 'Detect fields or add at least one field before Rename.';
@@ -443,7 +443,7 @@ export function useOpenAiPipeline(deps: UseOpenAiPipelineDeps) {
 
   const mapSchemaDisabledReason = useMemo(() => {
     if (mapSchemaInProgress) return 'Mapping is already running.';
-    if (mappingInProgress || renameInProgress) return 'Another OpenAI action is already running.';
+    if (mappingInProgress || renameInProgress) return 'Another OpenAI action is running.';
     if (!deps.verifiedUser) return 'Sign in to run Map Schema.';
     if (!deps.hasDocument) return 'Upload a PDF first.';
     if (deps.fieldsCount === 0) return 'Detect fields or add at least one field before mapping.';

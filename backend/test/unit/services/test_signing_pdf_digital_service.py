@@ -123,6 +123,22 @@ def test_apply_digital_pdf_signature_is_noop_when_bundled_dev_identity_is_disabl
     assert validation.summary == "missing_signature"
 
 
+def test_apply_digital_pdf_signature_is_noop_in_prod_without_identity(monkeypatch) -> None:
+    _clear_signing_identity_env(monkeypatch)
+    monkeypatch.setattr(signing_pdf_digital_service, "is_prod", lambda: True)
+
+    pdf_bytes = _sample_pdf_bytes()
+    result = signing_pdf_digital_service.apply_digital_pdf_signature(
+        pdf_bytes=pdf_bytes,
+        signer_name="Alex Signer",
+        source_document_name="Test Packet",
+    )
+
+    assert result.pdf_bytes == pdf_bytes
+    assert result.signature_info.signature_method is None
+    assert result.signature_info.field_name is None
+
+
 def test_apply_digital_pdf_signature_signs_and_validates_pkcs12(monkeypatch) -> None:
     _clear_signing_identity_env(monkeypatch)
     pkcs12_path = _write_test_pkcs12()

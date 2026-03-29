@@ -592,9 +592,12 @@ def _prepare_pdf_signing_execution(
     signer_name: str,
     source_document_name: str,
 ) -> tuple[_ResolvedPdfSigningIdentity, Any, IncrementalPdfFileWriter, BytesIO] | None:
-    ensure_pdf_signing_certificate_configuration()
     identity = _resolve_pdf_signing_identity()
     if identity.signer is None:
+        # Embedded PDF signatures are optional. Completion should still
+        # finalize the retained signed artifact when no signing identity is
+        # configured, and downstream validation already treats the missing
+        # embedded signature as informational rather than fatal.
         return None
 
     signer_display_name = " ".join(str(signer_name or "").strip().split()) or "Signer"

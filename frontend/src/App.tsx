@@ -49,8 +49,10 @@ function App({
   const runtimeAutoStartKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
-    applyRouteSeo({ kind: 'app' });
-  }, []);
+    if (browserRoute.kind === 'homepage') {
+      applyRouteSeo({ kind: 'app' });
+    }
+  }, [browserRoute.kind]);
 
   useEffect(() => {
     let isActive = true;
