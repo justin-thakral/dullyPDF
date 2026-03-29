@@ -456,6 +456,7 @@ deploy_detector() {
   local memory_limit="$DETECTOR_MEMORY_LIGHT"
   local stable_audience=""
   local runtime_audience=""
+  local custom_audience_flag=""
 
   reset_invoker_policy() {
     local allowed_member="$1"
@@ -509,6 +510,7 @@ PY
   fi
   if [[ "$DETECTOR_USE_STABLE_AUDIENCE" == "true" ]]; then
     stable_audience="$(build_stable_audience "$service_name")"
+    custom_audience_flag="--add-custom-audiences=${stable_audience}"
   fi
   if [[ "$current_target" == "gpu" ]] \
     && detector_share_single_gpu_service "$DETECTOR_ROUTING_MODE" \
@@ -623,6 +625,9 @@ PY
     )"
     "${deploy_args[@]}"
   )
+  if [[ -n "$custom_audience_flag" ]]; then
+    deploy_command+=("$custom_audience_flag")
+  fi
   if [[ "$current_target" == "gpu" ]] && detector_share_single_gpu_service "$DETECTOR_ROUTING_MODE"; then
     run_detector_deploy_with_quota_retry "$service_name" "${deploy_command[@]}"
   else

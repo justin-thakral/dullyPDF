@@ -21,6 +21,8 @@ def test_deploy_detector_services_syncs_generic_auth_env_to_service_url() -> Non
     assert 'gcloud run services update "$service_name"' in text
     assert 'DETECTOR_SERVICE_URL=${service_url}' in text
     assert 'DETECTOR_TASKS_AUDIENCE=${runtime_audience}' in text
+    assert 'custom_audience_flag="--add-custom-audiences=${stable_audience}"' in text
+    assert 'deploy_command+=("$custom_audience_flag")' in text
 
 
 def test_deploy_detector_services_syncs_profile_specific_auth_env_to_service_url() -> None:
