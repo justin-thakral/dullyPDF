@@ -124,6 +124,7 @@ def test_mark_signing_request_sent_consumes_monthly_quota_and_rollback_restores_
 
     assert rolled_back is not None
     assert rolled_back.status == signing_database.SIGNING_STATUS_DRAFT
+    assert rolled_back.sent_at is None
     assert rolled_back.quota_consumed_at is None
     assert rolled_back.quota_month_key is None
     usage_after_rollback = signing_database.get_signing_monthly_usage("user-1", month_key="2026-03", client=firestore_client)

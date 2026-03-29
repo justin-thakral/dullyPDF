@@ -1261,6 +1261,7 @@ def rollback_signing_request_sent(
     doc_ref = firestore_client.collection(SIGNING_REQUESTS_COLLECTION).document(normalized_request_id)
     payload = {
         "status": SIGNING_STATUS_DRAFT,
+        "sent_at": None,
         "source_pdf_bucket_path": None,
         "source_pdf_sha256": None,
         "source_version": None,

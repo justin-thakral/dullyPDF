@@ -114,7 +114,13 @@ def ensure_signing_storage_configuration(*, validate_remote: bool = False) -> Si
         )
 
     bucket = get_storage_bucket(final_bucket_name)
-    bucket.reload()
+    try:
+        bucket.reload()
+    except Exception as exc:
+        raise RuntimeError(
+            "Failed to inspect SIGNING_BUCKET retention policy. Grant bucket metadata read access "
+            "(storage.buckets.get) to the backend runtime identity or fix bucket access."
+        ) from exc
     retention_period_seconds = int(getattr(bucket, "retention_period", 0) or 0)
     object_retention_mode = str(getattr(bucket, "object_retention_mode", "") or "").strip() or None
     required_seconds = _required_retention_seconds()
@@ -189,7 +195,13 @@ def promote_signing_staged_object(
     if final_exists:
         try:
             enforce_signing_object_retention(final_bucket_path, retain_until=retain_until)
-        except Exception:
+        except Exception as exc:
+            logger.warning(
+                "Signing artifact promotion failed during retention enforcement (%s -> %s): %s",
+                stage_bucket_path,
+                final_bucket_path,
+                exc,
+            )
             if copied_to_final:
                 try:
                     delete_storage_object(final_bucket_path)

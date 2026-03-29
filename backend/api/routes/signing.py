@@ -849,6 +849,12 @@ async def send_owner_signing_request(
             retain_until=sent_record.retention_until,
         )
     except Exception as exc:
+        logger.warning(
+            "Owner signing source promotion failed for request %s (%s): %s",
+            record.id,
+            source_pdf_bucket_path,
+            exc,
+        )
         rollback_signing_request_sent(
             sent_record.id,
             user.app_user_id,

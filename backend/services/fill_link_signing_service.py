@@ -527,6 +527,12 @@ def ensure_fill_link_response_signing_request(
             retain_until=getattr(sent_record, "retention_until", None),
         )
     except Exception as exc:
+        logger.warning(
+            "Fill By Link signing source promotion failed for request %s (%s): %s",
+            request_record.id,
+            source_pdf_bucket_path,
+            exc,
+        )
         rollback_signing_request_sent(
             sent_record.id,
             link.user_id,
