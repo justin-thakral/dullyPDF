@@ -108,6 +108,9 @@ Thumbs.db
 # Local scratch screenshots
 /image.png
 
+# Private keys and certificates
+*.pem
+
 # Service account credentials
 .gcloud/
 firebase-adminsdk-*.json

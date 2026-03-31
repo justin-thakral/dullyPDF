@@ -55,7 +55,7 @@ When you are told to test changes (via an MCP) assume that there is an existing 
 
 You have full access to use gcloud commands with service accounts too. dev is dullypdf-dev and prod is dullypdf.
 
-Mobile version disables the dullyPDF ui and main pipeline. The layout activates at 900px and it meant as a landing page to describe concepts behind dullyPDF only.
+Mobile version disables the DullyPDF ui and main pipeline. The layout activates at 900px and it meant as a landing page to describe concepts behind DullyPDF only.
 
 ## Commenting Structure
 

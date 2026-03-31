@@ -25,7 +25,7 @@ Important details:
 ## Minimal smoke test
 
 ```bash
-cd /home/dully/projects/dullyPDF
+cd /home/dully/projects/DullyPDF
 set -a
 source search_console/.env
 set +a

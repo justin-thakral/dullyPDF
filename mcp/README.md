@@ -26,8 +26,8 @@ This folder documents the MCP setup for DullyPDF and hosts the custom MCP server
    ```toml
    [mcp_servers.dullypdf-dev]
    command = "node"
-   args = ["/home/dully/projects/dullyPDF/mcp/server/index.js"]
-   cwd = "/home/dully/projects/dullyPDF"
+   args = ["/home/dully/projects/DullyPDF/mcp/server/index.js"]
+   cwd = "/home/dully/projects/DullyPDF"
    enabled = false
    ```
 4. Enable the MCP server for a session and use it from Codex. The server refuses to start if the working directory is outside this repo.

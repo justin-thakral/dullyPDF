@@ -225,15 +225,15 @@ export default function UploadView({
         </DialogFrame>
       )}
       <div className="upload-primary-grid">
-        <UploadComponent variant="detect" title="Upload PDF for Field Detection" subtitle="Drag and drop your PDF file here, or"
+        <UploadComponent variant="detect" title="Upload PDF for Field Detection" subtitle="Upload a PDF to auto-detect fields, then edit, fill, sign, and search in the form builder"
           onFileUpload={onDetectUpload} onValidationError={(message) => onSetLoadError(message)} />
         <UploadComponent
           variant="group"
           title="Upload PDF Group"
-          subtitle="Create a named workflow from multiple PDFs in one batch"
+          subtitle="Upload multiple PDFs in one batch to detect, rename, and map fields across a workflow"
           onOpenDialog={onOpenGroupUpload}
         />
-        <UploadComponent variant="fillable" title="Upload Fillable PDF Template" subtitle="Open your existing fillable PDF directly in the editor"
+        <UploadComponent variant="fillable" title="Upload Fillable PDF Template" subtitle="Open a fillable PDF directly in the editor to fill, sign, and search fields"
           onFileUpload={onFillableUpload} onValidationError={(message) => onSetLoadError(message)} />
       </div>
       {verifiedUser && (

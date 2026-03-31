@@ -27,9 +27,9 @@ const INTENT_PAGES = [
     heroTitle: 'Convert PDF to Fillable Form Templates in Minutes',
     heroSummary:
       'Upload a raw PDF, detect candidate fields, clean geometry in the editor, and save a reusable fillable template for repeat workflows.',
-    seoTitle: 'Free Automatic PDF to Fillable Form Workflow | DullyPDF',
+    seoTitle: 'Convert Any PDF to a Fillable Form — Free AI Field Detection',
     seoDescription:
-      'Create free automatic PDF-to-fillable-form templates for existing documents with AI field detection, visual cleanup, and reusable saved workflows in DullyPDF.',
+      'Upload a PDF, let AI detect every field, rename and map them to your data, then reuse the template forever. No Acrobat required. Free to start.',
     seoKeywords: [
       'pdf to fillable form',
       'free pdf to fillable form',
@@ -229,9 +229,9 @@ const INTENT_PAGES = [
     heroTitle: 'Fill PDF From CSV, Excel, or JSON Data',
     heroSummary:
       'Search your records, pick a row, and fill mapped PDF templates in seconds for repeat data-entry workflows.',
-    seoTitle: 'Free Automatic PDF Fill From CSV, Excel, and JSON | DullyPDF',
+    seoTitle: 'Fill PDF Forms From CSV, Excel, or JSON — Map Fields in Minutes',
     seoDescription:
-      'Use free automatic Search & Fill to map PDF fields to database headers, choose CSV, Excel, or JSON rows, and fill mapped templates in seconds.',
+      'Upload a PDF and a spreadsheet, map columns to form fields, and batch-fill hundreds of PDFs in one click. Works with CSV, Excel, JSON, and SQL. Free tier available.',
     seoKeywords: [
       'fill pdf from csv',
       'free pdf fill from csv',
@@ -432,9 +432,9 @@ const INTENT_PAGES = [
     heroTitle: 'Detailed PDF Signature Workflow for Email and Web-Form-to-Sign Pipelines',
     heroSummary:
       'DullyPDF keeps two signing entry paths split on purpose: send a final PDF directly by email, or collect answers through a hosted web form first and then freeze that exact filled PDF before signature. Both routes converge on one immutable-record signing engine with owner-visible artifacts.',
-    seoTitle: 'Detailed PDF Signature Workflow by Email or Web Form | DullyPDF',
+    seoTitle: 'Send a PDF for E-Signature by Email or Web Form',
     seoDescription:
-      'See the full DullyPDF signature pipeline: email-first signing, web-form-to-sign handoff, immutable PDF freeze, consumer consent, retained artifacts, supported document classes, and excluded categories.',
+      'Two ways to collect signatures: email a final PDF directly, or collect answers through a web form first, then freeze and sign. Full audit trail and immutable record included.',
     seoKeywords: [
       'send pdf for signature by email',
       'electronic signature workflow',
@@ -622,9 +622,9 @@ const INTENT_PAGES = [
     heroTitle: 'Detailed U.S. E-SIGN and UETA Workflow for Supported Records',
     heroSummary:
       'This page is the legal-scope companion to the workflow page. It maps the DullyPDF signing pipeline to 15 U.S.C. §§ 7001-7003, UETA §§ 5, 7, 8, 9, and 12, New York ESRA rules in 9 NYCRR Part 540, and the categories that should remain outside ordinary self-serve signing.',
-    seoTitle: 'Detailed U.S. E-SIGN and UETA PDF Workflow for Supported Records | DullyPDF',
+    seoTitle: 'US E-SIGN Act and UETA Compliance for PDF Signatures',
     seoDescription:
-      'Understand the DullyPDF signing workflow in detail: 15 U.S.C. §§ 7001-7003, UETA, New York ESRA, consumer consent, retention, excluded categories, supported records, and responsibility boundaries.',
+      'How PDF e-signatures align with 15 U.S.C. §§ 7001-7003 and UETA: consumer consent, immutable record freeze, retention, audit artifacts, and which document categories are excluded.',
     seoKeywords: [
       'esign pdf workflow',
       'ueta electronic signature workflow',
@@ -824,9 +824,9 @@ const INTENT_PAGES = [
     heroTitle: 'Publish a JSON to PDF Fill API From Saved Templates',
     heroSummary:
       'Turn a reviewed saved template into a hosted JSON-to-PDF endpoint with schema downloads, key rotation, rate limits, and audit activity.',
-    seoTitle: 'JSON to PDF API and Template Fill API | DullyPDF',
+    seoTitle: 'PDF Fill API — Publish a JSON-to-PDF Endpoint From Any Template',
     seoDescription:
-      'Publish a template-scoped JSON-to-PDF API, return filled PDFs from hosted requests, and keep schema, auth, and audit controls tied to one saved DullyPDF template.',
+      'Turn a saved PDF template into a hosted API endpoint. Send JSON, get a filled PDF back. Includes schema downloads, key rotation, rate limits, and audit logs.',
     seoKeywords: [
       'pdf fill api',
       'json to pdf api',
@@ -904,9 +904,9 @@ const INTENT_PAGES = [
     heroTitle: 'Fill Information in PDF Forms With Structured Data',
     heroSummary:
       'If you need to fill information in PDF forms repeatedly, DullyPDF helps you map once and populate forms from searchable records.',
-    seoTitle: 'Free Automatic PDF Form Filling With Structured Data | DullyPDF',
+    seoTitle: 'Fill Out Any PDF Form Online — Map Fields and Auto-Fill',
     seoDescription:
-      'Use free automatic PDF form filling with mapped templates, database headers, and structured records for repeat workflows in DullyPDF.',
+      'Upload a PDF, map the form fields to your data source, and fill it instantly. Pull from CSV, Excel, JSON, or SQL — no special software required.',
     seoKeywords: [
       'fill information in pdf',
       'free automatic pdf form filling',
@@ -1000,9 +1000,9 @@ const INTENT_PAGES = [
     heroTitle: 'Standardize Fillable Form Field Names for Reliable Auto-Fill',
     heroSummary:
       'Normalize fillable form field names, map them to schema columns, and keep naming consistent across complex PDF packets.',
-    seoTitle: 'Free Automatic Fillable Form Field Naming and Mapping | DullyPDF',
+    seoTitle: 'PDF Form Field Names — How to Rename and Map for Auto-Fill',
     seoDescription:
-      'Use free automatic AI rename and mapping to standardize fillable form field names, align them to database headers, and improve PDF fill reliability.',
+      'Understand PDF field names, bulk-rename them to match your database columns, and set up reliable auto-fill for recurring forms.',
     seoKeywords: [
       'fillable form field name',
       'automatic pdf field rename',
@@ -1158,9 +1158,9 @@ const INTENT_PAGES = [
     heroTitle: 'Automate ACORD Insurance PDF Forms With Mapped Data',
     heroSummary:
       'Handle ACORD workflows such as ACORD 25, 24, 27, 28, 126, and 140 by mapping form fields to structured data and reducing repetitive manual entry.',
-    seoTitle: 'ACORD Form Automation for Insurance Certificate Workflows | DullyPDF',
+    seoTitle: 'ACORD 25 Auto-Fill — Automate Certificate of Insurance PDFs',
     seoDescription:
-      'Automate ACORD forms (25, 24, 27, 28, 126, and 140), auto-fill certificate of insurance PDFs, and map insurance data to structured templates.',
+      'Map ACORD 25, 24, 27, 28, 126, and 140 forms to your insurance data. Fill certificates of insurance in bulk instead of retyping each one.',
     seoKeywords: [
       'acord form automation',
       'auto fill acord 25 pdf',
@@ -1513,9 +1513,9 @@ const INTENT_PAGES = [
     heroTitle: 'Finance and Loan Origination PDF Automation Workflows',
     heroSummary:
       'Automate loan applications, financial disclosures, and compliance documents by mapping PDF fields to structured lending and underwriting data.',
-    seoTitle: 'Loan Application PDF Automation and Mapping | DullyPDF',
+    seoTitle: 'Auto-Fill Loan Applications — Map PDF Forms to Borrower Data',
     seoDescription:
-      'Automate loan PDF forms, fill financial disclosure documents from mapped records, and streamline lending document workflows.',
+      'Connect loan application PDFs to your borrower records and fill disclosure forms, 1003s, and closing docs automatically. No manual retyping.',
     seoKeywords: [
       'loan pdf automation',
       'loan application pdf automation',
@@ -1582,9 +1582,9 @@ const INTENT_PAGES = [
     heroTitle: 'HR Onboarding and Employee PDF Form Automation',
     heroSummary:
       'Automate job application, onboarding, benefits, and tax-document PDFs by mapping recurring HR forms to structured employee records.',
-    seoTitle: 'HR Onboarding PDF Form Automation | DullyPDF',
+    seoTitle: 'Auto-Fill HR Onboarding PDFs From Employee Records',
     seoDescription:
-      'Automate HR onboarding forms, map employee PDF paperwork to structured data, and streamline repetitive HR document entry.',
+      'Pull new-hire data from your system and fill W-4s, I-9s, offer letters, and onboarding packets automatically. Stop retyping the same employee info into every form.',
     seoKeywords: [
       'automate hr onboarding forms',
       'pdf employee form automation',
@@ -1688,9 +1688,9 @@ const INTENT_PAGES = [
     heroTitle: 'Legal Document PDF Workflow Automation',
     heroSummary:
       'Automate contract packets, affidavits, motions, and other legal PDF templates by mapping common fields to case or client record data.',
-    seoTitle: 'Legal PDF Workflow and Court Document Automation | DullyPDF',
+    seoTitle: 'Stop Retyping Court Filings — Automate Legal PDF Forms',
     seoDescription:
-      'Automate legal PDF workflows, map contract and court document templates, and fill recurring legal forms from structured records.',
+      'Map contract templates, court documents, and legal intake forms to your case data. Fill hundreds of legal PDFs in seconds instead of retyping each one.',
     seoKeywords: [
       'legal pdf workflow automation',
       'court document automation',
@@ -1757,9 +1757,9 @@ const INTENT_PAGES = [
     heroTitle: 'Education and Admissions PDF Form Automation',
     heroSummary:
       'Automate student application, enrollment, consent, and transcript-request PDFs with reusable templates mapped to admissions data fields.',
-    seoTitle: 'Education and Student Application PDF Automation | DullyPDF',
+    seoTitle: 'Auto-Fill Student Applications and Enrollment PDFs',
     seoDescription:
-      'Automate student application PDFs, map enrollment forms to structured data columns, and streamline education document workflows.',
+      'Map admissions, enrollment, consent, and transcript-request forms to your student data. Fill application PDFs in bulk instead of one at a time.',
     seoKeywords: [
       'automate student application pdfs',
       'university form pdf automation',
@@ -1895,9 +1895,9 @@ const INTENT_PAGES = [
     heroTitle: 'Logistics and Transportation PDF Form Automation',
     heroSummary:
       'Automate bill of lading, safety inspection, and delivery receipt PDFs by mapping logistics form fields to structured shipment and operations data.',
-    seoTitle: 'Logistics and Transportation PDF Automation | DullyPDF',
+    seoTitle: 'Auto-Fill Logistics PDFs — BOLs, Inspections, and Delivery Receipts',
     seoDescription:
-      'Automate logistics PDF forms, map transportation paperwork to database templates, and streamline recurring shipping document workflows.',
+      'Map bill of lading, safety inspection, and delivery receipt forms to your shipment data. Fill logistics PDFs automatically instead of by hand.',
     seoKeywords: [
       'transport pdf automation',
       'logistics form to database',
@@ -2672,9 +2672,9 @@ const buildTechArticleSchema = (headline, description, path) => ({
 });
 
 const HOME_ROUTE_SEO = {
-  title: 'DullyPDF | AI PDF Automation Platform for Templates, Filling, and Signing',
+  title: 'DullyPDF — Automatic PDF to Fillable Form With Search & Fill',
   description:
-    'DullyPDF helps teams turn recurring PDFs into reusable templates, map them to structured data, collect answers by link, publish JSON-to-PDF endpoints, and route supported records into signature workflows.',
+    'Turn any PDF into a fillable template, then Search & Fill from CSV, Excel, JSON, or SQL. Collect answers by web form or API and add US e-signatures — all in one platform.',
   canonicalPath: '/',
   keywords: ['pdf automation platform', 'ai pdf workflow software', 'fillable pdf automation', 'pdf workflow software', 'structured data to pdf', 'pdf intake automation'],
   structuredData: [
@@ -2999,9 +2999,9 @@ for (const page of INTENT_PAGES) {
 
 const INTENT_HUB_ROUTE_SEO = {
   workflows: {
-    title: 'Workflow Library for PDF Automation | DullyPDF',
+    title: 'PDF Automation Workflows — Templates, Filling, Signing, and API',
     description:
-      'Explore DullyPDF workflow pages for converting PDFs to fillable templates, mapping fields to schemas, and auto-filling from structured data.',
+      'Every way to automate PDFs: convert to fillable forms, fill from spreadsheets or databases, collect signatures by link, and publish fill-by-API endpoints.',
     canonicalPath: '/workflows',
     keywords: [
       'pdf workflow library',
@@ -3054,9 +3054,9 @@ const INTENT_HUB_ROUTE_SEO = {
     },
   },
   industries: {
-    title: 'Industry PDF Automation Solutions | DullyPDF',
+    title: 'PDF Automation by Industry — Healthcare, Insurance, Legal, HR, and More',
     description:
-      'Explore DullyPDF industry pages for healthcare, insurance, legal, HR, finance, and other repeat PDF automation workflows.',
+      'See how teams in healthcare, insurance, legal, HR, finance, logistics, and education use PDF auto-fill to eliminate repetitive form entry.',
     canonicalPath: '/industries',
     keywords: [
       'industry pdf automation',
@@ -3214,9 +3214,9 @@ const BLOG_POSTS = [
   {
     slug: 'how-to-convert-pdf-to-fillable-form',
     title: 'How to Convert a PDF to a Fillable Form Without Adobe Acrobat',
-    seoTitle: 'Convert PDF to Fillable Form Without Adobe Acrobat | DullyPDF Blog',
+    seoTitle: 'How to Convert a PDF to Fillable Form Without Acrobat (Free)',
     seoDescription:
-      'Learn how to convert any PDF into a fillable form without Acrobat. DullyPDF uses AI field detection to create reusable templates for free.',
+      'Step-by-step: upload any PDF, auto-detect form fields with AI, rename them to match your data, and save a reusable fillable template. No Acrobat license needed.',
     seoKeywords: ['pdf to fillable form without acrobat', 'convert pdf to fillable form free', 'fillable pdf without adobe'],
     publishedDate: '2026-03-04',
     updatedDate: '2026-03-24',
@@ -3542,9 +3542,9 @@ const BLOG_POSTS = [
   {
     slug: 'automate-medical-intake-forms',
     title: 'Automate Medical Intake Forms: Reduce Front-Desk Data Entry by 80%',
-    seoTitle: 'Automate Medical Intake Forms: Cut Data Entry 80% | DullyPDF Blog',
+    seoTitle: 'Automate Medical Intake Forms — Cut Front-Desk Data Entry 80%',
     seoDescription:
-      'Reduce front-desk data entry by automating patient intake PDF forms. Map intake fields to your EHR data and fill in seconds.',
+      'Map patient intake PDFs to your EHR fields once, then auto-fill every new patient form from your records. Handles registration, consent, and insurance forms.',
     seoKeywords: ['automate patient intake forms', 'healthcare pdf automation', 'medical intake form automation', 'patient registration automation'],
     publishedDate: '2026-03-04',
     updatedDate: '2026-03-24',
@@ -3678,9 +3678,9 @@ const BLOG_POSTS = [
   {
     slug: 'dullypdf-vs-adobe-acrobat-pdf-form-automation',
     title: 'DullyPDF vs Adobe Acrobat for PDF Form Automation',
-    seoTitle: 'DullyPDF vs Adobe Acrobat for PDF Form Automation | Comparison',
+    seoTitle: 'Adobe Acrobat Alternative for PDF Form Automation (2026)',
     seoDescription:
-      'Compare DullyPDF and Adobe Acrobat for PDF form automation. See how AI field detection and schema mapping differ from Acrobat\'s manual form tools.',
+      'Acrobat makes you place form fields manually. See how AI field detection creates fillable templates in seconds — and what each tool actually costs.',
     seoKeywords: ['dullypdf vs acrobat', 'acrobat fillable form alternative', 'pdf form automation comparison', 'acrobat alternative'],
     publishedDate: '2026-03-04',
     updatedDate: '2026-03-24',
@@ -3775,8 +3775,8 @@ const BLOG_POSTS = [
 const BLOG_INDEX_ROUTE = {
   path: '/blog',
   seo: {
-    title: 'PDF Automation Blog | DullyPDF',
-    description: 'Guides, tutorials, and best practices for converting PDFs to fillable forms, mapping fields to databases, and automating form-filling workflows.',
+    title: 'PDF Automation Guides and Tutorials — DullyPDF Blog',
+    description: 'Step-by-step guides for converting PDFs to fillable forms, auto-filling from spreadsheets, setting up e-signatures, and eliminating manual data entry.',
     canonicalPath: '/blog',
     keywords: ['pdf automation blog', 'fillable form guides', 'pdf form tutorials'],
     structuredData: [{

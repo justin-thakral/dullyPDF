@@ -112,11 +112,11 @@ If the user edits the saved form later, the API output must not silently change.
 
 The implementation should build on current repo seams:
 
-- [forms.py](/home/dully/projects/dullyPDF/backend/api/routes/forms.py)
-- [fill_link_download_service.py](/home/dully/projects/dullyPDF/backend/services/fill_link_download_service.py)
-- [saved_form_snapshot_service.py](/home/dully/projects/dullyPDF/backend/services/saved_form_snapshot_service.py)
-- [saved_forms.py](/home/dully/projects/dullyPDF/backend/api/routes/saved_forms.py)
-- [rate_limit.py](/home/dully/projects/dullyPDF/backend/security/rate_limit.py)
+- [forms.py](/home/dully/projects/DullyPDF/backend/api/routes/forms.py)
+- [fill_link_download_service.py](/home/dully/projects/DullyPDF/backend/services/fill_link_download_service.py)
+- [saved_form_snapshot_service.py](/home/dully/projects/DullyPDF/backend/services/saved_form_snapshot_service.py)
+- [saved_forms.py](/home/dully/projects/DullyPDF/backend/api/routes/saved_forms.py)
+- [rate_limit.py](/home/dully/projects/DullyPDF/backend/security/rate_limit.py)
 
 The existing Fill By Link respondent download path is the closest architectural match because it already materializes PDFs from a frozen publish-time snapshot instead of trusting client-provided field geometry.
 
@@ -176,8 +176,8 @@ This service should:
 
 The service should absorb the logic currently split across:
 
-- [fill_link_download_service.py](/home/dully/projects/dullyPDF/backend/services/fill_link_download_service.py)
-- [forms.py](/home/dully/projects/dullyPDF/backend/api/routes/forms.py)
+- [fill_link_download_service.py](/home/dully/projects/DullyPDF/backend/services/fill_link_download_service.py)
+- [forms.py](/home/dully/projects/DullyPDF/backend/api/routes/forms.py)
 - frontend Search & Fill runtime behavior that must eventually match backend output
 
 ### Initial owner endpoints
@@ -351,7 +351,7 @@ The dialog should avoid a cluttered “developer console” look. This should fe
 
 Likely additions:
 
-- new header action in [HeaderBar.tsx](/home/dully/projects/dullyPDF/frontend/src/components/layout/HeaderBar.tsx)
+- new header action in [HeaderBar.tsx](/home/dully/projects/DullyPDF/frontend/src/components/layout/HeaderBar.tsx)
 - new dialog component, for example `ApiFillManagerDialog.tsx`
 - new hook, for example `useTemplateApiEndpoints.ts`
 - new API client helpers in `frontend/src/services/api.ts`

@@ -186,12 +186,12 @@ const UploadComponent: React.FC<UploadComponentProps> = ({
   const sub =
     subtitle ??
     (variant === 'fillable'
-      ? 'Open your existing fillable PDF directly in the editor'
+      ? 'Open a fillable PDF directly in the editor to fill, sign, and search fields'
       : variant === 'group'
-        ? 'Scan multiple PDFs together and save them as one named workflow group'
+        ? 'Upload multiple PDFs in one batch to detect, rename, and map fields across a workflow'
       : variant === 'saved'
         ? 'Select a form from your saved templates'
-        : 'Drag and drop your PDF file here, or click to browse');
+        : 'Upload a PDF to auto-detect fields, then edit, fill, sign, and search in the form builder');
 
   if (variant === 'saved') {
     const hasIntroText =
@@ -438,7 +438,7 @@ const UploadComponent: React.FC<UploadComponentProps> = ({
           />
           <h3>{heading}</h3>
           <p>
-            {sub} {variant !== 'fillable' && <span className="upload-link">click to browse</span>}
+            {sub}
           </p>
           <p className="upload-requirements">Supports PDF files up to 50MB</p>
           <input
