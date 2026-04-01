@@ -198,121 +198,32 @@ def _fit_checkbox_tag(
     preferred_scale: float,
 ) -> tuple[str, float]:
     """
-    Fit checkbox tag text inside checkbox bounds while preserving readability.
+    Choose a readable scale for a checkbox tag.
+
+    The tag is allowed to overflow the checkbox bounds — readability is more
+    important than fitting inside the box.  We use a generous minimum scale
+    so that even tiny checkboxes get a legible label.
     """
     text = (label or "").strip()
     if not text:
         return "", 0.0
 
-    inner_w = max(1, int(round(max(1, box_w) * 0.84)))
-    inner_h = max(1, int(round(max(1, box_h) * 0.84)))
-    max_scale = max(0.28, min(4.0, float(preferred_scale)))
-    min_scale = 0.10
-    attempt = text
-    for _ in range(max(2, len(text) + 2)):
-        (base_w, base_h), base_baseline = cv2.getTextSize(attempt, _FONT, 1.0, 1)
-        if base_w <= 0 or base_h <= 0:
-            return "", 0.0
+    min_scale = 0.58
+    max_scale = max(min_scale, min(4.0, float(preferred_scale)))
 
-        scale_by_width = inner_w / max(1.0, base_w)
-        scale_by_height = inner_h / max(1.0, base_h + base_baseline)
-        fitted_scale = min(max_scale, scale_by_width, scale_by_height)
-        if fitted_scale >= min_scale:
-            return attempt, fitted_scale
+    # Try to fit inside the box first.
+    (base_w, base_h), base_baseline = cv2.getTextSize(text, _FONT, 1.0, 1)
+    if base_w <= 0 or base_h <= 0:
+        return "", 0.0
 
-        if len(attempt) <= 1:
-            break
-        if len(attempt) == 2:
-            attempt = attempt[:1]
-        else:
-            attempt = f"{attempt[:-2]}…"
+    inner_w = max(1, box_w)
+    inner_h = max(1, box_h)
+    scale_by_width = inner_w / max(1.0, base_w)
+    scale_by_height = inner_h / max(1.0, base_h + base_baseline)
+    fitted_scale = min(max_scale, scale_by_width, scale_by_height)
 
-    # Final fallback for extremely tiny boxes.
-    return attempt[:1], min_scale
-
-
-def _rects_intersect_px(a: Tuple[int, int, int, int], b: Tuple[int, int, int, int]) -> bool:
-    return not (a[2] <= b[0] or a[0] >= b[2] or a[3] <= b[1] or a[1] >= b[3])
-
-
-def _expand_rect_px(rect: Tuple[int, int, int, int], *, padding: int) -> Tuple[int, int, int, int]:
-    x1, y1, x2, y2 = rect
-    return (x1 - padding, y1 - padding, x2 + padding, y2 + padding)
-
-
-def _draw_badge_with_leader(
-    canvas: np.ndarray,
-    *,
-    checkbox_rect: Tuple[int, int, int, int],
-    badge_rect: Tuple[int, int, int, int],
-    label: str,
-    color_bgr: Tuple[int, int, int],
-) -> None:
-    bx1, by1, bx2, by2 = badge_rect
-    cv2.rectangle(canvas, (bx1, by1), (bx2, by2), (0, 0, 0), -1)
-    cv2.rectangle(canvas, (bx1, by1), (bx2, by2), color_bgr, 1)
-
-    (tw, th), baseline = cv2.getTextSize(label, _FONT, 0.46, 1)
-    tx = int(round(bx1 + max(2, (bx2 - bx1 - tw) / 2)))
-    ty = int(round(by1 + max(th + 2, (by2 - by1 + th) / 2)))
-    _draw_text_with_outline(
-        canvas,
-        label,
-        (tx, ty),
-        font_scale=0.46,
-        color_bgr=(255, 255, 255),
-        thickness=1,
-        outline_thickness=2,
-    )
-
-    cbx1, cby1, cbx2, cby2 = checkbox_rect
-    start = (int(round((cbx1 + cbx2) / 2)), int(round((cby1 + cby2) / 2)))
-    end = (int(round((bx1 + bx2) / 2)), int(round((by1 + by2) / 2)))
-    cv2.line(canvas, start, end, color_bgr, 1, cv2.LINE_AA)
-
-
-def _choose_checkbox_badge_rect(
-    *,
-    checkbox_rect: Tuple[int, int, int, int],
-    label: str,
-    image_width_px: int,
-    image_height_px: int,
-    occupied_rects: List[Tuple[int, int, int, int]],
-) -> Tuple[int, int, int, int] | None:
-    """
-    Place a compact ID badge near a tiny checkbox without covering other overlay tags.
-
-    Placement is greedy and deterministic:
-    1) top-right
-    2) bottom-right
-    3) left
-
-    Time complexity:
-    - O(R) for R occupied rectangles because we scan the avoidance list for each
-      candidate slot. The slot count is constant.
-    """
-    (tw, th), baseline = cv2.getTextSize(label, _FONT, 0.46, 1)
-    badge_w = max(18, tw + 8)
-    badge_h = max(14, th + baseline + 6)
-    margin = 4
-
-    cbx1, cby1, cbx2, cby2 = checkbox_rect
-    center_y = int(round((cby1 + cby2) / 2))
-    slot_candidates = [
-        (cbx2 + margin, cby1 - badge_h - margin, cbx2 + margin + badge_w, cby1 - margin),
-        (cbx2 + margin, cby2 + margin, cbx2 + margin + badge_w, cby2 + margin + badge_h),
-        (cbx1 - margin - badge_w, center_y - badge_h // 2, cbx1 - margin, center_y - badge_h // 2 + badge_h),
-    ]
-
-    for rect in slot_candidates:
-        x1, y1, x2, y2 = rect
-        if x1 < 0 or y1 < 0 or x2 >= image_width_px or y2 >= image_height_px:
-            continue
-        padded = _expand_rect_px(rect, padding=2)
-        if any(_rects_intersect_px(padded, occupied) for occupied in occupied_rects):
-            continue
-        return rect
-    return None
+    # Clamp to minimum — overflow is acceptable.
+    return text, max(min_scale, fitted_scale)
 
 
 def _draw_checkbox_tag(
@@ -321,11 +232,15 @@ def _draw_checkbox_tag(
     label: str,
     cb_px: Tuple[int, int, int, int],
     color_bgr: Tuple[int, int, int],
-    image_width_px: int,
-    image_height_px: int,
-    occupied_rects: List[Tuple[int, int, int, int]] | None = None,
     tag_scale: float = 1.6,
 ) -> None:
+    """
+    Draw a checkbox ID tag centered on the checkbox.
+
+    The tag is drawn with a filled background pill so it stays readable even
+    when it overflows outside the checkbox bounds.  The background color is
+    distinct from the field border so both remain distinguishable.
+    """
     x1, y1, x2, y2 = cb_px
     if x2 <= x1 or y2 <= y1 or not label:
         return
@@ -339,36 +254,16 @@ def _draw_checkbox_tag(
     if not fitted_label or scale <= 0.0:
         return
 
-    box_w = x2 - x1
-    box_h = y2 - y1
-    should_use_callout = box_w < 18 or box_h < 18 or scale < 0.35
-    if should_use_callout:
-        badge_rect = _choose_checkbox_badge_rect(
-            checkbox_rect=cb_px,
-            label=fitted_label,
-            image_width_px=image_width_px,
-            image_height_px=image_height_px,
-            occupied_rects=list(occupied_rects or []),
-        )
-        if badge_rect is not None:
-            _draw_badge_with_leader(
-                canvas,
-                checkbox_rect=cb_px,
-                badge_rect=badge_rect,
-                label=fitted_label,
-                color_bgr=color_bgr,
-            )
-            if occupied_rects is not None:
-                occupied_rects.append(_expand_rect_px(badge_rect, padding=2))
-            return
+    thickness = 2 if scale >= 0.7 else 1
+    (tw, th), _baseline = cv2.getTextSize(fitted_label, _FONT, scale, thickness)
 
-    (tw, th), _baseline = cv2.getTextSize(fitted_label, _FONT, scale, 1)
-    tx = int(round(x1 + (x2 - x1 - tw) / 2))
-    ty = int(round(y1 + (y2 - y1 + th) / 2))
-    tx = max(x1 + 1, min(tx, x2 - max(2, tw)))
-    ty = max(y1 + max(2, th), min(ty, y2 - 1))
-    thickness = 2 if scale >= 1.2 else 1
-    outline = 4 if scale >= 1.2 else 3
+    # Center on the checkbox.
+    cx = int(round((x1 + x2) / 2))
+    cy = int(round((y1 + y2) / 2))
+    tx = cx - tw // 2
+    ty = cy + th // 2
+
+    outline = 4 if scale >= 0.7 else 3
     _draw_text_with_outline(
         canvas,
         fitted_label,
@@ -445,7 +340,6 @@ def draw_overlay(
     # Step 2: Optionally draw candidate geometry used during rename prompt generation.
     if draw_candidates:
         labels = list(page_candidates.get("labels", []) or [])
-        candidate_canvas = canvas.copy()
         keep_label_indexes: set[int] = set()
 
         # Optionally limit label rendering to those near fields to reduce overlay noise.
@@ -499,7 +393,7 @@ def draw_overlay(
             text = (label.get("text") or "").strip()
             tag = text[:28] + ("…" if len(text) > 28 else "")
             _draw_rect(
-                candidate_canvas,
+                canvas,
                 bbox_pts=bbox,
                 image_width_px=image_width_px,
                 image_height_px=image_height_px,
@@ -514,7 +408,7 @@ def draw_overlay(
             if not bbox or len(bbox) != 4:
                 continue
             _draw_rect(
-                candidate_canvas,
+                canvas,
                 bbox_pts=bbox,
                 image_width_px=image_width_px,
                 image_height_px=image_height_px,
@@ -529,7 +423,7 @@ def draw_overlay(
             if not bbox or len(bbox) != 4:
                 continue
             _draw_rect(
-                candidate_canvas,
+                canvas,
                 bbox_pts=bbox,
                 image_width_px=image_width_px,
                 image_height_px=image_height_px,
@@ -546,7 +440,7 @@ def draw_overlay(
             detector = cb.get("detector")
             suffix = f" ({detector})" if detector else ""
             _draw_rect(
-                candidate_canvas,
+                canvas,
                 bbox_pts=bbox,
                 image_width_px=image_width_px,
                 image_height_px=image_height_px,
@@ -555,40 +449,10 @@ def draw_overlay(
                 thickness=2,
                 label=(cb.get("id") + suffix) if cb.get("id") else None,
             )
-        canvas = cv2.addWeighted(candidate_canvas, 0.62, canvas, 0.38, 0.0)
 
     # Step 3: Draw the final field boxes and IDs that OpenAI consumes.
     if draw_fields:
         labels = list(page_candidates.get("labels", []) or [])
-        occupied_rects_px: List[Tuple[int, int, int, int]] = []
-        for field_rect in field_rects_pts:
-            occupied_rects_px.append(
-                _expand_rect_px(
-                    _to_px_corners(
-                        field_rect,
-                        image_width_px=image_width_px,
-                        image_height_px=image_height_px,
-                        page_box=page_box,
-                    ),
-                    padding=2,
-                )
-            )
-        if draw_candidates:
-            for label in labels:
-                bbox = label.get("bbox")
-                if not isinstance(bbox, list) or len(bbox) != 4:
-                    continue
-                occupied_rects_px.append(
-                    _expand_rect_px(
-                        _to_px_corners(
-                            bbox,
-                            image_width_px=image_width_px,
-                            image_height_px=image_height_px,
-                            page_box=page_box,
-                        ),
-                        padding=2,
-                    )
-                )
         for f in page_fields:
             rect = f.get("rect")
             if not rect or len(rect) != 4:
@@ -631,9 +495,6 @@ def draw_overlay(
                     label=label_text,
                     cb_px=(x1, y1, x2, y2),
                     color_bgr=colors["checkbox_tag"],
-                    image_width_px=image_width_px,
-                    image_height_px=image_height_px,
-                    occupied_rects=occupied_rects_px,
                     tag_scale=checkbox_tag_scale,
                 )
                 if highlight_checkbox_labels and labels and isinstance(rect, list):

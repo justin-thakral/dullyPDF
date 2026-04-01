@@ -254,7 +254,6 @@ def _estimate_page_payload(
     user_message: str,
     clean_page_url: str | None,
     overlay_url: str | None,
-    analysis_overlay_url: str | None,
     prev_page_url: str | None,
 ) -> Dict[str, int]:
     return _estimate_page_payload_impl(
@@ -262,7 +261,6 @@ def _estimate_page_payload(
         user_message=user_message,
         clean_page_url=clean_page_url,
         overlay_url=overlay_url,
-        analysis_overlay_url=analysis_overlay_url,
         prev_page_url=prev_page_url,
     )
 
@@ -607,10 +605,6 @@ def run_openai_rename_pipeline(
     overlay_max_dim_default = 6000
     overlay_format_default = "png"
     overlay_detail_default = "high"
-    analysis_overlay_quality_default = 88
-    analysis_overlay_max_dim_default = 4200
-    analysis_overlay_format_default = "png"
-    analysis_overlay_detail_default = "low"
     clean_quality_default = 82
     clean_max_dim_default = 3000
     clean_format_default = "jpg"
@@ -626,8 +620,6 @@ def run_openai_rename_pipeline(
         clean_quality_default = 84
         clean_max_dim_default = 3200
         label_max_dist_default = 140.0
-        analysis_overlay_quality_default = 90
-        analysis_overlay_max_dim_default = 4600
 
     overlay_quality = int(os.getenv("SANDBOX_RENAME_OVERLAY_QUALITY", str(overlay_quality_default)))
     overlay_max_dim = int(os.getenv("SANDBOX_RENAME_OVERLAY_MAX_DIM", str(overlay_max_dim_default)))
@@ -638,20 +630,6 @@ def run_openai_rename_pipeline(
     overlay_detail = _normalize_image_detail(
         os.getenv("SANDBOX_RENAME_OVERLAY_DETAIL", overlay_detail_default),
         default=overlay_detail_default,
-    )
-    analysis_overlay_quality = int(
-        os.getenv("SANDBOX_RENAME_ANALYSIS_OVERLAY_QUALITY", str(analysis_overlay_quality_default))
-    )
-    analysis_overlay_max_dim = int(
-        os.getenv("SANDBOX_RENAME_ANALYSIS_OVERLAY_MAX_DIM", str(analysis_overlay_max_dim_default))
-    )
-    analysis_overlay_format = _normalize_image_format(
-        os.getenv("SANDBOX_RENAME_ANALYSIS_OVERLAY_FORMAT", analysis_overlay_format_default),
-        default=analysis_overlay_format_default,
-    )
-    analysis_overlay_detail = _normalize_image_detail(
-        os.getenv("SANDBOX_RENAME_ANALYSIS_OVERLAY_DETAIL", analysis_overlay_detail_default),
-        default=analysis_overlay_detail_default,
     )
     clean_quality = int(os.getenv("SANDBOX_RENAME_CLEAN_QUALITY", str(clean_quality_default)))
     clean_max_dim = int(os.getenv("SANDBOX_RENAME_CLEAN_MAX_DIM", str(clean_max_dim_default)))
@@ -675,7 +653,6 @@ def run_openai_rename_pipeline(
         default=overlay_format,
     )
     overlay_min_dim = int(os.getenv("SANDBOX_RENAME_OVERLAY_MIN_DIM", "3600"))
-    analysis_overlay_min_dim = int(os.getenv("SANDBOX_RENAME_ANALYSIS_OVERLAY_MIN_DIM", "2600"))
     prev_page_fraction = float(os.getenv("SANDBOX_RENAME_PREV_PAGE_FRACTION", "0.2"))
     prev_page_top_fraction = float(os.getenv("SANDBOX_RENAME_PREV_PAGE_TOP_FRACTION", "0.15"))
     db_prompt_full_threshold = int(os.getenv("SANDBOX_RENAME_DB_PROMPT_FULL_THRESHOLD", "1000"))
@@ -780,21 +757,6 @@ def run_openai_rename_pipeline(
         )
         if overlay is None:
             raise RuntimeError(f"Failed to render overlay image: {overlay_path}")
-        analysis_overlay_path = output_dir / f"page_{page_idx}_analysis.png"
-        analysis_overlay = draw_overlay(
-            page.get("image"),
-            page_candidates,
-            overlay_fields,
-            analysis_overlay_path,
-            draw_candidates=True,
-            field_labels_inside=True,
-            label_max_dist_pts=label_max_dist_pts,
-            highlight_checkbox_labels=True,
-            checkbox_tag_scale=1.6,
-            return_image=True,
-        )
-        if analysis_overlay is None:
-            raise RuntimeError(f"Failed to render analysis overlay image: {analysis_overlay_path}")
 
         page_db_fields: List[str] | None = None
         page_db_total = 0
@@ -823,7 +785,6 @@ def run_openai_rename_pipeline(
             user_message=user_message,
             clean_page_url=None,
             overlay_url=None,
-            analysis_overlay_url=None,
             prev_page_url=None,
         )
         if (
@@ -869,7 +830,6 @@ def run_openai_rename_pipeline(
             page_idx=page_idx,
             page_image=page.get("image"),
             overlay_image=overlay,
-            analysis_overlay_image=analysis_overlay,
             prev_crop_image=prev_crop,
             system_message=system_message,
             user_message=user_message,
@@ -885,17 +845,10 @@ def run_openai_rename_pipeline(
                 "format": page_overlay_format,
                 "detail": overlay_detail,
             },
-            analysis_overlay_profile={
-                "max_dim": analysis_overlay_max_dim,
-                "quality": analysis_overlay_quality,
-                "format": analysis_overlay_format,
-                "detail": analysis_overlay_detail,
-            },
             prev_detail=prev_detail,
             page_prompt_char_budget=page_prompt_char_budget,
             page_image_byte_budget=page_image_byte_budget,
             overlay_min_dim=overlay_min_dim,
-            analysis_overlay_min_dim=analysis_overlay_min_dim,
             budget_clean_profile={
                 "max_dim": budget_clean_max_dim,
                 "quality": budget_clean_quality,
@@ -913,8 +866,6 @@ def run_openai_rename_pipeline(
             "clean_detail": payload_context["clean_detail"],
             "overlay_url": payload_context["overlay_url"],
             "overlay_detail": payload_context["overlay_detail"],
-            "analysis_overlay_url": payload_context.get("analysis_overlay_url"),
-            "analysis_overlay_detail": payload_context.get("analysis_overlay_detail"),
             "prev_page_url": payload_context["prev_page_url"],
             "prev_detail": payload_context["prev_detail"],
         }
@@ -937,14 +888,6 @@ def run_openai_rename_pipeline(
                 "detail": context.get("overlay_detail") or "high",
             },
         ]
-        if context.get("analysis_overlay_url"):
-            user_content.append(
-                {
-                    "type": "input_image",
-                    "image_url": context["analysis_overlay_url"],
-                    "detail": context.get("analysis_overlay_detail") or "low",
-                }
-            )
         if context.get("prev_page_url"):
             user_content.append(
                 {

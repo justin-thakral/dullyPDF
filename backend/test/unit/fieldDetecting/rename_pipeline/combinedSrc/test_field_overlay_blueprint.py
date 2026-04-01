@@ -71,7 +71,7 @@ def test_fit_text_in_box_handles_tiny_regions() -> None:
     assert scale > 0
 
 
-def test_fit_checkbox_tag_keeps_text_inside_checkbox_bounds() -> None:
+def test_fit_checkbox_tag_returns_readable_scale_for_small_box() -> None:
     label, scale = field_overlay._fit_checkbox_tag(
         "patient_checkbox_identifier",
         box_w=10,
@@ -80,48 +80,8 @@ def test_fit_checkbox_tag_keeps_text_inside_checkbox_bounds() -> None:
     )
 
     assert label
-    assert scale > 0
-    (tw, th), baseline = field_overlay.cv2.getTextSize(label, field_overlay._FONT, scale, 1)
-    assert tw <= int(round(10 * 0.84)) + 1
-    assert (th + baseline) <= int(round(10 * 0.84)) + 1
-
-
-def test_choose_checkbox_badge_rect_avoids_existing_tags() -> None:
-    checkbox_rect = (60, 10, 68, 18)
-    occupied = [
-        field_overlay._expand_rect_px((70, 0, 110, 12), padding=2),   # blocks top-right
-        field_overlay._expand_rect_px((70, 20, 110, 34), padding=2),  # blocks bottom-right
-    ]
-
-    badge_rect = field_overlay._choose_checkbox_badge_rect(
-        checkbox_rect=checkbox_rect,
-        label="a1b",
-        image_width_px=140,
-        image_height_px=100,
-        occupied_rects=occupied,
-    )
-
-    assert badge_rect is not None
-    assert badge_rect[2] <= checkbox_rect[0]
-
-
-def test_draw_checkbox_tag_uses_external_badge_for_tiny_checkbox() -> None:
-    canvas = np.zeros((80, 80, 3), dtype=np.uint8)
-    occupied = [field_overlay._expand_rect_px((10, 10, 18, 18), padding=2)]
-
-    field_overlay._draw_checkbox_tag(
-        canvas,
-        label="a1b",
-        cb_px=(10, 10, 18, 18),
-        color_bgr=(180, 0, 180),
-        image_width_px=80,
-        image_height_px=80,
-        occupied_rects=occupied,
-        tag_scale=1.6,
-    )
-
-    # The leader line / badge should add painted pixels outside the checkbox bounds.
-    assert np.count_nonzero(canvas[:, 19:, :]) > 0 or np.count_nonzero(canvas[:, :9, :]) > 0
+    # Scale must be at least the minimum readable threshold (overflow is allowed).
+    assert scale >= 0.58
 
 
 def test_draw_overlay_writes_image_for_normal_and_off_page_inputs(tmp_path: Path) -> None:

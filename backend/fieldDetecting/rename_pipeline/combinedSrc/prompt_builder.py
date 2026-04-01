@@ -26,78 +26,6 @@ def _rect_distance(a: List[float], b: List[float]) -> float:
     return (dx * dx + dy * dy) ** 0.5
 
 
-def _candidate_bboxes(page_candidates: Dict[str, Any], key: str) -> List[List[float]]:
-    rects: List[List[float]] = []
-    for candidate in list((page_candidates or {}).get(key) or []):
-        if not isinstance(candidate, dict):
-            continue
-        bbox = candidate.get("bbox")
-        if not isinstance(bbox, list) or len(bbox) != 4:
-            continue
-        try:
-            rects.append([float(value) for value in bbox])
-        except (TypeError, ValueError):
-            continue
-    return rects
-
-
-def _x_overlap(a: List[float], b: List[float]) -> float:
-    return max(0.0, min(a[2], b[2]) - max(a[0], b[0]))
-
-
-def _nearest_line_below(rect: List[float], line_bboxes: List[List[float]]) -> bool:
-    if not rect or len(rect) != 4 or not line_bboxes:
-        return False
-    rect_w = max(1.0, float(rect[2]) - float(rect[0]))
-    rect_h = max(1.0, float(rect[3]) - float(rect[1]))
-    max_gap = max(10.0, rect_h * 1.5)
-    min_required_overlap = rect_w * 0.2
-    for line in line_bboxes:
-        gap = float(line[1]) - float(rect[3])
-        if gap < -max(2.0, rect_h * 0.25) or gap > max_gap:
-            continue
-        if _x_overlap(rect, line) < min_required_overlap:
-            continue
-        return True
-    return False
-
-
-def _inside_box_candidate(rect: List[float], box_bboxes: List[List[float]]) -> bool:
-    if not rect or len(rect) != 4 or not box_bboxes:
-        return False
-    rect_area = max(1.0, (float(rect[2]) - float(rect[0])) * (float(rect[3]) - float(rect[1])))
-    for box in box_bboxes:
-        if not _rects_intersect(rect, box):
-            continue
-        overlap_x = _x_overlap(rect, box)
-        overlap_y = max(0.0, min(rect[3], box[3]) - max(rect[1], box[1]))
-        overlap_area = overlap_x * overlap_y
-        if overlap_area / rect_area >= 0.5:
-            return True
-    return False
-
-
-def _checkbox_cluster_size(rect: List[float], checkbox_bboxes: List[List[float]]) -> int:
-    if not rect or len(rect) != 4 or not checkbox_bboxes:
-        return 0
-    rect_w = max(1.0, float(rect[2]) - float(rect[0]))
-    rect_h = max(1.0, float(rect[3]) - float(rect[1]))
-    center_x = (float(rect[0]) + float(rect[2])) / 2.0
-    center_y = (float(rect[1]) + float(rect[3])) / 2.0
-    row_tolerance = max(8.0, rect_h * 1.5)
-    column_tolerance = max(8.0, rect_w * 1.5)
-
-    count = 0
-    for candidate in checkbox_bboxes:
-        candidate_center_x = (float(candidate[0]) + float(candidate[2])) / 2.0
-        candidate_center_y = (float(candidate[1]) + float(candidate[3])) / 2.0
-        aligned_row = abs(candidate_center_y - center_y) <= row_tolerance
-        aligned_column = abs(candidate_center_x - center_x) <= column_tolerance
-        if aligned_row or aligned_column or _rects_intersect(rect, candidate):
-            count += 1
-    return count
-
-
 def label_context(rect: List[float], label_bboxes: List[List[float]]) -> Tuple[float | None, bool]:
     """
     Return (min_distance_to_label, overlaps_label).
@@ -263,15 +191,12 @@ def build_prompt(
     system_message = (
         "You are a PDF form renaming assistant. You will receive:\n"
         "1) The original PDF page image (no overlays).\n"
-        "2) The same page image with a clean overlay of field IDs.\n"
-        "3) When available, an analysis overlay that also shows nearby OCR labels, detector primitives, "
-        "and checkbox label arrows.\n"
+        "2) The same page image with an overlay of field IDs.\n"
         "Each detected field is drawn as a box and tagged with a short 3-character ID "
         "(base32, e.g., k7m):\n"
         "- Text/date/signature fields: the ID is printed centered *inside* the field box.\n"
-        "- Checkbox fields: the ID is centered on the checkbox square when space allows.\n"
-        "- Tiny checkboxes may use an external callout badge with a leader line when an in-box tag would be unreadable.\n"
-        "- If present, a later image shows the bottom of the previous page (no overlays). "
+        "- Checkbox fields: the ID is centered on the checkbox square (no callout box).\n"
+        "- If present, a third image shows the bottom of the previous page (no overlays). "
         "It is context only—do NOT label or rename fields from that image.\n"
         "- Use the previous-page image only to recognize labels that belong to the prior page.\n"
         "Use that ID as originalFieldName. Do NOT invent IDs.\n"
@@ -356,15 +281,13 @@ def build_prompt(
         "- If CommonForms thresholds are provided below, use those values instead.\n\n"
         "Field-ness rules:\n"
         "- Real fields have an empty box/underline or a checkbox aligned with nearby option text.\n"
-        "- Use the per-field metadata (label_dist, overlaps_label, w_ratio, h_ratio, nearest_line_below, inside_box_candidate, checkbox_cluster_size) as hints.\n"
+        "- Use the per-field metadata (label_dist, overlaps_label, w_ratio, h_ratio) as hints.\n"
         "- Reject boxes sitting in paragraph text, headers/footers, logos, or decorative shapes.\n"
         "- If a field is drawn in the middle of a paragraph and there is no visible underline "
         "or checkbox tied to it, mark it as not-a-field (isItAfieldConfidence < 0.30).\n"
         "- Reject isolated boxes in whitespace with no prompt label.\n"
         "- For text fields: if label_dist >= 60 and overlaps_label=0, treat it as not-a-field "
         "unless it is clearly inside a repeating table grid.\n"
-        "- nearest_line_below=1 is strong evidence for an underline-style text field.\n"
-        "- inside_box_candidate=1 is strong evidence for a boxed input instead of decorative text.\n"
         "- For long rules: if w_ratio >= 0.80 and h_ratio <= 0.02, treat as a page break "
         "or separator (not a field).\n"
         "- If a field is in the middle of empty whitespace with no nearby label or prompt text, set "
@@ -375,7 +298,6 @@ def build_prompt(
         "isItAfieldConfidence < 0.30.\n"
         "- For checkboxes: require option text on the same row/column or clear grid alignment with "
         "other checkboxes; a lone square is not-a-field.\n"
-        "- checkbox_cluster_size >= 2 increases the odds that the field belongs to a real option group.\n"
         "- Double-checkbox problem: sometimes two checkbox boxes overlap the same option label. "
         "If two boxes overlap or are nearly identical, keep the best one and set the duplicate "
         "isItAfieldConfidence < 0.30.\n"
@@ -395,9 +317,6 @@ def build_prompt(
         for lb in (page_candidates.get("labels") or [])
         if isinstance(lb.get("bbox"), list) and len(lb.get("bbox")) == 4
     ]
-    line_bboxes = _candidate_bboxes(page_candidates, "lineCandidates")
-    box_bboxes = _candidate_bboxes(page_candidates, "boxCandidates")
-    checkbox_bboxes = _candidate_bboxes(page_candidates, "checkboxCandidates")
     page_width = float(page_candidates.get("pageWidth") or 0.0)
     page_height = float(page_candidates.get("pageHeight") or 0.0)
 
@@ -415,9 +334,6 @@ def build_prompt(
             height_ratio = 0.0
         label_dist_str = "na" if label_dist is None else f"{int(round(label_dist))}"
         overlaps_str = "1" if overlaps_label else "0"
-        nearest_line_below = "1" if _nearest_line_below(rect, line_bboxes) else "0"
-        inside_box_candidate = "1" if _inside_box_candidate(rect, box_bboxes) else "0"
-        checkbox_cluster_size = _checkbox_cluster_size(rect, checkbox_bboxes)
         option_hint = ""
         if str(field.get("type") or "").lower() == "checkbox":
             hint = str(field.get("labelHintText") or "").strip()
@@ -425,9 +341,7 @@ def build_prompt(
                 option_hint = f', option_hint="{hint}"'
         field_lines.append(
             f"{field.get('name')}\t(type={field.get('type')}, label_dist={label_dist_str}, "
-            f"overlaps_label={overlaps_str}, w_ratio={width_ratio:.2f}, h_ratio={height_ratio:.2f}, "
-            f"nearest_line_below={nearest_line_below}, inside_box_candidate={inside_box_candidate}, "
-            f"checkbox_cluster_size={checkbox_cluster_size}{option_hint})"
+            f"overlaps_label={overlaps_str}, w_ratio={width_ratio:.2f}, h_ratio={height_ratio:.2f}{option_hint})"
         )
     field_block = "\n".join(field_lines)
 
