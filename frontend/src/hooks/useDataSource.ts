@@ -404,12 +404,6 @@ export function useDataSource(deps: {
     );
   }, [applyParsedDataSource, applySchemaMetadata, runSchemaUpload]);
 
-  const canSearchFill = useMemo(() => {
-    if (!deps.hasDocument || dataSourceKind === 'none') return false;
-    if (!['csv', 'sql', 'excel', 'json', 'respondent'].includes(dataSourceKind)) return false;
-    return dataRows.length > 0;
-  }, [dataRows.length, dataSourceKind, deps.hasDocument]);
-
   const reset = useCallback(() => {
     setSchemaError(null);
     setSchemaId(null);
@@ -446,7 +440,6 @@ export function useDataSource(deps: {
     handleJsonFileSelected,
     handleTxtFileSelected,
     handleSqlFileSelected,
-    canSearchFill,
     reset,
   };
 }

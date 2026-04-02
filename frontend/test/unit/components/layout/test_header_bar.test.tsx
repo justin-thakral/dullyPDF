@@ -33,7 +33,6 @@ function createProps(overrides: Partial<HeaderBarProps> = {}): HeaderBarProps {
     canRename: true,
     canRenameAndMap: true,
     onOpenSearchFill: vi.fn(),
-    canSearchFill: true,
     onDownload: vi.fn(),
     onSaveToProfile: vi.fn(),
     downloadInProgress: false,
@@ -136,7 +135,6 @@ describe('HeaderBar', () => {
       <HeaderBar
         {...props}
         mappingInProgress
-        canSearchFill={false}
       />,
     );
 

@@ -1652,7 +1652,7 @@ function WorkspaceRuntime({
     mapSchemaDisabledReason,
     renameAndMapDisabledReason,
   } = openAi;
-  const { schemaError, dataSourceKind, dataSourceLabel, schemaUploadInProgress, dataColumns, dataRows, identifierKey, canSearchFill } = dataSource;
+  const { schemaError, dataSourceKind, dataSourceLabel, schemaUploadInProgress, dataColumns, dataRows, identifierKey } = dataSource;
   const { savedForms: savedFormsList, savedFormsLoading, deletingFormId, showSavedFormsLimitDialog } = savedForms;
   const { fields } = fieldHistory;
   const radioGroups = useMemo(() => buildRadioGroups(fields), [fields]);
@@ -2492,7 +2492,6 @@ function WorkspaceRuntime({
         renameAndMapGroupInProgress={groupRenameMapInProgress}
         renameAndMapGroupButtonLabel={groupRenameMapLabel}
         onOpenSearchFill={handleOpenSearchFill}
-        canSearchFill={canSearchFill}
         onOpenImageFill={!demoActive && detection.detectSessionId && fieldHistory.fields.length > 0 ? imageFill.openDialog : undefined}
         onDownload={saveDownload.handleDownload}
         onDownloadGroup={activeGroupId ? groupDownload.handleDownloadGroup : undefined}
