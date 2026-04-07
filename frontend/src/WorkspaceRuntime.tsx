@@ -1960,6 +1960,16 @@ function WorkspaceRuntime({
     }
   }, [verifiedUser, showOnboarding]);
 
+  useEffect(() => {
+    if (!showLogin || !verifiedUser) {
+      return;
+    }
+    // Email verification and other external auth completions can resolve after
+    // the runtime already opened its login shell. Close that shell once the
+    // verified session exists so onboarding or the requested workspace can show.
+    auth.setShowLogin(false);
+  }, [auth.setShowLogin, showLogin, verifiedUser]);
+
   const hadVerifiedWorkspaceRef = useRef(Boolean(bootstrapHasVerifiedUser));
   const handledSignedOutRedirectRef = useRef(false);
   useEffect(() => {

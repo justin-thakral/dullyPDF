@@ -292,6 +292,10 @@ vi.mock('../../../src/components/pages/VerifyEmailPage', () => ({
   default: () => <div data-testid="verify-page">Verify</div>,
 }));
 
+vi.mock('../../../src/components/pages/OnboardingPage', () => ({
+  default: () => <div data-testid="onboarding-page">Onboarding</div>,
+}));
+
 vi.mock('../../../src/components/layout/HeaderBar', () => ({
   HeaderBar: uiMocks.headerBar,
 }));
@@ -606,6 +610,7 @@ describe('App', () => {
     }
     window.history.replaceState({}, '', '/');
     window.scrollTo = vi.fn();
+    window.localStorage.clear();
     window.sessionStorage.clear();
     document.documentElement.classList.remove('workspace-no-scroll');
     document.body.classList.remove('workspace-no-scroll');
@@ -707,6 +712,25 @@ describe('App', () => {
     expect(await screen.findByTestId('login-page', {}, { timeout: 10_000 })).toBeTruthy();
     expect(screen.queryByTestId('upload-detect')).toBeNull();
   }, 30_000);
+
+  it('replaces the login shell with onboarding when verification completes after /upload already opened sign-in', async () => {
+    window.history.replaceState({}, '', '/upload');
+    window.localStorage.setItem(
+      'dullypdf.verifiedEmailOnboardingPending',
+      JSON.stringify({ ts: Date.now() }),
+    );
+
+    const App = await importApp();
+    render(<App initialBrowserRoute={{ kind: 'upload-root' }} />);
+
+    await settleAuthAsSignedOut();
+    expect(await screen.findByTestId('login-page', {}, { timeout: 10_000 })).toBeTruthy();
+
+    await settleAuthAsSignedIn();
+
+    expect(await screen.findByTestId('onboarding-page', {}, { timeout: 10_000 })).toBeTruthy();
+    expect(screen.queryByTestId('login-page')).toBeNull();
+  }, 15_000);
 
   it('releases workspace scroll lock when mobile users back out of the runtime login shell', async () => {
     installMatchMedia({
