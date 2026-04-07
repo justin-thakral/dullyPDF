@@ -106,8 +106,14 @@ async def _complete_envelope(envelope) -> None:
             exc_info=True,
         )
         update_signing_envelope(envelope.id, {
-            "status": ENVELOPE_STATUS_COMPLETED,
-            "completed_at": completed_at,
+            "status": ENVELOPE_STATUS_PARTIAL,
+            "completed_at": None,
+            "signed_pdf_bucket_path": None,
+            "signed_pdf_sha256": None,
+            "audit_manifest_bucket_path": None,
+            "audit_manifest_sha256": None,
+            "audit_receipt_bucket_path": None,
+            "audit_receipt_sha256": None,
         })
 
 

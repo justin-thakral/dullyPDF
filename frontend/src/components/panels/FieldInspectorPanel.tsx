@@ -279,7 +279,7 @@ export function FieldInspectorPanel({
     onCommitFieldChange();
   };
 
-  const handleNumberInputKeyDown = (_commit: () => void) => (event: ReactKeyboardEvent<HTMLInputElement>) => {
+  const handleNumberInputKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
     if (event.key !== 'Enter') return;
     event.preventDefault();
     event.currentTarget.blur(); // onBlur handler will commitFieldEdit
@@ -362,7 +362,7 @@ export function FieldInspectorPanel({
     <>
       <aside className="panel panel--inspector">
         <div className="panel__header">
-          <div>
+          <div className="panel__header-copy">
             <h2>Inspector</h2>
             <p className="panel__hint">
               {selected ? `Editing ${selected.name} (enter to confirm)` : 'Select a field to edit its details.'}
@@ -370,7 +370,7 @@ export function FieldInspectorPanel({
           </div>
           <button
             type="button"
-            className="ui-button ui-button--ghost ui-button--compact"
+            className="ui-button ui-button--ghost ui-button--compact panel__header-action"
             onClick={() => openUsageDocsWindow(USAGE_DOCS_ROUTES.editorWorkflow)}
             title="Open Editor Workflow usage docs in a new window"
           >
@@ -395,7 +395,7 @@ export function FieldInspectorPanel({
                   onFocus={beginFieldEdit}
                   onBlur={() => commitFieldEdit(commitName)}
                   onChange={(event) => updateDraftField('name', event.target.value)}
-                  onKeyDown={handleNumberInputKeyDown(commitName)}
+                  onKeyDown={handleNumberInputKeyDown}
                 />
 
                 <div className="panel__row">
@@ -432,7 +432,7 @@ export function FieldInspectorPanel({
                     onFocus={beginFieldEdit}
                     onBlur={() => commitFieldEdit(commitPage)}
                     onChange={(event) => updateDraftField('page', event.target.value)}
-                    onKeyDown={handleNumberInputKeyDown(commitPage)}
+                    onKeyDown={handleNumberInputKeyDown}
                   />
                 </div>
 
@@ -450,7 +450,7 @@ export function FieldInspectorPanel({
                       onFocus={beginFieldEdit}
                       onBlur={() => commitFieldEdit(() => commitRect('x'))}
                       onChange={(event) => updateDraftField('x', event.target.value)}
-                      onKeyDown={handleNumberInputKeyDown(() => commitRect('x'))}
+                      onKeyDown={handleNumberInputKeyDown}
                     />
                   </div>
                   <div>
@@ -466,7 +466,7 @@ export function FieldInspectorPanel({
                       onFocus={beginFieldEdit}
                       onBlur={() => commitFieldEdit(() => commitRect('y'))}
                       onChange={(event) => updateDraftField('y', event.target.value)}
-                      onKeyDown={handleNumberInputKeyDown(() => commitRect('y'))}
+                      onKeyDown={handleNumberInputKeyDown}
                     />
                   </div>
                   <div>
@@ -483,7 +483,7 @@ export function FieldInspectorPanel({
                       onFocus={beginFieldEdit}
                       onBlur={() => commitFieldEdit(() => commitRect('width'))}
                       onChange={(event) => updateDraftField('width', event.target.value)}
-                      onKeyDown={handleNumberInputKeyDown(() => commitRect('width'))}
+                      onKeyDown={handleNumberInputKeyDown}
                     />
                   </div>
                   <div>
@@ -500,7 +500,7 @@ export function FieldInspectorPanel({
                       onFocus={beginFieldEdit}
                       onBlur={() => commitFieldEdit(() => commitRect('height'))}
                       onChange={(event) => updateDraftField('height', event.target.value)}
-                      onKeyDown={handleNumberInputKeyDown(() => commitRect('height'))}
+                      onKeyDown={handleNumberInputKeyDown}
                     />
                   </div>
                 </div>
@@ -528,7 +528,7 @@ export function FieldInspectorPanel({
                       onFocus={beginFieldEdit}
                       onBlur={() => commitFieldEdit(commitRadioGroupDraft)}
                       onChange={(event) => setRadioGroupLabelDraft(event.target.value)}
-                      onKeyDown={handleNumberInputKeyDown(commitRadioGroupDraft)}
+                      onKeyDown={handleNumberInputKeyDown}
                     />
                     <label className="panel__label" htmlFor="radio-group-key">
                       Group key
@@ -541,7 +541,7 @@ export function FieldInspectorPanel({
                       onFocus={beginFieldEdit}
                       onBlur={() => commitFieldEdit(commitRadioGroupDraft)}
                       onChange={(event) => setRadioGroupKeyDraft(event.target.value)}
-                      onKeyDown={handleNumberInputKeyDown(commitRadioGroupDraft)}
+                      onKeyDown={handleNumberInputKeyDown}
                     />
                     <div className="panel__row">
                       <label className="panel__label" htmlFor="radio-move-group">
@@ -573,7 +573,7 @@ export function FieldInspectorPanel({
                       onFocus={beginFieldEdit}
                       onBlur={() => commitFieldEdit(commitRadioOptionDraft)}
                       onChange={(event) => setRadioOptionLabelDraft(event.target.value)}
-                      onKeyDown={handleNumberInputKeyDown(commitRadioOptionDraft)}
+                      onKeyDown={handleNumberInputKeyDown}
                     />
                     <label className="panel__label" htmlFor="radio-option-key">
                       Option key
@@ -586,7 +586,7 @@ export function FieldInspectorPanel({
                       onFocus={beginFieldEdit}
                       onBlur={() => commitFieldEdit(commitRadioOptionDraft)}
                       onChange={(event) => setRadioOptionKeyDraft(event.target.value)}
-                      onKeyDown={handleNumberInputKeyDown(commitRadioOptionDraft)}
+                      onKeyDown={handleNumberInputKeyDown}
                     />
                     <div className="panel__action-grid">
                       <button

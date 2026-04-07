@@ -14,6 +14,13 @@ append_unique() {
   commands+=("$candidate")
 }
 
+if [[ "${RUN_PLAYWRIGHT_SAFE:-false}" == "true" || "${RUN_WORKSPACE:-false}" == "true" || "${RUN_SHARED_RUNTIME:-false}" == "true" ]]; then
+  append_unique "npm run test:playwright:localhost-auth-profile"
+fi
+if [[ "${RUN_PLAYWRIGHT_SAFE:-false}" == "true" || "${RUN_DETECTION_AI:-false}" == "true" || "${RUN_SHARED_RUNTIME:-false}" == "true" ]]; then
+  append_unique "npm run test:playwright:localhost-detection"
+fi
+
 if [[ "${RUN_PLAYWRIGHT_SAFE:-false}" == "true" || "${RUN_TEMPLATE_API:-false}" == "true" || "${RUN_SHARED_RUNTIME:-false}" == "true" ]]; then
   append_unique "npm run test:playwright:template-api:real"
 fi

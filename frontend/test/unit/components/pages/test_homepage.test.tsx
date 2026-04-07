@@ -144,19 +144,20 @@ describe('Homepage', () => {
     const nextButton = screen.getByRole('button', { name: 'Next demo step' }) as HTMLButtonElement;
 
     expect(prevButton.disabled).toBe(true);
-    expect(screen.getByText('Step 1 of 9')).toBeTruthy();
+    expect(screen.getByText('Step 1 of 11')).toBeTruthy();
 
-    for (let index = 0; index < 8; index += 1) {
+    for (let index = 0; index < 10; index += 1) {
       await user.click(nextButton);
     }
 
-    expect(screen.getByText('Step 9 of 9')).toBeTruthy();
+    expect(screen.getByText('Step 11 of 11')).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Create groups for full document workflows' })).toBeTruthy();
     expect(nextButton.disabled).toBe(true);
 
     await user.click(prevButton);
-    expect(screen.getByText('Step 8 of 9')).toBeTruthy();
-    expect(screen.getByRole('heading', { name: 'Respondents fill a mock form, not the PDF' })).toBeTruthy();
+    expect(screen.getByText('Step 10 of 11')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Freeze the exact PDF, then send U.S. e-sign' })).toBeTruthy();
+    expect(screen.getByText(/immutable source PDF, final signed PDF, audit receipt/i)).toBeTruthy();
   });
 
   it('shows Sign in for signed-out users and Profile for signed-in users', async () => {

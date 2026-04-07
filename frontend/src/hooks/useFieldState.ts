@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ConfidenceFilter, ConfidenceTier, FieldType, PageSize, PdfField } from '../types';
 import { fieldConfidenceTierForField } from '../utils/confidence';
 import { createField } from '../utils/fields';
@@ -69,6 +69,11 @@ export function useFieldState(
   });
   const [selectedFieldId, setSelectedFieldId] = useState<string | null>(null);
   const lastFieldVisibilityRef = useRef({ showFieldInfo, showFieldNames });
+
+  useEffect(() => {
+    if (!showFields) return;
+    lastFieldVisibilityRef.current = { showFieldInfo, showFieldNames };
+  }, [showFieldInfo, showFieldNames, showFields]);
 
   const handleUpdateField = useCallback((fieldId: string, updates: Partial<PdfField>) => {
     updateFieldsWith((prev) => updateSingleField(prev, fieldId, updates));

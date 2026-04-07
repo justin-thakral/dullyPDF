@@ -167,9 +167,13 @@ For a dev deploy, verify all of the following:
 
 1. `Hybrid QA` passed on the same commit you intend to deploy.
 2. `Controlled Deploy` completed successfully for the requested component.
-3. `https://dullypdf-dev.web.app/` returns `200`.
-4. `https://dullypdf-dev.web.app/api/health` returns `{"status":"ok"}` when backend was part of the deploy.
-5. The hosted Playwright smoke passed for `frontend` or `all`.
+3. The relevant Cloud Run service revision is healthy in `dullypdf-dev`.
+4. `npm run dev:stack` boots locally on `http://localhost:5173` + `http://localhost:8010`.
+5. The localhost baseline smoke passes against that stack.
+
+Note:
+
+- `dullypdf-dev.web.app` is intentionally disabled. Dev verification happens through the localhost prod-topology stack, not a shared hosted frontend.
 
 Recommended additional local verification before merging risky runtime changes:
 
@@ -224,6 +228,12 @@ The manual baseline smoke is:
 5. Attach `quickTestFiles/new_patient_forms_1915ccb015_mock.csv`
 6. Run OpenAI Rename + Map and verify the mapped state appears
 7. Verify API Fill works from the same template flow
+
+Detection timing note:
+
+- On local `npm run dev:stack`, field detection can legitimately take a while.
+- The standard CPU path may sit on `Processing Document` / `Detecting fields on the standard CPU...` for multiple minutes before the editor appears.
+- Treat this as expected latency unless the UI stops progressing entirely, the backend returns an error, or the flow clearly stalls past the normal local wait window for that machine.
 
 Chrome DevTools baseline expectations:
 

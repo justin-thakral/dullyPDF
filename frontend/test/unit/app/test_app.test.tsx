@@ -136,6 +136,9 @@ const uiMocks = vi.hoisted(() => ({
       <button data-testid="save-profile" type="button" onClick={() => void props.onSaveToProfile?.()}>
         Save profile
       </button>
+      <button data-testid="sign-out" type="button" onClick={() => void props.onSignOut?.()}>
+        Sign out
+      </button>
     </div>
   )),
   fieldListPanel: vi.fn((props: any) => (
@@ -1088,8 +1091,10 @@ describe('App', () => {
 
     fireEvent.click(screen.getByTestId('profile-close'));
     expect(await screen.findByTestId('homepage')).toBeTruthy();
-    expect(document.documentElement.classList.contains('workspace-no-scroll')).toBe(false);
-    expect(document.body.classList.contains('workspace-no-scroll')).toBe(false);
+    await waitFor(() => {
+      expect(document.documentElement.classList.contains('workspace-no-scroll')).toBe(false);
+      expect(document.body.classList.contains('workspace-no-scroll')).toBe(false);
+    });
   }, 15_000);
 
   it('keeps desktop profile saved-form reopening enabled', async () => {
@@ -1707,7 +1712,7 @@ describe('App', () => {
     expect(window.location.search.includes('billing=')).toBe(false);
   });
 
-  it('gates save action after auth transitions to signed-out', async () => {
+  it('returns the editor to the homepage after auth transitions to signed-out', async () => {
     const App = await importApp();
     render(<App />);
 
@@ -1716,10 +1721,28 @@ describe('App', () => {
 
     expect(await screen.findByTestId('header-bar')).toBeTruthy();
     await settleAuthAsSignedOut();
+    expect(await screen.findByTestId('homepage')).toBeTruthy();
     expect(screen.queryByTestId('save-profile')).toBeNull();
-    expect(document.querySelector('.auth-loading-screen')).toBeTruthy();
+    expect(document.querySelector('.auth-loading-screen')).toBeNull();
+    expect(window.location.pathname).toBe('/');
     expect(apiServiceMocks.saveFormToProfile).not.toHaveBeenCalled();
-  });
+  }, 15_000);
+
+  it('skips the blank homepage splash when signing out from the live editor', async () => {
+    const App = await importApp();
+    render(<App />);
+
+    await settleAuthAsSignedIn();
+    await openFillableWorkspace();
+
+    fireEvent.click(await screen.findByTestId('sign-out'));
+
+    expect(await screen.findByTestId('homepage')).toBeTruthy();
+    await waitFor(() => {
+      expect(document.querySelector('.homepage-loading-overlay')).toBeNull();
+    });
+    expect(authMocks.signOut).toHaveBeenCalledTimes(1);
+  }, 15_000);
 
   it('supports undo/redo for field edits in editor history', async () => {
     window.history.replaceState({}, '', '/ui/forms/saved-1');

@@ -48,6 +48,15 @@ From repo root:
 cd frontend && npm run test
 ```
 
+Hybrid QA uses a lighter split so routine app changes do not always pay for the static-content and legacy suites:
+
+```bash
+npm run test:frontend:ci
+npm run test:frontend:content
+```
+
+`test:frontend:ci` skips the marketing/docs/SEO suites that mostly assert static copy, route metadata, prerendered public-page wiring, and legacy fixtures. Run `test:frontend:content` when you actually changed those content/config surfaces.
+
 ## Test Authoring Rules
 
 1. Mock external boundaries (`fetch`, Firebase SDK, PDF.js, browser observers, timers).

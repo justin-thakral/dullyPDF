@@ -99,7 +99,7 @@ def _setup_env(mocker, monkeypatch):
     monkeypatch.setenv("SANDBOX_SIGNING_REQUESTS_MONTHLY_MAX_BASE", "100")
     mocker.patch.object(signing_database, "get_firestore_client", return_value=firestore_client)
     patch_signing_authenticated_owner(mocker, request_user)
-    patch_signing_artifact_storage(mocker, storage)
+    patch_signing_artifact_storage(mocker, storage, patch_delete=True)
 
     return firestore_client, request_user, storage
 
@@ -224,6 +224,50 @@ def test_envelope_create_rejects_missing_sha256(
     assert response.status_code == 400
 
 
+def test_envelope_create_rejects_duplicate_recipient_orders(
+    client: TestClient, mocker, monkeypatch
+) -> None:
+    _setup_env(mocker, monkeypatch)
+    source_pdf_bytes = _pdf_bytes()
+
+    response = client.post(
+        "/api/signing/envelopes",
+        headers=AUTH_HEADERS,
+        json=_envelope_create_payload(
+            source_pdf_bytes,
+            recipients=[
+                {"name": "Alice First", "email": "alice@example.com", "order": 1},
+                {"name": "Bob Second", "email": "bob@example.com", "order": 1},
+            ],
+        ),
+    )
+
+    assert response.status_code == 400
+    assert "unique order values" in response.json()["detail"]
+
+
+def test_envelope_create_rejects_nonconsecutive_recipient_orders(
+    client: TestClient, mocker, monkeypatch
+) -> None:
+    _setup_env(mocker, monkeypatch)
+    source_pdf_bytes = _pdf_bytes()
+
+    response = client.post(
+        "/api/signing/envelopes",
+        headers=AUTH_HEADERS,
+        json=_envelope_create_payload(
+            source_pdf_bytes,
+            recipients=[
+                {"name": "Alice First", "email": "alice@example.com", "order": 1},
+                {"name": "Bob Second", "email": "bob@example.com", "order": 3},
+            ],
+        ),
+    )
+
+    assert response.status_code == 400
+    assert "consecutive starting at 1" in response.json()["detail"]
+
+
 # ---------------------------------------------------------------------------
 # Envelope send
 # ---------------------------------------------------------------------------
@@ -298,6 +342,82 @@ def test_envelope_send_parallel_sends_all(
     # Parallel: all signers should be sent
     for req in body["requests"]:
         assert req["status"] == "sent", f"Signer {req['signerEmail']} should be sent"
+
+
+def test_envelope_send_hash_mismatch_invalidates_drafts(
+    client: TestClient, mocker, monkeypatch
+) -> None:
+    firestore_client, _request_user, storage = _setup_env(mocker, monkeypatch)
+    source_pdf_bytes = _pdf_bytes()
+    changed_pdf_bytes = _pdf_bytes(width=320, height=320)
+
+    create_response = client.post(
+        "/api/signing/envelopes",
+        headers=AUTH_HEADERS,
+        json=_envelope_create_payload(source_pdf_bytes),
+    )
+    assert create_response.status_code == 201
+    envelope_id = create_response.json()["envelope"]["id"]
+
+    send_response = client.post(
+        f"/api/signing/envelopes/{envelope_id}/send",
+        headers=AUTH_HEADERS,
+        files={"pdf": ("packet.pdf", changed_pdf_bytes, "application/pdf")},
+        data={
+            "sourcePdfSha256": _immutable_source_pdf_sha256(changed_pdf_bytes),
+        },
+    )
+
+    assert send_response.status_code == 409, send_response.text
+    assert "source pdf changed" in send_response.json()["detail"].lower()
+
+    envelope = signing_database.get_signing_envelope(envelope_id, client=firestore_client)
+    assert envelope is not None
+    assert envelope.status == "invalidated"
+
+    requests = signing_database.list_signing_requests_for_envelope(envelope_id, client=firestore_client)
+    assert {request.status for request in requests} == {"invalidated"}
+    assert storage.objects == {}
+
+
+def test_envelope_send_quota_failure_rolls_back_all_child_requests(
+    client: TestClient, mocker, monkeypatch
+) -> None:
+    firestore_client, _request_user, storage = _setup_env(mocker, monkeypatch)
+    monkeypatch.setenv("SANDBOX_SIGNING_REQUESTS_MONTHLY_MAX_BASE", "1")
+    source_pdf_bytes = _pdf_bytes()
+
+    create_response = client.post(
+        "/api/signing/envelopes",
+        headers=AUTH_HEADERS,
+        json=_envelope_create_payload(source_pdf_bytes, signingMode="parallel"),
+    )
+    assert create_response.status_code == 201
+    envelope_id = create_response.json()["envelope"]["id"]
+
+    send_response = client.post(
+        f"/api/signing/envelopes/{envelope_id}/send",
+        headers=AUTH_HEADERS,
+        files={"pdf": ("packet.pdf", source_pdf_bytes, "application/pdf")},
+        data={
+            "sourcePdfSha256": _immutable_source_pdf_sha256(source_pdf_bytes),
+        },
+    )
+
+    assert send_response.status_code == 403, send_response.text
+    assert "sent signing request limit" in send_response.json()["detail"]
+
+    envelope = signing_database.get_signing_envelope(envelope_id, client=firestore_client)
+    assert envelope is not None
+    assert envelope.status == "draft"
+    assert envelope.source_pdf_bucket_path is None
+
+    requests = signing_database.list_signing_requests_for_envelope(envelope_id, client=firestore_client)
+    assert {request.status for request in requests} == {"draft"}
+    assert all(request.sent_at is None for request in requests)
+    assert all(request.quota_month_key is None for request in requests)
+    assert all(request.source_pdf_bucket_path is None for request in requests)
+    assert storage.objects == {}
 
 
 def test_parallel_envelope_completion_generates_artifacts_for_every_signer(
@@ -593,6 +713,49 @@ def test_envelope_revoke_invalidates_child_requests(
         assert req["status"] == "invalidated"
 
 
+def test_envelope_revoke_rejects_completed_signers(
+    client: TestClient, mocker, monkeypatch
+) -> None:
+    _setup_env(mocker, monkeypatch)
+    mock_signing_verification_delivery(mocker)
+    source_pdf_bytes = _pdf_bytes()
+
+    create_response = client.post(
+        "/api/signing/envelopes",
+        headers=AUTH_HEADERS,
+        json=_envelope_create_payload(source_pdf_bytes, signingMode="sequential"),
+    )
+    assert create_response.status_code == 201, create_response.text
+    envelope_id = create_response.json()["envelope"]["id"]
+
+    send_response = client.post(
+        f"/api/signing/envelopes/{envelope_id}/send",
+        headers=AUTH_HEADERS,
+        files={"pdf": ("packet.pdf", source_pdf_bytes, "application/pdf")},
+        data={"sourcePdfSha256": _immutable_source_pdf_sha256(source_pdf_bytes)},
+    )
+    assert send_response.status_code == 200, send_response.text
+    alice_request = next(
+        request for request in send_response.json()["requests"] if request["signerOrder"] == 1
+    )
+
+    alice_complete = _complete_public_envelope_signer(
+        client,
+        alice_request,
+        adopted_name="Alice Completed",
+        browser_name="integration-envelope-alice/1.0",
+    )
+    assert alice_complete["status"] == "completed"
+
+    revoke_response = client.post(
+        f"/api/signing/envelopes/{envelope_id}/revoke",
+        headers=AUTH_HEADERS,
+    )
+
+    assert revoke_response.status_code == 409
+    assert "completed signers" in revoke_response.json()["detail"].lower()
+
+
 # ---------------------------------------------------------------------------
 # Existing single-signer flow still works (regression guard)
 # ---------------------------------------------------------------------------
@@ -686,7 +849,7 @@ def test_envelope_child_requests_only_get_assigned_anchors(
 def test_envelope_rejects_unassigned_signature_anchors(
     client: TestClient, mocker, monkeypatch
 ) -> None:
-    """Signature anchors without assignedSignerOrder should be rejected."""
+    """All envelope anchors must be assigned to a signer."""
     _setup_env(mocker, monkeypatch)
     source_pdf_bytes = _pdf_bytes()
 
@@ -705,6 +868,81 @@ def test_envelope_rejects_unassigned_signature_anchors(
 
     assert response.status_code == 400
     assert "assigned to a signer" in response.json()["detail"]
+
+
+def test_envelope_rejects_unassigned_non_signature_anchors(
+    client: TestClient, mocker, monkeypatch
+) -> None:
+    _setup_env(mocker, monkeypatch)
+    source_pdf_bytes = _pdf_bytes()
+
+    response = client.post(
+        "/api/signing/envelopes",
+        headers=AUTH_HEADERS,
+        json=_envelope_create_payload(
+            source_pdf_bytes,
+            anchors=[
+                {
+                    "kind": "signature",
+                    "page": 1,
+                    "rect": {"x": 100, "y": 400, "width": 180, "height": 36},
+                    "assignedSignerOrder": 1,
+                },
+                {
+                    "kind": "signature",
+                    "page": 1,
+                    "rect": {"x": 100, "y": 500, "width": 180, "height": 36},
+                    "assignedSignerOrder": 2,
+                },
+                {
+                    "kind": "signed_date",
+                    "page": 1,
+                    "rect": {"x": 100, "y": 550, "width": 100, "height": 20},
+                },
+            ],
+        ),
+    )
+
+    assert response.status_code == 400
+    assert "assigned to a signer" in response.json()["detail"]
+
+
+def test_envelope_rejects_anchor_assignment_for_unknown_recipient(
+    client: TestClient, mocker, monkeypatch
+) -> None:
+    _setup_env(mocker, monkeypatch)
+    source_pdf_bytes = _pdf_bytes()
+
+    response = client.post(
+        "/api/signing/envelopes",
+        headers=AUTH_HEADERS,
+        json=_envelope_create_payload(
+            source_pdf_bytes,
+            anchors=[
+                {
+                    "kind": "signature",
+                    "page": 1,
+                    "rect": {"x": 100, "y": 400, "width": 180, "height": 36},
+                    "assignedSignerOrder": 1,
+                },
+                {
+                    "kind": "signature",
+                    "page": 1,
+                    "rect": {"x": 100, "y": 500, "width": 180, "height": 36},
+                    "assignedSignerOrder": 2,
+                },
+                {
+                    "kind": "initials",
+                    "page": 1,
+                    "rect": {"x": 100, "y": 550, "width": 80, "height": 20},
+                    "assignedSignerOrder": 3,
+                },
+            ],
+        ),
+    )
+
+    assert response.status_code == 400
+    assert "no recipient has that order" in response.json()["detail"]
 
 
 def test_envelope_allows_multiple_anchors_per_signer(
@@ -736,6 +974,12 @@ def test_envelope_allows_multiple_anchors_per_signer(
                 "rect": {"x": 100, "y": 550, "width": 100, "height": 20},
                 "assignedSignerOrder": 1,
             },
+            {
+                "kind": "signature",
+                "page": 1,
+                "rect": {"x": 100, "y": 600, "width": 180, "height": 36},
+                "assignedSignerOrder": 2,
+            },
         ]),
     )
 
@@ -744,6 +988,40 @@ def test_envelope_allows_multiple_anchors_per_signer(
     alice_req = next(r for r in requests if r["signerEmail"] == "alice@example.com")
     # Alice should get all 3 anchors (2 signature + 1 signed_date)
     assert len(alice_req["anchors"]) == 3
-    # Bob should get nothing (no anchors assigned to order 2)
+    # Bob should still get only the anchor assigned to order 2.
     bob_req = next(r for r in requests if r["signerEmail"] == "bob@example.com")
-    assert len(bob_req["anchors"]) == 0
+    assert len(bob_req["anchors"]) == 1
+    assert bob_req["anchors"][0]["kind"] == "signature"
+    assert bob_req["anchors"][0]["assignedSignerOrder"] == 2
+
+
+def test_envelope_rejects_recipient_without_signature_anchor(
+    client: TestClient, mocker, monkeypatch
+) -> None:
+    _setup_env(mocker, monkeypatch)
+    source_pdf_bytes = _pdf_bytes()
+
+    response = client.post(
+        "/api/signing/envelopes",
+        headers=AUTH_HEADERS,
+        json=_envelope_create_payload(
+            source_pdf_bytes,
+            anchors=[
+                {
+                    "kind": "signature",
+                    "page": 1,
+                    "rect": {"x": 100, "y": 400, "width": 180, "height": 36},
+                    "assignedSignerOrder": 1,
+                },
+                {
+                    "kind": "signed_date",
+                    "page": 1,
+                    "rect": {"x": 100, "y": 550, "width": 100, "height": 20},
+                    "assignedSignerOrder": 1,
+                },
+            ],
+        ),
+    )
+
+    assert response.status_code == 400
+    assert "at least one signature anchor" in response.json()["detail"].lower()

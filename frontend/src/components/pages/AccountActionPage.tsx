@@ -6,10 +6,12 @@ import './AccountActionPage.css';
 import { Auth } from '../../services/auth';
 import { Alert } from '../ui/Alert';
 import { applyNoIndexSeo } from '../../utils/seo';
+import { markPostVerificationOnboardingPending } from '../../utils/onboardingState';
 import {
   ACCOUNT_ACTION_ROUTE_PATH,
   parseEmailActionSearch,
   readStoredEmailActionState,
+  type StoredEmailActionState,
   type SupportedEmailActionMode,
   writeStoredEmailActionState,
 } from '../../utils/emailActions';
@@ -45,12 +47,70 @@ const HELP_ACTION: ActionLink = {
   href: '/usage-docs/getting-started',
   label: 'Open setup guide',
 };
+const DEFAULT_VERIFY_CONTINUE_PATH = '/upload';
+
+function resolveVerifyEmailContinuePath(continuePath: string): string {
+  return continuePath === '/' ? DEFAULT_VERIFY_CONTINUE_PATH : continuePath;
+}
+
+function resolveStoredAccountActionState(storedAction: StoredEmailActionState): AccountActionState {
+  if (storedAction.kind === 'pending-reset-password') {
+    return {
+      kind: 'error',
+      continuePath: storedAction.continuePath,
+      mode: 'resetPassword',
+      message: RESET_LINK_REFRESH_MESSAGE,
+    };
+  }
+  return storedAction.status === 'success'
+    ? storedAction.mode === 'verifyEmail'
+      ? {
+          kind: 'verify-email-success',
+          continuePath: resolveVerifyEmailContinuePath(storedAction.continuePath),
+        }
+      : {
+          kind: 'reset-password-success',
+          continuePath: storedAction.continuePath,
+          email: '',
+        }
+    : {
+        kind: 'error',
+        continuePath: storedAction.continuePath,
+        message: storedAction.message || INVALID_LINK_MESSAGE,
+        mode: storedAction.mode,
+      };
+}
+
+function resolveInitialAccountActionState(): AccountActionState {
+  if (typeof window === 'undefined') {
+    return {
+      kind: 'processing-verify-email',
+      continuePath: '/',
+    };
+  }
+  const storedAction = readStoredEmailActionState(window.history.state);
+  if (storedAction && !window.location.search) {
+    return resolveStoredAccountActionState(storedAction);
+  }
+  const parsedAction = parseEmailActionSearch(window.location.search);
+  if (parsedAction.status === 'invalid') {
+    const message =
+      parsedAction.reason === 'unsupported-mode' ? UNSUPPORTED_LINK_MESSAGE : INVALID_LINK_MESSAGE;
+    return {
+      kind: 'error',
+      continuePath: parsedAction.continuePath,
+      message,
+      mode: undefined,
+    };
+  }
+  return {
+    kind: 'processing-verify-email',
+    continuePath: parsedAction.continuePath,
+  };
+}
 
 const AccountActionPage = () => {
-  const [state, setState] = useState<AccountActionState>({
-    kind: 'processing-verify-email',
-    continuePath: '/',
-  });
+  const [state, setState] = useState<AccountActionState>(() => resolveInitialAccountActionState());
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
@@ -64,49 +124,16 @@ const AccountActionPage = () => {
 
     const storedAction = readStoredEmailActionState(window.history.state);
     if (storedAction && !window.location.search) {
-      if (storedAction.kind === 'pending-reset-password') {
-        setState({
-          kind: 'error',
-          continuePath: storedAction.continuePath,
-          mode: 'resetPassword',
-          message: RESET_LINK_REFRESH_MESSAGE,
-        });
-        return undefined;
-      }
-      setState(
-        storedAction.status === 'success'
-          ? storedAction.mode === 'verifyEmail'
-            ? { kind: 'verify-email-success', continuePath: storedAction.continuePath }
-            : {
-                kind: 'reset-password-success',
-                continuePath: storedAction.continuePath,
-                email: '',
-              }
-          : {
-              kind: 'error',
-              continuePath: storedAction.continuePath,
-              message: storedAction.message || INVALID_LINK_MESSAGE,
-              mode: storedAction.mode,
-            },
-      );
       return undefined;
     }
 
     const parsedAction = parseEmailActionSearch(window.location.search);
     if (parsedAction.status === 'invalid') {
-      const message =
-        parsedAction.reason === 'unsupported-mode' ? UNSUPPORTED_LINK_MESSAGE : INVALID_LINK_MESSAGE;
       writeStoredEmailActionState({
         kind: 'result',
         mode: 'verifyEmail',
         status: 'error',
         continuePath: parsedAction.continuePath,
-      });
-      setState({
-        kind: 'error',
-        continuePath: parsedAction.continuePath,
-        message,
-        mode: undefined,
       });
       return undefined;
     }
@@ -117,14 +144,16 @@ const AccountActionPage = () => {
       void (async () => {
         try {
           await Auth.applyEmailVerificationCode(oobCode);
+          const resolvedContinuePath = resolveVerifyEmailContinuePath(continuePath);
           if (cancelled) return;
+          markPostVerificationOnboardingPending();
           writeStoredEmailActionState({
             kind: 'result',
             mode,
             status: 'success',
-            continuePath,
+            continuePath: resolvedContinuePath,
           });
-          setState({ kind: 'verify-email-success', continuePath });
+          setState({ kind: 'verify-email-success', continuePath: resolvedContinuePath });
         } catch (error) {
           if (cancelled) return;
           const message = resolveEmailActionFailureMessage(mode, error);

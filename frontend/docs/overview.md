@@ -116,6 +116,7 @@ The frontend is a React + TypeScript app for loading PDFs, editing fields, organ
 - The resume manifest is not a full offline cache. It never stores PDF bytes or unsaved field edits locally. Saved forms/groups still rehydrate from backend data plus the saved editor snapshot, and ad hoc `/ui` restores only work while the backing session still exists.
 - Detection timeout no longer forces a zero-field editor for slow scans. When the foreground poll budget expires before CommonForms finishes and there are no embedded fields to use yet, the runtime stays in the processing view and keeps polling until the backend returns fields or a terminal failure.
 - Firebase email action links land on the branded `/account-action` handler, which applies email verification codes and handles password reset flows before returning users to the app.
+- Verification success now routes back through `/upload` and stores a short-lived onboarding marker in that browser, so newly verified password accounts resume the free-vs-trial onboarding choice even if Firebase makes them sign in again before the workspace can reopen.
 - Legacy `/verify-email` links still normalize into `/account-action` so older emails continue working.
 - Verification email resend is throttled in the UI (60-second cooldown, max 5 sends per day per account on that browser).
 - Profile view shows the full enforced limit set, including PDF page caps, saved-form/storage caps, Fill By Link caps, API Fill caps, signing limits, credits, Stripe billing/subscription status, and template-access lock state when applicable. When a downgraded base account has locked saved forms, the retention summary also calls out how many signing drafts are blocked from send until the owner upgrades again, while sent/completed signing requests tied to those forms stay retained.
@@ -126,7 +127,7 @@ The frontend is a React + TypeScript app for loading PDFs, editing fields, organ
 
 - Demo assets are served from `frontend/public/demo`.
 - Demo sessions allow downloading the generated PDF without signing in; saving to profile remains sign-in only.
-- Mobile homepage walkthrough is marketing/demo only, but it now explains the native Fill By Link path alongside local Search & Fill.
+- Mobile homepage walkthrough is marketing/demo only, but it now explains template prep, native Fill By Link intake, extraction from images/documents, final fill review, and the supported U.S. e-sign handoff.
 - Small tracked fixtures live in `quickTestFiles/`; larger local datasets live in `samples/`.
 - Regenerate demo rename/remap name maps from the repo root with `npm run demo:generate-name-maps`.
 

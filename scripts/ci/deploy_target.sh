@@ -171,16 +171,15 @@ case "$COMPONENT" in
   all)
     if [[ "$DEPLOY_ENV" == "prod" ]]; then
       if [[ "$DRY_RUN" == "1" ]]; then
-        echo "+ ENV_FILE=${BACKEND_ENV_FILE} BACKEND_IMAGE=${BACKEND_IMAGE:-<auto>} FRONTEND_ENV_OVERRIDE_FILE=${FRONTEND_ENV_FILE:-<default>} DRY_RUN=1 bash scripts/deploy-all-services.sh"
+        echo "+ BACKEND_IMAGE=${BACKEND_IMAGE:-<auto>} FRONTEND_ENV_OVERRIDE_FILE=${FRONTEND_ENV_FILE:-<default>} DRY_RUN=1 bash scripts/deploy-all-services.sh ${BACKEND_ENV_FILE}"
         exit 0
       fi
       (
         cd "$REPO_ROOT"
         env \
-          ENV_FILE="$BACKEND_ENV_FILE" \
           BACKEND_IMAGE="${BACKEND_IMAGE:-}" \
           FRONTEND_ENV_OVERRIDE_FILE="${FRONTEND_ENV_FILE:-}" \
-          bash scripts/deploy-all-services.sh
+          bash scripts/deploy-all-services.sh "$BACKEND_ENV_FILE"
       )
       exit 0
     fi

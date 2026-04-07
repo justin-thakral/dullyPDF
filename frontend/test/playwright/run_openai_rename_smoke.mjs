@@ -11,7 +11,9 @@ import {
   signOutHarness,
 } from './helpers/downgradeFixture.mjs';
 import {
+  buildMockRenameResult,
   collectFieldNames,
+  parseJsonPostData,
   pollOpenAiJob,
   repoRoot,
   retry,
@@ -24,6 +26,7 @@ const apiBaseUrl = (process.env.PLAYWRIGHT_API_URL || 'http://127.0.0.1:8000').r
 const artifactDir = path.resolve(process.cwd(), 'output/playwright');
 const screenshotPath = path.join(artifactDir, 'openai-rename-smoke.png');
 const summaryPath = path.join(artifactDir, 'openai-rename-smoke.json');
+const mockExpensiveAi = /^true$/i.test(process.env.PLAYWRIGHT_MOCK_EXPENSIVE_AI || '');
 
 function logStep(message) {
   console.log(`[openai-rename-real-flow] ${message}`);
@@ -35,18 +38,6 @@ function waitForLocalBackend() {
     env: { ...process.env, PW_API_BASE_URL: apiBaseUrl },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
-}
-
-function parseJsonPostData(response) {
-  const postData = response.request().postData();
-  if (!postData) {
-    return null;
-  }
-  try {
-    return JSON.parse(postData);
-  } catch {
-    return null;
-  }
 }
 
 async function main() {
@@ -97,6 +88,22 @@ async function main() {
     await page.getByRole('button', { name: /Rename or Remap/i }).click();
     await page.getByRole('menuitem', { name: 'Rename', exact: true }).click();
     await page.getByRole('dialog', { name: 'Send to OpenAI?' }).waitFor({ timeout: 10000 });
+    if (mockExpensiveAi) {
+      logStep('mocking expensive OpenAI rename request');
+      await page.route('**/api/renames/ai', async (route) => {
+        const renameRequest = parseJsonPostData(route.request());
+        const templateFields = Array.isArray(renameRequest?.templateFields) ? renameRequest.templateFields : [];
+        const renameResult = buildMockRenameResult(templateFields);
+        capture.renameRequest = renameRequest;
+        capture.renameKickoff = renameResult;
+        capture.renameResult = renameResult;
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(renameResult),
+        });
+      }, { times: 1 });
+    }
     const renameResponsePromise = page.waitForResponse((response) => {
       return response.request().method() === 'POST'
         && response.url().includes('/api/renames/ai')
@@ -162,6 +169,7 @@ async function main() {
       ok: true,
       screenshotPath,
       summaryPath,
+      mockExpensiveAi,
       userEmail: userFixture.email,
       initialFieldCount: initialFieldNames.length,
       finalFieldCount: finalFieldNames.length,

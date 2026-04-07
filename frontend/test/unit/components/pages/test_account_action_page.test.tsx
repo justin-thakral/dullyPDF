@@ -26,6 +26,7 @@ describe('AccountActionPage', () => {
     verifyEmailActionMocks.applyEmailVerificationCode.mockResolvedValue(undefined);
     verifyEmailActionMocks.verifyPasswordResetActionCode.mockResolvedValue('reset@example.com');
     verifyEmailActionMocks.confirmPasswordReset.mockResolvedValue(undefined);
+    window.localStorage.clear();
     window.history.replaceState({}, '', '/account-action');
   });
 
@@ -48,6 +49,18 @@ describe('AccountActionPage', () => {
     expect(screen.getByRole('link', { name: 'Continue to DullyPDF' }).getAttribute('href')).toBe(
       '/profile?verified=1',
     );
+  });
+
+  it('routes verified signup links back into upload onboarding when the email action does not provide a workflow path', async () => {
+    window.history.replaceState({}, '', '/account-action?mode=verifyEmail&oobCode=test-code');
+
+    render(<AccountActionPage />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Email verified' })).toBeTruthy();
+    });
+
+    expect(screen.getByRole('link', { name: 'Continue to DullyPDF' }).getAttribute('href')).toBe('/upload');
   });
 
   it('renders a reset-password form for valid reset links and submits the new password', async () => {

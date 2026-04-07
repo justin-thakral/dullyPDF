@@ -65,6 +65,11 @@ def allow_public_signing_rate_limits(mocker) -> None:
     mocker.patch.object(signing_public_routes, "_check_public_rate_limits", return_value=True)
 
 
+@pytest.fixture(autouse=True)
+def allow_owner_signing_saved_forms(mocker) -> None:
+    mocker.patch.object(signing_routes, "get_user_retention_pending_template_ids", return_value=frozenset())
+
+
 def _patch_owner_signing_environment(
     mocker,
     firestore_client,
@@ -522,6 +527,7 @@ def test_signing_owner_create_blocks_locked_saved_forms_after_downgrade(
     for module in (signing_database, user_database, template_database, fill_link_database, group_database):
         mocker.patch.object(module, "get_firestore_client", return_value=firestore_client)
     patch_signing_authenticated_owner(mocker, request_user)
+    mocker.patch.object(signing_routes, "get_user_retention_pending_template_ids", return_value={"form-6"})
 
     response = client.post(
         "/api/signing/requests",

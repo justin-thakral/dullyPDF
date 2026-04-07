@@ -1418,11 +1418,18 @@ async def complete_public_signing_request(
             required_present_fields=("reviewed_at", "signature_adopted_at", "signature_adopted_name"),
             required_absent_fields=("manual_fallback_requested_at", "consent_withdrawn_at"),
         )
-        if updated_record is None or updated_record.status != SIGNING_STATUS_COMPLETED:
-            raise HTTPException(
-                status_code=409,
-                detail="Signing completion could not be applied. The request may have already been completed or revoked.",
-            )
+        updated_record = _require_public_transition_applied(
+            updated_record,
+            expected_status=SIGNING_STATUS_COMPLETED,
+            required_fields=("completed_at",),
+            expected_field_values={
+                "completed_at": completed_at,
+                "completed_session_id": session.id,
+                "representative_title": authority_completion_payload["representative_title"],
+                "representative_company_name": authority_completion_payload["representative_company_name"],
+                "authority_attested_at": completion_updates["authority_attested_at"],
+            },
+        )
         touch_signing_session(session.id, client_ip=client_ip, user_agent=user_agent, completed=True)
         _record_public_signing_event(
             updated_record,

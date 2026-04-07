@@ -181,6 +181,16 @@ jobs:
           fi
           npm --prefix frontend ci
 
+      - name: Install backend dependencies
+        run: |
+          set -euo pipefail
+          if [[ "$DEPLOY_COMPONENT" != "backend" && "$DEPLOY_COMPONENT" != "all" ]]; then
+            echo "Backend Python dependencies are not needed for component=${DEPLOY_COMPONENT}."
+            exit 0
+          fi
+          python -m pip install --upgrade pip
+          python -m pip install -r backend/requirements-dev.txt
+
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v3
         with:
@@ -204,6 +214,43 @@ jobs:
           else
             echo "Authenticated as ${active_account}"
           fi
+
+      - name: Seed ADC for runner-side backend preflight checks
+        run: |
+          set -euo pipefail
+          if [[ "$DEPLOY_COMPONENT" != "backend" && "$DEPLOY_COMPONENT" != "all" ]]; then
+            echo "Runner ADC is not required for component=${DEPLOY_COMPONENT}."
+            exit 0
+          fi
+
+          creds_source=""
+          for candidate in \
+            "${GOOGLE_GHA_CREDS_PATH:-}" \
+            "${GOOGLE_APPLICATION_CREDENTIALS:-}" \
+            "${CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE:-}"
+          do
+            if [[ -n "$candidate" && -f "$candidate" ]]; then
+              creds_source="$candidate"
+              break
+            fi
+          done
+
+          if [[ -z "$creds_source" ]]; then
+            echo "Missing credential file for runner ADC bootstrap." >&2
+            exit 1
+          fi
+
+          adc_dir="${HOME}/.config/gcloud"
+          adc_path="${adc_dir}/application_default_credentials.json"
+          mkdir -p "$adc_dir"
+          cp "$creds_source" "$adc_path"
+          chmod 600 "$adc_path"
+
+          # The deploy scripts intentionally scrub credential-file env vars before
+          # invoking the guarded prod entrypoints. Seeding the well-known ADC path
+          # keeps runner-side Python preflight checks authenticated without relaxing
+          # the runtime env validation.
+          gcloud auth application-default print-access-token >/dev/null
 
       - name: Install Firebase CLI
         run: |
@@ -261,6 +308,17 @@ jobs:
       - name: Run deploy target
         run: |
           set -euo pipefail
+
+          restore_var() {
+            local name="$1"
+            local value="$2"
+            if [[ -n "$value" ]]; then
+              export "${name}=${value}"
+            else
+              unset "${name}"
+            fi
+          }
+
           args=(
             --environment "$DEPLOY_ENVIRONMENT"
             --component "$DEPLOY_COMPONENT"
@@ -278,7 +336,25 @@ jobs:
             args+=(--dry-run)
           fi
 
+          saved_google_application_credentials="${GOOGLE_APPLICATION_CREDENTIALS-}"
+          saved_cloudsdk_auth_credential_file_override="${CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE-}"
+          saved_google_gha_creds_path="${GOOGLE_GHA_CREDS_PATH-}"
+
+          if [[ "$DEPLOY_COMPONENT" == "frontend" ]]; then
+            bash scripts/ci/deploy_target.sh "${args[@]}"
+            exit 0
+          fi
+
+          # Prod backend-style deploy scripts reject credential-file env injection
+          # and expect the authenticated gcloud session to stand on its own. Keep
+          # those guards for backend, detectors, workers, and all-in-one deploys,
+          # but allow frontend-only deploys to use the credential file that
+          # Firebase Hosting expects in GitHub Actions.
+          unset GOOGLE_APPLICATION_CREDENTIALS CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE GOOGLE_GHA_CREDS_PATH
           bash scripts/ci/deploy_target.sh "${args[@]}"
+          restore_var GOOGLE_APPLICATION_CREDENTIALS "${saved_google_application_credentials}"
+          restore_var CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE "${saved_cloudsdk_auth_credential_file_override}"
+          restore_var GOOGLE_GHA_CREDS_PATH "${saved_google_gha_creds_path}"
 
       - name: Install Chromium for Playwright deploy smoke
         run: |

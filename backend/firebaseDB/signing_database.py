@@ -273,6 +273,7 @@ class SigningEventRecord:
     user_agent: Optional[str]
     details: Dict[str, Any]
     occurred_at: Optional[str]
+    recorded_at: Optional[str]
 
 
 @dataclass(frozen=True)
@@ -484,6 +485,7 @@ def _serialize_signing_event(doc) -> SigningEventRecord:
         user_agent=_coerce_optional_text(data.get("user_agent")),
         details=dict(data.get("details") or {}) if isinstance(data.get("details"), dict) else {},
         occurred_at=_coerce_optional_text(data.get("occurred_at")),
+        recorded_at=_coerce_optional_text(data.get("recorded_at")),
     )
 
 
@@ -1093,6 +1095,7 @@ def record_signing_event(
     firestore_client = client or get_firestore_client()
     event_id = uuid4().hex
     event_time = _coerce_optional_text(occurred_at) or now_iso()
+    recorded_at = now_iso()
     doc_ref = firestore_client.collection(SIGNING_EVENTS_COLLECTION).document(event_id)
     doc_ref.set(
         {
@@ -1104,6 +1107,7 @@ def record_signing_event(
             "user_agent": _coerce_optional_text(user_agent),
             "details": dict(details or {}),
             "occurred_at": event_time,
+            "recorded_at": recorded_at,
         }
     )
     return _serialize_signing_event(doc_ref.get())
@@ -1120,7 +1124,7 @@ def list_signing_events_for_request(request_id: str, *, client=None) -> List[Sig
         normalized_request_id,
     ).get()
     records = [_serialize_signing_event(doc) for doc in snapshot]
-    return sorted(records, key=lambda entry: (entry.occurred_at or "", entry.id))
+    return sorted(records, key=lambda entry: (entry.occurred_at or "", entry.recorded_at or "", entry.id))
 
 
 def _update_public_signing_request(

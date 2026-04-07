@@ -15,7 +15,7 @@ append_unique() {
 }
 
 if [[ "${RUN_TEMPLATE_API:-false}" == "true" || "${RUN_SHARED_RUNTIME:-false}" == "true" ]]; then
-  append_unique "npm run test:backend:template-api"
+  append_unique "npm run test:backend:template-api:integration"
 fi
 if [[ "${RUN_DETECTION_AI:-false}" == "true" || "${RUN_SHARED_RUNTIME:-false}" == "true" ]]; then
   append_unique "backend/.venv/bin/python -m pytest backend/test/integration/test_detection_rename_saved_form_flow.py -q"

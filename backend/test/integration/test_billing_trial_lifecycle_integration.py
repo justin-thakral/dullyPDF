@@ -71,6 +71,8 @@ def webhook_secret(monkeypatch: pytest.MonkeyPatch) -> str:
 def _no_transaction_wrapper(mocker):
     mocker.patch.object(user_database.firebase_firestore, "transactional", side_effect=lambda fn: fn)
     mocker.patch.object(billing_database.firebase_firestore, "transactional", side_effect=lambda fn: fn)
+    mocker.patch.object(billing_routes, "restore_user_downgrade_managed_links", return_value=None)
+    mocker.patch.object(billing_routes, "apply_user_downgrade_retention", return_value=None)
 
 
 def test_trial_checkout_and_activation(

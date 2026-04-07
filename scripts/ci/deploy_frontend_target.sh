@@ -85,11 +85,18 @@ if [[ -n "$ENV_FILE_OVERRIDE" ]]; then
   printf '\n' >> "$TMP_OVERRIDE_FILE"
 fi
 
-cat >> "$TMP_OVERRIDE_FILE" <<EOF
-VITE_API_URL=${BASE_URL}
-VITE_DETECTION_API_URL=${BASE_URL}
-VITE_ADMIN_TOKEN=
-EOF
+append_default_env() {
+  local key="$1"
+  local value="$2"
+  if grep -Eq "^${key}=" "$TMP_OVERRIDE_FILE"; then
+    return 0
+  fi
+  printf '%s=%s\n' "$key" "$value" >> "$TMP_OVERRIDE_FILE"
+}
+
+append_default_env "VITE_API_URL" "$BASE_URL"
+append_default_env "VITE_DETECTION_API_URL" "$BASE_URL"
+append_default_env "VITE_ADMIN_TOKEN" ""
 
 if [[ "$DRY_RUN" == "1" ]]; then
   echo "+ FRONTEND_ENV_OVERRIDE_FILE=${TMP_OVERRIDE_FILE} bash scripts/use-frontend-env.sh ${MODE}"

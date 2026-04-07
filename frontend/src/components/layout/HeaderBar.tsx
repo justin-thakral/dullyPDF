@@ -74,6 +74,7 @@ type HeaderBarProps = {
   onDemoLockedAction?: () => void;
   demoFillLinkDocsHref?: string;
   demoCreateGroupDocsHref?: string;
+  demoFillFromImagesDocsHref?: string;
   demoSignatureDocsHref?: string;
   onBlockedAction?: (message: string) => void;
 };
@@ -194,6 +195,7 @@ export function HeaderBar({
   onDemoLockedAction,
   demoFillLinkDocsHref,
   demoCreateGroupDocsHref,
+  demoFillFromImagesDocsHref,
   demoSignatureDocsHref,
   onBlockedAction,
 }: HeaderBarProps) {
@@ -225,8 +227,9 @@ export function HeaderBar({
   const disableTemplateApi = demoOverride ? true : !canOpenTemplateApi;
   const showDemoFillLinkDocs = demoLocked && Boolean(demoFillLinkDocsHref);
   const showDemoCreateGroupDocs = demoLocked && Boolean(demoCreateGroupDocsHref);
+  const showDemoFillFromImagesDocs = demoLocked && Boolean(demoFillFromImagesDocsHref);
   const showDemoSignatureDocs = demoLocked && Boolean(demoSignatureDocsHref);
-  const showDemoDocs = showDemoFillLinkDocs || showDemoCreateGroupDocs;
+  const showDemoDocs = showDemoFillLinkDocs || showDemoCreateGroupDocs || showDemoFillFromImagesDocs || showDemoSignatureDocs;
   const rawActionHint = demoOverride
     ? (showDemoDocs ? null : demoLockedHint)
     : hasGroupContext && disableRenameAndMapGroup
@@ -848,6 +851,16 @@ export function HeaderBar({
                   rel="noreferrer noopener"
                 >
                   Signature docs
+                </a>
+              ) : null}
+              {showDemoFillFromImagesDocs ? (
+                <a
+                  className="ui-button ui-button--ghost ui-button--compact"
+                  href={demoFillFromImagesDocsHref}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                >
+                  Fill from Images docs
                 </a>
               ) : null}
               {!showDemoFillLinkDocs && !showDemoCreateGroupDocs && onOpenFillLink ? (

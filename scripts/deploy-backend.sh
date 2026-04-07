@@ -566,6 +566,8 @@ if [[ ${#SECRETS_TO_REMOVE[@]} -gt 0 ]]; then
 fi
 
 BACKEND_REQUEST_TIMEOUT="${BACKEND_REQUEST_TIMEOUT:-900}"
+BACKEND_MEMORY="${BACKEND_MEMORY:-1Gi}"
+BACKEND_CPU="${BACKEND_CPU:-2}"
 
 DEPLOY_ARGS=(
   --image "$BACKEND_IMAGE"
@@ -574,6 +576,8 @@ DEPLOY_ARGS=(
   --service-account "$BACKEND_RUNTIME_SERVICE_ACCOUNT"
   --allow-unauthenticated
   --env-vars-file "$TMP_ENV_FILE"
+  --memory "$BACKEND_MEMORY"
+  --cpu "$BACKEND_CPU"
   --timeout "$BACKEND_REQUEST_TIMEOUT"
 )
 

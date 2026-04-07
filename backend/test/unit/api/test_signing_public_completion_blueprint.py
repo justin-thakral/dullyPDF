@@ -154,3 +154,74 @@ def test_public_signing_complete_rolls_back_when_final_artifact_promotion_fails(
     assert delete_mock.call_count == 6
     touch_mock.assert_not_called()
     event_mock.assert_not_called()
+
+
+def test_public_signing_envelope_completion_rejects_stale_completed_snapshot(app_main, mocker) -> None:
+    record = SimpleNamespace(
+        id="req-1",
+        status="sent",
+        envelope_id="env-1",
+        source_pdf_bucket_path="gs://signing/source.pdf",
+        source_pdf_sha256="abc123",
+        source_version="workspace:form-alpha:abc123",
+        anchors=[],
+        signature_adopted_name="Alex Signer",
+        signer_name="Alex Signer",
+        verification_method="email_otp",
+        retention_until=None,
+    )
+    session = SimpleNamespace(
+        id="session-1",
+        link_token_id="link-token-1",
+        verification_completed_at="2026-03-28T10:00:00+00:00",
+    )
+    stale_record = SimpleNamespace(
+        id="req-1",
+        status="completed",
+        envelope_id="env-1",
+        completed_at="2026-03-28T09:00:00+00:00",
+        completed_session_id="session-old",
+        invalidation_reason=None,
+        representative_title=None,
+        representative_company_name=None,
+        authority_attested_at=None,
+    )
+
+    mocker.patch.object(
+        app_main,
+        "_require_public_signing_session",
+        return_value=(record, session, "203.0.113.5", "browser/1.0"),
+    )
+    mocker.patch.object(app_main, "_require_public_signing_session_verified", return_value=None)
+    mocker.patch.object(app_main, "validate_public_signing_completable_record", return_value=None)
+    mocker.patch.object(
+        app_main,
+        "resolve_company_authority_completion_payload",
+        return_value={
+            "representative_title": None,
+            "representative_company_name": None,
+        },
+    )
+    mocker.patch.object(app_main, "is_gcs_path", return_value=True)
+    mocker.patch.object(app_main, "ensure_signing_storage_configuration", return_value=None)
+    mocker.patch.object(
+        app_main,
+        "resolve_signing_storage_read_bucket_path",
+        return_value="gs://signing/source.pdf",
+    )
+    mocker.patch.object(app_main, "download_storage_bytes", return_value=b"%PDF-source")
+    mocker.patch.object(app_main, "complete_signing_request_transactional", return_value=stale_record)
+    touch_mock = mocker.patch.object(app_main, "touch_signing_session", return_value=None)
+    event_mock = mocker.patch.object(app_main, "_record_public_signing_event", return_value=None)
+
+    client = TestClient(app_main.app, raise_server_exceptions=False)
+    response = client.post(
+        "/api/signing/public/token-1/complete",
+        headers={"X-Signing-Session": "session-token-1"},
+        json={"intentConfirmed": True},
+    )
+
+    assert response.status_code == 409
+    assert "already been completed" in response.json()["detail"].lower()
+    touch_mock.assert_not_called()
+    event_mock.assert_not_called()

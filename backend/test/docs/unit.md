@@ -42,6 +42,15 @@ Run with coverage (`pytest-cov`):
 backend/.venv/bin/pytest backend/test/unit --cov=backend --cov-config=.coveragerc --cov-report=term-missing
 ```
 
+Hybrid QA uses a lighter runtime/governance split instead of running every unit file on every backend-adjacent change:
+
+```bash
+npm run test:backend:ci
+npm run test:backend:governance
+```
+
+`test:backend:ci` skips `backend/test/unit/scripts/`, `backend/test/unit/config/`, and `backend/test/unit/internal_stats/`, which are mostly deploy/config guardrail checks or environment policy assertions. Run `test:backend:governance` when those lower-signal suites are the thing you actually changed.
+
 ## How To Complete a Blueprint File
 
 1. Read the file-level docstring and copy each listed scenario into concrete tests.

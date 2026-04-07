@@ -765,11 +765,29 @@
   color: var(--ink-900);
 }
 
-.mobile-demo-content p {
-  margin: 0;
+.mobile-demo-description {
   color: var(--ink-500);
   line-height: 1.6;
   font-size: 0.95rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.mobile-demo-description p,
+.mobile-demo-description ul {
+  margin: 0;
+}
+
+.mobile-demo-description ul {
+  padding-left: 1.15rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.mobile-demo-description li {
+  margin: 0;
 }
 
 .mobile-demo-nav {

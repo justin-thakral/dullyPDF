@@ -15,8 +15,8 @@ import { setAuthToken } from './services/authTokenStore';
 import { clearExpiredPendingBillingCheckout, hasFreshPendingBillingCheckout } from './utils/billingCheckoutState';
 import { hasOnboardingPending } from './utils/onboardingState';
 import { debugLog } from './utils/debug';
+import { returnWorkspaceToHomepage } from './utils/returnWorkspaceToHomepage';
 import { applyRouteSeo } from './utils/seo';
-import { clearWorkspaceResumeState } from './utils/workspaceResumeState';
 import {
   areWorkspaceBrowserRoutesEqual,
   buildWorkspaceBrowserHref,
@@ -48,6 +48,7 @@ function App({
   const runtimeStartAttemptRef = useRef(0);
   const runtimeStartAbortRef = useRef<AbortController | null>(null);
   const runtimeAutoStartKeyRef = useRef<string | null>(null);
+  const skipNextHomepageSplashRef = useRef(false);
 
   useEffect(() => {
     if (browserRoute.kind === 'homepage') {
@@ -135,14 +136,19 @@ function App({
     ));
     replaceBrowserRoute(nextRoute, options);
     if (nextRoute.kind === 'homepage') {
+      skipNextHomepageSplashRef.current = true;
       abortRuntimeStart();
       runtimeAutoStartKeyRef.current = null;
       setRuntimeMounted(false);
       setLaunchIntent(null);
       setRuntimeStarting(false);
       setRuntimeStartError(null);
-      setHomepageInitialRenderReady(false);
+      // Keep the homepage visible on in-app returns such as sign-out instead of
+      // replaying the cold-start splash overlay, which looks like a blank page.
+      setHomepageInitialRenderReady(true);
+      return;
     }
+    skipNextHomepageSplashRef.current = false;
   }, [abortRuntimeStart, replaceBrowserRoute]);
 
   const replaceBrowserRouteWithBillingState = useCallback((billingState: 'success' | 'cancel') => {
@@ -161,7 +167,14 @@ function App({
 
   useEffect(() => {
     if (browserRoute.kind !== 'homepage' || runtimeMounted) {
+      skipNextHomepageSplashRef.current = false;
       setHomepageInitialRenderReady(false);
+      return;
+    }
+
+    if (skipNextHomepageSplashRef.current) {
+      skipNextHomepageSplashRef.current = false;
+      setHomepageInitialRenderReady(true);
       return;
     }
 
@@ -311,9 +324,8 @@ function App({
     try {
       // Unmount the runtime BEFORE clearing auth state so WorkspaceRuntime
       // never renders with a null user while still mounted (white screen).
-      navigateBrowserRoute({ kind: 'homepage' }, { replace: true });
+      returnWorkspaceToHomepage(navigateBrowserRoute);
       await Auth.signOut();
-      clearWorkspaceResumeState();
       setAuthToken(null);
       setAuthUser(null);
       setAuthSignInProvider(null);
@@ -400,7 +412,11 @@ function App({
     return workspaceLoadingScreen;
   }
 
-  const showHomepageSplash = browserRoute.kind === 'homepage' && !homepageInitialRenderReady;
+  const showHomepageSplash = (
+    browserRoute.kind === 'homepage'
+    && !homepageInitialRenderReady
+    && !skipNextHomepageSplashRef.current
+  );
 
   return (
     <>

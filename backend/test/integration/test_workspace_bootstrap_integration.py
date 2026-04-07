@@ -10,7 +10,9 @@ import backend.api.routes.groups as groups_routes
 import backend.api.middleware.security as security_middleware
 import backend.api.routes.profile as profile_routes
 import backend.api.routes.saved_forms as saved_forms_routes
+import backend.firebaseDB.fill_link_database as fill_link_database
 import backend.firebaseDB.group_database as group_database
+import backend.firebaseDB.signing_database as signing_database
 import backend.firebaseDB.template_database as template_database
 import backend.firebaseDB.user_database as user_database
 from backend.firebaseDB.firebase_service import RequestUser
@@ -121,7 +123,7 @@ def test_workspace_bootstrap_endpoints_return_profile_saved_forms_and_groups(
     request_user = _workspace_user()
     _seed_workspace_bootstrap(firestore_client)
 
-    for module in (user_database, template_database, group_database):
+    for module in (user_database, template_database, group_database, fill_link_database, signing_database):
         mocker.patch.object(module, "get_firestore_client", return_value=firestore_client)
     for route_module in (profile_routes, saved_forms_routes, groups_routes):
         mocker.patch.object(route_module, "require_user", return_value=request_user)

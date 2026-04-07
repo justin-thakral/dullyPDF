@@ -36,7 +36,14 @@ This runs backend + frontend together via `concurrently`.
 npm run dev:stack
 ```
 
-This runs the prod-like dev stack (backend container + frontend dev server).
+This runs the local prod-topology dev stack:
+- frontend on `http://localhost:5173`
+- local backend gateway on `http://localhost:8010`
+- real dev Firebase / Cloud Tasks / Cloud Run detector + worker dependencies behind that local gateway
+
+The goal is to keep local verification close to production behavior without relying on a shared hosted dev site.
+The main intentional runtime difference from production is that the local gateway itself has no warm instances.
+
 When `STRIPE_SECRET_KEY` is present and `stripe` is installed, the stack also auto-starts Stripe CLI forwarding to the local billing webhook on host port `8010` by default.
 
 ```bash
@@ -47,6 +54,8 @@ npm run dev:stack:stop
 - `env/backend.dev.stack.env` (backend settings; copied from `config/backend.dev.stack.env.example` when missing)
 - `config/public/frontend.stack.env` (frontend committed public settings)
 - optional `env/frontend.stack.local.env` for local-only overrides
+
+The shared hosted Firebase dev app is intentionally disabled. Use `localhost:5173` for browser verification instead of `dullypdf-dev.web.app`.
 
 ## Internal stats launcher
 

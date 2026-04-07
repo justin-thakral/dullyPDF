@@ -1,7 +1,10 @@
+import type { User } from 'firebase/auth';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+type MockFirebaseUser = Partial<User>;
+
 const firebaseAuthRef = vi.hoisted(() => ({
-  currentUser: null as any,
+  currentUser: null as MockFirebaseUser | null,
 }));
 
 const firebaseMocks = vi.hoisted(() => ({
@@ -76,7 +79,7 @@ describe('auth service', () => {
   });
 
   it('registers ID token listener once and updates token store on auth token changes', async () => {
-    let onIdTokenChangedCallback: ((user: any) => Promise<void> | void) | null = null;
+    let onIdTokenChangedCallback: ((user: MockFirebaseUser | null) => Promise<void> | void) | null = null;
     firebaseMocks.onIdTokenChanged.mockImplementation((_auth, callback) => {
       onIdTokenChangedCallback = callback;
       return vi.fn();
@@ -152,7 +155,7 @@ describe('auth service', () => {
     expect(signedUp).toBe(signUpUser);
     expect(firebaseMocks.updateProfile).toHaveBeenCalledWith(signUpUser, { displayName: 'Jane Smith' });
     expect(firebaseMocks.sendEmailVerification).toHaveBeenCalledWith(signUpUser, {
-      url: window.location.origin,
+      url: `${window.location.origin}/upload`,
       handleCodeInApp: false,
     });
     expect(tokenStoreMocks.setAuthToken).toHaveBeenCalledWith('signup-token');
@@ -208,7 +211,7 @@ describe('auth service', () => {
 
     await Auth.sendVerificationEmail();
     expect(firebaseMocks.sendEmailVerification).toHaveBeenCalledWith(verifiedUser, {
-      url: window.location.origin,
+      url: `${window.location.origin}/upload`,
       handleCodeInApp: false,
     });
 

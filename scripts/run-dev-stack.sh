@@ -19,10 +19,82 @@ set -a
 source "$ENV_FILE"
 set +a
 
+normalize_truthy_flag() {
+  local raw="${1:-}"
+  raw="$(printf '%s' "$raw" | tr '[:upper:]' '[:lower:]')"
+  case "$raw" in
+    1|true|yes|on) printf 'true' ;;
+    *) printf 'false' ;;
+  esac
+}
+
+build_detector_stable_audience() {
+  local service_name="${1:-}"
+  if [[ -z "$service_name" ]]; then
+    printf '\n'
+    return
+  fi
+  printf 'https://%s.dullypdf.internal\n' "$service_name"
+}
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/_load_firebase_secret.sh"
 source "${SCRIPT_DIR}/_detector_routing.sh"
-load_firebase_secret
+
+DEV_STACK_PROD_TOPOLOGY="$(normalize_truthy_flag "${DEV_STACK_PROD_TOPOLOGY:-true}")"
+
+apply_dev_stack_prod_topology() {
+  if [[ "$DEV_STACK_PROD_TOPOLOGY" != "true" ]]; then
+    return
+  fi
+
+  # Keep the localhost stack on dev semantics for local origins, but force the
+  # same topology and auth posture as the deployed environment: ADC-backed
+  # Firebase, Cloud Tasks/Run detector routing, task-mode rename/remap, and no
+  # debug/admin shortcuts. This keeps local smoke paths close to prod without
+  # triggering prod-only canonical-origin constraints like https://dullypdf.com.
+  export ENV=dev
+  export FIREBASE_USE_ADC=true
+  export FIREBASE_CHECK_REVOKED=true
+  unset FIREBASE_CREDENTIALS
+  unset FIREBASE_CREDENTIALS_SECRET
+  unset FIREBASE_CREDENTIALS_PROJECT
+  unset GOOGLE_APPLICATION_CREDENTIALS
+
+  if [[ -z "${FIREBASE_SERVICE_ACCOUNT_ID:-}" && -n "${BACKEND_RUNTIME_SERVICE_ACCOUNT:-}" ]]; then
+    export FIREBASE_SERVICE_ACCOUNT_ID="$BACKEND_RUNTIME_SERVICE_ACCOUNT"
+  fi
+
+  export DETECTOR_MODE=tasks
+  export DETECTOR_ROUTING_MODE="${DETECTOR_ROUTING_MODE:-gpu}"
+  export DETECTOR_SERIALIZE_GPU_TASKS="${DETECTOR_SERIALIZE_GPU_TASKS:-true}"
+  export DETECTOR_USE_STABLE_AUDIENCE="${DETECTOR_USE_STABLE_AUDIENCE:-true}"
+  export OPENAI_RENAME_REMAP_MODE=tasks
+  export SANDBOX_ENABLE_LEGACY_ENDPOINTS=false
+  export SANDBOX_ALLOW_ADMIN_OVERRIDE=false
+  export ADMIN_TOKEN=
+  export SANDBOX_DEBUG=false
+  export SANDBOX_DEBUG_FORCE=false
+  export SANDBOX_DEBUG_PASSWORD=
+  export SANDBOX_LOG_OPENAI_RESPONSE=false
+  export SANDBOX_ENABLE_DOCS=false
+  export SANDBOX_TRUST_PROXY_HEADERS=true
+  export SANDBOX_TRUSTED_PROXY_DEPTH="${SANDBOX_TRUSTED_PROXY_DEPTH:-1}"
+
+  if [[ -z "${SANDBOX_TRUSTED_HOSTS:-}" || "${SANDBOX_TRUSTED_HOSTS:-}" == "*" ]]; then
+    export SANDBOX_TRUSTED_HOSTS="localhost,127.0.0.1,[::1],testserver"
+  fi
+
+  if [[ -z "${RECAPTCHA_ALLOWED_HOSTNAMES:-}" ]]; then
+    export RECAPTCHA_ALLOWED_HOSTNAMES="localhost,127.0.0.1"
+  fi
+}
+
+apply_dev_stack_prod_topology
+
+if [[ "$(normalize_truthy_flag "${FIREBASE_USE_ADC:-false}")" != "true" ]]; then
+  load_firebase_secret
+fi
 load_backend_email_secrets
 
 DEV_STACK_DETECTOR_GPU="${DEV_STACK_DETECTOR_GPU:-false}"
@@ -43,7 +115,7 @@ detector_set_active_routing_vars
 DETECTOR_ROUTING_MODE="${DETECTOR_ROUTING_MODE_RESOLVED}"
 
 if command -v gcloud >/dev/null 2>&1; then
-  if [[ ("${DEV_STACK_BUILD:-}" == "1" || -z "${DETECTOR_SERVICE_URL_LIGHT_ACTIVE:-}") && -n "${DETECTOR_TASKS_PROJECT:-}" ]]; then
+  if [[ ("${DEV_STACK_PROD_TOPOLOGY}" == "true" || "${DEV_STACK_BUILD:-}" == "1" || -z "${DETECTOR_SERVICE_URL_LIGHT_ACTIVE:-}") && -n "${DETECTOR_TASKS_PROJECT:-}" ]]; then
     DETECTOR_SERVICE_URL_LIGHT_ACTIVE="$(
       gcloud run services describe "$DETECTOR_SERVICE_NAME_LIGHT_ACTIVE" \
         --region "$DETECTOR_SERVICE_REGION_LIGHT_ACTIVE" \
@@ -51,7 +123,7 @@ if command -v gcloud >/dev/null 2>&1; then
         --format='value(status.url)' 2>/dev/null || true
     )"
   fi
-  if [[ ("${DEV_STACK_BUILD:-}" == "1" || -z "${DETECTOR_SERVICE_URL_HEAVY_ACTIVE:-}") && -n "${DETECTOR_TASKS_PROJECT:-}" ]]; then
+  if [[ ("${DEV_STACK_PROD_TOPOLOGY}" == "true" || "${DEV_STACK_BUILD:-}" == "1" || -z "${DETECTOR_SERVICE_URL_HEAVY_ACTIVE:-}") && -n "${DETECTOR_TASKS_PROJECT:-}" ]]; then
     DETECTOR_SERVICE_URL_HEAVY_ACTIVE="$(
       gcloud run services describe "$DETECTOR_SERVICE_NAME_HEAVY_ACTIVE" \
         --region "$DETECTOR_SERVICE_REGION_HEAVY_ACTIVE" \
@@ -74,17 +146,23 @@ fi
 DETECTOR_SERVICE_URL_LIGHT="$DETECTOR_SERVICE_URL_LIGHT_ACTIVE"
 DETECTOR_SERVICE_URL_HEAVY="$DETECTOR_SERVICE_URL_HEAVY_ACTIVE"
 DETECTOR_SERVICE_URL="$DETECTOR_SERVICE_URL_LIGHT"
+DETECTOR_TASKS_AUDIENCE_LIGHT_FALLBACK="$DETECTOR_SERVICE_URL_LIGHT"
+DETECTOR_TASKS_AUDIENCE_HEAVY_FALLBACK="$DETECTOR_SERVICE_URL_HEAVY"
+if detector_is_truthy "${DETECTOR_USE_STABLE_AUDIENCE:-false}"; then
+  DETECTOR_TASKS_AUDIENCE_LIGHT_FALLBACK="$(build_detector_stable_audience "$DETECTOR_SERVICE_NAME_LIGHT_ACTIVE")"
+  DETECTOR_TASKS_AUDIENCE_HEAVY_FALLBACK="$(build_detector_stable_audience "$DETECTOR_SERVICE_NAME_HEAVY_ACTIVE")"
+fi
 DETECTOR_TASKS_AUDIENCE_LIGHT="$(
   detector_tasks_audience_for_target \
     "$DETECTOR_TARGET_LIGHT_ACTIVE" \
     "light" \
-    "$DETECTOR_SERVICE_URL_LIGHT"
+    "$DETECTOR_TASKS_AUDIENCE_LIGHT_FALLBACK"
 )"
 DETECTOR_TASKS_AUDIENCE_HEAVY="$(
   detector_tasks_audience_for_target \
     "$DETECTOR_TARGET_HEAVY_ACTIVE" \
     "heavy" \
-    "$DETECTOR_SERVICE_URL_HEAVY"
+    "$DETECTOR_TASKS_AUDIENCE_HEAVY_FALLBACK"
 )"
 DETECTOR_TASKS_AUDIENCE="$DETECTOR_TASKS_AUDIENCE_LIGHT"
 echo "Detector routing mode: ${DETECTOR_ROUTING_MODE} (light=${DETECTOR_TARGET_LIGHT_ACTIVE}:${DETECTOR_SERVICE_NAME_LIGHT_ACTIVE}@${DETECTOR_SERVICE_REGION_LIGHT_ACTIVE}, heavy=${DETECTOR_TARGET_HEAVY_ACTIVE}:${DETECTOR_SERVICE_NAME_HEAVY_ACTIVE}@${DETECTOR_SERVICE_REGION_HEAVY_ACTIVE})"
@@ -169,6 +247,10 @@ EVENTS="${STRIPE_DEV_FORWARD_EVENTS:-checkout.session.completed,invoice.paid,cus
 ENABLE_LISTENER_RAW="${STRIPE_DEV_LISTEN_ENABLED:-true}"
 ENABLE_LISTENER="$(printf '%s' "$ENABLE_LISTENER_RAW" | tr '[:upper:]' '[:lower:]')"
 STACK_WEBHOOK_ENDPOINT_URL="${STRIPE_WEBHOOK_ENDPOINT_URL:-${FORWARD_TO}}"
+
+if [[ "$DEV_STACK_PROD_TOPOLOGY" == "true" ]]; then
+  export SIGNING_APP_ORIGIN="${SIGNING_APP_ORIGIN:-http://localhost:${FRONTEND_PORT}}"
+fi
 
 LISTENER_PID=""
 LISTENER_LOG=""

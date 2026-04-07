@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 
 import pytest
@@ -186,6 +187,41 @@ def test_advance_envelope_not_found(mocker) -> None:
     logger_mock.warning.assert_called_once()
     assert "not found" in logger_mock.warning.call_args[0][0]
     update_mock.assert_not_called()
+
+
+def test_complete_envelope_artifact_failure_leaves_envelope_partial(mocker) -> None:
+    envelope = _envelope(signing_mode="parallel", signer_count=2, status="partial")
+    mocker.patch.object(
+        envelope_service,
+        "list_signing_requests_for_envelope",
+        return_value=[
+            _request(id="req-1", signer_order=1, status="completed"),
+            _request(id="req-2", signer_order=2, status="completed"),
+        ],
+    )
+    mocker.patch.object(envelope_service, "now_iso", return_value="2026-04-01T12:00:00+00:00")
+    mocker.patch.object(
+        envelope_service,
+        "_generate_envelope_artifacts",
+        new=mocker.AsyncMock(side_effect=RuntimeError("boom")),
+    )
+    update_mock = mocker.patch.object(envelope_service, "update_signing_envelope")
+
+    asyncio.run(envelope_service._complete_envelope(envelope))
+
+    update_mock.assert_called_once_with(
+        "env-1",
+        {
+            "status": "partial",
+            "completed_at": None,
+            "signed_pdf_bucket_path": None,
+            "signed_pdf_sha256": None,
+            "audit_manifest_bucket_path": None,
+            "audit_manifest_sha256": None,
+            "audit_receipt_bucket_path": None,
+            "audit_receipt_sha256": None,
+        },
+    )
 
 
 def test_activate_next_signer_delivers_invite(mocker) -> None:

@@ -16,6 +16,7 @@ import backend.api.routes.saved_forms as saved_forms_routes
 import backend.firebaseDB.fill_link_database as fill_link_database
 import backend.firebaseDB.group_database as group_database
 import backend.firebaseDB.session_database as session_database
+import backend.firebaseDB.signing_database as signing_database
 import backend.firebaseDB.template_database as template_database
 import backend.firebaseDB.user_database as user_database
 from backend.detection.pdf_validation import PdfValidationResult
@@ -181,6 +182,7 @@ def _integration_state(mocker, qa_user: RequestUser):
     mocker.patch.object(user_database, "get_firestore_client", return_value=firestore_client)
     mocker.patch.object(fill_link_database, "get_firestore_client", return_value=firestore_client)
     mocker.patch.object(group_database, "get_firestore_client", return_value=firestore_client)
+    mocker.patch.object(signing_database, "get_firestore_client", return_value=firestore_client)
 
     mocker.patch.object(security_middleware, "verify_token", return_value={"uid": qa_user.uid})
     mocker.patch.object(detection_routes, "verify_token", return_value={"uid": qa_user.uid})

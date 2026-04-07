@@ -87,6 +87,18 @@ def _seed_locked_template_set(
     )
 
 
+def _patch_firestore_modules(mocker, firestore_client: FakeFirestoreClient, *modules) -> None:
+    target_modules = modules or (
+        fill_link_database,
+        template_database,
+        user_database,
+        group_database,
+        signing_database,
+    )
+    for module in target_modules:
+        mocker.patch.object(module, "get_firestore_client", return_value=firestore_client)
+
+
 def test_public_submit_accepts_and_enforces_monthly_quota_without_closing_link(
     client: TestClient,
     mocker,
@@ -120,8 +132,7 @@ def test_public_submit_accepts_and_enforces_monthly_quota_without_closing_link(
         }
     )
 
-    mocker.patch.object(fill_link_database, "get_firestore_client", return_value=firestore_client)
-    mocker.patch.object(template_database, "get_firestore_client", return_value=firestore_client)
+    _patch_firestore_modules(mocker, firestore_client)
     mocker.patch.object(fill_link_database, "resolve_fill_link_responses_monthly_limit", return_value=1)
     mocker.patch.object(fill_links_public_routes, "check_rate_limit", return_value=True)
     mocker.patch.object(fill_links_public_routes, "resolve_fill_link_submit_rate_limits", return_value=(300, 10, 0))
@@ -193,8 +204,7 @@ def test_public_submit_reuses_duplicate_attempt_without_consuming_extra_capacity
         }
     )
 
-    mocker.patch.object(fill_link_database, "get_firestore_client", return_value=firestore_client)
-    mocker.patch.object(template_database, "get_firestore_client", return_value=firestore_client)
+    _patch_firestore_modules(mocker, firestore_client)
     mocker.patch.object(fill_link_database, "resolve_fill_link_responses_monthly_limit", return_value=1)
     mocker.patch.object(fill_links_public_routes, "check_rate_limit", return_value=True)
     mocker.patch.object(fill_links_public_routes, "resolve_fill_link_submit_rate_limits", return_value=(300, 10, 0))
@@ -276,9 +286,7 @@ def test_public_submit_uses_real_base_monthly_limit_when_usage_bucket_is_near_ex
     )
     _seed_owner_credit_profile(firestore_client, user_id="user-1", role=user_database.ROLE_BASE)
 
-    mocker.patch.object(fill_link_database, "get_firestore_client", return_value=firestore_client)
-    mocker.patch.object(template_database, "get_firestore_client", return_value=firestore_client)
-    mocker.patch.object(user_database, "get_firestore_client", return_value=firestore_client)
+    _patch_firestore_modules(mocker, firestore_client)
     mocker.patch.object(fill_link_database, "_current_month_key", return_value="2026-03")
     mocker.patch.object(fill_links_public_routes, "check_rate_limit", return_value=True)
     mocker.patch.object(fill_links_public_routes, "resolve_fill_link_submit_rate_limits", return_value=(300, 10, 0))
@@ -353,9 +361,7 @@ def test_public_submit_starts_new_month_usage_bucket_after_prior_month_exhaustio
     )
     _seed_owner_credit_profile(firestore_client, user_id="user-1", role=user_database.ROLE_BASE)
 
-    mocker.patch.object(fill_link_database, "get_firestore_client", return_value=firestore_client)
-    mocker.patch.object(template_database, "get_firestore_client", return_value=firestore_client)
-    mocker.patch.object(user_database, "get_firestore_client", return_value=firestore_client)
+    _patch_firestore_modules(mocker, firestore_client)
     mocker.patch.object(fill_link_database, "_current_month_key", return_value="2026-04")
     mocker.patch.object(fill_links_public_routes, "check_rate_limit", return_value=True)
     mocker.patch.object(fill_links_public_routes, "resolve_fill_link_submit_rate_limits", return_value=(300, 10, 0))
@@ -423,9 +429,7 @@ def test_public_submit_allows_only_one_new_month_response_after_rollover_from_ex
     )
     _seed_owner_credit_profile(firestore_client, user_id="user-1", role=user_database.ROLE_BASE)
 
-    mocker.patch.object(fill_link_database, "get_firestore_client", return_value=firestore_client)
-    mocker.patch.object(template_database, "get_firestore_client", return_value=firestore_client)
-    mocker.patch.object(user_database, "get_firestore_client", return_value=firestore_client)
+    _patch_firestore_modules(mocker, firestore_client)
     mocker.patch.object(fill_link_database, "_current_month_key", return_value="2026-04")
     mocker.patch.object(fill_link_database, "_resolve_fill_link_monthly_limit_for_user", return_value=1)
     mocker.patch.object(fill_links_public_routes, "check_rate_limit", return_value=True)
@@ -536,8 +540,7 @@ def test_public_submit_rejects_missing_required_answers(client: TestClient, mock
         }
     )
 
-    mocker.patch.object(fill_link_database, "get_firestore_client", return_value=firestore_client)
-    mocker.patch.object(template_database, "get_firestore_client", return_value=firestore_client)
+    _patch_firestore_modules(mocker, firestore_client)
     mocker.patch.object(fill_links_public_routes, "check_rate_limit", return_value=True)
     mocker.patch.object(fill_links_public_routes, "resolve_fill_link_submit_rate_limits", return_value=(300, 10, 0))
     mocker.patch.object(fill_links_public_routes, "resolve_client_ip", return_value="198.51.100.20")
@@ -583,7 +586,7 @@ def test_public_get_closed_link_hides_schema_and_specific_closure_reason(client:
         }
     )
 
-    mocker.patch.object(fill_link_database, "get_firestore_client", return_value=firestore_client)
+    _patch_firestore_modules(mocker, firestore_client)
     mocker.patch.object(fill_links_public_routes, "check_rate_limit", return_value=True)
     mocker.patch.object(fill_links_public_routes, "resolve_fill_link_view_rate_limits", return_value=(60, 60, 0))
     mocker.patch.object(fill_links_public_routes, "resolve_client_ip", return_value="198.51.100.20")
@@ -619,7 +622,7 @@ def test_public_get_invalid_active_link_does_not_persist_close_state(client: Tes
         }
     )
 
-    mocker.patch.object(fill_link_database, "get_firestore_client", return_value=firestore_client)
+    _patch_firestore_modules(mocker, firestore_client)
     mocker.patch.object(fill_links_public_routes, "check_rate_limit", return_value=True)
     mocker.patch.object(fill_links_public_routes, "resolve_fill_link_view_rate_limits", return_value=(60, 60, 0))
     mocker.patch.object(fill_links_public_routes, "resolve_client_ip", return_value="198.51.100.20")
@@ -678,7 +681,7 @@ def test_public_download_materializes_saved_template_snapshot(client: TestClient
     output_path = tmp_path / "response.pdf"
     output_path.write_bytes(b"%PDF-1.4\n%stub\n")
 
-    mocker.patch.object(fill_link_database, "get_firestore_client", return_value=firestore_client)
+    _patch_firestore_modules(mocker, firestore_client)
     mocker.patch.object(fill_links_public_routes, "check_rate_limit", return_value=True)
     mocker.patch.object(fill_links_public_routes, "resolve_fill_link_download_rate_limits", return_value=(300, 10, 0))
     mocker.patch.object(fill_links_public_routes, "resolve_client_ip", return_value="198.51.100.20")
@@ -813,8 +816,7 @@ def test_public_submit_returns_signing_handoff_when_template_requires_signature(
     output_path = tmp_path / "response-signing.pdf"
     output_path.write_bytes(b"%PDF-1.4\n%stub\n")
 
-    mocker.patch.object(fill_link_database, "get_firestore_client", return_value=firestore_client)
-    mocker.patch.object(template_database, "get_firestore_client", return_value=firestore_client)
+    _patch_firestore_modules(mocker, firestore_client)
     mocker.patch.object(fill_links_public_routes, "check_rate_limit", return_value=True)
     mocker.patch.object(fill_links_public_routes, "resolve_fill_link_submit_rate_limits", return_value=(300, 10, 0))
     mocker.patch.object(fill_links_public_routes, "resolve_client_ip", return_value="198.51.100.20")
@@ -966,7 +968,7 @@ def test_public_retry_signing_reuses_stored_response_snapshot(client: TestClient
     output_path = tmp_path / "retry-response-signing.pdf"
     output_path.write_bytes(b"%PDF-1.4\n%retry\n")
 
-    mocker.patch.object(fill_link_database, "get_firestore_client", return_value=firestore_client)
+    _patch_firestore_modules(mocker, firestore_client)
     mocker.patch.object(fill_links_public_routes, "check_rate_limit", return_value=True)
     mocker.patch.object(fill_links_public_routes, "resolve_fill_link_submit_rate_limits", return_value=(300, 10, 0))
     mocker.patch.object(fill_links_public_routes, "resolve_client_ip", return_value="198.51.100.20")
@@ -1104,8 +1106,7 @@ def test_public_submit_and_retry_signing_preserve_owner_credits_and_enforce_mont
     _seed_owner_credit_profile(firestore_client, user_id="user-1", credits=7)
     materialize_call_count = {"value": 0}
 
-    for module in (fill_link_database, template_database, signing_database, user_database):
-        mocker.patch.object(module, "get_firestore_client", return_value=firestore_client)
+    _patch_firestore_modules(mocker, firestore_client)
     patch_signing_artifact_storage(mocker, storage)
     mocker.patch.object(fill_links_public_routes, "check_rate_limit", return_value=True)
     mocker.patch.object(fill_links_public_routes, "resolve_fill_link_submit_rate_limits", return_value=(300, 10, 0))

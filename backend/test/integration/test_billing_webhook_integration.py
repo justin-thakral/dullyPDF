@@ -42,6 +42,13 @@ def webhook_secret(monkeypatch: pytest.MonkeyPatch) -> str:
     return "whsec_integration_test"
 
 
+@pytest.fixture(autouse=True)
+def allow_webhook_retention_restores(mocker) -> None:
+    mocker.patch.object(billing_routes, "restore_user_downgrade_managed_links", return_value=None)
+    mocker.patch.object(billing_routes, "apply_user_downgrade_retention", return_value=None)
+    mocker.patch.object(billing_routes, "get_user_billing_record", return_value=None)
+
+
 def test_webhook_accepts_valid_signature_and_dispatches_refill(
     client: TestClient,
     webhook_secret: str,

@@ -11,7 +11,10 @@ import {
   signOutHarness,
 } from './helpers/downgradeFixture.mjs';
 import {
+  buildMockMappingResult,
+  buildMockRenameResult,
   collectFieldNames,
+  parseJsonPostData,
   pollOpenAiJob,
   repoRoot,
   retry,
@@ -28,6 +31,7 @@ const remapSamplePdfPath = path.join(
   repoRoot,
   'quickTestFiles/dentalintakeform_d1c394f594.pdf',
 );
+const mockExpensiveAi = /^true$/i.test(process.env.PLAYWRIGHT_MOCK_EXPENSIVE_AI || '');
 
 function logStep(message) {
   console.log(`[openai-rename-remap-real-flow] ${message}`);
@@ -55,21 +59,6 @@ function buildSchemaFilePath() {
     'utf8',
   );
   return schemaPath;
-}
-
-function parseJsonPostData(requestOrResponse) {
-  const request = typeof requestOrResponse?.postData === 'function'
-    ? requestOrResponse
-    : requestOrResponse?.request?.();
-  const postData = request?.postData?.();
-  if (!postData) {
-    return null;
-  }
-  try {
-    return JSON.parse(postData);
-  } catch {
-    return null;
-  }
 }
 
 async function main() {
@@ -123,6 +112,35 @@ async function main() {
     await page.getByRole('button', { name: /Rename or Remap/i }).click();
     await page.getByRole('menuitem', { name: 'Rename + Map', exact: true }).click();
     await page.getByRole('dialog', { name: 'Send to OpenAI?' }).waitFor({ timeout: 10000 });
+    if (mockExpensiveAi) {
+      logStep('mocking expensive OpenAI rename + map requests');
+      await page.route('**/api/renames/ai', async (route) => {
+        const renameRequest = parseJsonPostData(route.request());
+        const templateFields = Array.isArray(renameRequest?.templateFields) ? renameRequest.templateFields : [];
+        const renameResult = buildMockRenameResult(templateFields);
+        capture.renameRequest = renameRequest;
+        capture.renameKickoff = renameResult;
+        capture.renameResult = renameResult;
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(renameResult),
+        });
+      }, { times: 1 });
+      await page.route('**/api/schema-mappings/ai', async (route) => {
+        const mappingRequest = parseJsonPostData(route.request());
+        const templateFields = Array.isArray(mappingRequest?.templateFields) ? mappingRequest.templateFields : [];
+        const mappingResult = buildMockMappingResult(templateFields);
+        capture.mappingRequest = mappingRequest;
+        capture.mappingKickoff = mappingResult;
+        capture.mappingResult = mappingResult;
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(mappingResult),
+        });
+      }, { times: 1 });
+    }
     const renameRequestPromise = page.waitForRequest((request) => {
       return request.method() === 'POST'
         && request.url().includes('/api/renames/ai');
@@ -224,6 +242,7 @@ async function main() {
       userEmail: userFixture.email,
       screenshotPath,
       summaryPath,
+      mockExpensiveAi,
       schemaId: capture.schemaCreate.schemaId,
       initialFieldCount: initialFieldNames.length,
       finalFieldCount: finalFieldNames.length,

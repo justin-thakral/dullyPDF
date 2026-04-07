@@ -27,22 +27,31 @@ function readFrontendEnvValue(key) {
 }
 
 function runBackendPython(script, extraEnv = {}) {
+  const backendEnvFile = process.env.PW_BACKEND_ENV_FILE || 'env/backend.dev.env';
   const bashScript = `
 set -euo pipefail
 # Export the dev env file so Python inherits the intended Firebase project and
 # secret settings even when the parent shell already has other values loaded.
 set -a
-source env/backend.dev.env
+source "$PW_BACKEND_ENV_FILE"
 set +a
 source scripts/_load_firebase_secret.sh
-load_firebase_secret
+if [[ "\${PW_USE_FIREBASE_SECRET_FOR_ADMIN_HELPERS:-true}" == "true" ]] && [[ -n "\${FIREBASE_CREDENTIALS_SECRET:-}" ]]; then
+  load_firebase_secret
+  export FIREBASE_USE_ADC=false
+  unset FIREBASE_SERVICE_ACCOUNT_ID
+elif [[ "\${FIREBASE_USE_ADC:-}" == "true" ]] && [[ -z "\${FIREBASE_SERVICE_ACCOUNT_ID:-}" ]] && [[ -n "\${BACKEND_RUNTIME_SERVICE_ACCOUNT:-}" ]]; then
+  export FIREBASE_SERVICE_ACCOUNT_ID="$BACKEND_RUNTIME_SERVICE_ACCOUNT"
+elif [[ "\${FIREBASE_USE_ADC:-}" != "true" ]]; then
+  load_firebase_secret
+fi
 backend/.venv/bin/python - <<'PY'
 ${script}
 PY
 `;
   return execFileSync('bash', ['-lc', bashScript], {
     cwd: repoRoot,
-    env: { ...process.env, ...extraEnv },
+    env: { ...process.env, PW_BACKEND_ENV_FILE: backendEnvFile, ...extraEnv },
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
   }).trim();

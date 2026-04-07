@@ -1,6 +1,7 @@
 /**
  * Workspace runtime shell that orchestrates detection, mapping, and editor state.
  */
+/* eslint-disable react-hooks/refs */
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { User } from 'firebase/auth';
 import type { PDFDocumentProxy } from 'pdfjs-dist/types/src/display/api';
@@ -16,6 +17,7 @@ import type {
   RadioGroup,
   RadioGroupSuggestion,
   RadioToolDraft,
+  TextTransformRule,
 } from './types';
 import { HeaderBar } from './components/layout/HeaderBar';
 import LegacyHeader from './components/layout/LegacyHeader';
@@ -57,6 +59,7 @@ import { useWorkspaceSessionDiagnostic } from './hooks/useWorkspaceSessionDiagno
 import { ApiService } from './services/api';
 import { fetchDetectionStatus } from './services/detectionApi';
 import { debugLog } from './utils/debug';
+import { returnWorkspaceToHomepage } from './utils/returnWorkspaceToHomepage';
 import { applyRouteSeo } from './utils/seo';
 import {
   LazyDemoTour,
@@ -169,6 +172,41 @@ type CreateToolDisplayState = {
 
 const WORKSPACE_ERROR_AUTO_DISMISS_MS = 5000;
 
+type SavedFormsBridge = {
+  clearSavedFormsRetry: () => void;
+  clearSavedForms: () => void;
+  refreshSavedForms: (opts?: { allowRetry?: boolean; throwOnError?: boolean }) => Promise<unknown>;
+};
+
+type OpenAiRenameOptions = {
+  confirm?: boolean;
+  allowDefer?: boolean;
+  sessionId?: string | null;
+  schemaId?: string | null;
+};
+
+type ApplySchemaMappingsOptions = {
+  fieldsOverride?: PdfField[];
+  schemaIdOverride?: string | null;
+};
+
+type OpenAiBridge = {
+  runOpenAiRename: (opts?: OpenAiRenameOptions) => Promise<PdfField[] | null>;
+  applySchemaMappings: (opts?: ApplySchemaMappingsOptions) => Promise<boolean>;
+  handleMappingSuccess: () => void;
+  setHasRenamedFields: (value: boolean) => void;
+  setHasMappedSchema: (value: boolean) => void;
+  setCheckboxRules: (rules: CheckboxRule[]) => void;
+  setRadioGroupSuggestions: (suggestions: RadioGroupSuggestion[]) => void;
+  setTextTransformRules: (rules: TextTransformRule[]) => void;
+  setOpenAiError: (value: string | null) => void;
+};
+
+type OpenAiSetterBridge = {
+  setMappingInProgress: (value: boolean) => void;
+  setOpenAiError: (value: string | null) => void;
+};
+
 /**
  * Main workspace runtime component that coordinates auth, detection, and editing.
  */
@@ -182,29 +220,25 @@ function WorkspaceRuntime({
   onBrowserRouteChange,
 }: WorkspaceRuntimeProps) {
   // ── Ref bridges to break circular hook dependencies ────────────────
-  const savedFormsBridge = useRef<{
-    clearSavedFormsRetry: () => void;
-    clearSavedForms: () => void;
-    refreshSavedForms: (opts?: { allowRetry?: boolean; throwOnError?: boolean }) => Promise<unknown>;
-  }>({
+  const savedFormsBridge = useRef<SavedFormsBridge>({
     clearSavedFormsRetry: () => {},
     clearSavedForms: () => {},
-    refreshSavedForms: async (_opts?: { allowRetry?: boolean; throwOnError?: boolean }) => [],
+    refreshSavedForms: async () => [],
   });
-  const openAiBridge = useRef({
-    runOpenAiRename: async (_opts?: any) => null as PdfField[] | null,
-    applySchemaMappings: async (_opts?: any) => false,
+  const openAiBridge = useRef<OpenAiBridge>({
+    runOpenAiRename: async () => null,
+    applySchemaMappings: async () => false,
     handleMappingSuccess: () => {},
-    setHasRenamedFields: (_v: boolean) => {},
-    setHasMappedSchema: (_v: boolean) => {},
-    setCheckboxRules: (_v: any[]) => {},
-    setRadioGroupSuggestions: (_v: any[]) => {},
-    setTextTransformRules: (_v: any[]) => {},
-    setOpenAiError: (_v: string | null) => {},
+    setHasRenamedFields: () => {},
+    setHasMappedSchema: () => {},
+    setCheckboxRules: () => {},
+    setRadioGroupSuggestions: () => {},
+    setTextTransformRules: () => {},
+    setOpenAiError: () => {},
   });
-  const openAiSettersForDataSource = useRef({
-    setMappingInProgress: (_v: boolean) => {},
-    setOpenAiError: (_v: string | null) => {},
+  const openAiSettersForDataSource = useRef<OpenAiSetterBridge>({
+    setMappingInProgress: () => {},
+    setOpenAiError: () => {},
   });
   const clearWorkspaceRef = useRef<() => void>(() => {});
   const demoBridgeRef = useRef({ demoActive: false, demoCompletionOpen: false });
@@ -693,7 +727,7 @@ function WorkspaceRuntime({
     sourceTemplateId: savedForms.activeSavedFormId,
     sourceTemplateName: activeTemplateName,
     fields: fieldHistory.fields,
-    resolveSourcePdfBytes: async (_mode) => resolveWorkspaceImmutableSourcePdfBytes(),
+    resolveSourcePdfBytes: async () => resolveWorkspaceImmutableSourcePdfBytes(),
     reviewedFillContext,
   });
   const {
@@ -818,37 +852,57 @@ function WorkspaceRuntime({
   demoBridgeRef.current = { demoActive: demo.demoActive, demoCompletionOpen: demo.demoCompletionOpen };
 
   // ── Auth-related callbacks ─────────────────────────────────────────
+  const returnRuntimeToHomepage = useCallback((options?: {
+    clearSavedForms?: boolean;
+    clearLoadError?: boolean;
+    clearLogin?: boolean;
+    clearProfile?: boolean;
+    clearOnboarding?: boolean;
+  }) => {
+    clearWorkspace();
+    if (options?.clearSavedForms) {
+      savedForms.clearSavedForms();
+    }
+    if (options?.clearLoadError) {
+      setLoadError(null);
+    }
+    if (options?.clearLogin) {
+      auth.setShowLogin(false);
+    }
+    if (options?.clearProfile) {
+      auth.setShowProfile(false);
+    }
+    if (options?.clearOnboarding) {
+      setShowOnboarding(false);
+    }
+    setPendingBrowserRouteKey(null);
+    setShowHomepage(true);
+    demo.setDemoActive(false);
+    demo.setDemoStepIndex(null);
+    demo.setDemoCompletionOpen(false);
+    demo.setDemoSearchPreset(null);
+    returnWorkspaceToHomepage(onBrowserRouteChange);
+  }, [auth, clearWorkspace, demo, onBrowserRouteChange, savedForms]);
+
   const handleSignOut = useCallback(async () => {
     const confirmed = await confirmDiscardDirtyGroupChanges('signing out');
     if (!confirmed) return;
     // Tear down workspace state and unmount the runtime BEFORE clearing auth
     // so the component never renders with a null user (white screen).
-    clearWorkspaceResumeState();
-    clearWorkspace();
-    savedForms.clearSavedForms();
-    setShowHomepage(true);
-    auth.setShowProfile(false);
-    demo.setDemoActive(false);
-    demo.setDemoStepIndex(null);
-    demo.setDemoCompletionOpen(false);
-    demo.setDemoSearchPreset(null);
-    onBrowserRouteChange?.({ kind: 'homepage' }, { replace: true });
+    returnRuntimeToHomepage({
+      clearSavedForms: true,
+      clearLogin: true,
+      clearOnboarding: true,
+      clearProfile: true,
+    });
     await auth.handleSignOut();
-  }, [auth, clearWorkspace, confirmDiscardDirtyGroupChanges, demo, onBrowserRouteChange, savedForms]);
+  }, [auth, confirmDiscardDirtyGroupChanges, returnRuntimeToHomepage]);
 
   const handleNavigateHome = useCallback(async () => {
     const confirmed = await confirmDiscardDirtyGroupChanges('returning home');
     if (!confirmed) return;
-    clearWorkspaceResumeState();
-    clearWorkspace();
-    setLoadError(null);
-    setShowHomepage(true);
-    demo.setDemoActive(false);
-    demo.setDemoStepIndex(null);
-    demo.setDemoCompletionOpen(false);
-    demo.setDemoSearchPreset(null);
-    onBrowserRouteChange?.({ kind: 'homepage' }, { replace: true });
-  }, [clearWorkspace, confirmDiscardDirtyGroupChanges, demo, onBrowserRouteChange]);
+    returnRuntimeToHomepage({ clearLoadError: true });
+  }, [confirmDiscardDirtyGroupChanges, returnRuntimeToHomepage]);
 
   // ── Save & Download ────────────────────────────────────────────────
   const saveDownload = useSaveDownload({
@@ -1457,14 +1511,6 @@ function WorkspaceRuntime({
   ]);
 
   useEffect(() => {
-    if (!fieldState.showFields) return;
-    fieldState.lastFieldVisibilityRef.current = {
-      showFieldInfo: fieldState.showFieldInfo,
-      showFieldNames: fieldState.showFieldNames,
-    };
-  }, [fieldState, fieldState.showFieldInfo, fieldState.showFieldNames, fieldState.showFields]);
-
-  useEffect(() => {
     if (openAi.openAiError || dataSource.schemaError) dialog.setBannerNotice(null);
   }, [dataSource.schemaError, dialog, openAi.openAiError]);
 
@@ -1719,6 +1765,8 @@ function WorkspaceRuntime({
     () => fields.find((field) => field.id === selectedFieldId) || null,
     [fields, selectedFieldId],
   );
+  const isDemoAsset = Boolean(sourceFileIsDemo && sourceFileName && DEMO_ASSET_NAME_SET.has(sourceFileName));
+  const allowAnonymousDemoEditor = demoActive || isDemoAsset;
   const pendingQuickRadioFields = useMemo(() => {
     return resolvePendingQuickRadioFields(pendingQuickRadioSelection, fields);
   }, [fields, pendingQuickRadioSelection]);
@@ -1912,6 +1960,63 @@ function WorkspaceRuntime({
     }
   }, [verifiedUser, showOnboarding]);
 
+  const hadVerifiedWorkspaceRef = useRef(Boolean(bootstrapHasVerifiedUser));
+  const handledSignedOutRedirectRef = useRef(false);
+  useEffect(() => {
+    if (verifiedUser) {
+      hadVerifiedWorkspaceRef.current = true;
+      handledSignedOutRedirectRef.current = false;
+      return;
+    }
+    if (!hadVerifiedWorkspaceRef.current || handledSignedOutRedirectRef.current) {
+      return;
+    }
+    if (!authReady) {
+      return;
+    }
+    if (showLogin || showOnboarding || requiresEmailVerification || allowAnonymousDemoEditor) {
+      return;
+    }
+
+    const hasProtectedWorkspaceState = (
+      browserRoute.kind !== 'homepage' ||
+      !showHomepage ||
+      showProfile ||
+      Boolean(pdfDoc || detection.isProcessing || savedForms.activeSavedFormId || activeGroupId)
+    );
+    if (!hasProtectedWorkspaceState) {
+      return;
+    }
+
+    // Firebase can report sign-out before the parent shell finishes swapping
+    // routes. Force the runtime back to the homepage once per auth loss so the
+    // user never gets stranded on a blank/loading screen.
+    handledSignedOutRedirectRef.current = true;
+    returnRuntimeToHomepage({
+      clearSavedForms: true,
+      clearLogin: true,
+      clearOnboarding: true,
+      clearProfile: true,
+    });
+  }, [
+    activeGroupId,
+    authReady,
+    allowAnonymousDemoEditor,
+    bootstrapHasVerifiedUser,
+    browserRoute.kind,
+    detection.isProcessing,
+    onBrowserRouteChange,
+    pdfDoc,
+    requiresEmailVerification,
+    returnRuntimeToHomepage,
+    savedForms.activeSavedFormId,
+    showHomepage,
+    showLogin,
+    showOnboarding,
+    showProfile,
+    verifiedUser,
+  ]);
+
   useEffect(() => {
     if (!verifiedUser?.uid || launchIntent === 'demo') {
       return;
@@ -2002,7 +2107,7 @@ function WorkspaceRuntime({
     };
     const restoreRequestedRoute = async () => {
       if (browserRoute.kind === 'profile') {
-        if (!auth.showProfile) {
+        if (!auth.showProfile && !auth.showLogin) {
           setShowHomepage(false);
           if (verifiedUser || bootstrapHasVerifiedUser) {
             auth.setShowProfile(true);
@@ -2158,8 +2263,6 @@ function WorkspaceRuntime({
   const canSaveToProfile = Boolean(pdfDoc && verifiedUser);
   const canDownload = Boolean(pdfDoc && (verifiedUser || sourceFileIsDemo));
 
-  const isDemoAsset = Boolean(sourceFileIsDemo && sourceFileName && DEMO_ASSET_NAME_SET.has(sourceFileName));
-  const allowAnonymousDemoEditor = demoActive || isDemoAsset;
   const demoUiLocked = demoCompletionOpen || (!demoActive && isDemoAsset);
 
   const activeErrorMessage = openAiError ?? schemaError;
@@ -2566,6 +2669,7 @@ function WorkspaceRuntime({
         onDemoLockedAction={handleDemoLockedAction}
         demoFillLinkDocsHref="/usage-docs/fill-by-link"
         demoCreateGroupDocsHref="/usage-docs/create-group"
+        demoFillFromImagesDocsHref="/usage-docs/fill-from-images"
         demoSignatureDocsHref="/usage-docs/signature-workflow"
         onBlockedAction={(message) => dialog.setBannerNotice({ tone: 'error', message })}
       />

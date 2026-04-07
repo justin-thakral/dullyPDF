@@ -28,6 +28,19 @@
   border-bottom: 1px solid rgba(148, 163, 184, 0.25);
 }
 
+.panel__header-copy {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.panel__header-action {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  margin-top: -0.12rem;
+  margin-right: -0.18rem;
+  white-space: nowrap;
+}
+
 .panel__header h2 {
   margin: 0;
   font-size: 1.1rem;

@@ -75,25 +75,16 @@ const DEMO_WALKTHROUGH: DemoWalkthroughStep[] = [
     id: 'rename-remap',
     title: 'OpenAI rename + OpenAI remap',
     description:
-      'OpenAI rename standardizes field names, and OpenAI remap aligns them to database columns so the template is ready for database plug-ins.',
+      'OpenAI rename standardizes field names, and OpenAI remap aligns them to database columns so the template is ready for repeat fills.',
     imageWebp: '/demo/mobile-rename-remap.webp',
     imagePng: '/demo/mobile-rename-remap.png',
     alt: 'PDF overlay showing standardized field names after rename and remap.',
   },
   {
-    id: 'filled',
-    title: 'Search & Fill or Fill By Link completes the form',
-    description:
-      'Pull a local record or choose a stored Fill By Link respondent record and populate every mapped field in seconds.',
-    imageWebp: '/demo/mobile-filled.webp',
-    imagePng: '/demo/mobile-filled.png',
-    alt: 'Completed PDF form with patient data filled into the detected fields.',
-  },
-  {
     id: 'link-generated',
-    title: 'Generate a shareable link for respondents',
+    title: 'Optional public intake with Fill By Link',
     description:
-      'After saving the template, publish a DullyPDF link you can send to users so they can submit the form without opening the PDF editor.',
+      'After saving the template, publish a DullyPDF link you can send to users so they can submit answers without opening the PDF editor.',
     imageWebp: '/demo/link-generated.webp',
     imagePng: '/demo/link-generated.png',
     alt: 'Generated Fill By Link panel showing a shareable respondent link for the saved template.',
@@ -106,6 +97,33 @@ const DEMO_WALKTHROUGH: DemoWalkthroughStep[] = [
     imageWebp: '/demo/mock-form.webp',
     imagePng: '/demo/mock-form.png',
     alt: 'Mock respondent form showing public question fields that collect answers outside the PDF editor.',
+  },
+  {
+    id: 'extract-images',
+    title: 'Optional extraction from images and documents',
+    description:
+      'Use this when the source data lives in files instead of a row: upload IDs, insurance cards, invoices, pay stubs, tax forms, utility bills, medical records, or similar photos and PDFs, and DullyPDF sends those files plus the named field schema and nearby label text to OpenAI so it can return confidence-scored candidates before the final fill, without sending the template page images themselves.',
+    imageWebp: '/demo/Extract_Images.webp',
+    imagePng: '/demo/Extract_Images.png',
+    alt: 'Fill from information extracted from images and documents dialog showing candidate field values with confidence scores.',
+  },
+  {
+    id: 'filled',
+    title: 'Review the filled PDF before output',
+    description:
+      'Choose a matching database row, a stored respondent submission, or extracted candidates and populate the mapped fields before download or signing.',
+    imageWebp: '/demo/mobile-filled.webp',
+    imagePng: '/demo/mobile-filled.png',
+    alt: 'Completed PDF form with patient data filled into the detected fields.',
+  },
+  {
+    id: 'signature-request',
+    title: 'Freeze the exact PDF, then send U.S. e-sign',
+    description:
+      'When the record is ready, DullyPDF freezes that exact PDF before the signer enters the ceremony and retains the immutable source PDF, final signed PDF, audit receipt, owner audit manifest, hashes, identity and verification state, timestamps, and any disclosure or authority-attestation evidence, which is enough for DullyPDF&apos;s intended U.S. business flow because the exact record and signer actions stay reproducible later.',
+    imageWebp: '/demo/Signature.webp',
+    imagePng: '/demo/Signature.png',
+    alt: 'Signature request dialog showing signing mode, compliance readiness checks, and the immutable PDF send workflow.',
   },
   {
     id: 'create-group',
@@ -499,11 +517,12 @@ const Homepage: React.FC<HomepageProps> = ({
             <div className="feature-item">
               <span className="feature-number">4</span>
               <div className="feature-content">
-                <h4>Search, Generate, or Route Into U.S. E-Sign</h4>
+                <h4>Search, Fill from Images, Generate, or Route Into U.S. E-Sign</h4>
                 <p>
-                  Choose a matching database row or a stored respondent submission in the workspace. DullyPDF
-                  fills the mapped template, generates the PDF only when you download it, or routes eligible
-                  records into DullyPDF&apos;s supported U.S. e-sign workflow.
+                  Choose a matching database row, a stored respondent submission, or upload images and
+                  documents like IDs, invoices, pay stubs, or records. DullyPDF fills the template from
+                  those sources, generates the PDF only when you download it, or routes eligible records
+                  into DullyPDF&apos;s supported U.S. e-sign workflow.
                 </p>
               </div>
             </div>
@@ -516,8 +535,8 @@ const Homepage: React.FC<HomepageProps> = ({
           <p className="demo-kicker">Demo walkthrough</p>
           <h3>See the pipeline on mobile</h3>
           <p>
-            Use the arrows to move through each state and see how DullyPDF prepares a database-ready template that can
-            be filled from local data or a native Fill By Link respondent record.
+            Use the arrows to move through detection, template cleanup, intake options, extraction, final fill, and
+            the immutable e-sign handoff.
           </p>
         </div>
         <div className="mobile-demo-card">
@@ -540,7 +559,7 @@ const Homepage: React.FC<HomepageProps> = ({
           <div className="mobile-demo-content">
             <span className="mobile-demo-step">Step {activeDemoIndex + 1} of {DEMO_WALKTHROUGH.length}</span>
             <h4>{activeStep.title}</h4>
-            <p>{activeStep.description}</p>
+            <div className="mobile-demo-description">{activeStep.description}</div>
           </div>
           <div className="mobile-demo-nav" ref={demoNavRef}>
             <button
@@ -635,11 +654,12 @@ const Homepage: React.FC<HomepageProps> = ({
                     <div className="feature-item">
                       <span className="feature-number">4</span>
                       <div className="feature-content">
-                        <h4>Search, Generate, or Route Into U.S. E-Sign</h4>
+                        <h4>Search, Fill from Images, Generate, or Route Into U.S. E-Sign</h4>
                         <p>
-                          Choose a matching database row or a stored respondent submission in the workspace. DullyPDF
-                          fills the mapped template, generates the PDF only when you download it, or routes eligible
-                          records into DullyPDF&apos;s supported U.S. e-sign workflow.
+                          Choose a matching database row, a stored respondent submission, or upload images and
+                          documents like IDs, invoices, pay stubs, or records. DullyPDF fills the template from
+                          those sources, generates the PDF only when you download it, or routes eligible records
+                          into DullyPDF&apos;s supported U.S. e-sign workflow.
                         </p>
                       </div>
                     </div>

@@ -404,6 +404,7 @@ describe('HeaderBar', () => {
           canSendForSignature: true,
           demoFillLinkDocsHref: '/usage-docs/fill-by-link',
           demoCreateGroupDocsHref: '/usage-docs/create-group',
+          demoFillFromImagesDocsHref: '/usage-docs/fill-from-images',
           demoSignatureDocsHref: '/usage-docs/signature-workflow',
         })}
       />,
@@ -423,6 +424,10 @@ describe('HeaderBar', () => {
       '/usage-docs/signature-workflow',
     );
     expect(screen.getByRole('link', { name: 'Signature docs' }).getAttribute('target')).toBe('_blank');
+    expect(screen.getByRole('link', { name: 'Fill from Images docs' }).getAttribute('href')).toBe(
+      '/usage-docs/fill-from-images',
+    );
+    expect(screen.getByRole('link', { name: 'Fill from Images docs' }).getAttribute('target')).toBe('_blank');
   });
 
   it('opens the download menu and wires format-specific download callbacks', async () => {
