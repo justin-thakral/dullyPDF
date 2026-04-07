@@ -172,7 +172,7 @@ export function useDetection(deps: UseDetectionDeps) {
   } | null>(null);
   const backgroundDetectionAbortRefs = useRef<Map<string, AbortController>>(new Map());
   const detectionRetryTimeoutsRef = useRef<Map<string, number>>(new Map());
-  const detectionPipeline: 'commonforms' = 'commonforms';
+  const detectionPipeline = 'commonforms' as const;
   const activeSessionId = detectSessionId || mappingSessionId;
 
   const clearScheduledDetectionRetry = useCallback((sessionId?: string) => {
