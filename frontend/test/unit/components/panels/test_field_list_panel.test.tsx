@@ -39,12 +39,18 @@ const SAMPLE_FIELDS: PdfField[] = [
 function createProps(overrides: Partial<FieldListPanelProps> = {}): FieldListPanelProps {
   return {
     fields: SAMPLE_FIELDS,
+    totalFieldCount: SAMPLE_FIELDS.length,
     selectedFieldId: null,
+    selectedField: null,
     currentPage: 1,
     pageCount: 3,
     showFields: true,
     showFieldNames: true,
     showFieldInfo: false,
+    transformMode: false,
+    displayPreset: 'edit',
+    onApplyDisplayPreset: vi.fn(),
+    onTransformModeChange: vi.fn(),
     onShowFieldsChange: vi.fn(),
     onShowFieldNamesChange: vi.fn(),
     onShowFieldInfoChange: vi.fn(),
@@ -52,13 +58,26 @@ function createProps(overrides: Partial<FieldListPanelProps> = {}): FieldListPan
     onClearInputs: vi.fn(),
     confidenceFilter: { high: true, medium: true, low: true },
     onConfidenceFilterChange: vi.fn(),
+    onResetConfidenceFilters: vi.fn(),
     onSelectField: vi.fn(),
     onPageChange: vi.fn(),
+    renameInProgress: false,
     ...overrides,
   };
 }
 
 describe('FieldListPanel', () => {
+  it('shows the renaming hint only while rename is in progress', () => {
+    const { rerender } = render(<FieldListPanel {...createProps()} />);
+
+    expect(screen.getByText('Filter, sort, and jump to fields fast.')).toBeTruthy();
+    expect(screen.queryByText('(Renaming...) Filter, sort, and jump to fields fast.')).toBeNull();
+
+    rerender(<FieldListPanel {...createProps({ renameInProgress: true })} />);
+
+    expect(screen.getByText('(Renaming...) Filter, sort, and jump to fields fast.')).toBeTruthy();
+  });
+
   it('clamps page navigation and applies disabled states at boundaries', async () => {
     const user = userEvent.setup();
     const onPageChange = vi.fn();

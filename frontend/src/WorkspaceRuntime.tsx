@@ -2698,7 +2698,8 @@ function WorkspaceRuntime({
           canClearInputs={hasFieldValues} onClearInputs={fieldState.handleClearFieldValues}
           confidenceFilter={confidenceFilter} onConfidenceFilterChange={fieldState.handleConfidenceFilterChange}
           onResetConfidenceFilters={handleResetConfidenceFilters}
-          onSelectField={handleSelectField} onPageChange={handlePageJump} />
+          onSelectField={handleSelectField} onPageChange={handlePageJump}
+          renameInProgress={renameInProgress} />
         <main className="workspace">
           {loadError ? (
             <div className="viewer viewer--empty">

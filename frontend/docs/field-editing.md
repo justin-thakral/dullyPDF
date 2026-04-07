@@ -72,6 +72,7 @@ Field editing is centered around three coordinated areas: overlay (PDF), field l
 - Rename and Map now send a SHA-256 fingerprint of the active PDF, and the backend rejects the
   request if that document no longer matches the active backend session.
 - Rename now derives radio-group suggestions from returned `checkboxRules` plus high-signal renamed checkbox layouts such as compact `yes/no`, `male/female`, and single-row enum groups. `Rename + Map` now performs the full rename pass followed by a real remap pass instead of stopping after rename.
+- When upload-time `Rename` or `Rename + Map` continues after the editor opens, the workspace shows a non-blocking banner so operators know field names are still being updated in the background.
 - OpenAI-derived radio-group suggestions now auto-apply only when their confidence lands in the high tier (`>= 0.60`).
 - Medium/low-confidence radio suggestions stay review-only, and their source fields keep checkbox behavior until you explicitly convert them.
 - Fill By Link web forms only render radio questions for explicit radio widgets. Unconverted checkbox clusters stay checkbox-style (`boolean` or grouped multi-select) in the public form.

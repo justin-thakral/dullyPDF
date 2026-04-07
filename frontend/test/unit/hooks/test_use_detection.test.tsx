@@ -9,6 +9,8 @@ const loadPdfFromFileMock = vi.hoisted(() => vi.fn());
 const loadPageSizesMock = vi.hoisted(() => vi.fn());
 const extractFieldsFromPdfMock = vi.hoisted(() => vi.fn());
 const touchSessionMock = vi.hoisted(() => vi.fn());
+const loadSavedFormMock = vi.hoisted(() => vi.fn());
+const downloadSavedFormMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../../../src/services/detectionApi', () => ({
   detectFields: detectFieldsMock,
@@ -26,6 +28,8 @@ vi.mock('../../../src/services/api', () => ({
     createTemplateSession: vi.fn(),
     createSavedFormSession: vi.fn(),
     updateSavedFormEditorSnapshot: vi.fn(),
+    loadSavedForm: loadSavedFormMock,
+    downloadSavedForm: downloadSavedFormMock,
     touchSession: touchSessionMock,
   },
 }));
@@ -137,6 +141,15 @@ describe('useDetection', () => {
     loadPageSizesMock.mockReset().mockResolvedValue({ 1: { width: 612, height: 792 } });
     extractFieldsFromPdfMock.mockReset().mockResolvedValue([]);
     touchSessionMock.mockReset();
+    loadSavedFormMock.mockReset().mockResolvedValue({
+      name: 'Saved Template',
+      editorSnapshot: {
+        pageCount: 1,
+        pageSizes: { 1: { width: 612, height: 792 } },
+        fields: [],
+      },
+    });
+    downloadSavedFormMock.mockReset().mockResolvedValue(new Blob(['pdf'], { type: 'application/pdf' }));
     Object.defineProperty(document, 'hidden', {
       configurable: true,
       value: false,
@@ -314,5 +327,82 @@ describe('useDetection', () => {
       schemaIdOverride: 'schema-1',
     });
     expect(deps.handleMappingSuccess).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows a banner while auto-rename is still running after the editor opens', async () => {
+    const renameDeferred = deferred<any>();
+    const deps = createDeps({
+      runOpenAiRename: vi.fn(() => renameDeferred.promise),
+    });
+    const hook = renderHookHarness(deps);
+    const pdfState = createPdfState();
+
+    detectFieldsMock.mockResolvedValue({
+      sessionId: 'session-auto-rename',
+      status: 'complete',
+      fields: [{
+        name: 'Original Field',
+        type: 'text',
+        page: 1,
+        rect: [10, 10, 120, 24],
+      }],
+    });
+
+    let uploadPromise: Promise<void> | null = null;
+    await act(async () => {
+      uploadPromise = hook.current.runDetectUpload(
+        new File(['pdf'], 'auto-rename.pdf', { type: 'application/pdf' }),
+        { autoRename: true },
+        pdfState,
+      );
+      await Promise.resolve();
+    });
+
+    expect(pdfState.setPdfDoc).toHaveBeenCalledTimes(1);
+    expect(deps.setBannerNotice).toHaveBeenCalledWith({
+      tone: 'info',
+      message: 'Fields are still renaming. You can review the editor while OpenAI finishes.',
+      autoDismissMs: 8000,
+    });
+
+    renameDeferred.resolve([
+      {
+        id: 'field-1',
+        name: 'Renamed Field',
+        type: 'text',
+        page: 1,
+        rect: { x: 10, y: 10, width: 120, height: 24 },
+        value: null,
+      },
+    ]);
+
+    await act(async () => {
+      await uploadPromise;
+    });
+  });
+
+  it('marks the workspace as a saved form before the saved PDF finishes hydrating', async () => {
+    const deps = createDeps();
+    const hook = renderHookHarness(deps);
+    const pdfState = createPdfState();
+    const pendingPdfLoad = deferred<any>();
+
+    loadPdfFromFileMock.mockReturnValueOnce(pendingPdfLoad.promise);
+
+    let openPromise: Promise<boolean> | null = null;
+    await act(async () => {
+      openPromise = hook.current.handleSelectSavedForm('saved-form-1', pdfState);
+      await Promise.resolve();
+    });
+
+    expect(deps.setActiveSavedFormId).toHaveBeenCalledWith('saved-form-1');
+    expect(deps.setActiveSavedFormName).toHaveBeenCalledWith('Saved Template');
+    expect(pdfState.setPdfDoc).not.toHaveBeenCalled();
+
+    pendingPdfLoad.resolve(createPdfDoc());
+
+    await act(async () => {
+      await openPromise;
+    });
   });
 });

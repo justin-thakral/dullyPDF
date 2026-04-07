@@ -130,6 +130,22 @@ function hasMappedSchemaState(
   );
 }
 
+function resolveAutoOpenAiInProgressMessage(options: {
+  autoRename: boolean;
+  autoMap: boolean;
+}): string | null {
+  if (options.autoRename && options.autoMap) {
+    return 'Fields are still renaming and mapping. You can review the editor while OpenAI finishes.';
+  }
+  if (options.autoRename) {
+    return 'Fields are still renaming. You can review the editor while OpenAI finishes.';
+  }
+  if (options.autoMap) {
+    return 'Field mappings are still generating. You can review the editor while OpenAI finishes.';
+  }
+  return null;
+}
+
 export function useDetection(deps: UseDetectionDeps) {
   const [detectSessionId, setDetectSessionId] = useState<string | null>(null);
   const [mappingSessionId, setMappingSessionId] = useState<string | null>(null);
@@ -212,6 +228,21 @@ export function useDetection(deps: UseDetectionDeps) {
     detectionRetryTimeoutsRef.current.set(sessionId, timeoutId);
   }, [clearScheduledDetectionRetry]);
 
+  const announceAutoOpenAiInProgress = useCallback((options: {
+    autoRename: boolean;
+    autoMap: boolean;
+  }) => {
+    const message = resolveAutoOpenAiInProgressMessage(options);
+    if (!message) {
+      return;
+    }
+    deps.setBannerNotice({
+      tone: 'info',
+      message,
+      autoDismissMs: 8000,
+    });
+  }, [deps]);
+
   const resumeDetectionPolling = useCallback(
     async (sessionId: string, loadToken: number) => {
       clearScheduledDetectionRetry(sessionId);
@@ -258,6 +289,10 @@ export function useDetection(deps: UseDetectionDeps) {
             pendingAutoActions.sessionId === sessionId
           ) {
             pendingAutoActionsRef.current = null;
+            announceAutoOpenAiInProgress({
+              autoRename: pendingAutoActions.autoRename,
+              autoMap: pendingAutoActions.autoMap,
+            });
             if (pendingAutoActions.autoRename && pendingAutoActions.autoMap) {
               const renamed = await deps.runOpenAiRename({
                 confirm: false, allowDefer: true, sessionId, schemaId: pendingAutoActions.schemaId,
@@ -324,7 +359,7 @@ export function useDetection(deps: UseDetectionDeps) {
         }
       }
     },
-    [clearScheduledDetectionRetry, scheduleDetectionRetry, deps],
+    [announceAutoOpenAiInProgress, clearScheduledDetectionRetry, scheduleDetectionRetry, deps],
   );
 
   useEffect(() => {
@@ -525,6 +560,11 @@ export function useDetection(deps: UseDetectionDeps) {
           deps.setSourceFile(file);
           deps.setSourceFileName(name);
           deps.setSourceFileIsDemo(false);
+          // Attach the saved-template identity before the PDF hydration work
+          // continues so header actions do not briefly treat the workspace as
+          // an unsaved draft while a saved form is opening.
+          deps.setActiveSavedFormId(formId);
+          deps.setActiveSavedFormName(savedMeta?.name || null);
           const doc = await loadPdfFromFile(file);
           const hydratedSnapshot = normalizeSavedFormEditorSnapshot(savedMeta?.editorSnapshot, {
             expectedPageCount: doc.numPages,
@@ -545,8 +585,6 @@ export function useDetection(deps: UseDetectionDeps) {
           const sizes = await sizesPromise;
           const initialFields = hydratedSnapshot ? clonePdfFields(hydratedSnapshot.fields) : [];
           if (!commitPdfLoad(doc, sizes, initialFields, loadToken, pdfState)) return false;
-          deps.setActiveSavedFormId(formId);
-          deps.setActiveSavedFormName(savedMeta?.name || null);
           const {
             checkboxRules: savedCheckboxRules,
             legacyRadioGroupSuggestions,
@@ -961,6 +999,11 @@ export function useDetection(deps: UseDetectionDeps) {
           return;
         }
 
+        announceAutoOpenAiInProgress({
+          autoRename: Boolean(options.autoRename),
+          autoMap: Boolean(options.autoMap),
+        });
+
         if (options.autoRename && options.autoMap) {
           const renamed = await deps.runOpenAiRename({
             confirm: false, allowDefer: true, sessionId: detectedSessionId, schemaId: activeSchemaId,
@@ -993,7 +1036,7 @@ export function useDetection(deps: UseDetectionDeps) {
         clearWarmupTimers();
       }
     },
-    [commitPdfLoad, resumeDetectionPolling, deps],
+    [announceAutoOpenAiInProgress, commitPdfLoad, resumeDetectionPolling, deps],
   );
 
   // ── Session keep-alive ────────────────────────────────────────────

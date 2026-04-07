@@ -56,6 +56,7 @@ type FieldListPanelProps = {
   onResetConfidenceFilters: () => void;
   onSelectField: (fieldId: string) => void;
   onPageChange: (page: number) => void;
+  renameInProgress?: boolean;
   onBlockedAction?: (message: string) => void;
 };
 
@@ -233,6 +234,7 @@ export function FieldListPanel({
   onResetConfidenceFilters,
   onSelectField,
   onPageChange,
+  renameInProgress = false,
   onBlockedAction,
 }: FieldListPanelProps) {
   const guardClick = (blocked: boolean, reason: string, action: () => void) => {
@@ -343,7 +345,10 @@ export function FieldListPanel({
       <div className="panel__header">
         <div>
           <h2>Fields</h2>
-          <p className="panel__hint">Filter, sort, and jump to fields fast.</p>
+          <p className="panel__hint">
+            {renameInProgress ? '(Renaming...) ' : ''}
+            Filter, sort, and jump to fields fast.
+          </p>
         </div>
         <div className="panel__meta panel__meta--counts" title={`Visible ${visibleCount} of ${headerScopeCount} in scope; ${fields.length} of ${totalFieldCount} after confidence filter.`}>
           <span className="panel__meta-primary">{visibleCount} / {headerScopeCount}</span>
