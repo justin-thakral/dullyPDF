@@ -13,7 +13,7 @@ For each page, outputs:
   - page_N_payload_meta.json   (detail levels, image sizes, budget metrics)
 
 Usage:
-    python3 dump_openai_rename_payload.py <pdf_path> [--out-dir "./sent to openAI rename"]
+    python3 dump_openai_rename_payload.py <pdf_path> [--out-dir "./openAI_overlays_exmaple"]
 """
 from __future__ import annotations
 
@@ -189,7 +189,7 @@ def _should_include_prev_context(
 def main():
     parser = argparse.ArgumentParser(description="Dump everything sent to OpenAI for rename")
     parser.add_argument("pdf", help="Path to PDF file")
-    parser.add_argument("--out-dir", default="./sent to openAI rename", help="Output directory")
+    parser.add_argument("--out-dir", default="./openAI_overlays_exmaple", help="Output directory")
     parser.add_argument("--fields-json", default=None, help="Pre-detected fields JSON")
     parser.add_argument("--dpi", type=int, default=500, help="Render DPI (default 500, matches prod)")
     args = parser.parse_args()

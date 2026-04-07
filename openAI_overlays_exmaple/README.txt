@@ -1,3 +1,4 @@
+openAI_overlays_exmaple
 OpenAI Rename Payload Dump
 Source PDF: new_patient_forms_1915ccb015.pdf
 DPI: 500
@@ -7,7 +8,7 @@ For each page, OpenAI receives:
   1. system_prompt.txt - system message (same for all pages)
   2. page_N_user_prompt.txt - user message with field list
   3. page_N_clean.jpg - clean page image (detail=low)
-  4. page_N_overlay_sent.png - overlay with field IDs (detail=high)
+  4. page_N_overlay.png - overlay with field IDs (detail=high)
   5. page_N_prev_crop.jpg - previous page bottom crop (if applicable, detail=low)
 
 Supporting data:
