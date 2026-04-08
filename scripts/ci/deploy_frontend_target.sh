@@ -137,7 +137,12 @@ done
 
 firebase deploy --only hosting --project "$PROJECT_ID"
 
-if ! curl --silent --fail "${BASE_URL}/fill-pdf-from-csv" | grep -Fq 'data-seo-jsonld="true"'; then
+if ! body="$(curl --silent --fail "${BASE_URL}/fill-pdf-from-csv")"; then
+  echo "Failed to fetch ${BASE_URL}/fill-pdf-from-csv for prerender validation." >&2
+  exit 1
+fi
+
+if ! grep -Fq 'data-seo-jsonld="true"' <<<"$body"; then
   echo "Expected ${BASE_URL}/fill-pdf-from-csv to contain prerendered SEO markup." >&2
   exit 1
 fi

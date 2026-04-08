@@ -115,7 +115,12 @@ check_remote_status_not() {
 check_remote_body_contains() {
   local url="$1"
   local needle="$2"
-  if ! curl -fsSL "$url" | grep -Fq "$needle"; then
+  local body
+  if ! body="$(curl -fsSL "$url")"; then
+    echo "Failed to fetch $url for body validation." >&2
+    exit 1
+  fi
+  if ! grep -Fq "$needle" <<<"$body"; then
     echo "Expected $url body to contain: $needle" >&2
     exit 1
   fi
@@ -124,7 +129,12 @@ check_remote_body_contains() {
 check_remote_body_not_contains() {
   local url="$1"
   local needle="$2"
-  if curl -fsSL "$url" | grep -Fq "$needle"; then
+  local body
+  if ! body="$(curl -fsSL "$url")"; then
+    echo "Failed to fetch $url for body validation." >&2
+    exit 1
+  fi
+  if grep -Fq "$needle" <<<"$body"; then
     echo "Expected $url body to not contain: $needle" >&2
     exit 1
   fi
