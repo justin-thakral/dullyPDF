@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import type { WorkspaceSessionDiagnostic } from '../types';
 import { fetchDetectionStatus } from '../services/detectionApi';
@@ -21,7 +21,17 @@ export interface UseWorkspaceSessionDiagnosticDeps {
  * header badge and the pre-Rename/Map console trace.
  */
 export function useWorkspaceSessionDiagnostic(deps: UseWorkspaceSessionDiagnosticDeps) {
-  const [sessionDiagnostic, setSessionDiagnostic] = useState<WorkspaceSessionDiagnostic | null>(null);
+  const [resolvedSessionDiagnostic, setResolvedSessionDiagnostic] = useState<WorkspaceSessionDiagnostic | null>(null);
+  const debugEnabled = isUiDebugEnabled();
+  const activeSessionId = debugEnabled ? deps.detectSessionId : null;
+  const pendingSessionDiagnostic = useMemo(
+    () => (
+      activeSessionId
+        ? createPendingSessionDiagnostic(activeSessionId, deps.pageCount > 0 ? deps.pageCount : null)
+        : null
+    ),
+    [activeSessionId, deps.pageCount],
+  );
 
   const resolveWorkspaceSessionDiagnostic = useCallback(
     async (sessionId: string): Promise<WorkspaceSessionDiagnostic> => {
@@ -45,7 +55,7 @@ export function useWorkspaceSessionDiagnostic(deps: UseWorkspaceSessionDiagnosti
         ? await resolveWorkspaceSessionDiagnostic(sessionId)
         : null;
       if (sessionId && deps.detectSessionId === sessionId) {
-        setSessionDiagnostic(diagnostic);
+        setResolvedSessionDiagnostic(diagnostic);
       }
       debugLog('OpenAI workspace session diagnostic', {
         action,
@@ -70,33 +80,31 @@ export function useWorkspaceSessionDiagnostic(deps: UseWorkspaceSessionDiagnosti
   );
 
   useEffect(() => {
-    if (!isUiDebugEnabled()) {
-      setSessionDiagnostic(null);
-      return;
-    }
-    const activeSessionId = deps.detectSessionId;
     if (!activeSessionId) {
-      setSessionDiagnostic(null);
       return;
     }
 
     let cancelled = false;
-    setSessionDiagnostic(
-      createPendingSessionDiagnostic(activeSessionId, deps.pageCount > 0 ? deps.pageCount : null),
-    );
-
     void (async () => {
       const diagnostic = await resolveWorkspaceSessionDiagnostic(activeSessionId);
       if (cancelled) return;
-      setSessionDiagnostic((current) =>
-        current?.sessionId === activeSessionId ? diagnostic : current,
+      setResolvedSessionDiagnostic((current) =>
+        current?.sessionId && current.sessionId !== activeSessionId ? current : diagnostic,
       );
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [deps.detectSessionId, deps.pageCount, resolveWorkspaceSessionDiagnostic]);
+  }, [activeSessionId, resolveWorkspaceSessionDiagnostic]);
+
+  const sessionDiagnostic = activeSessionId
+    ? (
+      resolvedSessionDiagnostic?.sessionId === activeSessionId
+        ? resolvedSessionDiagnostic
+        : pendingSessionDiagnostic
+    )
+    : null;
 
   return {
     sessionDiagnostic,

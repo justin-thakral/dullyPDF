@@ -1,11 +1,12 @@
 /** React entrypoint that mounts the application shell. */
-import { StrictMode, Suspense, lazy, useLayoutEffect, type ReactNode } from 'react';
+import { StrictMode, Suspense, lazy } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import './index.css';
 import {
   ACCOUNT_ACTION_ROUTE_PATH,
   LEGACY_ACCOUNT_ACTION_ROUTE_PATH,
 } from './utils/emailActions';
+import { PrerenderedSeoShellBoundary } from './components/PrerenderedSeoShellBoundary';
 import type { LegalPageKind } from './components/pages/LegalPage';
 import {
   resolveUsageDocsPath,
@@ -51,11 +52,6 @@ type AppRoute =
   | { kind: 'seo-layout-preview' }
   | { kind: 'blog-post'; slug: string }
   | { kind: 'not-found'; requestedPath: string };
-
-type PrerenderedSeoShellBoundaryProps = {
-  route: AppRoute;
-  children: ReactNode;
-};
 
 declare global {
   interface Window {
@@ -246,19 +242,6 @@ const routeUsesPrerenderedSeoShell = (route: AppRoute): boolean => {
   );
 };
 
-const PrerenderedSeoShellBoundary = ({ route, children }: PrerenderedSeoShellBoundaryProps) => {
-  useLayoutEffect(() => {
-    if (!routeUsesPrerenderedSeoShell(route) || typeof document === 'undefined') {
-      return;
-    }
-
-    document.body.removeAttribute('data-seo-shell-visible');
-    document.getElementById('seo-static-shell')?.remove();
-  }, [route]);
-
-  return <>{children}</>;
-};
-
 const route = resolveRoute();
 
 if (typeof window !== 'undefined' && route.kind === 'app') {
@@ -282,11 +265,11 @@ if (typeof window !== 'undefined') {
 }
 
 root.render(
-  <StrictMode>
-    <Suspense fallback={null}>
-      <PrerenderedSeoShellBoundary route={route}>
-        {renderRoute(route)}
-      </PrerenderedSeoShellBoundary>
-    </Suspense>
+    <StrictMode>
+      <Suspense fallback={null}>
+        <PrerenderedSeoShellBoundary enabled={routeUsesPrerenderedSeoShell(route)}>
+          {renderRoute(route)}
+        </PrerenderedSeoShellBoundary>
+      </Suspense>
   </StrictMode>,
 );

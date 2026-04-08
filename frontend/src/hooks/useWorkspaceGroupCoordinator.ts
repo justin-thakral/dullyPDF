@@ -8,6 +8,7 @@ import {
   type ProfileLimits,
   type SavedFormSummary,
   type TemplateGroupSummary,
+  type UserProfile,
 } from '../services/api';
 import type {
   BannerNotice,
@@ -214,7 +215,7 @@ type DisplayController = {
 type DataSourceController = {
   schemaId: string | null;
   schemaUploadInProgress: boolean;
-  pendingSchemaPayload: unknown;
+  pendingSchemaPayload: SchemaPayload | null;
   persistSchemaPayload: (payload: SchemaPayload) => Promise<string | null>;
   setSchemaUploadInProgress: (value: boolean) => void;
   dataColumns: string[];
@@ -230,7 +231,7 @@ type UseWorkspaceGroupCoordinatorDeps = {
     creditsRemaining?: number | null;
     creditPricing?: CreditPricingConfig | null;
   } | null;
-  loadUserProfile: () => Promise<unknown>;
+  loadUserProfile: () => Promise<UserProfile | null>;
   profileLimits: ProfileLimits;
   dialog: DialogController;
   groups: GroupsController;

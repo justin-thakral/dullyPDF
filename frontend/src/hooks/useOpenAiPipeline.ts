@@ -18,7 +18,7 @@ import {
   deriveCombinedRadioGroupSuggestions,
 } from '../utils/openAiFields';
 import { resolveSourcePdfSha256 } from '../utils/pdfFingerprint';
-import { ApiService } from '../services/api';
+import { ApiService, type UserProfile } from '../services/api';
 import { ApiError } from '../services/apiConfig';
 import { fetchDetectionStatus } from '../services/detectionApi';
 import type { PendingAutoActions } from '../types';
@@ -38,7 +38,7 @@ export interface UseOpenAiPipelineDeps {
   setBannerNotice: (notice: BannerNotice | null) => void;
   requestConfirm: (options: ConfirmDialogOptions) => Promise<boolean | null>;
   resolveSourcePdfBytes: () => Promise<Uint8Array>;
-  loadUserProfile: () => Promise<any>;
+  loadUserProfile: () => Promise<UserProfile | null>;
   resetFieldHistory: (fields?: PdfField[]) => void;
   updateFieldsWith: (updater: (prev: PdfField[]) => PdfField[], options?: { trackHistory?: boolean }) => void;
   setIdentifierKey: (key: string | null) => void;
@@ -151,7 +151,7 @@ export function useOpenAiPipeline(deps: UseOpenAiPipelineDeps) {
   }, [deps]);
 
   const applyMappingResults = useCallback(
-    (mappingResults?: any) => {
+    (mappingResults?: Record<string, unknown> | null) => {
       if (!mappingResults) return;
       const mapped = applyMappingPayloadToFields(
         deps.fieldsRef.current,
@@ -182,7 +182,7 @@ export function useOpenAiPipeline(deps: UseOpenAiPipelineDeps) {
   );
 
   const applyRenameResults = useCallback(
-    (renamedFieldsPayload?: Array<Record<string, any>>): PdfField[] | null => {
+    (renamedFieldsPayload?: Array<Record<string, unknown>>): PdfField[] | null => {
       const updated = applyRenamePayloadToFields(deps.fieldsRef.current, renamedFieldsPayload);
       if (!updated || updated.length === 0) return null;
       const clearedTemplateInputs = clearFieldValuesForTemplateChange(updated);

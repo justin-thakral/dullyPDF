@@ -4,12 +4,14 @@ import { flushSync } from 'react-dom';
 import type {
   BannerNotice,
   CheckboxRule,
+  SchemaPayload,
   TextTransformRule,
 } from '../types';
 import type {
   CreditPricingConfig,
   ProfileLimits,
   TemplateGroupSummary,
+  UserProfile,
 } from '../services/api';
 import { ApiService } from '../services/api';
 import { ApiError } from '../services/apiConfig';
@@ -69,14 +71,14 @@ export type GroupUploadItem = {
 type UseGroupUploadModalDeps = {
   verifiedUser: User | null;
   userProfile?: GroupUploadProfileSnapshot;
-  loadUserProfile: () => Promise<any>;
+  loadUserProfile: () => Promise<UserProfile | null>;
   profileLimits: Pick<ProfileLimits, 'detectMaxPages' | 'savedFormsMax'>;
   savedFormsCount: number;
   dataColumns: string[];
   schemaId: string | null;
   schemaUploadInProgress: boolean;
-  pendingSchemaPayload: any;
-  persistSchemaPayload: (payload: any) => Promise<string | null>;
+  pendingSchemaPayload: SchemaPayload | null;
+  persistSchemaPayload: (payload: SchemaPayload) => Promise<string | null>;
   setSchemaUploadInProgress: (value: boolean) => void;
   createGroup: (
     payload: { name: string; templateIds: string[] },
@@ -93,10 +95,16 @@ type Deferred<T> = {
   resolve: (value: T) => void;
 };
 
+type DetectionPayload = Record<string, unknown> & {
+  sessionId?: string;
+  status?: string;
+  timedOut?: boolean;
+};
+
 type GroupUploadDetectionOutcome = {
   cancelled: boolean;
   error: unknown | null;
-  payload: any | null;
+  payload: DetectionPayload | null;
 };
 
 function createDeferred<T>(): Deferred<T> {
@@ -178,7 +186,7 @@ function shouldStopRemaining(error: unknown, message: string): boolean {
   );
 }
 
-function isDetectionStillRunning(payload: any): boolean {
+function isDetectionStillRunning(payload: DetectionPayload | null): boolean {
   const status = String(payload?.status || '').toLowerCase();
   return Boolean(payload?.timedOut) || status === 'queued' || status === 'running';
 }
@@ -506,7 +514,7 @@ export function useGroupUploadModal(deps: UseGroupUploadModalDeps) {
 
       const processDetectedItem = async (
         item: GroupUploadItem,
-        detectionPayload: any,
+        detectionPayload: DetectionPayload,
       ): Promise<{ cancelled: boolean; savedFormId: string | null }> => {
         const controller = trackAbortController(new AbortController());
         try {
@@ -770,18 +778,28 @@ export function useGroupUploadModal(deps: UseGroupUploadModalDeps) {
           continue;
         }
 
-        if (cancelRequestedRef.current) {
-          setItemState(item.id, {
-            status: 'failed',
-            error: null,
-            detail: 'Stopped before saving.',
-          });
-          continue;
-        }
+	        if (cancelRequestedRef.current) {
+	          setItemState(item.id, {
+	            status: 'failed',
+	            error: null,
+	            detail: 'Stopped before saving.',
+	          });
+	          continue;
+	        }
+	        if (!outcome.payload) {
+	          const message = 'Detection did not return a usable payload.';
+	          failures.push({ name: item.name, message });
+	          setItemState(item.id, {
+	            status: 'failed',
+	            error: message,
+	            detail: message,
+	          });
+	          continue;
+	        }
 
-        setProgressLabel(`Processing ${index + 1}/${readyItems.length}`);
-        try {
-          const result = await processDetectedItem(item, outcome.payload);
+	        setProgressLabel(`Processing ${index + 1}/${readyItems.length}`);
+	        try {
+	          const result = await processDetectedItem(item, outcome.payload);
           if (result.cancelled) {
             setItemState(item.id, {
               status: 'failed',

@@ -21,6 +21,32 @@ const formatDisplayDate = (date: string): string =>
 
 const BlogPostPage = ({ slug }: BlogPostPageProps) => {
   const post = getBlogPost(slug);
+  const relatedIntentLinks = useMemo(
+    () => (post
+      ? post.relatedIntentPages.map((key) => {
+        const page = getIntentPage(key);
+        return { label: page.navLabel, href: page.path };
+      })
+      : []),
+    [post],
+  );
+  const relatedDocsLinks = useMemo(
+    () => (post
+      ? post.relatedDocs.map((key) => {
+        const page = getUsageDocsPage(key);
+        return { label: page.navLabel, href: usageDocsHref(key) };
+      })
+      : []),
+    [post],
+  );
+  const inlineResourceLinks = useMemo(
+    () => [...relatedIntentLinks.slice(0, 2), ...relatedDocsLinks.slice(0, 2)],
+    [relatedDocsLinks, relatedIntentLinks],
+  );
+  const nextStepLinks = useMemo(
+    () => [...relatedIntentLinks, ...relatedDocsLinks].slice(0, 4),
+    [relatedDocsLinks, relatedIntentLinks],
+  );
 
   useEffect(() => {
     if (post) {
@@ -49,33 +75,6 @@ const BlogPostPage = ({ slug }: BlogPostPageProps) => {
       </PublicSiteFrame>
     );
   }
-
-  const relatedIntentLinks = useMemo(
-    () =>
-      post.relatedIntentPages.map((key) => {
-        const page = getIntentPage(key);
-        return { label: page.navLabel, href: page.path };
-      }),
-    [post.relatedIntentPages],
-  );
-
-  const relatedDocsLinks = useMemo(
-    () =>
-      post.relatedDocs.map((key) => {
-        const page = getUsageDocsPage(key);
-        return { label: page.navLabel, href: usageDocsHref(key) };
-      }),
-    [post.relatedDocs],
-  );
-
-  const inlineResourceLinks = useMemo(
-    () => [...relatedIntentLinks.slice(0, 2), ...relatedDocsLinks.slice(0, 2)],
-    [relatedDocsLinks, relatedIntentLinks],
-  );
-  const nextStepLinks = useMemo(
-    () => [...relatedIntentLinks, ...relatedDocsLinks].slice(0, 4),
-    [relatedDocsLinks, relatedIntentLinks],
-  );
 
   const publishedDateLabel = formatDisplayDate(post.publishedDate);
   const updatedDateLabel = formatDisplayDate(post.updatedDate);

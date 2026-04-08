@@ -6,16 +6,12 @@ import { Alert } from '../components/ui/Alert';
 import { ConfirmDialog } from '../components/ui/Dialog';
 import { useDialog } from '../hooks/useDialog';
 import { useOpenAiPipeline } from '../hooks/useOpenAiPipeline';
-import type { BannerNotice, CheckboxRule, PdfField } from '../types';
-import { ApiService } from '../services/api';
+import type { BannerNotice, PdfField } from '../types';
+import { ApiService, type OpenAiRenameResult } from '../services/api';
 import { resolveConfirmDialogResult } from '../utils/dialogResult';
 
 type RenameHarnessConfig = {
-  renameResponse?: {
-    success?: boolean;
-    fields?: Array<Record<string, unknown>>;
-    checkboxRules?: CheckboxRule[];
-  };
+  renameResponse?: OpenAiRenameResult;
 };
 
 type RenameHarnessState = {
@@ -149,7 +145,7 @@ export function RenameHarnessApp() {
     setBannerNotice: dialog.setBannerNotice,
     requestConfirm: dialog.requestConfirm,
     resolveSourcePdfBytes: async () => new Uint8Array([1, 2, 3]),
-    loadUserProfile: async () => ({ role: 'base' }),
+    loadUserProfile: async () => null,
     resetFieldHistory,
     updateFieldsWith,
     setIdentifierKey: () => {},

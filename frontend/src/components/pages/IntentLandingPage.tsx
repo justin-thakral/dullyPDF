@@ -14,6 +14,10 @@ type IntentLandingPageProps = {
 
 const FOOTNOTE_TOKEN = /\[\^([a-z0-9-]+)\]/gi;
 
+function getFootnoteMatches(text: string): RegExpMatchArray[] {
+  return Array.from(text.matchAll(FOOTNOTE_TOKEN));
+}
+
 const getFootnoteSuffix = (referenceIndex: number): string => {
   let remaining = referenceIndex;
   let suffix = '';
@@ -37,12 +41,9 @@ const IntentLandingPage = ({ pageKey }: IntentLandingPageProps) => {
     () => {
       const totals = new Map<string, number>();
       const collect = (text: string) => {
-        FOOTNOTE_TOKEN.lastIndex = 0;
-        let match: RegExpExecArray | null = FOOTNOTE_TOKEN.exec(text);
-        while (match) {
+        for (const match of getFootnoteMatches(text)) {
           const footnoteId = match[1];
           totals.set(footnoteId, (totals.get(footnoteId) ?? 0) + 1);
-          match = FOOTNOTE_TOKEN.exec(text);
         }
       };
 
@@ -100,13 +101,11 @@ const IntentLandingPage = ({ pageKey }: IntentLandingPageProps) => {
   const renderFootnotedText = (text: string) => {
     const parts: ReactNode[] = [];
     let lastIndex = 0;
-    let match: RegExpExecArray | null;
 
-    FOOTNOTE_TOKEN.lastIndex = 0;
-    match = FOOTNOTE_TOKEN.exec(text);
-    while (match) {
-      if (match.index > lastIndex) {
-        parts.push(text.slice(lastIndex, match.index));
+    for (const match of getFootnoteMatches(text)) {
+      const matchIndex = match.index ?? lastIndex;
+      if (matchIndex > lastIndex) {
+        parts.push(text.slice(lastIndex, matchIndex));
       }
 
       const footnoteId = match[1];
@@ -122,7 +121,7 @@ const IntentLandingPage = ({ pageKey }: IntentLandingPageProps) => {
           : `${footnoteNumber}`;
         const referenceId = `footnote-ref-${footnoteId}-${nextReferenceCount}`;
         parts.push(
-          <sup key={`${footnoteId}-${match.index}`} className="intent-page__footnote-ref">
+          <sup key={`${footnoteId}-${matchIndex}`} className="intent-page__footnote-ref">
             <a
               id={referenceId}
               href={`#footnote-${footnoteId}`}
@@ -134,8 +133,7 @@ const IntentLandingPage = ({ pageKey }: IntentLandingPageProps) => {
         );
       }
 
-      lastIndex = match.index + match[0].length;
-      match = FOOTNOTE_TOKEN.exec(text);
+      lastIndex = matchIndex + match[0].length;
     }
 
     if (lastIndex < text.length) {

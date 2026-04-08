@@ -352,8 +352,9 @@ export type PromptDialogProps = {
   onCancel: () => void;
 };
 
-export function PromptDialog({
-  open,
+type PromptDialogBodyProps = Omit<PromptDialogProps, 'open'>;
+
+function PromptDialogBody({
   title,
   description,
   confirmLabel = 'Save',
@@ -364,15 +365,13 @@ export function PromptDialog({
   requireValue = false,
   onSubmit,
   onCancel,
-}: PromptDialogProps) {
+}: PromptDialogBodyProps) {
   const [value, setValue] = useState(defaultValue);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (!open) return;
-    setValue(defaultValue);
     inputRef.current?.focus();
-  }, [defaultValue, open]);
+  }, []);
 
   const primaryClass = tone === 'danger' ? 'ui-button ui-button--danger' : 'ui-button ui-button--primary';
   const canSubmit = !requireValue || value.trim().length > 0;
@@ -385,7 +384,7 @@ export function PromptDialog({
   };
 
   return (
-    <DialogShell open={open} title={title} description={description} onClose={onCancel}>
+    <DialogShell open title={title} description={description} onClose={onCancel}>
       <div className="ui-dialog__input-row">
         <input
           ref={inputRef}
@@ -410,6 +409,40 @@ export function PromptDialog({
         </button>
       </div>
     </DialogShell>
+  );
+}
+
+export function PromptDialog({
+  open,
+  title,
+  description,
+  confirmLabel = 'Save',
+  cancelLabel = 'Cancel',
+  tone = 'default',
+  defaultValue = '',
+  placeholder,
+  requireValue = false,
+  onSubmit,
+  onCancel,
+}: PromptDialogProps) {
+  if (!open) {
+    return null;
+  }
+
+  return (
+    <PromptDialogBody
+      key={`${title}:${defaultValue}`}
+      title={title}
+      description={description}
+      confirmLabel={confirmLabel}
+      cancelLabel={cancelLabel}
+      tone={tone}
+      defaultValue={defaultValue}
+      placeholder={placeholder}
+      requireValue={requireValue}
+      onSubmit={onSubmit}
+      onCancel={onCancel}
+    />
   );
 }
 

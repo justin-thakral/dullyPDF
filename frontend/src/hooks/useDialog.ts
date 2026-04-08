@@ -1,12 +1,14 @@
 import { useCallback, useRef, useState } from 'react';
 import type { BannerNotice, ConfirmDialogOptions, DialogRequest, PromptDialogOptions } from '../types';
 
+type DialogResolution = boolean | string | null;
+
 export function useDialog() {
   const [dialogRequest, setDialogRequest] = useState<DialogRequest | null>(null);
   const [bannerNotice, setBannerNotice] = useState<BannerNotice | null>(null);
-  const dialogResolverRef = useRef<((value: any) => void) | null>(null);
+  const dialogResolverRef = useRef<((value: DialogResolution) => void) | null>(null);
 
-  const resolveDialog = useCallback((value: any) => {
+  const resolveDialog = useCallback((value: DialogResolution) => {
     const resolver = dialogResolverRef.current;
     dialogResolverRef.current = null;
     setDialogRequest(null);
@@ -17,14 +19,14 @@ export function useDialog() {
 
   const requestConfirm = useCallback((options: ConfirmDialogOptions) => {
     return new Promise<boolean | null>((resolve) => {
-      dialogResolverRef.current = resolve;
+      dialogResolverRef.current = resolve as (value: DialogResolution) => void;
       setDialogRequest({ kind: 'confirm', ...options });
     });
   }, []);
 
   const requestPrompt = useCallback((options: PromptDialogOptions) => {
     return new Promise<string | null>((resolve) => {
-      dialogResolverRef.current = resolve;
+      dialogResolverRef.current = resolve as (value: DialogResolution) => void;
       setDialogRequest({ kind: 'prompt', ...options });
     });
   }, []);

@@ -2,8 +2,10 @@
  * API wrapper for backend endpoints used by the UI.
  */
 import type {
+  CheckboxRule,
   PdfField,
   SavedFormEditorSnapshot,
+  TextTransformRule,
 } from '../types';
 import {
   ApiError,
@@ -39,6 +41,54 @@ type AbortableRequestOptions = {
 };
 
 export type MaterializePdfExportMode = 'editable' | 'flat';
+
+type ApiJsonObject = Record<string, unknown>;
+
+type TemplateFieldPayload = {
+  name: string;
+  type?: string;
+  page?: number;
+  rect?: { x: number; y: number; width: number; height: number };
+  groupKey?: string;
+  optionKey?: string;
+  optionLabel?: string;
+  groupLabel?: string;
+};
+
+type OpenAiJobPayload<T extends ApiJsonObject> = ApiJsonObject & {
+  status?: string;
+  jobId?: string;
+  error?: string;
+  result?: T;
+};
+
+export type OpenAiMappingResult = ApiJsonObject & {
+  success?: boolean;
+  status?: string;
+  jobId?: string;
+  error?: string;
+  mappingResults?: ApiJsonObject | null;
+};
+
+export type OpenAiRenameResult = ApiJsonObject & {
+  success?: boolean;
+  status?: string;
+  jobId?: string;
+  error?: string;
+  fields?: TemplateFieldPayload[];
+  checkboxRules?: CheckboxRule[];
+};
+
+export type OpenAiRenameAndRemapResult = OpenAiRenameResult & {
+  mappingResults?: ApiJsonObject | null;
+};
+
+type SavedFormRulePayload = {
+  version?: number;
+  checkboxRules?: Array<Record<string, unknown>>;
+  textTransformRules?: Array<Record<string, unknown>>;
+  templateRules?: Array<Record<string, unknown>>;
+};
 
 class OpenAiJobTerminalError extends Error {}
 
@@ -877,15 +927,16 @@ export class ApiService {
     jobId: string,
     timeoutMs = OPENAI_JOB_POLL_TIMEOUT_MS,
     options?: AbortableRequestOptions,
-  ): Promise<any> {
+  ): Promise<ApiJsonObject> {
     const deadline = Date.now() + timeoutMs;
     let attempt = 0;
     while (Date.now() < deadline) {
       const response = await apiFetch('GET', buildApiUrl('api', resource, 'ai', jobId), buildAbortOptions(options?.signal));
-      const payload = await apiJsonFetch<any>(response);
+      const payload = await apiJsonFetch<OpenAiJobPayload<ApiJsonObject>>(response);
       const status = String(payload?.status || '').toLowerCase();
       if (status === 'complete') {
-        return payload?.result && typeof payload.result === 'object' ? payload.result : payload;
+        const resultPayload = payload?.result;
+        return resultPayload && typeof resultPayload === 'object' ? resultPayload : payload;
       }
       if (status === 'failed') {
         throw new OpenAiJobTerminalError(String(payload?.error || 'OpenAI worker request failed.'));
@@ -1468,7 +1519,7 @@ export class ApiService {
     sessionId?: string,
     options?: AbortableRequestOptions,
     sourcePdfSha256?: string,
-  ): Promise<any> {
+  ): Promise<OpenAiMappingResult> {
     const requestPayload = {
       schemaId,
       templateId,
@@ -1489,10 +1540,15 @@ export class ApiService {
         }),
         ...buildAbortOptions(options?.signal),
       });
-      const payload = await apiJsonFetch<any>(response);
+      const payload = await apiJsonFetch<OpenAiJobPayload<OpenAiMappingResult>>(response);
       const status = String(payload?.status || '').toLowerCase();
       if ((status === 'queued' || status === 'running') && payload?.jobId) {
-        const result = await ApiService.pollOpenAiJob('schema-mappings', String(payload.jobId), OPENAI_JOB_POLL_TIMEOUT_MS, options);
+        const result = await ApiService.pollOpenAiJob(
+          'schema-mappings',
+          String(payload.jobId),
+          OPENAI_JOB_POLL_TIMEOUT_MS,
+          options,
+        ) as OpenAiMappingResult;
         clearOpenAiRequestId(requestCacheKey);
         return result;
       }
@@ -1523,7 +1579,7 @@ export class ApiService {
       optionLabel?: string;
       groupLabel?: string;
     }>;
-  }, options?: AbortableRequestOptions): Promise<any> {
+  }, options?: AbortableRequestOptions): Promise<OpenAiRenameResult> {
     const requestCacheKey = `renames:${stableStringify(payload)}`;
     const requestId = getOrCreateOpenAiRequestId(requestCacheKey);
     try {
@@ -1537,10 +1593,15 @@ export class ApiService {
         }),
         ...buildAbortOptions(options?.signal),
       });
-      const result = await apiJsonFetch<any>(response);
+      const result = await apiJsonFetch<OpenAiJobPayload<OpenAiRenameResult>>(response);
       const status = String(result?.status || '').toLowerCase();
       if ((status === 'queued' || status === 'running') && result?.jobId) {
-        const polled = await ApiService.pollOpenAiJob('renames', String(result.jobId), OPENAI_JOB_POLL_TIMEOUT_MS, options);
+        const polled = await ApiService.pollOpenAiJob(
+          'renames',
+          String(result.jobId),
+          OPENAI_JOB_POLL_TIMEOUT_MS,
+          options,
+        ) as OpenAiRenameResult;
         clearOpenAiRequestId(requestCacheKey);
         return polled;
       }
@@ -1571,7 +1632,7 @@ export class ApiService {
       optionLabel?: string;
       groupLabel?: string;
     }>;
-  }, options?: AbortableRequestOptions): Promise<any> {
+  }, options?: AbortableRequestOptions): Promise<OpenAiRenameAndRemapResult> {
     const requestCacheKey = `rename-remap:${stableStringify(payload)}`;
     const requestId = getOrCreateOpenAiRequestId(requestCacheKey);
     try {
@@ -1585,10 +1646,15 @@ export class ApiService {
         }),
         ...buildAbortOptions(options?.signal),
       });
-      const result = await apiJsonFetch<any>(response);
+      const result = await apiJsonFetch<OpenAiJobPayload<OpenAiRenameAndRemapResult>>(response);
       const status = String(result?.status || '').toLowerCase();
       if ((status === 'queued' || status === 'running') && result?.jobId) {
-        const polled = await ApiService.pollOpenAiJob('rename-remap', String(result.jobId), OPENAI_JOB_POLL_TIMEOUT_MS, options);
+        const polled = await ApiService.pollOpenAiJob(
+          'rename-remap',
+          String(result.jobId),
+          OPENAI_JOB_POLL_TIMEOUT_MS,
+          options,
+        ) as OpenAiRenameAndRemapResult;
         clearOpenAiRequestId(requestCacheKey);
         return polled;
       }
@@ -1795,15 +1861,10 @@ export class ApiService {
     url: string;
     name: string;
     sessionId?: string;
-    fillRules?: {
-      version?: number;
-      checkboxRules?: Array<Record<string, any>>;
-      textTransformRules?: Array<Record<string, any>>;
-      templateRules?: Array<Record<string, any>>;
-    };
-    checkboxRules?: Array<Record<string, any>>;
-    textTransformRules?: Array<Record<string, any>>;
-    templateRules?: Array<Record<string, any>>;
+    fillRules?: SavedFormRulePayload;
+    checkboxRules?: Array<Record<string, unknown>>;
+    textTransformRules?: Array<Record<string, unknown>>;
+    templateRules?: Array<Record<string, unknown>>;
     editorSnapshot?: SavedFormEditorSnapshot | null;
   }> {
     const response = await apiFetch('GET', `/api/saved-forms/${encodeURIComponent(formId)}`, {
@@ -1835,7 +1896,7 @@ export class ApiService {
    */
   static async createSavedFormSession(
     formId: string,
-    payload: { fields: Array<Record<string, any>>; pageCount?: number },
+    payload: { fields: Array<Record<string, unknown>>; pageCount?: number },
   ): Promise<{ success: boolean; sessionId: string; fieldCount: number }> {
     const encoded = encodeURIComponent(formId);
     const response = await apiFetch('POST', `/api/saved-forms/${encoded}/session`, {
@@ -1869,7 +1930,7 @@ export class ApiService {
    */
   static async createTemplateSession(
     file: File,
-    payload: { fields: Array<Record<string, any>>; pageCount?: number },
+    payload: { fields: Array<Record<string, unknown>>; pageCount?: number },
     options?: AbortableRequestOptions,
   ): Promise<{ success: boolean; sessionId: string; fieldCount: number; pageCount?: number }> {
     const formData = new FormData();
@@ -1929,8 +1990,8 @@ export class ApiService {
     name: string,
     sessionId?: string,
     overwriteFormId?: string,
-    checkboxRules?: Array<Record<string, any>>,
-    textTransformRules?: Array<Record<string, any>>,
+    checkboxRules?: CheckboxRule[],
+    textTransformRules?: TextTransformRule[],
     editorSnapshot?: SavedFormEditorSnapshot,
     options?: AbortableRequestOptions,
   ): Promise<{ success: boolean; id: string; name?: string }> {
@@ -2006,7 +2067,7 @@ export class ApiService {
     success: boolean;
     fields: Array<{ fieldName: string; value: string; confidence: number }>;
     usage?: { promptTokens?: number; completionTokens?: number; totalTokens?: number };
-    creditPricing?: any;
+    creditPricing?: Record<string, unknown>;
   }> {
     const formData = new FormData();
     formData.append('session_id', payload.sessionId);
@@ -2020,6 +2081,6 @@ export class ApiService {
       ...buildAbortOptions(options?.signal),
     });
 
-    return apiJsonFetch<any>(response);
+    return apiJsonFetch(response);
   }
 }
