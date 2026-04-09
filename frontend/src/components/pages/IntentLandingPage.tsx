@@ -91,17 +91,10 @@ const IntentLandingPage = ({ pageKey }: IntentLandingPageProps) => {
     },
     [page.relatedDocs],
   );
-  const implementationChecklist = useMemo(
-    () => [
-      'Start with one recurring PDF layout instead of every possible variation.',
-      'Validate field geometry, names, checkbox groups, and date behavior before sharing the workflow broadly.',
-      'Run one representative record through the full template before treating the route as production-ready.',
-      page.category === 'industry'
-        ? 'Document version control matters more than volume. Keep one canonical template per recurring form type whenever possible.'
-        : 'Use the saved-template workflow to preserve one canonical setup instead of rebuilding the same document every time.',
-    ],
-    [page.category],
-  );
+  const routeFocusLabel = page.navLabel.toLowerCase();
+  const relatedRoutesSummary = page.category === 'industry'
+    ? `These adjacent routes cover neighboring document workflows and team use cases that usually get evaluated alongside ${routeFocusLabel}.`
+    : `These adjacent workflow pages cover nearby search intents teams compare while evaluating ${routeFocusLabel}.`;
 
   const renderFootnotedText = (text: string) => {
     const parts: ReactNode[] = [];
@@ -167,7 +160,7 @@ const IntentLandingPage = ({ pageKey }: IntentLandingPageProps) => {
     >
       {articleFigures.length ? (
         <section className="intent-page__panel">
-          <h2>Workflow examples</h2>
+          <h2>Workflow examples for {page.navLabel}</h2>
           <div className="intent-page__figure-grid">
             {articleFigures.map((figure) => (
               <figure key={`${figure.src}-${figure.caption}`} className="intent-page__figure">
@@ -206,30 +199,9 @@ const IntentLandingPage = ({ pageKey }: IntentLandingPageProps) => {
         </section>
       ))}
 
-      <section className="intent-page__panel intent-page__panel--article">
-        <h2>How teams put this into production</h2>
-        <div className="intent-page__article-copy">
-          <p>
-            This route is strongest when it is treated as an operating workflow rather than a one-time conversion.
-            The durable pattern is to pick one representative document, turn it into a reusable template, test it
-            against real data, and only then expand to more records or adjacent form variations.
-          </p>
-          <p>
-            That rollout order matters because the early mistakes are rarely in the headline feature. They are in
-            field naming, checkbox grouping, date handling, and quality assurance. A disciplined first pass usually
-            saves more time than trying to automate everything at once.
-          </p>
-          <ul>
-            {implementationChecklist.map((item) => (
-              <li key={item}>{item}</li>
-            ))}
-          </ul>
-        </div>
-      </section>
-
       <section className="intent-page__grid">
         <article className="intent-page__panel">
-          <h2>What this page solves</h2>
+          <h2>Why teams use {page.navLabel}</h2>
           <ul>
             {page.valuePoints.map((point) => (
               <li key={point}>{renderFootnotedText(point)}</li>
@@ -238,14 +210,14 @@ const IntentLandingPage = ({ pageKey }: IntentLandingPageProps) => {
         </article>
 
         <article className="intent-page__panel">
-          <h2>Evidence and implementation proof</h2>
+          <h2>Implementation signals for {page.navLabel}</h2>
           <ul>
             {page.proofPoints.map((point) => (
               <li key={point}>{renderFootnotedText(point)}</li>
             ))}
           </ul>
           <p>
-            Need deeper technical details? Use the
+            Need deeper technical details about {routeFocusLabel}? Use the
             {' '}
             <a href="/usage-docs/rename-mapping">Rename + Mapping docs</a>
             {' '}
@@ -259,7 +231,7 @@ const IntentLandingPage = ({ pageKey }: IntentLandingPageProps) => {
       </section>
 
       <section className="intent-page__panel">
-        <h2>Frequently asked questions</h2>
+        <h2>Frequently asked questions about {page.navLabel}</h2>
         <div className="intent-page__faq-list">
           {page.faqs.map((faq) => (
             <article key={faq.question} className="intent-page__faq-item">
@@ -272,7 +244,7 @@ const IntentLandingPage = ({ pageKey }: IntentLandingPageProps) => {
 
       {page.footnotes?.length ? (
         <section className="intent-page__panel intent-page__panel--article">
-          <h2>Legal footnotes and sources</h2>
+          <h2>Legal footnotes and sources for {page.navLabel}</h2>
           <ol className="intent-page__footnote-list">
             {page.footnotes.map((footnote, index) => (
               <li key={footnote.id} id={`footnote-${footnote.id}`} className="intent-page__footnote-item">
@@ -321,10 +293,10 @@ const IntentLandingPage = ({ pageKey }: IntentLandingPageProps) => {
       ))}
 
       <section className="intent-page__panel">
-        <h2>Supporting docs</h2>
+        <h2>Docs for {page.navLabel}</h2>
         <p>
-          Use these docs pages when you want the exact runtime behavior behind the workflow instead of summary-level
-          landing-page copy.
+          Use these docs pages to verify the exact DullyPDF behavior behind {routeFocusLabel} before you ship it as a
+          repeat workflow.
         </p>
         <div className="intent-page__related-links">
           {relatedDocs.map((doc) => (
@@ -336,38 +308,9 @@ const IntentLandingPage = ({ pageKey }: IntentLandingPageProps) => {
       </section>
 
       <section className="intent-page__panel">
-        <h2>Public workflow examples</h2>
+        <h2>Related routes for {page.navLabel}</h2>
         <p>
-          These links are designed as shareable authority assets for communities, partners, and implementation
-          reviews.
-        </p>
-        <div className="intent-page__related-links">
-          <a href="/usage-docs/getting-started" className="intent-page__related-link">
-            End-to-end quick-start example
-          </a>
-          <a href="/usage-docs/detection" className="intent-page__related-link">
-            Detection quality review example
-          </a>
-          <a href="/usage-docs/rename-mapping" className="intent-page__related-link">
-            Mapping and rename example
-          </a>
-          <a href="/usage-docs/search-fill" className="intent-page__related-link">
-            Search &amp; Fill validation example
-          </a>
-          <a href="/usage-docs/troubleshooting" className="intent-page__related-link">
-            Troubleshooting playbook example
-          </a>
-          <a href="mailto:justin@dullypdf.com" className="intent-page__related-link">
-            Request partner workflow review
-          </a>
-        </div>
-      </section>
-
-      <section className="intent-page__panel">
-        <h2>Related search intents</h2>
-        <p>
-          Explore adjacent intent pages so visitors searching for fillable form field name cleanup, PDF database
-          templates, or how to fill information in PDF forms can find the right entry point.
+          {relatedRoutesSummary}
         </p>
         <div className="intent-page__related-links">
           {relatedPages.map((entry) => (

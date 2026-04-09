@@ -83,6 +83,14 @@ const BLOG_FIGURE_LIBRARY = {
     src: '/demo/create-group.png',
     alt: 'DullyPDF showing saved-form grouping for teams that manage multiple recurring templates.',
   },
+  databaseSchema: {
+    src: '/seo/database-schema.png',
+    alt: 'Database schema diagram representing stable field mapping before API publication.',
+  },
+  csvCalcScreenshot: {
+    src: '/seo/csv-calc-screenshot.png',
+    alt: 'Spreadsheet grid with columns and rows representing data prepared for repeat PDF filling.',
+  },
 };
 
 const figure = (key, caption, extra = {}) => ({
@@ -231,8 +239,8 @@ export const BLOG_POSTS = [
         {
           figures: [
             figure(
-              'remappedPatientIntake',
-              'A mapped template should already line up with the real schema before anyone tries to expose it as a server-side JSON-to-PDF contract.',
+              'databaseSchema',
+              'The API contract only becomes believable once the PDF template lines up with a stable schema another system can depend on.',
             ),
             figure(
               'renameMapUi',
@@ -622,8 +630,8 @@ export const BLOG_POSTS = [
         {
           figures: [
             figure(
-              'remappedPatientIntake',
-              'The mapping step is where the PDF becomes row-aware. Until that map is stable, high-volume fill is just high-volume risk.',
+              'csvCalcScreenshot',
+              'Spreadsheet-driven fill only works when the row data is already organized clearly enough to map into the template without guesswork.',
             ),
             figure(
               'fieldList',
@@ -889,7 +897,7 @@ export const BLOG_POSTS = [
           figures: [
             figure(
               'rawPatientIntake',
-              'A source PDF contains plenty of visual hints for humans, but none of them are useful to automation until they become explicit candidate fields.',
+              'A flat source PDF contains plenty of visual hints for humans, but none of them are useful to automation until they become explicit candidate fields.',
             ),
             figure(
               'detectionOverlay',

@@ -221,15 +221,15 @@ const INTENT_VISUALS: Partial<Record<IntentPageKey, IntentVisuals>> = {
     },
     articleFigures: [
       {
-        src: '/demo/mobile-filled.webp',
-        alt: 'Filled PDF preview before the record is frozen for signing.',
-        caption: 'The clean signing path starts only after the final record has already been reviewed as a filled PDF.',
+        src: '/demo/Signature.webp',
+        alt: 'DullyPDF signature workflow with signer mode and document policy controls.',
+        caption: 'The clean signing path starts when the reviewed final PDF is frozen and routed into a controlled signer ceremony.',
         objectPosition: 'center top',
       },
       {
-        src: '/demo/Signature.webp',
-        alt: 'DullyPDF signature workflow with signer mode and document policy controls.',
-        caption: 'Once the record is fixed, the signing workflow freezes that exact PDF and routes it into the signer ceremony.',
+        src: '/demo/mobile-filled.webp',
+        alt: 'Filled PDF preview before the record is frozen for signing.',
+        caption: 'That signing step only works well after the document has already been reviewed as the exact record the team intends to keep.',
         objectPosition: 'center top',
       },
     ],
@@ -249,23 +249,22 @@ const INTENT_VISUALS: Partial<Record<IntentPageKey, IntentVisuals>> = {
       {
         src: '/demo/mobile-filled.webp',
         alt: 'Filled PDF with structured values applied into the template.',
-        caption: 'This workflow is about reusing one mapped template so information lands in the PDF consistently instead of being retyped each time.',
+        caption: 'This workflow is about reusing one mapped template so information lands in the PDF consistently instead of being retyped every time.',
         objectPosition: 'center top',
       },
     ],
   },
   'fillable-form-field-name': {
     hubImage: {
-      src: '/demo/workflow-library/field-list-card.png',
-      alt: 'Field list view showing standardized PDF field names ready for review.',
+      src: '/blog/patient-intake-rename-1.png',
+      alt: 'Patient intake PDF after field labels have been renamed into clearer, reusable names.',
       eyebrow: 'Field naming',
     },
     articleFigures: [
       {
-        src: '/demo/mobile-rename-remap.webp',
-        alt: 'Rename and mapping UI used to normalize PDF field names before fill.',
+        src: '/blog/patient-intake-rename-1.png',
+        alt: 'Renamed patient intake form showing clearer field names before mapping and fill.',
         caption: 'Name cleanup matters because reliable auto-fill starts with fields that mean something beyond their original PDF widget labels.',
-        objectPosition: 'center top',
       },
     ],
   },
@@ -292,8 +291,8 @@ const INTENT_VISUALS: Partial<Record<IntentPageKey, IntentVisuals>> = {
   },
   'pdf-checkbox-automation': {
     hubImage: {
-      src: '/demo/workflow-library/checkbox-card.png',
-      alt: 'Filled PDF preview focused on checkbox selections in the output.',
+      src: '/blog/dental-intake-form-1.png',
+      alt: 'Checkbox-heavy dental intake form with repeated yes-no and multi-select sections.',
       eyebrow: 'Checkbox rules',
     },
     articleFigures: [
@@ -312,8 +311,8 @@ const INTENT_VISUALS: Partial<Record<IntentPageKey, IntentVisuals>> = {
   },
   'pdf-field-detection-tool': {
     hubImage: {
-      src: '/demo/workflow-library/commonforms-card.png',
-      alt: 'Detected PDF form fields overlaid on the source patient intake document.',
+      src: '/blog/patient-intake-source-1.png',
+      alt: 'Source patient intake PDF before any field detection or template cleanup.',
       eyebrow: 'Field detection',
     },
     articleFigures: [
@@ -442,17 +441,15 @@ const INTENT_VISUALS: Partial<Record<IntentPageKey, IntentVisuals>> = {
   },
   'finance-loan-pdf-automation': {
     hubImage: {
-      src: '/demo/mobile-rename-remap.webp',
-      alt: 'Mapped PDF template fields aligned to a structured schema.',
-      objectPosition: 'center top',
+      src: '/seo/online-loan-application.jpg',
+      alt: 'Loan application and borrower paperwork representing finance PDFs that need repeat data entry.',
       eyebrow: 'Borrower mapping',
     },
     articleFigures: [
       {
-        src: '/demo/mobile-rename-remap.webp',
-        alt: 'Rename and schema mapping view for a saved PDF template.',
+        src: '/seo/online-loan-application.jpg',
+        alt: 'Borrower application workflow that mirrors the data finance teams later need in fixed PDFs.',
         caption: 'Loan and finance workflows get more dependable after borrower and disclosure fields are normalized into one stable schema instead of being reinterpreted on each packet.',
-        objectPosition: 'center top',
       },
       {
         src: '/demo/mobile-filled.webp',
@@ -486,17 +483,15 @@ const INTENT_VISUALS: Partial<Record<IntentPageKey, IntentVisuals>> = {
   },
   'legal-pdf-workflow-automation': {
     hubImage: {
-      src: '/demo/Signature.webp',
-      alt: 'Signature workflow shown for a reviewed final PDF record.',
-      objectPosition: 'center top',
+      src: '/seo/legal-contract-signature.jpg',
+      alt: 'Signed legal contract with a pen representing a reviewed final record.',
       eyebrow: 'Record control',
     },
     articleFigures: [
       {
-        src: '/demo/mobile-field-list.webp',
-        alt: 'Field list review for a saved PDF template in DullyPDF.',
-        caption: 'Legal template work becomes safer when the repeating field inventory is visible and normalized before documents are shared under deadline pressure.',
-        objectPosition: 'center top',
+        src: '/seo/legal-contract-signature.jpg',
+        alt: 'Legal contract and signature block representing the final document that must stay controlled.',
+        caption: 'Legal template work becomes safer when the document is normalized before it is routed into review, signature, or archive under deadline pressure.',
       },
       {
         src: '/demo/Signature.webp',
@@ -508,17 +503,15 @@ const INTENT_VISUALS: Partial<Record<IntentPageKey, IntentVisuals>> = {
   },
   'education-form-automation': {
     hubImage: {
-      src: '/demo/link-generated.webp',
-      alt: 'Published link workflow for collecting structured responses before generating a PDF.',
-      objectPosition: 'center top',
+      src: '/seo/fafsa-screenshot.png',
+      alt: 'Student aid application interface representing recurring education form intake.',
       eyebrow: 'Student intake',
     },
     articleFigures: [
       {
-        src: '/demo/link-generated.webp',
-        alt: 'Link-publishing workflow for collecting structured responses from a student or applicant.',
+        src: '/seo/fafsa-screenshot.png',
+        alt: 'Education application screen representing structured student data collected before packet generation.',
         caption: 'Admissions and registrar teams often benefit from collecting student information first and only then applying it to the recurring PDF packet.',
-        objectPosition: 'center top',
       },
       {
         src: '/demo/create-group.webp',
@@ -530,17 +523,15 @@ const INTENT_VISUALS: Partial<Record<IntentPageKey, IntentVisuals>> = {
   },
   'nonprofit-pdf-form-automation': {
     hubImage: {
-      src: '/demo/link-generated.webp',
-      alt: 'Published intake link builder for gathering structured responses before PDF generation.',
-      objectPosition: 'center top',
+      src: '/seo/volunteer-application-form.jpg',
+      alt: 'Volunteer or program application form used as a recurring nonprofit intake document.',
       eyebrow: 'Program intake',
     },
     articleFigures: [
       {
-        src: '/demo/link-generated.webp',
-        alt: 'Link builder used to collect volunteer or client intake information before generating packet documents.',
+        src: '/seo/volunteer-application-form.jpg',
+        alt: 'Volunteer application form representing nonprofit intake information collected once and reused later.',
         caption: 'Nonprofit teams often save time when volunteer or client information is collected once and then reused across recurring packet documents.',
-        objectPosition: 'center top',
       },
       {
         src: '/demo/create-group.webp',
@@ -552,17 +543,15 @@ const INTENT_VISUALS: Partial<Record<IntentPageKey, IntentVisuals>> = {
   },
   'logistics-pdf-automation': {
     hubImage: {
-      src: '/demo/mobile-filled.webp',
-      alt: 'Filled PDF preview representing a delivery or shipment document after structured data has been applied.',
-      objectPosition: 'center 38%',
+      src: '/seo/bill-of-lading.jpg',
+      alt: 'Bill of lading document representing shipment paperwork that needs repeat filling.',
       eyebrow: 'Shipment output',
     },
     articleFigures: [
       {
-        src: '/demo/mobile-filled.webp',
-        alt: 'Filled PDF preview for a logistics-style repeat document workflow.',
+        src: '/seo/bill-of-lading.jpg',
+        alt: 'Shipment document and bill of lading used as a logistics workflow example.',
         caption: 'Dispatch and back-office teams gain leverage when recurring shipment and receipt documents can be filled from route data instead of rebuilt by hand.',
-        objectPosition: 'center 38%',
       },
       {
         src: '/demo/Signature.webp',
@@ -574,17 +563,15 @@ const INTENT_VISUALS: Partial<Record<IntentPageKey, IntentVisuals>> = {
   },
   'construction-pdf-automation': {
     hubImage: {
-      src: '/demo/create-group.webp',
-      alt: 'Saved-template group manager used to organize several recurring documents into one packet.',
-      objectPosition: 'center top',
+      src: '/seo/paperwork-desk.jpg',
+      alt: 'Construction staff reviewing and signing recurring site paperwork at a job location.',
       eyebrow: 'Project packets',
     },
     articleFigures: [
       {
-        src: '/demo/mobile-field-list.webp',
-        alt: 'Field list review for a recurring fixed-layout PDF template.',
+        src: '/seo/paperwork-desk.jpg',
+        alt: 'Construction workers filling out and reviewing recurring project paperwork.',
         caption: 'Construction workflows become easier to maintain when recurring permit, inspection, and change-order documents are treated as reusable templates instead of ad hoc project files.',
-        objectPosition: 'center top',
       },
       {
         src: '/demo/create-group.webp',
