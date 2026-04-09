@@ -125,6 +125,7 @@ node "${REPO_ROOT}/scripts/generate-sitemap.mjs"
 
 for required_path in \
   "${REPO_ROOT}/frontend/dist/index.html" \
+  "${REPO_ROOT}/frontend/dist/app-shell.html" \
   "${REPO_ROOT}/frontend/dist/healthcare-pdf-automation/index.html" \
   "${REPO_ROOT}/frontend/dist/pdf-to-fillable-form/index.html" \
   "${REPO_ROOT}/frontend/dist/usage-docs/index.html" \
@@ -144,6 +145,21 @@ fi
 
 if ! grep -Fq 'data-seo-jsonld="true"' <<<"$body"; then
   echo "Expected ${BASE_URL}/fill-pdf-from-csv to contain prerendered SEO markup." >&2
+  exit 1
+fi
+
+if ! respond_body="$(curl --silent --fail "${BASE_URL}/respond/token-1")"; then
+  echo "Failed to fetch ${BASE_URL}/respond/token-1 for rewrite shell validation." >&2
+  exit 1
+fi
+
+if grep -Fq 'homepage-shell' <<<"$respond_body"; then
+  echo "Expected ${BASE_URL}/respond/token-1 to use the neutral app shell instead of homepage prerender markup." >&2
+  exit 1
+fi
+
+if ! grep -Fq '<div id="root"></div>' <<<"$respond_body"; then
+  echo "Expected ${BASE_URL}/respond/token-1 to ship an empty root app shell." >&2
   exit 1
 fi
 

@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { ALL_ROUTES } from '../../../../scripts/seo-route-data.mjs';
-import { extractViteAssetTags, generatePageHtml } from '../../../../scripts/generate-static-html.mjs';
+import {
+  extractViteAssetTags,
+  generateAppShellHtml,
+  generatePageHtml,
+} from '../../../../scripts/generate-static-html.mjs';
 
 const EMPTY_VITE_ASSETS = {
   headScriptTags: [],
@@ -52,6 +56,27 @@ describe('generate-static-html', () => {
 </html>`);
 
     expect(assets.headScriptTags).toEqual(['<script>window.__otherBootstrap = true;</script>']);
+  });
+
+  it('generates a neutral app shell for rewrite routes', () => {
+    const appShell = generateAppShellHtml(`<!doctype html>
+<html lang="en">
+  <head>
+    <style data-homepage-hydration-cover="true">#homepage-hydration-cover {}</style>
+    <script data-homepage-hydration-cover="true">document.getElementById('homepage-hydration-cover')?.remove();</script>
+    <script data-app-route-hydration-cover="true">document.documentElement.setAttribute('data-app-route-hydration-cover', 'active');</script>
+  </head>
+  <body>
+    <div id="homepage-hydration-cover" aria-hidden="true"></div>
+    <div id="root"></div>
+    <script type="module" src="/assets/main.js"></script>
+  </body>
+</html>`);
+
+    expect(appShell).not.toContain('data-homepage-hydration-cover="true"');
+    expect(appShell).toContain('data-app-route-hydration-cover="true"');
+    expect(appShell).toContain('<div id="root"></div>');
+    expect(appShell).not.toContain('homepage-hydration-cover');
   });
 
   it('includes head SEO signals for usage docs pages', () => {

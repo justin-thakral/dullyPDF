@@ -104,6 +104,8 @@ on whatever stale `.env.local` happens to be in the workspace:
 - From the repo root: `npm run frontend:build:dev` or `npm run frontend:build:prod`
 - From `frontend/`: `npm run build:dev` or `npm run build:prod`
 
+Production/static deploys then run `node scripts/generate-static-html.mjs`, which emits both the prerendered homepage/public-route HTML and a neutral `frontend/dist/app-shell.html` used only for Firebase rewrite targets like `/respond/:token`, `/sign/:token`, `/upload`, and `/ui/*`.
+
 CSV/XLSX/JSON/TXT schema imports are capped at 10MB in the browser so oversized
 files fail fast instead of freezing the editor tab.
 

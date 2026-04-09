@@ -37,18 +37,18 @@ describe('appRouteHydrationCover', () => {
     expect(shouldActivateAppRouteHydrationCover(pathname, search)).toBe(expected);
   });
 
-  it('covers every index.html rewrite declared in firebase hosting', () => {
+  it('covers every app-shell rewrite declared in firebase hosting', () => {
     const firebasePath = resolve(process.cwd(), '../firebase.json');
     const payload = JSON.parse(readFileSync(firebasePath, 'utf8'));
     const rewrites = payload.hosting?.rewrites || [];
 
-    const htmlRewriteSources = rewrites
-      .filter((entry: { destination?: string }) => entry.destination === '/index.html')
+    const appShellRewriteSources = rewrites
+      .filter((entry: { destination?: string }) => entry.destination === '/app-shell.html')
       .map((entry: { source: string }) => entry.source);
 
-    expect(htmlRewriteSources.length).toBeGreaterThan(0);
+    expect(appShellRewriteSources.length).toBeGreaterThan(0);
 
-    for (const source of htmlRewriteSources) {
+    for (const source of appShellRewriteSources) {
       const samplePath = samplePathForRewriteSource(source);
       const search = source === '/ui/groups/:groupId' ? '?template=sample-template' : '';
       expect(

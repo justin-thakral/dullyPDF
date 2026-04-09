@@ -64,5 +64,6 @@ frontend/
 - `internal_stats/`: Standalone local-only production stats tool served by `npm run stats` on `127.0.0.1:5174`. It lives outside `frontend/src` specifically so it cannot be bundled into the deployed app.
 - `scripts/seo-route-data.mjs`: Build-time re-export bridge for the shared public route SEO dataset. Existing scripts import this path, but `frontend/src/config/publicRouteSeoData.mjs` is the source of truth.
 - `frontend/src/ssr/publicRouteRenderer.ts` + `frontend/vite.public-ssr.config.ts`: Tiny SSR build entry used by `scripts/generate-static-html.mjs` to prerender the homepage and SEO/public routes from the same React components the browser hydrates.
+- `scripts/generate-static-html.mjs`: Converts the raw Vite `index.html` into two deploy artifacts: a neutral `frontend/dist/app-shell.html` for Firebase rewrite targets and the prerendered `frontend/dist/index.html` plus route-specific `*/index.html` files for homepage/SEO delivery.
 
 For the hook interaction map, see `frontend/docs/app-hooks.md`.

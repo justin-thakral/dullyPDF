@@ -201,6 +201,7 @@ node scripts/generate-sitemap.mjs
 
 # Validate key static HTML files exist
 require_file "frontend/dist/index.html"
+require_file "frontend/dist/app-shell.html"
 require_file "frontend/dist/healthcare-pdf-automation/index.html"
 require_file "frontend/dist/pdf-to-fillable-form/index.html"
 require_file "frontend/dist/usage-docs/index.html"
@@ -220,6 +221,8 @@ done
 
 check_remote_status "${LIVE_BASE_URL}/fill-pdf-from-csv/" "301"
 check_remote_body_contains "${LIVE_BASE_URL}/fill-pdf-from-csv" 'data-seo-jsonld="true"'
+check_remote_body_not_contains "${LIVE_BASE_URL}/respond/token-1" 'homepage-shell'
+check_remote_body_contains "${LIVE_BASE_URL}/respond/token-1" '<div id="root"></div>'
 check_remote_status_not "${LIVE_BASE_URL}/this-path-should-not-exist" "200"
 
 echo "Frontend deploy checks passed: critical WebP assets are present locally and served remotely as image/webp."

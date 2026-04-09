@@ -29,6 +29,8 @@ The frontend is a React + TypeScript app for loading PDFs, editing fields, organ
 ## Workspace routing
 
 - `/` is the marketing shell only.
+- Firebase Hosting rewrites dynamic app and public-ceremony routes (`/upload`, `/ui*`, `/respond/:token`, `/sign/:token`, `/verify-signing/:token`, `/account-action`) to a neutral `app-shell.html` SPA bootstrap instead of the prerendered homepage `index.html`.
+- The prerendered homepage `index.html` is reserved for `/` and SEO/public static-route generation, so homepage-only cover markup does not leak into Fill By Link or signing routes.
 - `/upload` mounts the signed-in upload shell.
 - `/ui` is the generic editor/runtime route for unsaved uploads and in-flight workspace processing.
 - `/ui/profile` opens the signed-in profile view.

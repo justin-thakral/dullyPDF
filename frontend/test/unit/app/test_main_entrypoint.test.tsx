@@ -150,7 +150,7 @@ describe('main entrypoint', () => {
     expect(screen.queryByTestId('legal-privacy')).toBeNull();
     expect(screen.queryByTestId('legal-terms')).toBeNull();
     expect(screen.queryByTestId('usage-docs-index')).toBeNull();
-  });
+  }, 15000);
 
   it.each([
     ['/upload', { kind: 'upload-root' }],

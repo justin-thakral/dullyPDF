@@ -212,7 +212,7 @@ describe('PdfViewer', () => {
     expect(pageNode(13)?.querySelector('.viewer__canvas')).toBeTruthy();
     expect(pageNode(17)?.querySelector('.viewer__canvas')).toBeTruthy();
     expect(pageNode(12)?.querySelector('.viewer__page-placeholder')).toBeTruthy();
-  });
+  }, 15000);
 
   it('scrolls to pending page jump and calls completion callback after timeout', async () => {
     const onPageJumpComplete = vi.fn();

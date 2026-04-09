@@ -18,6 +18,14 @@ import {
 
 const DIST_DIR = resolve(process.cwd(), 'frontend/dist');
 const SSR_RENDERER_PATH = resolve(process.cwd(), 'frontend/dist-ssr/public-route-renderer.mjs');
+const APP_SHELL_FILENAME = 'app-shell.html';
+
+function generateAppShellHtml(indexHtml) {
+  return indexHtml
+    .replace(/\s*<style\b[^>]*data-homepage-hydration-cover="true"[\s\S]*?<\/style>/gi, '')
+    .replace(/\s*<script\b[^>]*data-homepage-hydration-cover="true"[\s\S]*?<\/script>/gi, '')
+    .replace(/\s*<div id="homepage-hydration-cover" aria-hidden="true"><\/div>/gi, '');
+}
 
 function extractViteAssetTags(indexHtml) {
   const headMatch = indexHtml.match(/<head>([\s\S]*?)<\/head>/i);
@@ -183,10 +191,13 @@ async function main() {
   }
 
   const indexHtml = readFileSync(indexHtmlPath, 'utf-8');
+  const appShellHtml = generateAppShellHtml(indexHtml);
   const viteAssets = extractViteAssetTags(indexHtml);
   const renderPublicRouteHtml = await loadPublicRouteRenderer();
 
   console.log(`Extracted ${viteAssets.linkTags.length} link tags and ${viteAssets.scriptTags.length} script tags from index.html`);
+  writeFileSync(join(DIST_DIR, APP_SHELL_FILENAME), appShellHtml, 'utf-8');
+  console.log(`Generated ${APP_SHELL_FILENAME} in ${DIST_DIR}`);
 
   let generated = 0;
   for (const route of ALL_ROUTES) {
@@ -216,6 +227,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
 
 export {
   extractViteAssetTags,
+  generateAppShellHtml,
   generatePageHtml,
   mapSeoRouteToHydratableRoute,
 };

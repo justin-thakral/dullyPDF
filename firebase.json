@@ -163,43 +163,43 @@
     "rewrites": [
       {
         "source": "/account-action",
-        "destination": "/index.html"
+        "destination": "/app-shell.html"
       },
       {
         "source": "/verify-email",
-        "destination": "/index.html"
+        "destination": "/app-shell.html"
       },
       {
         "source": "/upload",
-        "destination": "/index.html"
+        "destination": "/app-shell.html"
       },
       {
         "source": "/ui",
-        "destination": "/index.html"
+        "destination": "/app-shell.html"
       },
       {
         "source": "/ui/profile",
-        "destination": "/index.html"
+        "destination": "/app-shell.html"
       },
       {
         "source": "/ui/forms/:formId",
-        "destination": "/index.html"
+        "destination": "/app-shell.html"
       },
       {
         "source": "/ui/groups/:groupId",
-        "destination": "/index.html"
+        "destination": "/app-shell.html"
       },
       {
         "source": "/respond/:token",
-        "destination": "/index.html"
+        "destination": "/app-shell.html"
       },
       {
         "source": "/sign/:token",
-        "destination": "/index.html"
+        "destination": "/app-shell.html"
       },
       {
         "source": "/verify-signing/:token",
-        "destination": "/index.html"
+        "destination": "/app-shell.html"
       },
       {
         "source": "/api/**",
