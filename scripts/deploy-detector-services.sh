@@ -130,14 +130,12 @@ DETECTOR_DEPLOY_PHASE="${DETECTOR_DEPLOY_PHASE:-multi}"
 DETECTOR_ROUTING_MODE="$(detector_normalize_routing_mode "${DETECTOR_ROUTING_MODE:-}")"
 DETECTOR_DEPLOY_VARIANTS="$(normalize_detector_deploy_variants "${DETECTOR_DEPLOY_VARIANTS:-active}")"
 
-# Both dev and prod standardize on a GPU-only detector topology. CPU detectors
-# are no longer supported in either environment. Cloud Tasks queues always live
-# in us-east4 so the backend's dispatch is region-consistent, but the GPU
-# service region is split by project:
-#   - prod (dullypdf)     -> us-east4  (matches the rest of prod)
-#   - dev  (dullypdf-dev) -> us-central1 (separate per-region GPU quota so dev
-#                                         deploys don't fight prod for the
-#                                         single-GPU allotment in us-east4)
+# Both dev and prod standardize on a GPU-only detector topology in us-east4.
+# CPU detectors are no longer supported in either environment. Cloud Tasks
+# queues always live in us-east4 so the backend's dispatch is region-
+# consistent. See test/docs/deployment-runbook.md's Region Topology section
+# for the long-term plan to move dev GPU to us-central1 once we have the
+# necessary quota.
 if [[ "$DETECTOR_ROUTING_MODE" != "gpu" ]]; then
   echo "Refusing to deploy detectors with DETECTOR_ROUTING_MODE=${DETECTOR_ROUTING_MODE}. Expected 'gpu'." >&2
   exit 1
@@ -159,19 +157,8 @@ if [[ -n "${DETECTOR_TASKS_LOCATION:-}" && "$DETECTOR_TASKS_LOCATION" != "us-eas
   echo "Refusing to deploy: env file has DETECTOR_TASKS_LOCATION=${DETECTOR_TASKS_LOCATION}, expected us-east4." >&2
   exit 1
 fi
-case "$PROJECT_ID" in
-  dullypdf)
-    EXPECTED_DETECTOR_GPU_REGION="us-east4"
-    ;;
-  dullypdf-dev)
-    EXPECTED_DETECTOR_GPU_REGION="us-central1"
-    ;;
-  *)
-    EXPECTED_DETECTOR_GPU_REGION="${DETECTOR_GPU_REGION:-us-east4}"
-    ;;
-esac
-if [[ -n "${DETECTOR_GPU_REGION:-}" && "$DETECTOR_GPU_REGION" != "$EXPECTED_DETECTOR_GPU_REGION" ]]; then
-  echo "Refusing to deploy: env file has DETECTOR_GPU_REGION=${DETECTOR_GPU_REGION} for project ${PROJECT_ID}, expected ${EXPECTED_DETECTOR_GPU_REGION}." >&2
+if [[ -n "${DETECTOR_GPU_REGION:-}" && "$DETECTOR_GPU_REGION" != "us-east4" ]]; then
+  echo "Refusing to deploy: env file has DETECTOR_GPU_REGION=${DETECTOR_GPU_REGION}, expected us-east4." >&2
   exit 1
 fi
 

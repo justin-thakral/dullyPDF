@@ -163,16 +163,14 @@ gh workflow run controlled-deploy.yml \
 
 ## Region Topology
 
-Both environments standardize on the same four-service footprint and keep
-Cloud Tasks queues in `us-east4`, but the GPU detector service region is
-split by project so dev and prod do not fight over the same single-GPU
-L4 quota slot:
+Both environments standardize on the same four-service footprint with all
+services in `us-east4`:
 
 | Service                        | Prod (`dullypdf`) region | Dev (`dullypdf-dev`) region |
 | ------------------------------ | ------------------------ | --------------------------- |
 | `dullypdf-backend-east4`       | `us-east4`               | `us-east4`                  |
 | `dullypdf-openai-rename-remap` | `us-east4`               | `us-east4`                  |
-| `dullypdf-detector-light-gpu`  | `us-east4`               | `us-central1`               |
+| `dullypdf-detector-light-gpu`  | `us-east4`               | `us-east4`                  |
 | `dullypdf-session-cleanup` (Job) | `us-east4`              | `us-east4`                  |
 
 CPU detectors (`dullypdf-detector-light`, `dullypdf-detector-heavy`) are
@@ -184,15 +182,32 @@ routing mode and any region drift:
 - `scripts/deploy-openai-workers.sh` — requires `REGION=us-east4` and
   `OPENAI_RENAME_REMAP_TASKS_LOCATION=us-east4`.
 - `scripts/deploy-detector-services.sh` — requires `DETECTOR_ROUTING_MODE=gpu`,
-  `REGION=us-east4` (tasks queue), and a project-matched
-  `DETECTOR_GPU_REGION` (prod: `us-east4`, dev: `us-central1`).
+  `REGION=us-east4` (tasks queue), and `DETECTOR_GPU_REGION=us-east4`.
 - `scripts/deploy-session-cleanup-job.sh` — prod-only today; requires
   `us-east4`.
 
-When updating the dev env file (`BACKEND_ENV_FILE_B64_DEV` GitHub secret),
-keep `DETECTOR_GPU_REGION=us-central1`. The Cloud Tasks queue still lives in
-`us-east4` and dispatches cross-region to the `us-central1` GPU service — that
-is expected and supported.
+### Future work: move dev GPU detector to us-central1
+
+Cloud Run L4 GPU quota in `us-east4` is 1 per project. Dev and prod each have
+their own 1-slot quota, but rolling a new GPU revision requires the prior
+revision to be fully released first, so every dev GPU detector deploy goes
+through a delete-then-retry dance that adds 15-20 min to the deploy. The
+medium-term plan is to move the dev GPU detector to `us-central1` so dev can
+claim an independent per-region quota slot. That is currently blocked on a
+GCP quota request for `Cloud Run GPU` (L4, no zonal redundancy) in
+`us-central1` for the `dullypdf-dev` project.
+
+Once the quota is approved:
+
+1. Set `DETECTOR_GPU_REGION=us-central1` in the dev env secret.
+2. Reintroduce the project-aware guard in `deploy-detector-services.sh` that
+   expects `us-central1` for `dullypdf-dev`.
+3. Redeploy dev detectors (lands in us-central1).
+4. Delete the orphan `dullypdf-detector-light-gpu` in `us-east4` from
+   `dullypdf-dev`.
+
+The Cloud Tasks queue still lives in `us-east4` and dispatches cross-region to
+the new us-central1 service, which Cloud Tasks supports natively.
 
 ## Verification Checklist
 
