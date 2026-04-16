@@ -72,6 +72,22 @@ require_prod_artifact_registry_image "OPENAI_RENAME_REMAP_WORKER_IMAGE" "$WORKER
 
 SERVICE_NAME="${OPENAI_RENAME_REMAP_SERVICE_NAME:-dullypdf-openai-rename-remap}"
 
+# Standardize every environment on us-east4 and the canonical service name.
+# Without these guards, a mis-set env file can silently create a parallel
+# service in another region (as happened on dev during us-central1 drift).
+if [[ "$REGION" != "us-east4" ]]; then
+  echo "Refusing to deploy OpenAI worker outside us-east4 (got REGION=${REGION})." >&2
+  exit 1
+fi
+if [[ "$SERVICE_NAME" != "dullypdf-openai-rename-remap" ]]; then
+  echo "Refusing to deploy OpenAI worker under non-standard service name: ${SERVICE_NAME}." >&2
+  exit 1
+fi
+if [[ -n "${OPENAI_RENAME_REMAP_TASKS_LOCATION:-}" && "$OPENAI_RENAME_REMAP_TASKS_LOCATION" != "us-east4" ]]; then
+  echo "Refusing to deploy: env file has OPENAI_RENAME_REMAP_TASKS_LOCATION=${OPENAI_RENAME_REMAP_TASKS_LOCATION}, expected us-east4." >&2
+  exit 1
+fi
+
 CALLER_SA="${OPENAI_RENAME_REMAP_TASKS_SERVICE_ACCOUNT:-}"
 # Dev deploys can reuse the caller identity when no separate runtime account is
 # configured. Prod still rejects this fallback below.

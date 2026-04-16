@@ -94,6 +94,17 @@ BACKEND_MEMORY="${BACKEND_MEMORY:-1Gi}"
 BACKEND_CPU="${BACKEND_CPU:-2}"
 BACKEND_MIN_INSTANCES="${BACKEND_MIN_INSTANCES:-}"
 
+# Standardize dev on us-east4 so dev mirrors prod and we don't recreate a
+# parallel service in another region (as happened during us-central1 drift).
+if [[ "$BACKEND_REGION" != "us-east4" ]]; then
+  echo "Refusing to deploy dev backend outside us-east4 (got BACKEND_REGION=${BACKEND_REGION})." >&2
+  exit 1
+fi
+if [[ "$BACKEND_SERVICE" != "dullypdf-backend-east4" ]]; then
+  echo "Refusing to deploy dev backend under non-standard service name: ${BACKEND_SERVICE}." >&2
+  exit 1
+fi
+
 if [[ -n "$BACKEND_IMAGE_OVERRIDE" ]]; then
   BACKEND_IMAGE="$BACKEND_IMAGE_OVERRIDE"
 else

@@ -23,6 +23,20 @@ if [[ "$PROJECT_ID" == "dullypdf" && "$SERVICE_NAME" == "dullypdf-backend" ]]; t
   exit 1
 fi
 
+# This project standardizes on us-east4 for the public backend. Refuse any
+# accidental region drift so future deploys cannot create parallel services in
+# another region (as happened on dev during us-central1 drift).
+if [[ "$BACKEND_REGION" != "us-east4" ]]; then
+  echo "Refusing to deploy backend outside us-east4 (got BACKEND_REGION=${BACKEND_REGION})." >&2
+  exit 1
+fi
+
+if [[ "$SERVICE_NAME" != "dullypdf-backend-east4" ]]; then
+  echo "Refusing to deploy backend under non-standard service name: ${SERVICE_NAME}." >&2
+  echo "Expected BACKEND_SERVICE=dullypdf-backend-east4." >&2
+  exit 1
+fi
+
 if [[ ! -f "$ENV_FILE" ]]; then
   if [[ -f "$EXAMPLE" ]]; then
     mkdir -p "env"
@@ -249,6 +263,10 @@ require_empty FIREBASE_CREDENTIALS
 require_empty FIREBASE_CREDENTIALS_SECRET
 require_empty GOOGLE_APPLICATION_CREDENTIALS
 require_exact DETECTOR_MODE "tasks"
+# Pin Cloud Tasks queue regions to us-east4 so the backend never dispatches
+# worker/detector traffic into a region outside the standardized footprint.
+require_exact DETECTOR_TASKS_LOCATION "us-east4"
+require_exact OPENAI_RENAME_REMAP_TASKS_LOCATION "us-east4"
 require_exact OPENAI_RENAME_REMAP_MODE "tasks"
 require_nonempty FIREBASE_PROJECT_ID
 require_nonempty BACKEND_RUNTIME_SERVICE_ACCOUNT
