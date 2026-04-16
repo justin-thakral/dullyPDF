@@ -601,7 +601,11 @@ async def rename_fields_ai(
     authorization: Optional[str] = Header(default=None),
 ) -> Dict[str, Any]:
     """Run OpenAI rename using cached PDF bytes and overlay tags."""
-    from backend.ai.rename_pipeline import run_openai_rename_on_pdf
+    # schema_mapping is import-safe without cv2/numpy/pdfplumber; keep it at
+    # function top since build_allowlist_payload / validate_payload_size run
+    # in both task and inline branches. rename_pipeline pulls in the heavy
+    # image/PDF chain and only the inline (non-tasks-mode) branch needs it,
+    # so we defer that import to the inline try block below.
     from backend.ai.schema_mapping import build_allowlist_payload, validate_payload_size
 
     user = _resolve_user_from_request(request, authorization)
@@ -810,6 +814,11 @@ async def rename_fields_ai(
 
     _maybe_mark_openai_job_running(tracking=tracking)
 
+    # Inline fallback path (only reached when OPENAI_RENAME_REMAP_MODE != tasks).
+    # Defer the heavy rename_pipeline chain (cv2/numpy/pdfplumber/fitz/openai)
+    # to here so task-mode prod never triggers the import.
+    from backend.ai.rename_pipeline import run_openai_rename_on_pdf
+
     try:
         rename_report, renamed_fields = run_openai_rename_on_pdf(
             pdf_bytes=pdf_bytes,
@@ -908,7 +917,8 @@ async def rename_remap_fields_ai(
     authorization: Optional[str] = Header(default=None),
 ) -> Dict[str, Any]:
     """Run one schema-aware OpenAI rename pass and derive mapping results locally."""
-    from backend.ai.rename_pipeline import run_openai_rename_on_pdf
+    # schema_mapping is import-safe; rename_pipeline is deferred to the inline
+    # try block below so task-mode prod never loads the heavy chain.
     from backend.ai.schema_mapping import build_allowlist_payload, validate_payload_size
 
     user = _resolve_user_from_request(request, authorization)
@@ -1113,6 +1123,10 @@ async def rename_remap_fields_ai(
         }
 
     _maybe_mark_openai_job_running(tracking=tracking)
+
+    # Inline fallback path (only reached when OPENAI_RENAME_REMAP_MODE != tasks).
+    # Defer the heavy rename_pipeline chain so task-mode prod never imports it.
+    from backend.ai.rename_pipeline import run_openai_rename_on_pdf
 
     try:
         rename_report, renamed_fields = run_openai_rename_on_pdf(
