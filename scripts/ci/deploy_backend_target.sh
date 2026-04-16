@@ -134,7 +134,7 @@ python3 "${REPO_ROOT}/scripts/ci/render_env_yaml.py" \
   --set "STRIPE_CHECKOUT_CANCEL_URL=https://${PROJECT_ID}.web.app/?billing=cancel" \
   --set "SANDBOX_CORS_ORIGINS=https://${PROJECT_ID}.web.app,https://${PROJECT_ID}.firebaseapp.com" \
   --set "SANDBOX_TRUSTED_HOSTS=*" \
-  --set "RECAPTCHA_ALLOWED_HOSTNAMES=${PROJECT_ID}.web.app,${PROJECT_ID}.firebaseapp.com" \
+  --set "RECAPTCHA_ALLOWED_HOSTNAMES=${PROJECT_ID}.web.app,${PROJECT_ID}.firebaseapp.com,localhost,127.0.0.1" \
   --set "SANDBOX_ALLOW_ADMIN_OVERRIDE=false" \
   --set "ADMIN_TOKEN=" \
   --set "SANDBOX_DEBUG=false" \

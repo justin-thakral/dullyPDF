@@ -30,12 +30,10 @@ UVICORN_COUNT=$(count_pids "$UVICORN_PIDS")
 VITE_COUNT=$(count_pids "$VITE_PIDS")
 
 if [ "$UVICORN_COUNT" -eq "0" ] && [ "$VITE_COUNT" -eq "0" ]; then
-    echo "No old processes found. Starting fresh..."
-    exit 0
-fi
-
-echo ""
-echo "Found running processes:"
+    echo "No matching process patterns found; still sweeping dev ports."
+else
+    echo ""
+    echo "Found running processes:"
 
 if [ "$UVICORN_COUNT" -gt "0" ]; then
     echo "   Backend (uvicorn): $UVICORN_COUNT process(es)"
@@ -81,5 +79,26 @@ else
     echo "   Backend remaining: $REMAINING_UVICORN_COUNT"
     echo "   Frontend remaining: $REMAINING_VITE_COUNT"
 fi
+fi
+
+# Belt-and-suspenders: free the canonical dev ports even if the pattern matches
+# above missed something (e.g. nohup'd vite launched from a different cwd).
+free_port() {
+    local port="$1"
+    local pids=""
+    if command -v lsof >/dev/null 2>&1; then
+        pids="$(lsof -ti tcp:"$port" 2>/dev/null || true)"
+    elif command -v fuser >/dev/null 2>&1; then
+        pids="$(fuser -n tcp "$port" 2>/dev/null | tr -s ' ' | tr ' ' '\n' | grep -E '^[0-9]+$' || true)"
+    fi
+    if [ -n "$pids" ]; then
+        echo "   Freeing port $port (PIDs: $pids)"
+        echo "$pids" | xargs kill -9 2>/dev/null || true
+    fi
+}
+
+for port in 5173 8000; do
+    free_port "$port"
+done
 
 exit 0
