@@ -146,7 +146,12 @@ if [[ "$DETECTOR_DEPLOY_VARIANTS" != "active" && "$DETECTOR_DEPLOY_VARIANTS" != 
   echo "Refusing to deploy detectors with DETECTOR_DEPLOY_VARIANTS=${DETECTOR_DEPLOY_VARIANTS}. Expected 'active' or 'gpu'." >&2
   exit 1
 fi
-if [[ "$REGION" != "us-east4" ]]; then
+# The top-level (multi-phase) invocation uses REGION as the tasks queue
+# region, which must always be us-east4. Single-phase re-invocations receive
+# the target service region (for dev GPU this is us-central1) via a REGION
+# override, so skip this check in that case — DETECTOR_TASKS_LOCATION below
+# still guards the queue region.
+if [[ "$DETECTOR_DEPLOY_PHASE" != "single" && "$REGION" != "us-east4" ]]; then
   echo "Refusing to deploy detectors with REGION=${REGION} (tasks queue region must stay us-east4)." >&2
   exit 1
 fi
